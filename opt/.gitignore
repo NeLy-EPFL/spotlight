@@ -1,0 +1,6 @@
+*.AppImage
+*.deb
+*.tar
+*.tar.gz
+*.zip
+build/
