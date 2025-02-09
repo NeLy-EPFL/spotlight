@@ -1,6 +1,12 @@
-*.AppImage
-*.deb
-*.tar
-*.tar.gz
-*.zip
-build/
+# Ignore everything...
+*
+
+# ... except the examples
+!examples/
+!examples/**
+
+# But ignore all build files even if they're under examples/
+examples/**/build/
+
+# Finally, don't ignore this .gitignore file
+!.gitignore

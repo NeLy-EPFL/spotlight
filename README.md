@@ -3,24 +3,54 @@
 ## Software dependencies and setups
 
 ### eGrabber (for Euresys frame grabber)
-Download from https://www.euresys.com/en/download-area/
+Download from https://www.euresys.com/en/download-area/. This should include something like:
+```
+egrabber-linux-offline-documentation-en-24.12.2.2194.tar.gz
+egrabber-linux-sample-programs-24.12.2.16.tar.gz
+egrabber-linux-x86_64-24.12.3.24.tar.gz
+egrabber-release-notes-24.12.3.2195.pdf
+```
 
-Tested version: 24.12
+Version used for development: 24.12.
+
+Follow instruction in `egrabber-linux-x86_64-24.12.3.24/INSTALL`, namely:
+```bash
+cd egrabber-linux-x86_64-24.12.3.24/
+sudo ./install.sh
+```
+
+**Then, don't be so fast closing the terminal!** Follow on-screen instruction to complete installation:
+```
+. /opt/euresys/egrabber/shell/setup_gentl_paths.sh
+. /opt/euresys/egrabber/shell/select-coaxlink-producer.sh
+```
+
+Add the following to `~/.bashrc`:
+```
+export EURESYS_COAXLINK_GENTL64_CTI=/opt/euresys/egrabber/lib/x86_64/coaxlink.cti
+```
+
+Then, start a new shell and run:
+```
+/opt/euresys/egrabber/shell/select-default-producer.sh coaxlink
+```
+
+Finally, restart the computer.
 
 
 ### OpenCV
 Follow [official instruction](https://opencv.org/get-started/). For the C++ library on Linux without building from source:
 ```bash
-apt install libopencv-dev
+sudo apt install libopencv-dev
 ```
 
-Version: 4.6.0. To check actual version:
+Version used: 4.6.0. To check actual version:
 ```bash
-$ pkg-config --modversion opencv4
+pkg-config --modversion opencv4
 4.6.0
 ```
 
-To verify install:
+Boilerplate code and `CMakeLists.txt` to get started:
 ```bash
 cd opt/examples/opencv_cpp_boilerplate
 mkdir build
@@ -67,3 +97,12 @@ Go to https://www.zaber.com/software and follow instructions under "Getting Star
 ```bash
 sudo dpkg -i ZaberMotionCppInstaller-7.4.0-Linux_x64.deb
 ```
+
+Boilerplate code and `CMakeLists.txt` to get started:
+```bash
+cd examples/zaber_cpp_boilerplate/
+mkdir build
+cd build
+cmake ..
+make
+./zaber
