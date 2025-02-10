@@ -40,22 +40,46 @@ chmod ago+x ZaberLauncher.AppImage
 
 If the following error is encountered:
 ```
+AppImages require FUSE to run. 
+You might still be able to extract the contents of this AppImage 
+if you run it with the --appimage-extract option. 
+See https://github.com/AppImage/AppImageKit/wiki/FUSE 
+for more information
+```
+... then, go to the FUSE github repo as directed and install FUSE following the instructions there. In brief, these are:
+```bash
+sudo add-apt-repository universe
+sudo apt install libfuse2  # for Ubuntu 22.04
+sudo apt install libfuse2t64  # for Ubuntu 24.04
+```
+
+Then run `ZaberLauncher.AppImage` again.
+
+If the following error is encountered:
+```
 [13052:0208/184049.386863:FATAL:setuid_sandbox_host.cc(158)] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now. You need to make sure that /tmp/.mount_ZaberLlZtImo/chrome-sandbox is owned by root and has mode 4755.
 ```
 
-... rerun with the `--no-sandbox` flag:
+... then, rerun with the `--no-sandbox` flag:
 ```bash
 ./ZaberLauncher.AppImage --no-sandbox
 ```
 
-Then, follow on-screen instruction to create a connection (if not already done). If the following error is encountered:
+Then, follow on-screen instruction to create a connection (if not already done).
+
+If the following error is encountered:
 ```
 Cannot Open Connection
 Cannot open serial port: Permission denied. You may need to add user to the "dialout" group to access serial ports.
 You can still create the connection and resolve the issue later.
 ```
+... then simply run:
 
-... add the current user to the `dialout` group as instructed:
+```bash
+sudo chmod ago+rw /dev/ttyACM0  # or replace with appropriate USB device
+```
+
+ALTERNATIVELY, add the current user to the `dialout` group as instructed:
 ```bash
 sudo usermod -a -G dialout $USER
 ```
