@@ -17,17 +17,17 @@ include_directories(${EGRABBER_INCLUDE_DIR})
 
 # Find all sample source files
 # file(GLOB C_SAMPLES "*.cpp")
-# add_executable(async_grab ${C_SAMPLES})
-add_executable(async_grab async_grab.cpp)
+# add_executable(main ${C_SAMPLES})
+add_executable(main main.cpp)
 
 # Link libraries (pthread, dl, rt)
-target_link_libraries(async_grab pthread rt dl)
+target_link_libraries(main pthread rt dl)
 
 # Link OpenCV libraries
-target_link_libraries(async_grab ${OpenCV_LIBS})
+target_link_libraries(main ${OpenCV_LIBS})
 
 # Optionally, you can add other libraries here
-# target_link_libraries(async_grab <other-libraries>)
+# target_link_libraries(main <other-libraries>)
 
 cmake_minimum_required(VERSION 3.10)
 project(OpenCVExample)
