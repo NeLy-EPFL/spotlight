@@ -18,14 +18,13 @@ BehaviorCamera::BehaviorCamera(
     using Euresys::RemoteModule;
 
     std::cout << "Running GenTL eGrabber discovery..." << std::endl;
-    Euresys::EGenTL genTL;
-    Euresys::EGrabberDiscovery egrabberDiscovery(genTL);
+    Euresys::EGrabberDiscovery egrabberDiscovery(genTL_);
     egrabberDiscovery.discover();
     std::cout << "  OK - GenTL eGrabber discovery completed" << std::endl;
 
     std::cout << "Configuring camera..." << std::endl;
     camera_ = egrabberDiscovery.cameras(0);
-    frameGrabberPtr_ = new Euresys::EGrabber<>(camera_);
+    frameGrabberPtr_ = std::make_unique<Euresys::EGrabber<>>(camera_);
     Euresys::EGrabberInfo frameGrabberInfo = camera_.grabbers[0];
     std::string interfaceID = frameGrabberInfo.interfaceID;
     std::string deviceID = frameGrabberInfo.deviceID;
@@ -38,7 +37,6 @@ BehaviorCamera::BehaviorCamera(
     std::cout << "  Device model: " << deviceModelName << std::endl;
 
     std::cout << "Setting sensor ROI..." << std::endl;
-    // frameGrabberPtr_->setInteger<RemoteModule>("Width", imageWidth);
     setIntegerAndCheck<RemoteModule>("Width", imageWidth);
     setIntegerAndCheck<RemoteModule>("Height", imageHeight);
     setIntegerAndCheck<RemoteModule>("OffsetX", xOffset);
@@ -84,14 +82,15 @@ BehaviorCamera::BehaviorCamera(
     setStringAndCheck<RemoteModule>("LinkConfig", "CXP6_X4");
     std::cout << "  OK - Successfully set LinkConfig to CXP6_X4" << std::endl;
 
-    formatConverterPtr_ = new Euresys::FormatConverter(genTL);
+    formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
 }
 
-BehaviorCamera::~BehaviorCamera()
+BehaviorCamera::~BehaviorCamera() {}
+
+void BehaviorCamera::start(size_t bufferCount)
 {
-    // TODO: Somehow this led to double free and segfault??
-    delete frameGrabberPtr_;
-    delete formatConverterPtr_;
+    frameGrabberPtr_->reallocBuffers(bufferCount);
+    frameGrabberPtr_->start();
 }
 
 FrameData BehaviorCamera::waitForOneFrame()
@@ -134,14 +133,14 @@ template <typename Module>
 bool BehaviorCamera::setStringAndCheck(
     const std::string key, const std::string value)
 {
-    std::cout << "  Setting "
+    std::cout << "    Setting "
               << key << " to "
               << value << "..." << std::endl;
     frameGrabberPtr_->setString<Module>(key, value);
     std::string retrievedValue = frameGrabberPtr_->getString<Module>(key);
     if (retrievedValue != value)
     {
-        std::cerr << "  ERROR - Failed to set "
+        std::cerr << "    ERROR - Failed to set "
                   << key << " to "
                   << value << ". Retrieved value "
                   << retrievedValue << "after setting" << std::endl;

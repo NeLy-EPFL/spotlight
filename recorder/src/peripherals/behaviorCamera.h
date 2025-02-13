@@ -23,13 +23,15 @@ public:
         unsigned int yOffset,
         std::string ioLine);
     ~BehaviorCamera();
+    void start(size_t bufferCount = 20);
     FrameData waitForOneFrame();
     void changeFPS(unsigned int fps);
 
 private:
+    Euresys::EGenTL genTL_;
     Euresys::EGrabberCameraInfo camera_;
-    Euresys::EGrabber<Euresys::CallbackOnDemand> *frameGrabberPtr_;
-    Euresys::FormatConverter *formatConverterPtr_;
+    std::unique_ptr<Euresys::EGrabber<>> frameGrabberPtr_;
+    std::unique_ptr<Euresys::FormatConverter> formatConverterPtr_;
     int imageWidth_;
     int imageHeight_;
     int xOffset_;

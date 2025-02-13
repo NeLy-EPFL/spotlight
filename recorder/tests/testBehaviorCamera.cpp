@@ -7,28 +7,28 @@
 #include "../src/constants.h"
 #include "../src/utils.h"
 
-TEST(RoundingToMultiplesOf64Test, RoundToMultiplesOf64NoOp)
+TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64NoOp)
 {
     unsigned int value = 640;
     unsigned int roundedValue = roundToMultiplesOf64(value);
     ASSERT_EQ(roundedValue, 640);
 }
 
-TEST(RoundingToMultiplesOf64Test, RoundToMultiplesOf64RoundDown)
+TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64RoundDown)
 {
     unsigned int value = 641;
     unsigned int roundedValue = roundToMultiplesOf64(value);
     ASSERT_EQ(roundedValue, 640);
 }
 
-TEST(RoundingToMultiplesOf64Test, RoundToMultiplesOf64RoundUp)
+TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64RoundUp)
 {
     unsigned int value = 639;
     unsigned int roundedValue = roundToMultiplesOf64(value);
     ASSERT_EQ(roundedValue, 640);
 }
 
-TEST(GetCenteredOffsetsTest, GetCenteredOffsets)
+TEST(TestGetCenteredOffsets, GetCenteredOffsets)
 {
     unsigned int xOffset, yOffset;
     std::tie(xOffset, yOffset) = getCenteredOffsets(
@@ -40,7 +40,7 @@ TEST(GetCenteredOffsetsTest, GetCenteredOffsets)
     ASSERT_EQ(yOffset, 768);
 }
 
-TEST(BehaviorCameraTest, ConfigureBehaviorCamera)
+TEST(TestBehaviorCamera, ConfigureBehaviorCamera)
 {
     unsigned int imageWidth = roundToMultiplesOf64(640);
     unsigned int imageHeight = roundToMultiplesOf64(480);
@@ -55,15 +55,16 @@ TEST(BehaviorCameraTest, ConfigureBehaviorCamera)
         BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE);
 }
 
-TEST(BehaviorCameraTest, BehaviorCameraAcquisition)
-/* This test requires the hardware to be configured correctly:
- * An Arduino should ouput a `expectedFrameRate` Hz square wave
- * to the TTLIO12 line of the frame grabber. The width of the
- * squares control the exposure time.
+TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
+/* This test requires the hardware to be configured correctly: An Arduino
+ * should ouput a `expectedFrameRate` Hz square wave to the TTLIO12 line of
+ * the frame grabber. The width of the squares control the exposure time.
  */
 {
     const int expectedFrameRate = 50;
-    const int maxPerFrameProcessingTimeAllowedMicroseconds = 100;
+    
+    // For 500FPS, per frame processing time must be well under 2000us
+    const int maxPerFrameProcessingTimeAllowedMicroseconds = 300;
 
     unsigned int imageWidth = roundToMultiplesOf64(640);
     unsigned int imageHeight = roundToMultiplesOf64(480);
@@ -80,6 +81,8 @@ TEST(BehaviorCameraTest, BehaviorCameraAcquisition)
         yOffset,
         BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE);
 
+    behaviorCamera.start();
+
     int numFrames = expectedFrameRate;
     uint64_t acquisitionStartTime = getCurrentTimeMicroseconds();
     for (int i = 0; i < numFrames; i++)
@@ -94,8 +97,8 @@ TEST(BehaviorCameraTest, BehaviorCameraAcquisition)
     uint64_t acquisitionEndTime = getCurrentTimeMicroseconds();
 
     // Check if frame rate is right
-    double elapsedTime = acquisitionEndTime - acquisitionStartTime;
-    float actualFrameRate = numFrames / elapsedTime;
+    double elapsedTimeMicroseconds = acquisitionEndTime - acquisitionStartTime;
+    float actualFrameRate = numFrames / (elapsedTimeMicroseconds / 1e6);
     ASSERT_NEAR(actualFrameRate, expectedFrameRate, 1)
         << "Expected frame rate: " << expectedFrameRate << " Hz; "
         << "actual frame rate: " << actualFrameRate << " Hz";
@@ -119,6 +122,7 @@ TEST(BehaviorCameraTest, BehaviorCameraAcquisition)
         blockingTimeSum += blockingTimesMicroseconds[i];
     }
     double meanBlockingTime = blockingTimeSum / blockingTimesMicroseconds.size();
+    std::cerr << "a" << meanBlockingTime << std::endl; 
     double meanProcessingTime = (1e6 / expectedFrameRate) - meanBlockingTime;
     ASSERT_LT(meanProcessingTime, maxPerFrameProcessingTimeAllowedMicroseconds)
         << "Mean processing time: " << meanProcessingTime << " us; "
