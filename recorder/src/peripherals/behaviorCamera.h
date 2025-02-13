@@ -1,0 +1,52 @@
+#ifndef BEHAVIOR_CAMERA_H
+#define BEHAVIOR_CAMERA_H
+
+#include <iostream>
+#include <string>
+#include <cassert>
+#include <functional>
+#include <tuple>
+#include <EGrabber.h>
+#include <FormatConverter.h>
+#include <opencv2/opencv.hpp>
+
+#include "../dataTypes.h"
+#include "../utils.h"
+
+class BehaviorCamera
+{
+public:
+    BehaviorCamera(
+        unsigned int imageWidth,
+        unsigned int imageHeight,
+        unsigned int xOffset,
+        unsigned int yOffset,
+        std::string ioLine);
+    ~BehaviorCamera();
+    FrameData waitForOneFrame();
+    void changeFPS(unsigned int fps);
+
+private:
+    Euresys::EGrabberCameraInfo camera_;
+    Euresys::EGrabber<Euresys::CallbackOnDemand> *frameGrabberPtr_;
+    Euresys::FormatConverter *formatConverterPtr_;
+    int imageWidth_;
+    int imageHeight_;
+    int xOffset_;
+    int yOffset_;
+    std::string ioLine_;
+    int currentFPS_;
+
+    template <typename Module>
+    bool setIntegerAndCheck(const std::string key, int value);
+
+    template <typename Module>
+    bool setStringAndCheck(const std::string key, const std::string value);
+};
+
+int roundToMultiplesOf64(int value);
+
+std::tuple<int, int> getCenteredOffsets(
+    int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);
+
+#endif // BEHAVIOR_CAMERA_H
