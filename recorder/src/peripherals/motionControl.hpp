@@ -40,6 +40,7 @@ public:
         double velocity = 0.0);
     void home(MotionAxis axis, bool wait = true);
     double getPosition(MotionAxis axis);
+    void waitUntilIdle(MotionAxis axis);
 
 private:
     std::string serialPort_;

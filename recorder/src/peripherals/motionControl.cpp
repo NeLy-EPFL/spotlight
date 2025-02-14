@@ -111,3 +111,8 @@ double MotionControl::getPosition(MotionAxis axis)
 {
     return axisPtrLookup_[axis]->getPosition(MOTION_STAGE_LENGTH_UNIT);
 }
+
+void MotionControl::waitUntilIdle(MotionAxis axis)
+{
+    axisPtrLookup_[axis]->waitUntilIdle();
+}
