@@ -5,7 +5,6 @@ int add(int a, int b)
     return a + b;
 }
 
-
 TEST(AdditionTest, ShouldWork)
 {
     EXPECT_EQ(2, add(1, 1));

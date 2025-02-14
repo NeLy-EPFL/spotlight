@@ -1,4 +1,4 @@
-#include "behaviorCamera.h"
+#include "behaviorCamera.hpp"
 
 BehaviorCamera::BehaviorCamera(
     unsigned int imageWidth,
@@ -152,7 +152,7 @@ bool BehaviorCamera::setStringAndCheck(
 int roundToMultiplesOf64(int value)
 {
     int remainder = value % 64;
-    return value - remainder + (remainder > 32 ? 64 : 0);
+    return value - remainder + (remainder < 32 ? 0 : 64);
 }
 
 std::tuple<int, int> getCenteredOffsets(

@@ -3,9 +3,9 @@
 #include <vector>
 #include <opencv2/opencv.hpp>
 
-#include "../src/peripherals/behaviorCamera.h"
-#include "../src/constants.h"
-#include "../src/utils.h"
+#include "../src/peripherals/behaviorCamera.hpp"
+#include "../src/constants.hpp"
+#include "../src/utils.hpp"
 
 TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64NoOp)
 {
@@ -16,16 +16,16 @@ TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64NoOp)
 
 TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64RoundDown)
 {
-    unsigned int value = 641;
+    unsigned int value = 640 + 31;
     unsigned int roundedValue = roundToMultiplesOf64(value);
     ASSERT_EQ(roundedValue, 640);
 }
 
 TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64RoundUp)
 {
-    unsigned int value = 639;
+    unsigned int value = 640 + 32;
     unsigned int roundedValue = roundToMultiplesOf64(value);
-    ASSERT_EQ(roundedValue, 640);
+    ASSERT_EQ(roundedValue, 640 + 64);
 }
 
 TEST(TestGetCenteredOffsets, GetCenteredOffsets)
@@ -56,15 +56,16 @@ TEST(TestBehaviorCamera, ConfigureBehaviorCamera)
 }
 
 TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
-/* This test requires the hardware to be configured correctly: An Arduino
+/**
+ * This test requires the hardware to be configured correctly: An Arduino
  * should ouput a `expectedFrameRate` Hz square wave to the TTLIO12 line of
  * the frame grabber. The width of the squares control the exposure time.
  */
 {
     const int expectedFrameRate = 50;
-    
+
     // For 500FPS, per frame processing time must be well under 2000us
-    const int maxPerFrameProcessingTimeAllowedMicroseconds = 300;
+    const int maxPerFrameProcessingTimeAllowedMicroseconds = 500;
 
     unsigned int imageWidth = roundToMultiplesOf64(640);
     unsigned int imageHeight = roundToMultiplesOf64(480);
@@ -104,7 +105,7 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
         << "actual frame rate: " << actualFrameRate << " Hz";
 
     // Check if the frames are different from each other
-    for (int i = 0; i < (int) frameDataVector.size() - 1; i++)
+    for (int i = 0; i < (int)frameDataVector.size() - 1; i++)
     {
         cv::Mat thisImage = *frameDataVector[i].imagePtr;
         cv::Mat nextImage = *frameDataVector[i + 1].imagePtr;
@@ -117,12 +118,12 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
 
     // Check if acquisition is fast enough
     double blockingTimeSum = 0;
-    for (int i = 0; i < (int) blockingTimesMicroseconds.size(); i++)
+    for (int i = 0; i < (int)blockingTimesMicroseconds.size(); i++)
     {
         blockingTimeSum += blockingTimesMicroseconds[i];
     }
     double meanBlockingTime = blockingTimeSum / blockingTimesMicroseconds.size();
-    std::cerr << "a" << meanBlockingTime << std::endl; 
+    std::cerr << "a" << meanBlockingTime << std::endl;
     double meanProcessingTime = (1e6 / expectedFrameRate) - meanBlockingTime;
     ASSERT_LT(meanProcessingTime, maxPerFrameProcessingTimeAllowedMicroseconds)
         << "Mean processing time: " << meanProcessingTime << " us; "

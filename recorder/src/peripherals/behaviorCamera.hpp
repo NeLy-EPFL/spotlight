@@ -1,17 +1,18 @@
-#ifndef BEHAVIOR_CAMERA_H
-#define BEHAVIOR_CAMERA_H
+#ifndef BEHAVIOR_CAMERA_HPP
+#define BEHAVIOR_CAMERA_HPP
 
 #include <iostream>
 #include <string>
 #include <cassert>
 #include <functional>
 #include <tuple>
+
 #include <EGrabber.h>
 #include <FormatConverter.h>
 #include <opencv2/opencv.hpp>
 
-#include "../dataTypes.h"
-#include "../utils.h"
+#include "../dataTypes.hpp"
+#include "../utils.hpp"
 
 class BehaviorCamera
 {
@@ -51,4 +52,4 @@ int roundToMultiplesOf64(int value);
 std::tuple<int, int> getCenteredOffsets(
     int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);
 
-#endif // BEHAVIOR_CAMERA_H
+#endif // BEHAVIOR_CAMERA_HPP

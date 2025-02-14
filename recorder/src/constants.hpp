@@ -1,7 +1,10 @@
+#ifndef CONSTANTS_HPP
+#define CONSTANTS_HPP
+
 #include <iostream>
 
 #define BEHAVIOR_CAMERA_FULL_FRAME_WIDTH 2560
 #define BEHAVIOR_CAMERA_FULL_FRAME_HEIGHT 2048
 #define BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE "TTLIO12"
 
-// const char* behaviorCameraTriggerTTLIOLine = "TTLIO12";
+#endif // CONSTANTS_HPP
