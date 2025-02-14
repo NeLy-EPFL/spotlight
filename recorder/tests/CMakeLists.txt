@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
-project(SpotlightControlTest)
+project(SpotlightControlTest CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
 
@@ -10,28 +13,52 @@ set(GTEST_LIB_DIR "${GTEST_ROOT}/lib")
 find_library(GTEST_LIB gtest HINTS ${GTEST_LIB_DIR})
 find_library(GTEST_MAIN_LIB gtest_main HINTS ${GTEST_LIB_DIR})
 
-# Find OpenCV
+# Find various libraries and packages
+find_package(spdlog REQUIRED)
 find_package(OpenCV REQUIRED)
+find_library(ZABER_MOTION_LIB NAMES zaber-motion REQUIRED)
+message(STATUS "Zaber Motion library found at: ${ZABER_MOTION_LIB}")
 
 # Set up include directories for eGrabber and required compile options
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
 include_directories(${EGRABBER_INCLUDE_DIR})
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g -std=c++17")
 
-# Find all source files
-file(GLOB_RECURSE SOURCES "../src/*.cpp" "../src/*.hpp")
+# Find common source files
+file(GLOB COMMON_SOURCES
+    "../src/utils.*"
+    "../src/dataTypes.hpp"
+    "../src/constants.hpp")
 message(DEBUG "Source files added: ${SOURCES}")
 
 # Add executables
 # The `add_test(NAME ... COMMAND ...)` line registers the tests with CTest
-add_executable(testHelloWorld testHelloWorld.cpp)
+# Example test
+add_executable(testHelloWorld "testHelloWorld.cpp")
 target_include_directories(testHelloWorld PRIVATE ${GTEST_INCLUDE_DIR})
 target_link_libraries(testHelloWorld ${GTEST_LIB} ${GTEST_MAIN_LIB})
 target_link_libraries(testHelloWorld ${OpenCV_LIBS})
 add_test(NAME testHelloWorld COMMAND testHelloWorld)
 
-add_executable(testBehaviorCamera ${SOURCES} testBehaviorCamera.cpp)
+# Test bahavior camera
+file(GLOB BEHAVIOR_CAMERA_SOURCES "../src/peripherals/behaviorCamera.*")
+add_executable(testBehaviorCamera
+    ${COMMON_SOURCES}
+    ${BEHAVIOR_CAMERA_SOURCES}
+    "testBehaviorCamera.cpp")
 target_include_directories(testBehaviorCamera PRIVATE ${GTEST_INCLUDE_DIR})
 target_link_libraries(testBehaviorCamera ${GTEST_LIB} ${GTEST_MAIN_LIB})
 target_link_libraries(testBehaviorCamera ${OpenCV_LIBS})
 add_test(NAME testBehaviorCamera COMMAND behaviorCameraTest)
+
+# Test translation stages
+file(GLOB MOTION_CONTROL_SOURCES "../src/peripherals/motionControl.*")
+add_executable(testMotionControl
+    ${COMMON_SOURCES}
+    ${MOTION_CONTROL_SOURCES}
+    "testMotionControl.cpp")
+target_include_directories(testMotionControl PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testMotionControl ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(testMotionControl ${ZABER_MOTION_LIB})
+target_link_libraries(testMotionControl spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME testMotionControl COMMAND testMotionControl)
