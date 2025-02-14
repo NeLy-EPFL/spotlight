@@ -97,7 +97,8 @@ void MotionControl::moveRelative(
     axisPtrLookup_[axis]->moveRelative(
         relativePosition,
         MOTION_STAGE_LENGTH_UNIT,
-        wait, velocity,
+        wait,
+        velocity,
         MOTION_STAGE_VELOCITY_UNIT);
 }
 
