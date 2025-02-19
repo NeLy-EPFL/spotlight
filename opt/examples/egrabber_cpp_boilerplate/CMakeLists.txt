@@ -28,6 +28,3 @@ target_link_libraries(main ${OpenCV_LIBS})
 
 # Optionally, you can add other libraries here
 # target_link_libraries(main <other-libraries>)
-
-cmake_minimum_required(VERSION 3.10)
-project(OpenCVExample)
