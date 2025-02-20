@@ -50,7 +50,7 @@ namespace
 }
 
 void behaviorImageAcquierer(
-    std::shared_ptr<std::atomic<bool>> isSavingData,
+    std::shared_ptr<std::atomic<bool>> isRecording,
     std::shared_ptr<std::atomic<bool>> toQuit)
 {
     std::signal(SIGINT, handleSigint);
@@ -95,7 +95,7 @@ void behaviorImageAcquierer(
 
 void behaviorImageSaver(
     const std::string &directory,
-    std::shared_ptr<std::atomic<bool>> isSavingData,
+    std::shared_ptr<std::atomic<bool>> isRecording,
     std::shared_ptr<std::atomic<bool>> toQuit)
 {
     std::string filename;

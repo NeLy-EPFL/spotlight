@@ -17,7 +17,9 @@ find_library(GTEST_MAIN_LIB gtest_main HINTS ${GTEST_LIB_DIR})
 find_package(spdlog REQUIRED)
 find_package(OpenCV REQUIRED)
 find_library(ZABER_MOTION_LIB NAMES zaber-motion REQUIRED)
-message(STATUS "Zaber Motion library found at: ${ZABER_MOTION_LIB}")
+
+# Qt
+find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort)
 
 # Set up include directories for eGrabber and required compile options
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
@@ -36,8 +38,10 @@ message(DEBUG "Source files added: ${SOURCES}")
 # Example test
 add_executable(testHelloWorld "testHelloWorld.cpp")
 target_include_directories(testHelloWorld PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testHelloWorld Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(testHelloWorld ${GTEST_LIB} ${GTEST_MAIN_LIB})
 target_link_libraries(testHelloWorld ${OpenCV_LIBS})
+target_link_libraries(testHelloWorld spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 add_test(NAME testHelloWorld COMMAND testHelloWorld)
 
 # Test bahavior camera
@@ -47,8 +51,10 @@ add_executable(testBehaviorCamera
     ${BEHAVIOR_CAMERA_SOURCES}
     "testBehaviorCamera.cpp")
 target_include_directories(testBehaviorCamera PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testBehaviorCamera Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(testBehaviorCamera ${GTEST_LIB} ${GTEST_MAIN_LIB})
 target_link_libraries(testBehaviorCamera ${OpenCV_LIBS})
+target_link_libraries(testBehaviorCamera spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 add_test(NAME testBehaviorCamera COMMAND behaviorCameraTest)
 
 # Test translation stages
@@ -58,7 +64,20 @@ add_executable(testMotionControl
     ${MOTION_CONTROL_SOURCES}
     "testMotionControl.cpp")
 target_include_directories(testMotionControl PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testMotionControl Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(testMotionControl ${GTEST_LIB} ${GTEST_MAIN_LIB})
 target_link_libraries(testMotionControl ${ZABER_MOTION_LIB})
+target_link_libraries(testMotionControl ${OpenCV_LIBS})
 target_link_libraries(testMotionControl spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 add_test(NAME testMotionControl COMMAND testMotionControl)
+
+# Test camera acquisition config
+add_executable(testCameraAcquisitionConfig
+    ${COMMON_SOURCES}
+    "testCameraAcquisitionConfig.cpp")
+target_include_directories(testCameraAcquisitionConfig PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testCameraAcquisitionConfig Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(testCameraAcquisitionConfig ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(testCameraAcquisitionConfig ${OpenCV_LIBS})
+target_link_libraries(testCameraAcquisitionConfig spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME testCameraAcquisitionConfig COMMAND testCameraAcquisitionConfig)

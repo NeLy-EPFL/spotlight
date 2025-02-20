@@ -18,4 +18,9 @@ struct SerialPortInfo
     std::string manufacturer;
 };
 
+enum CameraAcquisitionMode {
+    STREAM,
+    RECORD
+};
+
 #endif // DATA_TYPES_HPP

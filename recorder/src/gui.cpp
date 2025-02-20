@@ -1,5 +1,3 @@
-#include <QVBoxLayout>
-
 #include "gui.hpp"
 
 namespace
@@ -50,9 +48,28 @@ Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
     stopButton = new QPushButton("Stop", this);
     stopButton->setEnabled(false); // initially disabled
 
+    behaviorFPSSpinBox = new QSpinBox(this);
+    behaviorFPSSpinBox->setRange(1, 1000);
+    behaviorFPSSpinBox->setValue(100);
+
+    behaviorExposureTimeSpinBox = new QDoubleSpinBox(this);
+    behaviorExposureTimeSpinBox->setRange(0.001, 1000.0);
+    behaviorExposureTimeSpinBox->setValue(1);
+
     stopRecording(); // initialy stream images only, don't save
 
     QVBoxLayout *layout = new QVBoxLayout(this);
+    QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
+    behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
+    behaviorFPSLayout->addWidget(behaviorFPSSpinBox);
+    layout->addLayout(behaviorFPSLayout);
+
+    QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
+    behaviorExposureTimeLayout->addWidget(
+        new QLabel("Behavior exposure time (ms)"));
+    behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox);
+    layout->addLayout(behaviorExposureTimeLayout);
+
     layout->addWidget(recordButton);
     layout->addWidget(stopButton);
 
@@ -65,7 +82,14 @@ Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
 void Gui::startRecording()
 {
     *isSavingData = true;
-    sendCommand(serialPort, QString("START"));
+
+    CameraAcquisitionConfig cameraAcquisitionConfig(
+        CameraAcquisitionMode::RECORD,
+        behaviorFPSSpinBox->value(),
+        behaviorExposureTimeSpinBox->value() * 1000); // convert to microseconds
+    std::string commandString = cameraAcquisitionConfig.toCommandString();
+    sendCommand(serialPort, QString(commandString.c_str()));
+
     recordButton->setEnabled(false);
     stopButton->setEnabled(true);
 }
@@ -73,7 +97,14 @@ void Gui::startRecording()
 void Gui::stopRecording()
 {
     *isSavingData = false;
-    sendCommand(serialPort, QString("STOP"));
+
+    CameraAcquisitionConfig cameraAcquisitionConfig(
+        CameraAcquisitionMode::STREAM,
+        BEHAVIOR_CAMERA_STREAMING_FPS,
+        behaviorExposureTimeSpinBox->value() * 1000); // convert to microseconds
+    std::string commandString = cameraAcquisitionConfig.toCommandString();
+    sendCommand(serialPort, QString(commandString.c_str()));
+
     recordButton->setEnabled(true);
     stopButton->setEnabled(false);
 }

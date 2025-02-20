@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(ArduinoControlApp)
+project(SpotlightController)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -31,11 +31,10 @@ file(GLOB SOURCES
     "main.cpp"
 )
 
-add_executable(ArduinoControlApp ${SOURCES})
-target_link_libraries(ArduinoControlApp pthread rt dl)
-target_link_libraries(ArduinoControlApp Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(ArduinoControlApp ${OpenCV_LIBS})
-target_link_libraries(ArduinoControlApp ${ZABER_MOTION_LIB})
-target_link_libraries(ArduinoControlApp spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-
-set_target_properties(ArduinoControlApp PROPERTIES AUTOMOC ON)
+add_executable(SpotlightController ${SOURCES})
+target_link_libraries(SpotlightController pthread rt dl)
+target_link_libraries(SpotlightController Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(SpotlightController ${OpenCV_LIBS})
+target_link_libraries(SpotlightController ${ZABER_MOTION_LIB})
+target_link_libraries(SpotlightController spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+set_target_properties(SpotlightController PROPERTIES AUTOMOC ON)

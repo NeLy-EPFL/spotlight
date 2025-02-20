@@ -27,7 +27,7 @@ int main(int argc, char **argv)
 {
     std::signal(SIGINT, handleSigint);
 
-    std::shared_ptr<std::atomic<bool>> isSavingData =
+    std::shared_ptr<std::atomic<bool>> isRecording =
         std::make_shared<std::atomic<bool>>(false);
     toQuit = std::make_shared<std::atomic<bool>>(false);
 
@@ -36,18 +36,18 @@ int main(int argc, char **argv)
 
     // Start behavior image acquirer
     std::thread behaviorImageAcquiererThread(
-        behaviorImageAcquierer, isSavingData, toQuit);
+        behaviorImageAcquierer, isRecording, toQuit);
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
     for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
     {
         behaviorImageSaverThreads.emplace_back(
-            behaviorImageSaver, "./images", isSavingData, toQuit);
+            behaviorImageSaver, "./images", isRecording, toQuit);
     }
 
     // Create and show GUI
-    Gui gui(isSavingData, toQuit);
+    Gui gui(isRecording, toQuit);
     gui.show();
 
     int result = application->exec();

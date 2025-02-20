@@ -8,8 +8,13 @@
 #include <QPushButton>
 #include <QSerialPort>
 #include <QSerialPortInfo>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QSpinBox>
+#include <QLabel>
 
 #include "utils.hpp"
+#include "constants.hpp"
 
 class Gui : public QWidget
 {
@@ -32,6 +37,8 @@ private:
     QSerialPort serialPort;
     QPushButton *recordButton;
     QPushButton *stopButton;
+    QSpinBox *behaviorFPSSpinBox;
+    QDoubleSpinBox *behaviorExposureTimeSpinBox;
 };
 
 #endif // GUI_HPP

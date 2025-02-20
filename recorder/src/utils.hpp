@@ -15,4 +15,18 @@ std::string getSerialPortName(
     std::string deviceDescription = "Nano ESP32",
     std::string deviceManufacturer = "Arduino");
 
+class CameraAcquisitionConfig
+{
+public:
+    CameraAcquisitionConfig(CameraAcquisitionMode mode,
+                            int fps,
+                            int exposureTimeMicroseconds);
+    CameraAcquisitionConfig(std::string commandString);
+    std::string toCommandString() const;
+
+    CameraAcquisitionMode mode;
+    int fps;
+    int exposureTimeMicroseconds;
+};
+
 #endif // UTILS_HPP

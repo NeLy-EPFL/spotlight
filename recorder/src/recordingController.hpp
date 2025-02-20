@@ -13,11 +13,11 @@
 #include "peripherals/motionControl.hpp"
 
 void behaviorImageAcquierer(
-    std::shared_ptr<std::atomic<bool>> isSavingData,
+    std::shared_ptr<std::atomic<bool>> isRecording,
     std::shared_ptr<std::atomic<bool>> toQuit);
 void behaviorImageSaver(
     const std::string &directory,
-    std::shared_ptr<std::atomic<bool>> isSavingData,
+    std::shared_ptr<std::atomic<bool>> isRecording,
     std::shared_ptr<std::atomic<bool>> toQuit);
 void muscleImageAcquierer(std::shared_ptr<std::atomic<bool>> toQuit);
 void muscleImageSaver(const std::string &directory,
