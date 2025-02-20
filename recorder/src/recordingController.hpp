@@ -12,11 +12,19 @@
 #include "peripherals/behaviorCamera.hpp"
 #include "peripherals/motionControl.hpp"
 
-void behaviorImageAcquierer(std::shared_ptr<bool> isSavingData);
+void behaviorImageAcquierer(
+    std::shared_ptr<std::atomic<bool>> isSavingData,
+    std::shared_ptr<std::atomic<bool>> toQuit);
 void behaviorImageSaver(
-    const std::string &directory, std::shared_ptr<bool> isSavingData);
-void muscleImageAcquierer();
-void muscleImageSaver(const std::string &directory);
-void flyTrackingController(int tolerancePx, int gainPx, int speedMmPerSec);
+    const std::string &directory,
+    std::shared_ptr<std::atomic<bool>> isSavingData,
+    std::shared_ptr<std::atomic<bool>> toQuit);
+void muscleImageAcquierer(std::shared_ptr<std::atomic<bool>> toQuit);
+void muscleImageSaver(const std::string &directory,
+                      std::shared_ptr<std::atomic<bool>> toQuit);
+void flyTrackingController(int tolerancePx,
+                           int gainPx,
+                           int speedMmPerSec,
+                           std::shared_ptr<std::atomic<bool>> toQuit);
 
 #endif // RECORDING_CONTROLLER_HPP

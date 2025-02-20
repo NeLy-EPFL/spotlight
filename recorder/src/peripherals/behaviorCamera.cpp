@@ -93,6 +93,11 @@ void BehaviorCamera::start(size_t bufferCount)
     frameGrabberPtr_->start();
 }
 
+void BehaviorCamera::stop()
+{
+    frameGrabberPtr_->stop();
+}
+
 FrameData BehaviorCamera::waitForOneFrame()
 {
     // Getting the buffer is the main blocking call

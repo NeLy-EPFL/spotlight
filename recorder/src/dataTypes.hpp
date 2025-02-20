@@ -8,6 +8,14 @@ struct FrameData
     long unsigned int acquisitionTime;
     long unsigned int receivedTime;
     cv::Mat *imagePtr;
+    bool noMoreData = false;
+};
+
+struct SerialPortInfo
+{
+    std::string portName;
+    std::string description;
+    std::string manufacturer;
 };
 
 #endif // DATA_TYPES_HPP

@@ -93,6 +93,9 @@
         "stdfloat": "cpp",
         "syncstream": "cpp",
         "typeindex": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "qapplication": "cpp",
+        "qvboxlayout": "cpp",
+        "queue": "cpp"
     }
 }

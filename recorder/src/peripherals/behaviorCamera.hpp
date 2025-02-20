@@ -6,6 +6,7 @@
 #include <cassert>
 #include <functional>
 #include <tuple>
+#include <csignal>
 
 #include <EGrabber.h>
 #include <FormatConverter.h>
@@ -25,6 +26,7 @@ public:
         std::string ioLine);
     ~BehaviorCamera();
     void start(size_t bufferCount = 20);
+    void stop();
     FrameData waitForOneFrame();
     void changeFPS(unsigned int fps);
 
