@@ -2,12 +2,6 @@
 
 namespace
 {
-    std::queue<FrameData> behaviorImageQueue;
-    std::mutex behaviorImageQueueMutex;
-    std::condition_variable behaviorImageQueueCondVar;
-    std::queue<FrameData> muscleImageQueue;
-    std::mutex muscleImageQueueMutex;
-    std::condition_variable muscleImageQueueCondVar;
     BehaviorCamera *behaviorCamera = nullptr;
 
     std::atomic<bool> isRecording(false);
@@ -49,9 +43,7 @@ namespace
     }
 }
 
-void behaviorImageAcquierer(
-    std::shared_ptr<std::atomic<bool>> isRecording,
-    std::shared_ptr<std::atomic<bool>> toQuit)
+void behaviorImageAcquierer()
 {
     std::signal(SIGINT, handleSigint);
 
@@ -93,10 +85,7 @@ void behaviorImageAcquierer(
                  "behavior camera acquisition thread stopped");
 }
 
-void behaviorImageSaver(
-    const std::string &directory,
-    std::shared_ptr<std::atomic<bool>> isRecording,
-    std::shared_ptr<std::atomic<bool>> toQuit)
+void behaviorImageSaver(const std::string &directory)
 {
     std::string filename;
     FrameData frameData;
