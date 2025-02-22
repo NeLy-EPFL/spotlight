@@ -4,9 +4,6 @@ namespace
 {
     BehaviorCamera *behaviorCamera = nullptr;
 
-    std::atomic<bool> isRecording(false);
-    uint frameNumber = 0;
-
     void handleSigint(int)
     /**
      * Handle SIGINT signal: quit gracefully by explicitly stopping
@@ -32,12 +29,18 @@ namespace
         {
             FrameData stopper;
             stopper.noMoreData = true;
+            // The behavior image queue actually keeps track of buffer groups
+            // of three images, so we just fill the buffer with stoppers here
+            GroupOfThreeFrames stopperBlock = {stopper, stopper, stopper};
             {
                 std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
-                behaviorImageQueue.push(stopper);
+                behaviorImageQueue.push(stopperBlock);
             }
             behaviorImageQueueCondVar.notify_one();
         }
+
+        spdlog::info("Stopping acquisition on behavior camera");
+        behaviorCamera->stop();
 
         std::exit(0);
     }
@@ -67,24 +70,41 @@ void behaviorImageAcquierer()
     behaviorCamera->start();
     spdlog::info("Behavior camera started");
 
-    FrameData frameData;
+    FrameData frameDataBuffer[3];
+    size_t frameDataBufferIndex = 0;
 
     while (!toQuit->load())
     {
         // Acquire image data
-        frameData = behaviorCamera->waitForOneFrame();
+        FrameData frameData = behaviorCamera->waitForOneFrame();
 
-        // Add to queue
+        // Update latest frame for live display
         {
-            std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
-            behaviorImageQueue.push(frameData);
+            std::lock_guard<std::mutex> lock(latestFrameMutex);
+            std::swap(latestFrameData, frameData);
         }
-        behaviorImageQueueCondVar.notify_one();
+
+        if (isRecording->load())
         {
+            frameDataBuffer[frameDataBufferIndex++] = frameData;
+
+            if (frameDataBufferIndex == 3)
             {
-                std::lock_guard<std::mutex> lock(latestFrameMutex);
-                std::swap(latestFrameData, frameData);
+                // Add to queue
+                GroupOfThreeFrames groupOfThreeFrames = {
+                    frameDataBuffer[0],
+                    frameDataBuffer[1],
+                    frameDataBuffer[2]};
+                {
+                    std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
+                    behaviorImageQueue.push(groupOfThreeFrames);
+                }
+                behaviorImageQueueCondVar.notify_one();
+
+                frameDataBufferIndex = 0;
             }
+        } else {
+            frameDataBufferIndex = 0;
         }
     }
 
@@ -95,35 +115,40 @@ void behaviorImageAcquierer()
 
 void behaviorImageSaver(const std::string &directory)
 {
-    std::string filename;
-    FrameData frameData;
-    uint currentFrameNumber = frameNumber;
-
     while (!toQuit->load())
     {
+        GroupOfThreeFrames frameGroup;
         {
             std::unique_lock<std::mutex> lock(behaviorImageQueueMutex);
             behaviorImageQueueCondVar.wait(
                 lock, []
                 { return !behaviorImageQueue.empty(); });
-            frameData = behaviorImageQueue.front();
+            frameGroup = behaviorImageQueue.front();
             behaviorImageQueue.pop();
-            currentFrameNumber = frameNumber++;
         }
 
-        if (frameData.noMoreData)
+        if (frameGroup.frame0.noMoreData)
         {
             spdlog::info("Behavior image saver received stopper; "
                          "no more frame will come.");
             break;
         }
 
-        filename = directory +
-                   "/behavior_" +
-                   fmt::format("{:09}", currentFrameNumber) +
-                   ".tiff";
-        // cv::imwrite(filename, *frameData.imagePtr);
-        // spdlog::info("Behavior image would be saved to {}", filename);
+        std::string filenameStem =
+            directory +
+            "/behavior_" +
+            fmt::format("{:09}", frameGroup.frame0.frameId);
+
+        // Save three frames as a single pseudo-RGB image
+        std::string filename = filenameStem + ".jpg";
+        cv::Mat image = makePseudoRGBImageFromThreeFrames(frameGroup);
+        cv::imwrite(filename, image);
+
+        // Save metadata
+        std::string metadataFilename = filenameStem + ".txt";
+        std::ofstream metadataFile(metadataFilename);
+        metadataFile << makeMetadataStringFromThreeFrames(frameGroup);
+        metadataFile.close();
     }
     spdlog::info("Behavior image saver thread stopped");
 }

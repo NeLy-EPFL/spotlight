@@ -24,6 +24,7 @@
 #define MOTION_STAGE_SERIAL_PORT_NAME "/dev/ttyACM0"
 
 // Triggering
+#define BUFFER_FLUSHING_WAIT_TIME_MILLISECS 100
 
 // GUI
 #endif // CONSTANTS_HPP

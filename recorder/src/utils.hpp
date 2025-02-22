@@ -15,6 +15,11 @@ std::string getSerialPortName(
     std::string deviceDescription = "Nano ESP32",
     std::string deviceManufacturer = "Arduino");
 
+cv::Mat makePseudoRGBImageFromThreeFrames(
+    const GroupOfThreeFrames &groupOfThreeFrames);
+std::string makeMetadataStringFromThreeFrames(
+    const GroupOfThreeFrames &groupOfThreeFrames);
+
 class CameraAcquisitionConfig
 {
 public:

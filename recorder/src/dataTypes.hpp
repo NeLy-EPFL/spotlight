@@ -5,10 +5,18 @@
 
 struct FrameData
 {
+    long unsigned int frameId;
     long unsigned int acquisitionTime;
     long unsigned int receivedTime;
     cv::Mat *imagePtr;
     bool noMoreData = false;
+};
+
+struct GroupOfThreeFrames
+{
+    FrameData frame0;
+    FrameData frame1;
+    FrameData frame2;
 };
 
 struct SerialPortInfo

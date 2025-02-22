@@ -6,6 +6,7 @@
 #include <queue>
 #include <condition_variable>
 #include <atomic>
+#include <fstream>
 
 #include <spdlog/spdlog.h>
 

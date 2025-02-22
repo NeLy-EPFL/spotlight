@@ -9,17 +9,17 @@
 #include "recordingController.hpp"
 #include "gui.hpp"
 
-std::queue<FrameData> behaviorImageQueue;
+std::queue<GroupOfThreeFrames> behaviorImageQueue;
 std::mutex behaviorImageQueueMutex;
 std::condition_variable behaviorImageQueueCondVar;
-std::queue<FrameData> muscleImageQueue;
+std::queue<GroupOfThreeFrames> muscleImageQueue;
 std::mutex muscleImageQueueMutex;
 std::condition_variable muscleImageQueueCondVar;
-FrameData latestFrameData = {0, 0, nullptr, false};
+FrameData latestFrameData = {0, 0, 0, nullptr, false};
 std::mutex latestFrameMutex;
 
-std::shared_ptr<std::atomic<bool>> toQuit;
-std::shared_ptr<std::atomic<bool>> isRecording;
+std::shared_ptr<std::atomic<bool>> toQuit = std::make_shared<std::atomic<bool>>(false);
+std::shared_ptr<std::atomic<bool>> isRecording = std::make_shared<std::atomic<bool>>(false);
 
 QApplication *application = nullptr;
 
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     }
 
     // Create and show GUI
-    Gui gui(isRecording, toQuit);
+    Gui gui(nullptr);
     gui.show();
 
     int result = application->exec();

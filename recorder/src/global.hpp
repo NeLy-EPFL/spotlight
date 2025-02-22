@@ -5,10 +5,10 @@
 
 #include "dataTypes.hpp"
 
-extern std::queue<FrameData> behaviorImageQueue;
+extern std::queue<GroupOfThreeFrames> behaviorImageQueue;
 extern std::mutex behaviorImageQueueMutex;
 extern std::condition_variable behaviorImageQueueCondVar;
-extern std::queue<FrameData> muscleImageQueue;
+extern std::queue<GroupOfThreeFrames> muscleImageQueue;
 extern std::mutex muscleImageQueueMutex;
 extern std::condition_variable muscleImageQueueCondVar;
 

@@ -13,6 +13,30 @@ namespace
             spdlog::error("Failed to send command; serial port not open.");
         }
     }
+
+    void waitUntilMessageReceived(QSerialPort &serialPort,
+                                  const std::string &message)
+    {
+        while (true)
+        {
+            if (serialPort.waitForReadyRead(1000))
+            {
+                QByteArray response = serialPort.readAll();
+                std::string responseStr = response.toStdString();
+                if (responseStr.find(message) != std::string::npos)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                spdlog::error(
+                    "Timeout while waiting for message: '{}' from Arduino",
+                    message);
+                throw std::runtime_error("Timeout while waiting for message");
+            }
+        }
+    }
 }
 
 cv::Mat getLatestFrame()
@@ -41,12 +65,8 @@ QImage cvMatToQImage(const cv::Mat &mat)
                   QImage::Format_Grayscale8);
 }
 
-Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
-         std::shared_ptr<std::atomic<bool>> toQuit,
-         QWidget *parent)
+Gui::Gui(QWidget *parent)
     : QWidget(parent),
-      isSavingData(isSavingData),
-      toQuit(toQuit),
       directory("./images"),
       serialPort(new QSerialPort(this))
 {
@@ -59,7 +79,7 @@ Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
     serialPort.setStopBits(QSerialPort::OneStop);
     serialPort.setFlowControl(QSerialPort::NoFlowControl);
 
-    bool serialPortOpened = serialPort.open(QIODevice::WriteOnly);
+    bool serialPortOpened = serialPort.open(QIODevice::ReadWrite);
     if (serialPortOpened)
     {
         spdlog::info("Serial port opened successfully.");
@@ -117,26 +137,49 @@ Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
 
 void Gui::startRecording()
 {
-    *isSavingData = true;
+    recordButton->setEnabled(false);
+    stopButton->setEnabled(true);
 
     int recordingFPS = behaviorFPSSpinBox->value();
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox->value() * 1000;
 
+    spdlog::info(
+        "Preparing for recording. I'm telling Arduino to pause trigger "
+        "pulses. I will wait until the camera image acquisition thread is "
+        "not receiving any frames anymore; then I will tell Arduino to "
+        "continue.");
+    sendCommand(serialPort, "PAUSE");
+
+    waitUntilMessageReceived(serialPort, "PAUSE_ACK");
+    spdlog::info(
+        "Arduino told me it has stopped sending pulses. I will now wait {} "
+        "milliseconds to make sure the camera image acquisition thread is "
+        "not receiving any frames anymore.",
+        BUFFER_FLUSHING_WAIT_TIME_MILLISECS);
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(BUFFER_FLUSHING_WAIT_TIME_MILLISECS));
+
+    spdlog::info(
+        "OK. I assume all pending frames have arrived. I'm marking my state "
+        "as recording; this way, new frames that arrive now will be saved. "
+        "I'm also telling Arduino to start sending trigger pulses again.");
+    isRecording->store(true);
     CameraAcquisitionConfig cameraAcquisitionConfig(
         CameraAcquisitionMode::RECORD,
         recordingFPS,
         recordingExposureTimeMicrosecs);
     std::string commandString = cameraAcquisitionConfig.toCommandString();
     sendCommand(serialPort, QString(commandString.c_str()));
-
-    recordButton->setEnabled(false);
-    stopButton->setEnabled(true);
+    spdlog::info("Command sent to Arduino: {}", commandString);
 }
 
 void Gui::stopRecording()
 {
-    *isSavingData = false;
+    isRecording->store(false);
+
+    recordButton->setEnabled(true);
+    stopButton->setEnabled(false);
 
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox->value() * 1000;
@@ -147,9 +190,6 @@ void Gui::stopRecording()
         recordingExposureTimeMicrosecs);
     std::string commandString = cameraAcquisitionConfig.toCommandString();
     sendCommand(serialPort, QString(commandString.c_str()));
-
-    recordButton->setEnabled(true);
-    stopButton->setEnabled(false);
 }
 
 void Gui::updateImageDisplay()

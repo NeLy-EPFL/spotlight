@@ -18,6 +18,7 @@ int behaviorCycleTimeMicrosecs = 1000000 / 25;
 unsigned long lastBehaviorExposureStartTimeMicrosecs = 0;
 bool behaviorTriggerState = LOW;
 CameraAcquisitionMode acquisitionMode = STREAM;
+bool waitingForCommand = false;
 
 std::tuple<CameraAcquisitionMode, int, int> parseCommand(
     const std::string &commandString)
@@ -58,10 +59,20 @@ void setup() {
 
 void loop() {
     // Check for serial input (this only takes 1-2 us)
-    if (Serial.available()) {
+    if (Serial.available() || waitingForCommand) {
         String commandArduinoString = Serial.readStringUntil('\n');
         commandArduinoString.trim();
         std::string commandString(commandArduinoString.c_str());
+
+        if (commandString == "PAUSE") {
+            // Wait until another command is received
+            waitingForCommand = true;
+            Serial.println("PAUSE_ACK");
+            return;
+        } else {
+            waitingForCommand = false;
+        }
+
         auto [mode, fps, exposureTimeMicrosecs] = parseCommand(commandString);
         acquisitionMode = mode;
         behaviorCycleTimeMicrosecs = 1000000 / fps;

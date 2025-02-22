@@ -28,9 +28,7 @@ class Gui : public QWidget
     Q_OBJECT
 
 public:
-    explicit Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
-                 std::shared_ptr<std::atomic<bool>> toQuit,
-                 QWidget *parent = nullptr);
+    explicit Gui(QWidget *parent = nullptr);
 
 private slots:
     void startRecording();
@@ -38,7 +36,6 @@ private slots:
     void updateImageDisplay();
 
 private:
-    std::shared_ptr<std::atomic<bool>> isSavingData;
     std::shared_ptr<std::atomic<bool>> toQuit;
     std::string directory;
     std::string serialPortName;

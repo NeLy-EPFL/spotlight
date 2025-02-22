@@ -102,17 +102,22 @@ FrameData BehaviorCamera::waitForOneFrame()
 {
     // Getting the buffer is the main blocking call
     Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
+    
+    // Get image data and metadata
     uint64_t receivedTime = getCurrentTimeMicroseconds();
     uint8_t *dataPtr = buffer.getInfo<uint8_t *>(
         Euresys::gc::BUFFER_INFO_BASE);
     uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(
         Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
     uint64_t acquisitionTime = grabberTimestamp / 1000;
+    
+    // Make FrameData object
     FrameData frameData;
-    frameData.imagePtr = new cv::Mat(
-        imageHeight_, imageWidth_, CV_8UC1, dataPtr);
+    frameData.frameId = currentFrameId_++;
     frameData.acquisitionTime = acquisitionTime;
     frameData.receivedTime = receivedTime;
+    frameData.imagePtr = new cv::Mat(
+        imageHeight_, imageWidth_, CV_8UC1, dataPtr);
     return frameData;
 }
 

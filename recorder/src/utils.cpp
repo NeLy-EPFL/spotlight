@@ -45,6 +45,37 @@ std::string getSerialPortName(std::string deviceDescription,
     return "";
 }
 
+cv::Mat makePseudoRGBImageFromThreeFrames(
+    const GroupOfThreeFrames &groupOfThreeFrames)
+{
+    FrameData frame0 = groupOfThreeFrames.frame0;
+    std::vector<cv::Mat> channels = {
+        *groupOfThreeFrames.frame0.imagePtr,
+        *groupOfThreeFrames.frame1.imagePtr,
+        *groupOfThreeFrames.frame2.imagePtr};
+    cv::Mat pseudoRGBImage;
+    cv::merge(channels, pseudoRGBImage);
+    return pseudoRGBImage;
+}
+
+std::string makeMetadataStringFromThreeFrames(
+    const GroupOfThreeFrames &groupOfThreeFrames)
+{
+    std::string metadataString = "";
+    for (const FrameData &frameData : {
+             groupOfThreeFrames.frame0,
+             groupOfThreeFrames.frame1,
+             groupOfThreeFrames.frame2})
+    {
+        metadataString += fmt::format(
+            "frameId {}, acquisitionTime {}, receivedTime {}\n",
+            frameData.frameId,
+            frameData.acquisitionTime,
+            frameData.receivedTime);
+    }
+    return metadataString;
+}
+
 CameraAcquisitionConfig::CameraAcquisitionConfig(
     CameraAcquisitionMode mode, int fps, int exposureTimeMicroseconds)
     : mode(mode),
