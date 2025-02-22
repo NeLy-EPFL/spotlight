@@ -28,7 +28,6 @@ public:
     void start(size_t bufferCount = 20);
     void stop();
     FrameData waitForOneFrame();
-    void changeFPS(unsigned int fps);
 
 private:
     Euresys::EGenTL genTL_;

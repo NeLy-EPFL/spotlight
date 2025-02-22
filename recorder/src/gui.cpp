@@ -15,6 +15,32 @@ namespace
     }
 }
 
+cv::Mat getLatestFrame()
+{
+    {
+        std::lock_guard<std::mutex> lock(latestFrameMutex);
+        if (latestFrameData.imagePtr == nullptr)
+        {
+            return cv::Mat();
+        }
+        cv::Mat latestFrameImage = latestFrameData.imagePtr->clone();
+        return latestFrameImage;
+    }
+}
+
+QImage cvMatToQImage(const cv::Mat &mat)
+{
+    if (mat.empty())
+    {
+        return QImage();
+    }
+    return QImage(mat.data,
+                  mat.cols,
+                  mat.rows,
+                  mat.step,
+                  QImage::Format_Grayscale8);
+}
+
 Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
          std::shared_ptr<std::atomic<bool>> toQuit,
          QWidget *parent)
@@ -70,6 +96,16 @@ Gui::Gui(std::shared_ptr<std::atomic<bool>> isSavingData,
     behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox);
     layout->addLayout(behaviorExposureTimeLayout);
 
+    behaviorImageDisplayLabel = new QLabel(this);
+    behaviorImageDisplayLabel->setFixedSize(
+        GUI_BEHAVIOR_CAMERA_PREVIEW_WIDTH, GUI_BEHAVIOR_CAMERA_PREVIEW_HEIGHT);
+    layout->addWidget(behaviorImageDisplayLabel);
+
+    // Timer to update the video display
+    imageDisplayTimer = new QTimer(this);
+    connect(imageDisplayTimer, &QTimer::timeout, this, &Gui::updateImageDisplay);
+    imageDisplayTimer->start(1000 / BEHAVIOR_CAMERA_STREAMING_FPS);
+
     layout->addWidget(recordButton);
     layout->addWidget(stopButton);
 
@@ -83,10 +119,14 @@ void Gui::startRecording()
 {
     *isSavingData = true;
 
+    int recordingFPS = behaviorFPSSpinBox->value();
+    int recordingExposureTimeMicrosecs =
+        behaviorExposureTimeSpinBox->value() * 1000;
+
     CameraAcquisitionConfig cameraAcquisitionConfig(
         CameraAcquisitionMode::RECORD,
-        behaviorFPSSpinBox->value(),
-        behaviorExposureTimeSpinBox->value() * 1000); // convert to microseconds
+        recordingFPS,
+        recordingExposureTimeMicrosecs);
     std::string commandString = cameraAcquisitionConfig.toCommandString();
     sendCommand(serialPort, QString(commandString.c_str()));
 
@@ -98,13 +138,31 @@ void Gui::stopRecording()
 {
     *isSavingData = false;
 
+    int recordingExposureTimeMicrosecs =
+        behaviorExposureTimeSpinBox->value() * 1000;
+
     CameraAcquisitionConfig cameraAcquisitionConfig(
         CameraAcquisitionMode::STREAM,
         BEHAVIOR_CAMERA_STREAMING_FPS,
-        behaviorExposureTimeSpinBox->value() * 1000); // convert to microseconds
+        recordingExposureTimeMicrosecs);
     std::string commandString = cameraAcquisitionConfig.toCommandString();
     sendCommand(serialPort, QString(commandString.c_str()));
 
     recordButton->setEnabled(true);
     stopButton->setEnabled(false);
+}
+
+void Gui::updateImageDisplay()
+{
+    cv::Mat latestFrame = getLatestFrame();
+    if (latestFrame.empty())
+    {
+        return;
+    }
+    QImage qImage = cvMatToQImage(latestFrame);
+    QPixmap pixmap = QPixmap::fromImage(qImage)
+                         .scaled(behaviorImageDisplayLabel->size(),
+                                 Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+    behaviorImageDisplayLabel->setPixmap(pixmap);
 }

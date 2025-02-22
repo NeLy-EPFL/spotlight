@@ -47,8 +47,10 @@ void behaviorImageAcquierer()
 {
     std::signal(SIGINT, handleSigint);
 
-    unsigned int imageWidth = roundToMultiplesOf64(640);
-    unsigned int imageHeight = roundToMultiplesOf64(480);
+    unsigned int imageWidth = roundToMultiplesOf64(
+        BEHAVIOR_CAMERA_ROI_WIDTH);
+    unsigned int imageHeight = roundToMultiplesOf64(
+        BEHAVIOR_CAMERA_ROI_HEIGHT);
     unsigned int xOffset = 0;
     unsigned int yOffset = 0;
 
@@ -78,6 +80,12 @@ void behaviorImageAcquierer()
             behaviorImageQueue.push(frameData);
         }
         behaviorImageQueueCondVar.notify_one();
+        {
+            {
+                std::lock_guard<std::mutex> lock(latestFrameMutex);
+                std::swap(latestFrameData, frameData);
+            }
+        }
     }
 
     behaviorCamera->stop();

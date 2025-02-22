@@ -3,6 +3,8 @@
 
 #include <memory>
 #include <atomic>
+#include <queue>
+#include <mutex>
 
 #include <QWidget>
 #include <QPushButton>
@@ -12,9 +14,14 @@
 #include <QHBoxLayout>
 #include <QSpinBox>
 #include <QLabel>
+#include <QTimer>
 
 #include "utils.hpp"
 #include "constants.hpp"
+#include "global.hpp"
+
+cv::Mat getLatestFrame();
+QImage cvMatToQImage(const cv::Mat &mat);
 
 class Gui : public QWidget
 {
@@ -28,6 +35,7 @@ public:
 private slots:
     void startRecording();
     void stopRecording();
+    void updateImageDisplay();
 
 private:
     std::shared_ptr<std::atomic<bool>> isSavingData;
@@ -39,6 +47,8 @@ private:
     QPushButton *stopButton;
     QSpinBox *behaviorFPSSpinBox;
     QDoubleSpinBox *behaviorExposureTimeSpinBox;
+    QLabel *behaviorImageDisplayLabel;
+    QTimer *imageDisplayTimer;
 };
 
 #endif // GUI_HPP

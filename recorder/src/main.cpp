@@ -15,6 +15,8 @@ std::condition_variable behaviorImageQueueCondVar;
 std::queue<FrameData> muscleImageQueue;
 std::mutex muscleImageQueueMutex;
 std::condition_variable muscleImageQueueCondVar;
+FrameData latestFrameData = {0, 0, nullptr, false};
+std::mutex latestFrameMutex;
 
 std::shared_ptr<std::atomic<bool>> toQuit;
 std::shared_ptr<std::atomic<bool>> isRecording;

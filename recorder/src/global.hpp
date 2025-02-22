@@ -14,3 +14,6 @@ extern std::condition_variable muscleImageQueueCondVar;
 
 extern std::shared_ptr<std::atomic<bool>> toQuit;
 extern std::shared_ptr<std::atomic<bool>> isRecording;
+
+extern FrameData latestFrameData;
+extern std::mutex latestFrameMutex;
