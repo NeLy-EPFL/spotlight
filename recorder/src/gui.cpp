@@ -213,6 +213,13 @@ void Gui::stopRecording()
     spdlog::info("Command sent to Arduino: {}", commandString);
 }
 
+void Gui::closeEvent(QCloseEvent *event)
+{
+    spdlog::info("User is closing GUI window. Quitting gracefully.");
+    event->accept();
+    quitProgram();
+}
+
 void Gui::browseDirectory()
 {
     QString dir = QFileDialog::getExistingDirectory(

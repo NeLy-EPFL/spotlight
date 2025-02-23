@@ -14,6 +14,7 @@
 #include "peripherals/motionControl.hpp"
 #include "global.hpp"
 
+void quitProgram();
 void behaviorImageAcquierer();
 void behaviorImageSaver();
 void muscleImageAcquierer();

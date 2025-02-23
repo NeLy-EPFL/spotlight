@@ -5,42 +5,8 @@ namespace
     BehaviorCamera *behaviorCamera = nullptr;
 
     void handleSigint(int)
-    /**
-     * Handle SIGINT signal: quit gracefully by explicitly stopping
-     * acquisition on the behavior camera. Without this, acquisition would
-     * technically never stops. Consequently, the frame grabber will think
-     * the device is busy the next time we run the program.
-     */
     {
-        spdlog::info("SIGINT received by behavior camera acquisition thread. "
-                     "eGrabber closing acquisition");
-
-        // Stop behavior camera acquisition
-        if (behaviorCamera)
-        {
-            spdlog::info("Stopping acquisition on behavior camera");
-            behaviorCamera->stop();
-        }
-
-        // Tell behavior camera saver threads to stop
-        spdlog::info("Telling behavior image saver threads to stop by adding "
-                     "{} stoppers to behavior image queue",
-                     NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
-        for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
-        {
-            FrameData stopper;
-            stopper.noMoreData = true;
-            // The behavior image queue actually keeps track of buffer groups
-            // of three images, so we just fill the buffer with stoppers here
-            GroupOfThreeFrames stopperBlock = {stopper, stopper, stopper};
-            {
-                std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
-                behaviorImageQueue.push(stopperBlock);
-            }
-            behaviorImageQueueCondVar.notify_one();
-        }
-
-        std::exit(0);
+        quitProgram();
     }
 }
 
@@ -155,4 +121,44 @@ void behaviorImageSaver()
         metadataFile.close();
     }
     spdlog::info("Behavior image saver thread stopped");
+}
+
+void quitProgram()
+/**
+ * Quit gracefully by explicitly stopping acquisition on the behavior
+ * camera* and telling saver threads that the work is done.
+ *
+ * * Without stopping acquiisition explicitly, the frame grabber will
+ * think the device is still busy the next time we run the program.
+ */
+{
+    spdlog::info("SIGINT received by behavior camera acquisition thread. "
+                 "eGrabber closing acquisition");
+
+    // Stop behavior camera acquisition
+    if (behaviorCamera)
+    {
+        spdlog::info("Stopping acquisition on behavior camera");
+        behaviorCamera->stop();
+    }
+
+    // Tell behavior camera saver threads to stop
+    spdlog::info("Telling behavior image saver threads to stop by adding "
+                 "{} stoppers to behavior image queue",
+                 NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
+    for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
+    {
+        FrameData stopper;
+        stopper.noMoreData = true;
+        // The behavior image queue actually keeps track of buffer groups
+        // of three images, so we just fill the buffer with stoppers here
+        GroupOfThreeFrames stopperBlock = {stopper, stopper, stopper};
+        {
+            std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
+            behaviorImageQueue.push(stopperBlock);
+        }
+        behaviorImageQueueCondVar.notify_one();
+    }
+
+    std::exit(0);
 }

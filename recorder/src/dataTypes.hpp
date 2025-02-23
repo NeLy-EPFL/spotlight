@@ -7,7 +7,7 @@ struct FrameData
 {
     unsigned int frameId = -1;
     uint64_t acquisitionTime = 0; // as returned by frame grabber
-    uint64_t receivedTime = 0; // as returned by frame grabber
+    uint64_t receivedTime = 0;    // as returned by frame grabber
     cv::Mat *imagePtr;
     bool noMoreData = false;
 };
@@ -26,7 +26,8 @@ struct SerialPortInfo
     std::string manufacturer;
 };
 
-enum CameraAcquisitionMode {
+enum CameraAcquisitionMode
+{
     STREAM,
     RECORD
 };

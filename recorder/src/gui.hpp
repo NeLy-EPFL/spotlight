@@ -17,10 +17,12 @@
 #include <QLabel>
 #include <QTimer>
 #include <QFileDialog>
+#include <QCloseEvent>
 
 #include "utils.hpp"
 #include "constants.hpp"
 #include "global.hpp"
+#include "recordingController.hpp"
 
 cv::Mat getLatestFrame();
 QImage cvMatToQImage(const cv::Mat &mat);
@@ -48,6 +50,9 @@ private:
     QPushButton *stopButton;
     QLabel *behaviorImageDisplayLabel;
     QTimer *imageDisplayTimer;
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 };
 
 #endif // GUI_HPP
