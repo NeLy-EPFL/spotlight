@@ -1,74 +1,123 @@
-// #include "triggering.hpp"
+#include "triggering.hpp"
 
-// namespace
-// {
-//     void sendCommand(
-//         boost::asio::serial_port *serialPort, const std::string &command)
-//     {
-//         if (serialPort && serialPort->is_open())
-//         {
-//             boost::system::error_code errCode;
-//             boost::asio::write(
-//                 *serialPort, boost::asio::buffer(command + "\n"), errCode);
-//             if (errCode)
-//             {
-//                 spdlog::error("Error sending command: {}", errCode.message());
-//             }
-//             else
-//             {
-//                 std::cout << "Sent command: " << command << std::endl;
-//             }
-//         }
-//     }
-// }
+std::string getSerialPortName(std::string deviceDescription,
+                              std::string deviceManufacturer)
+{
+    std::vector<SerialPortInfo> allSerialPortInfo;
 
-// TriggerController::TriggerController(
-//     const std::string &portName, unsigned int baudRate)
-//     : serialPortPtr_(nullptr)
-// {
-//     try
-//     {
-//         serialPortPtr_ = new boost::asio::serial_port(ioContext_, portName);
-//         serialPortPtr_->set_option(
-//             boost::asio::serial_port_base::baud_rate(baudRate));
-//     }
-//     catch (const std::exception &e)
-//     {
-//         std::cerr << "Error opening serial port: " << e.what() << std::endl;
-//     }
-// }
+    foreach (const QSerialPortInfo &port, QSerialPortInfo::availablePorts())
+    {
+        std::string portName = port.portName().toStdString();
+        std::string description = port.description().toStdString();
+        std::string manufacturer = port.manufacturer().toStdString();
+        if (description == deviceDescription &&
+            manufacturer == deviceManufacturer)
+        {
+            spdlog::info(
+                "Serial port found. "
+                "Port name: '{}', description: '{}', manufacturer: '{}'",
+                portName, description, manufacturer);
+            return portName;
+        }
+        allSerialPortInfo.push_back({portName, description, manufacturer});
+    }
 
-// TriggerController::~TriggerController()
-// {
-//     if (serialPortPtr_)
-//     {
-//         if (serialPortPtr_->is_open())
-//         {
-//             serialPortPtr_->close();
-//         }
-//         delete serialPortPtr_;
-//     }
-// }
+    spdlog::error(
+        "Arduino serial port not found. "
+        "I'm looking for manufacturer '{}', description '{}'. "
+        "Available ports are:",
+        deviceManufacturer, deviceDescription);
+    for (SerialPortInfo serialPortInfo : allSerialPortInfo)
+    {
+        spdlog::error(
+            "* Port name: '{}', description: '{}', manufacturer: '{}'",
+            serialPortInfo.portName,
+            serialPortInfo.description,
+            serialPortInfo.manufacturer);
+    }
+    return "";
+}
 
-// void TriggerController::startRecording(int recordingFPS)
-// {
-//     if (recordingFPS <= 0)
-//     {
-//         std::cerr << "Invalid recording FPS: " << recordingFPS << std::endl;
-//         return;
-//     }
+void sendCommand(QSerialPort &serialPort, const QString &command)
+{
+    if (serialPort.isOpen())
+    {
+        serialPort.write(command.toUtf8() + '\n');
+    }
+    else
+    {
+        spdlog::error("Failed to send command; serial port not open.");
+    }
+}
 
-//     // Send a command string: eg. "record 400" if it's 400 FPS
-//     std::ostringstream oss;
-//     oss << "record " << recordingFPS;
-//     sendCommand(serialPortPtr_, oss.str());
+void waitUntilMessageReceived(QSerialPort &serialPort,
+                              const std::string &message)
+{
+    while (true)
+    {
+        if (serialPort.waitForReadyRead(1000))
+        {
+            QByteArray response = serialPort.readAll();
+            std::string responseStr = response.toStdString();
+            if (responseStr.find(message) != std::string::npos)
+            {
+                break;
+            }
+        }
+        else
+        {
+            spdlog::error(
+                "Timeout while waiting for message: '{}' from Arduino",
+                message);
+            throw std::runtime_error("Timeout while waiting for message");
+        }
+    }
+}
 
-//     std::ostringstream oss;
-//     oss << "start " << recordingFPS;
-//     sendCommand(serialPortPtr_, oss.str());
-// }
+void runRecordingStartProcedure(QSerialPort &serialPort,
+                                int recordingFPS,
+                                int recordingExposureTimeMicrosecs)
+{
+    spdlog::info(
+        "Preparing for recording. I'm telling Arduino to pause trigger "
+        "pulses. I will wait until the camera image acquisition thread is "
+        "not receiving any frames anymore; then I will tell Arduino to "
+        "continue.");
+    sendCommand(serialPort, "PAUSE");
 
-// void TriggerController::stopRecording()
-// {
-//     sendCommand(serialPortPtr_, "stop");
-// }
+    waitUntilMessageReceived(serialPort, "PAUSE_ACK");
+    spdlog::info(
+        "Arduino told me it has stopped sending pulses. I will now wait {} "
+        "milliseconds to make sure the camera image acquisition thread is "
+        "not receiving any frames anymore.",
+        BUFFER_FLUSHING_WAIT_TIME_MILLISECS);
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(BUFFER_FLUSHING_WAIT_TIME_MILLISECS));
+
+    spdlog::info(
+        "OK. I assume all pending frames have arrived. I'm marking my state "
+        "as recording; this way, new frames that arrive now will be saved. "
+        "I'm also telling Arduino to start sending trigger pulses again.");
+    isRecording->store(true);
+    CameraAcquisitionConfig cameraAcquisitionConfig(
+        CameraAcquisitionMode::RECORD,
+        recordingFPS,
+        recordingExposureTimeMicrosecs);
+    std::string commandString = cameraAcquisitionConfig.toCommandString();
+    sendCommand(serialPort, QString(commandString.c_str()));
+    spdlog::info("Command sent to Arduino: {}", commandString);
+}
+
+void runRecordingStopProcedure(QSerialPort &serialPort,
+                               int recordingExposureTimeMicrosecs)
+{
+    isRecording->store(false);
+
+    CameraAcquisitionConfig cameraAcquisitionConfig(
+        CameraAcquisitionMode::STREAM,
+        BEHAVIOR_CAMERA_STREAMING_FPS,
+        recordingExposureTimeMicrosecs);
+    std::string commandString = cameraAcquisitionConfig.toCommandString();
+    sendCommand(serialPort, QString(commandString.c_str()));
+    spdlog::info("Command sent to Arduino: {}", commandString);
+}

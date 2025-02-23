@@ -23,6 +23,7 @@
 #include "constants.hpp"
 #include "global.hpp"
 #include "recordingController.hpp"
+#include "peripherals/triggering.hpp"
 
 cv::Mat getLatestFrame();
 QImage cvMatToQImage(const cv::Mat &mat);

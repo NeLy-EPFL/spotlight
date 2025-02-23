@@ -1,25 +1,29 @@
-// #ifndef RECORDING_CONTROLLER_HPP
-// #define RECORDING_CONTROLLER_HPP
+#ifndef TRIGGERING_HPP
+#define TRIGGERING_HPP
 
-// #include <iostream>
-// #include <sstream>
-// #include <string>
+#include <QSerialPort>
+#include <QSerialPortInfo>
+#include <QString>
+#include <spdlog/spdlog.h>
 
-// #include <boost/asio.hpp>
-// #include <spdlog/spdlog.h>
+#include "../constants.hpp"
+#include "../global.hpp"
+#include "../utils.hpp"
 
-// class TriggerController
-// {
-// public:
-//     explicit TriggerController(const std::string &port, unsigned int baudRate);
-//     ~TriggerController();
+// Low-level functions to communicate with Arduino
+std::string getSerialPortName(
+    std::string deviceDescription = "Nano ESP32",
+    std::string deviceManufacturer = "Arduino");
+void sendCommand(QSerialPort &serialPort, const QString &command);
+void waitUntilMessageReceived(QSerialPort &serialPort,
+                              const std::string &message);
 
-//     void startRecording(int recordingFPS);
-//     void stopRecording();
+// High-level functions to run procedures that pause/restart triggering
+// pulses at the right frquencies when recording starts or stops
+void runRecordingStartProcedure(QSerialPort &serialPort,
+                                int recordingFPS,
+                                int recordingExposureTimeMicrosecs);
+void runRecordingStopProcedure(QSerialPort &serialPort,
+                               int recordingExposureTimeMicrosecs);
 
-// private:
-//     boost::asio::io_context ioContext_;
-//     boost::asio::serial_port *serialPortPtr_;
-// };
-
-// #endif // RECORDING_CONTROLLER_HPP
+#endif // TRIGGERING_HPP
