@@ -52,18 +52,31 @@ void sendCommand(QSerialPort &serialPort, const std::string &command)
 
 ArduinoMessage waitForMessage(QSerialPort &serialPort, int timeOutMillisecs)
 {
-    if (serialPort.waitForReadyRead(timeOutMillisecs))
+    for (int i = 0; i < 3; i++)
     {
-        QByteArray response = serialPort.readAll();
-        std::string responseStr = response.trimmed().toStdString();
-        ArduinoMessage responseMessage(responseStr);
-        return responseMessage;
+        if (serialPort.waitForReadyRead(timeOutMillisecs))
+        {
+            QByteArray response = serialPort.readAll();
+            std::string responseStr = response.trimmed().toStdString();
+            spdlog::info("Received message from Arduino: '{}'", responseStr);
+            if (!responseStr.empty())
+            {
+                ArduinoMessage responseMessage(responseStr);
+                return responseMessage;
+            }
+            else
+            {
+                spdlog::warn(
+                    "Received an empty message from Arduino. This could just "
+                    "be harmless unflushed bits in the buffer; retrying...");
+            }
+        }
     }
-    else
-    {
-        spdlog::error("Timeout while waiting for message from Arduino.");
-        return ArduinoMessage(UNDEFINED);
-    }
+    spdlog::error(
+        "Failed to receive message from Arduino within {} milliseconds. "
+        "Retried twice to no avail. Check communication with Arduino.",
+        timeOutMillisecs);
+    throw std::runtime_error("Failed to receive message from Arduino.");
 }
 
 void runRecordingStartProcedure(QSerialPort &serialPort,
