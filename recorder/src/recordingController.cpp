@@ -3,16 +3,12 @@
 namespace
 {
     BehaviorCamera *behaviorCamera = nullptr;
-
-    void handleSigint(int)
-    {
-        quitProgram();
-    }
 }
 
 void behaviorImageAcquierer()
 {
-    std::signal(SIGINT, handleSigint);
+    std::signal(SIGINT, [](int)
+                { quitProgram(); });
 
     unsigned int imageWidth = roundToMultiplesOf64(
         BEHAVIOR_CAMERA_ROI_WIDTH);
