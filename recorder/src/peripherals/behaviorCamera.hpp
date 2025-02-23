@@ -11,6 +11,7 @@
 #include <EGrabber.h>
 #include <FormatConverter.h>
 #include <opencv2/opencv.hpp>
+#include <spdlog/spdlog.h>
 
 #include "../dataTypes.hpp"
 #include "../utils.hpp"
