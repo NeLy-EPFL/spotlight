@@ -4,47 +4,19 @@
 #include <vector>
 #include <string>
 
-enum CameraAcquisitionMode {
-    STREAM,
-    RECORD
-};
+#include "arduinoMessageInterface.hpp"
+#include "constants.hpp"
 
 const int behaviorCameraTriggerPin = 2;
 const int irIlluminationTriggerPin = 3;
 const int behaviorIndicatorPin = 6;
-const int bufferFlushTimeMicrosecs = 100000;
-int behaviorExposureTimeMicrosecs = 1000;
-int behaviorCycleTimeMicrosecs = 1000000 / 25;
+int behaviorCycleTimeMicrosecs =
+    1000000 / BEHAVIOR_CAMERA_STREAMING_FPS;
+int behaviorExposureTimeMicrosecs =
+    BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_MICROSECS;
 unsigned long lastBehaviorExposureStartTimeMicrosecs = 0;
 bool behaviorTriggerState = LOW;
-CameraAcquisitionMode acquisitionMode = STREAM;
 bool waitingForCommand = false;
-
-std::tuple<CameraAcquisitionMode, int, int> parseCommand(
-    const std::string &commandString)
-{
-    std::vector<std::string> tokens;
-    std::istringstream iss(commandString);
-    for (std::string token; std::getline(iss, token, ' ');)
-    {
-        tokens.push_back(token);
-    }
-    if (tokens.size() != 3)
-    {
-        Serial.println("Arduino initialized successfully!");
-        Serial.println("Invalid command: " + String(commandString.c_str()));
-    }
-    else
-    {
-        Serial.println("Received command: " + String(commandString.c_str()));
-    }
-    CameraAcquisitionMode mode = static_cast<CameraAcquisitionMode>(
-        std::stoi(tokens[0]));
-    int fps = std::stoi(tokens[1]);
-    int exposureTimeMicrosecs = std::stoi(tokens[2]);
-
-    return std::make_tuple(mode, fps, exposureTimeMicrosecs);
-}
 
 void setup() {
     Serial.begin(9600);
@@ -60,34 +32,36 @@ void setup() {
 void loop() {
     // Check for serial input (this only takes 1-2 us)
     if (Serial.available() || waitingForCommand) {
-        String commandArduinoString = Serial.readStringUntil('\n');
-        commandArduinoString.trim();
-        std::string commandString(commandArduinoString.c_str());
+        while (true) {
+            String commandArduinoString = Serial.readStringUntil('\n');
+            commandArduinoString.trim();
+            std::string commandString(commandArduinoString.c_str());
+            // Serial.println("READBACK: " + String(commandString.c_str()));
+            ArduinoMessage message(commandString.c_str());
 
-        if (commandString == "PAUSE") {
-            // Wait until another command is received
-            waitingForCommand = true;
-            Serial.println("PAUSE_ACK");
-            return;
-        } else {
-            waitingForCommand = false;
-        }
-
-        auto [mode, fps, exposureTimeMicrosecs] = parseCommand(commandString);
-        acquisitionMode = mode;
-        behaviorCycleTimeMicrosecs = 1000000 / fps;
-        behaviorExposureTimeMicrosecs = exposureTimeMicrosecs;
-
-        if (mode == RECORD)
-        {
-            // Give it some time for remaining unprocessed frames to be
-            // processed, so we know for sure that all newly arrived frames
-            // are what we want.
-            delayMicroseconds(bufferFlushTimeMicrosecs);
+            if (message.messageType == START_PULSING) {
+                // Start pulsing at the specified frequency and width now!
+                behaviorCycleTimeMicrosecs = 1000000 / message.pulseFrequency;
+                behaviorExposureTimeMicrosecs = message.pulseWidth;
+                waitingForCommand = false; // carry on
+                ArduinoMessage response(START_PULSING_ACK);
+                Serial.println(response.toCommString().c_str());
+                return;
+            }
+            else if (message.messageType == STOP_PULSING) {
+                behaviorTriggerState = LOW;
+                digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
+                digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
+                digitalWrite(behaviorIndicatorPin, behaviorTriggerState);
+                waitingForCommand = true; // keep checking until told to restart
+                ArduinoMessage response(STOP_PULSING_ACK);
+                Serial.println(response.toCommString().c_str());
+                return;
+            }
         }
     }
     
-    // Blink logic
+    // Trigger logic
     unsigned long currentTimeMicrosecs = micros();
     if (currentTimeMicrosecs - lastBehaviorExposureStartTimeMicrosecs
             >= behaviorExposureTimeMicrosecs)

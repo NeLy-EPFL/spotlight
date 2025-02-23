@@ -38,11 +38,11 @@ std::string getSerialPortName(std::string deviceDescription,
     return "";
 }
 
-void sendCommand(QSerialPort &serialPort, const QString &command)
+void sendCommand(QSerialPort &serialPort, const std::string &command)
 {
     if (serialPort.isOpen())
     {
-        serialPort.write(command.toUtf8() + '\n');
+        serialPort.write(QString::fromStdString(command).toUtf8() + '\n');
     }
     else
     {
@@ -50,27 +50,19 @@ void sendCommand(QSerialPort &serialPort, const QString &command)
     }
 }
 
-void waitUntilMessageReceived(QSerialPort &serialPort,
-                              const std::string &message)
+ArduinoMessage waitForMessage(QSerialPort &serialPort, int timeOutMillisecs)
 {
-    while (true)
+    if (serialPort.waitForReadyRead(timeOutMillisecs))
     {
-        if (serialPort.waitForReadyRead(1000))
-        {
-            QByteArray response = serialPort.readAll();
-            std::string responseStr = response.toStdString();
-            if (responseStr.find(message) != std::string::npos)
-            {
-                break;
-            }
-        }
-        else
-        {
-            spdlog::error(
-                "Timeout while waiting for message: '{}' from Arduino",
-                message);
-            throw std::runtime_error("Timeout while waiting for message");
-        }
+        QByteArray response = serialPort.readAll();
+        std::string responseStr = response.trimmed().toStdString();
+        ArduinoMessage responseMessage(responseStr);
+        return responseMessage;
+    }
+    else
+    {
+        spdlog::error("Timeout while waiting for message from Arduino.");
+        return ArduinoMessage(UNDEFINED);
     }
 }
 
@@ -83,11 +75,22 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
         "pulses. I will wait until the camera image acquisition thread is "
         "not receiving any frames anymore; then I will tell Arduino to "
         "continue.");
-    sendCommand(serialPort, "PAUSE");
+    std::string commandString = ArduinoMessage(STOP_PULSING).toCommString();
+    spdlog::info("Command sent to Arduino: `{}`", commandString);
+    sendCommand(serialPort, commandString);
 
-    waitUntilMessageReceived(serialPort, "PAUSE_ACK");
+    ArduinoMessage response = waitForMessage(serialPort, 1000);
+    if (response.messageType != STOP_PULSING_ACK || !response.isSyntaxValid)
+    {
+        spdlog::error(
+            "Arduino didn't acknowledge the STOP_PAUSING command. "
+            "It responded with message '{}'.",
+            response.toCommString());
+        throw std::runtime_error("Failed to pause trigger pulses.");
+        return;
+    }
     spdlog::info(
-        "Arduino told me it has stopped sending pulses. I will now wait {} "
+        "Arduino acknowledged the STOP_PAUSING command. I will now wait {} "
         "milliseconds to make sure the camera image acquisition thread is "
         "not receiving any frames anymore.",
         BUFFER_FLUSHING_WAIT_TIME_MILLISECS);
@@ -99,13 +102,24 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
         "as recording; this way, new frames that arrive now will be saved. "
         "I'm also telling Arduino to start sending trigger pulses again.");
     isRecording->store(true);
-    CameraAcquisitionConfig cameraAcquisitionConfig(
-        CameraAcquisitionMode::RECORD,
-        recordingFPS,
-        recordingExposureTimeMicrosecs);
-    std::string commandString = cameraAcquisitionConfig.toCommandString();
-    sendCommand(serialPort, QString(commandString.c_str()));
+    ArduinoMessage startMessage(START_PULSING,
+                                recordingFPS,
+                                recordingExposureTimeMicrosecs);
+    commandString = startMessage.toCommString();
+    sendCommand(serialPort, commandString);
     spdlog::info("Command sent to Arduino: {}", commandString);
+
+    response = waitForMessage(serialPort, 1000);
+    if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
+    {
+        spdlog::error(
+            "Arduino didn't acknowledge the START_PAUSING command. "
+            "It responded with message '{}'.",
+            response.toCommString());
+        throw std::runtime_error("Failed to start trigger pulses.");
+        return;
+    }
+    spdlog::info("Arduino acknowledged the START_PAUSING command.");
 }
 
 void runRecordingStopProcedure(QSerialPort &serialPort,
@@ -113,11 +127,22 @@ void runRecordingStopProcedure(QSerialPort &serialPort,
 {
     isRecording->store(false);
 
-    CameraAcquisitionConfig cameraAcquisitionConfig(
-        CameraAcquisitionMode::STREAM,
-        BEHAVIOR_CAMERA_STREAMING_FPS,
-        recordingExposureTimeMicrosecs);
-    std::string commandString = cameraAcquisitionConfig.toCommandString();
-    sendCommand(serialPort, QString(commandString.c_str()));
+    ArduinoMessage stopMessage(START_PULSING,
+                               BEHAVIOR_CAMERA_STREAMING_FPS,
+                               recordingExposureTimeMicrosecs);
+    std::string commandString = stopMessage.toCommString();
+    sendCommand(serialPort, commandString);
     spdlog::info("Command sent to Arduino: {}", commandString);
+
+    ArduinoMessage response = waitForMessage(serialPort, 1000);
+    if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
+    {
+        spdlog::error(
+            "Arduino didn't acknowledge the START_PAUSING command. "
+            "It responded with message '{}'.",
+            response.toCommString());
+        throw std::runtime_error("Failed to start trigger pulses.");
+        return;
+    }
+    spdlog::info("Arduino acknowledged the START_PAUSING command.");
 }

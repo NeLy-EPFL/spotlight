@@ -9,14 +9,15 @@
 #include "../constants.hpp"
 #include "../global.hpp"
 #include "../utils.hpp"
+#include "../arduinoMessageInterface.hpp"
 
 // Low-level functions to communicate with Arduino
 std::string getSerialPortName(
     std::string deviceDescription = "Nano ESP32",
     std::string deviceManufacturer = "Arduino");
-void sendCommand(QSerialPort &serialPort, const QString &command);
-void waitUntilMessageReceived(QSerialPort &serialPort,
-                              const std::string &message);
+void sendCommand(QSerialPort &serialPort, const std::string &command);
+ArduinoMessage waitForMessage(
+    QSerialPort &serialPort, int timeOutMillisecs = 1000);
 
 // High-level functions to run procedures that pause/restart triggering
 // pulses at the right frquencies when recording starts or stops

@@ -53,7 +53,7 @@ Gui::Gui(QWidget *parent)
     // Behavior FPS widget
     behaviorFPSSpinBox = new QSpinBox(this);
     behaviorFPSSpinBox->setRange(1, 1000);
-    behaviorFPSSpinBox->setValue(100);
+    behaviorFPSSpinBox->setValue(BEHAVIOR_CAMERA_DEFAULT_FPS);
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
     behaviorFPSLayout->addWidget(behaviorFPSSpinBox);
@@ -61,7 +61,8 @@ Gui::Gui(QWidget *parent)
     // Behavior exposure time widget
     behaviorExposureTimeSpinBox = new QDoubleSpinBox(this);
     behaviorExposureTimeSpinBox->setRange(0.001, 1000.0);
-    behaviorExposureTimeSpinBox->setValue(1);
+    behaviorExposureTimeSpinBox->setValue(
+        BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_MICROSECS / 1000.0);
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));

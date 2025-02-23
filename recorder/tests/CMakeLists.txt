@@ -72,12 +72,14 @@ target_link_libraries(testMotionControl spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32
 add_test(NAME testMotionControl COMMAND testMotionControl)
 
 # Test camera acquisition config
-add_executable(testCameraAcquisitionConfig
+file(GLOB MOTION_CONTROL_SOURCES "../src/arduinoMessageInterface.*")
+add_executable(testArduinoMessageInterface
     ${COMMON_SOURCES}
-    "testCameraAcquisitionConfig.cpp")
-target_include_directories(testCameraAcquisitionConfig PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testCameraAcquisitionConfig Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(testCameraAcquisitionConfig ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testCameraAcquisitionConfig ${OpenCV_LIBS})
-target_link_libraries(testCameraAcquisitionConfig spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testCameraAcquisitionConfig COMMAND testCameraAcquisitionConfig)
+    ${MOTION_CONTROL_SOURCES}
+    "testArduinoMessageInterface.cpp")
+target_include_directories(testArduinoMessageInterface PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testArduinoMessageInterface Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(testArduinoMessageInterface ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(testArduinoMessageInterface ${OpenCV_LIBS})
+target_link_libraries(testArduinoMessageInterface spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME testArduinoMessageInterface COMMAND testArduinoMessageInterface)
