@@ -18,12 +18,15 @@ std::condition_variable muscleImageQueueCondVar;
 FrameData latestFrameData = {0, 0, 0, nullptr, false};
 std::mutex latestFrameMutex;
 
-std::shared_ptr<std::atomic<bool>> toQuit = std::make_shared<std::atomic<bool>>(false);
-std::shared_ptr<std::atomic<bool>> isRecording = std::make_shared<std::atomic<bool>>(false);
+std::shared_ptr<std::atomic<bool>> toQuit =
+    std::make_shared<std::atomic<bool>>(false);
+std::shared_ptr<std::atomic<bool>> isRecording =
+    std::make_shared<std::atomic<bool>>(false);
 
 QApplication *application = nullptr;
 
-namespace {
+namespace
+{
     void handleSigint(int)
     {
         toQuit->store(true);

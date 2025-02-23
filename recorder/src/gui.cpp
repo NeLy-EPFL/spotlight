@@ -118,12 +118,15 @@ Gui::Gui(QWidget *parent)
 
     behaviorImageDisplayLabel = new QLabel(this);
     behaviorImageDisplayLabel->setFixedSize(
-        GUI_BEHAVIOR_CAMERA_PREVIEW_WIDTH, GUI_BEHAVIOR_CAMERA_PREVIEW_HEIGHT);
+        GUI_BEHAVIOR_CAMERA_PREVIEW_WIDTH,
+        GUI_BEHAVIOR_CAMERA_PREVIEW_HEIGHT);
     layout->addWidget(behaviorImageDisplayLabel);
 
     // Timer to update the video display
     imageDisplayTimer = new QTimer(this);
-    connect(imageDisplayTimer, &QTimer::timeout, this, &Gui::updateImageDisplay);
+    connect(imageDisplayTimer,
+            &QTimer::timeout, this,
+            &Gui::updateImageDisplay);
     imageDisplayTimer->start(1000 / BEHAVIOR_CAMERA_STREAMING_FPS);
 
     layout->addWidget(recordButton);

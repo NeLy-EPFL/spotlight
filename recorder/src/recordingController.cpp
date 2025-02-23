@@ -18,6 +18,7 @@ namespace
         // Stop behavior camera acquisition
         if (behaviorCamera)
         {
+            spdlog::info("Stopping acquisition on behavior camera");
             behaviorCamera->stop();
         }
 
@@ -38,9 +39,6 @@ namespace
             }
             behaviorImageQueueCondVar.notify_one();
         }
-
-        spdlog::info("Stopping acquisition on behavior camera");
-        behaviorCamera->stop();
 
         std::exit(0);
     }
@@ -109,16 +107,14 @@ void behaviorImageAcquierer()
 
                 frameDataBufferIndex = 0;
             }
-        } else {
+        }
+        else
+        {
             // Reset these to 0 in preparation for the next recording session
             frameDataBufferIndex = 0;
             currentFrameId = 0;
         }
     }
-
-    behaviorCamera->stop();
-    spdlog::info("eGrabber acquisition stopped; "
-                 "behavior camera acquisition thread stopped");
 }
 
 void behaviorImageSaver(const std::string &directory)
