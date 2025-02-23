@@ -42,15 +42,15 @@ private slots:
     void browseDirectory();
 
 private:
-    std::string serialPortName;
-    QSerialPort serialPort;
-    QSpinBox *behaviorFPSSpinBox;
-    QDoubleSpinBox *behaviorExposureTimeSpinBox;
-    QLineEdit *directoryLineEdit;
-    QPushButton *recordButton;
-    QPushButton *stopButton;
-    QLabel *behaviorImageDisplayLabel;
-    QTimer *imageDisplayTimer;
+    std::string serialPortName_;
+    QSerialPort serialPort_;
+    QSpinBox *behaviorFPSSpinBox_;
+    QDoubleSpinBox *behaviorExposureTimeSpinBox_;
+    QLineEdit *directoryLineEdit_;
+    QPushButton *recordButton_;
+    QPushButton *stopButton_;
+    QLabel *behaviorImageDisplayLabel_;
+    QTimer *imageDisplayTimer_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

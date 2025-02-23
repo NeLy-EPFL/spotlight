@@ -28,18 +28,18 @@ QImage cvMatToQImage(const cv::Mat &mat)
 
 Gui::Gui(QWidget *parent)
     : QWidget(parent),
-      serialPort(new QSerialPort(this))
+      serialPort_(new QSerialPort(this))
 {
     // Configure serial port
-    serialPortName = getSerialPortName();
-    serialPort.setPortName(QString::fromStdString(serialPortName));
-    serialPort.setBaudRate(QSerialPort::Baud9600);
-    serialPort.setDataBits(QSerialPort::Data8);
-    serialPort.setParity(QSerialPort::NoParity);
-    serialPort.setStopBits(QSerialPort::OneStop);
-    serialPort.setFlowControl(QSerialPort::NoFlowControl);
+    serialPortName_ = getSerialPortName();
+    serialPort_.setPortName(QString::fromStdString(serialPortName_));
+    serialPort_.setBaudRate(QSerialPort::Baud9600);
+    serialPort_.setDataBits(QSerialPort::Data8);
+    serialPort_.setParity(QSerialPort::NoParity);
+    serialPort_.setStopBits(QSerialPort::OneStop);
+    serialPort_.setFlowControl(QSerialPort::NoFlowControl);
 
-    bool serialPortOpened = serialPort.open(QIODevice::ReadWrite);
+    bool serialPortOpened = serialPort_.open(QIODevice::ReadWrite);
     if (serialPortOpened)
     {
         spdlog::info("Serial port opened successfully.");
@@ -51,65 +51,65 @@ Gui::Gui(QWidget *parent)
     }
 
     // Behavior FPS widget
-    behaviorFPSSpinBox = new QSpinBox(this);
-    behaviorFPSSpinBox->setRange(1, 1000);
-    behaviorFPSSpinBox->setValue(BEHAVIOR_CAMERA_DEFAULT_FPS);
+    behaviorFPSSpinBox_ = new QSpinBox(this);
+    behaviorFPSSpinBox_->setRange(1, 1000);
+    behaviorFPSSpinBox_->setValue(BEHAVIOR_CAMERA_DEFAULT_FPS);
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
-    behaviorFPSLayout->addWidget(behaviorFPSSpinBox);
+    behaviorFPSLayout->addWidget(behaviorFPSSpinBox_);
 
     // Behavior exposure time widget
-    behaviorExposureTimeSpinBox = new QDoubleSpinBox(this);
-    behaviorExposureTimeSpinBox->setRange(0.001, 1000.0);
-    behaviorExposureTimeSpinBox->setValue(
+    behaviorExposureTimeSpinBox_ = new QDoubleSpinBox(this);
+    behaviorExposureTimeSpinBox_->setRange(0.001, 1000.0);
+    behaviorExposureTimeSpinBox_->setValue(
         BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_MICROSECS / 1000.0);
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));
-    behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox);
+    behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox_);
 
     // Save directory widget
-    directoryLineEdit = new QLineEdit(this);
-    directoryLineEdit->setText(saveDirectory.c_str());
+    directoryLineEdit_ = new QLineEdit(this);
+    directoryLineEdit_->setText(saveDirectory.c_str());
     QPushButton *browseButton = new QPushButton("Browse", this);
 
     QHBoxLayout *directoryLayout = new QHBoxLayout();
     directoryLayout->addWidget(new QLabel("Save Directory"));
-    directoryLayout->addWidget(directoryLineEdit);
+    directoryLayout->addWidget(directoryLineEdit_);
     directoryLayout->addWidget(browseButton);
 
     connect(browseButton, &QPushButton::clicked, this, &Gui::browseDirectory);
 
     // Live display widget
-    behaviorImageDisplayLabel = new QLabel(this);
-    behaviorImageDisplayLabel->setFixedSize(
+    behaviorImageDisplayLabel_ = new QLabel(this);
+    behaviorImageDisplayLabel_->setFixedSize(
         GUI_BEHAVIOR_CAMERA_PREVIEW_WIDTH,
         GUI_BEHAVIOR_CAMERA_PREVIEW_HEIGHT);
 
     // Record and stop buttons
-    recordButton = new QPushButton("Record", this);
-    stopButton = new QPushButton("Stop", this);
-    stopButton->setEnabled(false); // initially disabled
+    recordButton_ = new QPushButton("Record", this);
+    stopButton_ = new QPushButton("Stop", this);
+    stopButton_->setEnabled(false); // initially disabled
     QHBoxLayout *recordStopButtonsLayout = new QHBoxLayout();
-    recordStopButtonsLayout->addWidget(recordButton);
-    recordStopButtonsLayout->addWidget(stopButton);
+    recordStopButtonsLayout->addWidget(recordButton_);
+    recordStopButtonsLayout->addWidget(stopButton_);
 
     // Add timer to update image display
-    imageDisplayTimer = new QTimer(this);
-    connect(imageDisplayTimer,
+    imageDisplayTimer_ = new QTimer(this);
+    connect(imageDisplayTimer_,
             &QTimer::timeout,
             this,
             &Gui::updateImageDisplay);
-    imageDisplayTimer->start(1000 / BEHAVIOR_CAMERA_STREAMING_FPS);
-    connect(recordButton, &QPushButton::clicked, this, &Gui::startRecording);
-    connect(stopButton, &QPushButton::clicked, this, &Gui::stopRecording);
+    imageDisplayTimer_->start(1000 / BEHAVIOR_CAMERA_STREAMING_FPS);
+    connect(recordButton_, &QPushButton::clicked, this, &Gui::startRecording);
+    connect(stopButton_, &QPushButton::clicked, this, &Gui::stopRecording);
 
     // Arrange layout
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addLayout(behaviorFPSLayout);
     layout->addLayout(behaviorExposureTimeLayout);
     layout->addLayout(directoryLayout);
-    layout->addWidget(behaviorImageDisplayLabel);
+    layout->addWidget(behaviorImageDisplayLabel_);
     layout->addLayout(recordStopButtonsLayout);
     setLayout(layout);
 
@@ -119,26 +119,26 @@ Gui::Gui(QWidget *parent)
 
 void Gui::startRecording()
 {
-    recordButton->setEnabled(false);
-    stopButton->setEnabled(true);
+    recordButton_->setEnabled(false);
+    stopButton_->setEnabled(true);
 
-    int recordingFPS = behaviorFPSSpinBox->value();
+    int recordingFPS = behaviorFPSSpinBox_->value();
     int recordingExposureTimeMicrosecs =
-        behaviorExposureTimeSpinBox->value() * 1000;
+        behaviorExposureTimeSpinBox_->value() * 1000;
 
     runRecordingStartProcedure(
-        serialPort, recordingFPS, recordingExposureTimeMicrosecs);
+        serialPort_, recordingFPS, recordingExposureTimeMicrosecs);
 }
 
 void Gui::stopRecording()
 {
-    recordButton->setEnabled(true);
-    stopButton->setEnabled(false);
+    recordButton_->setEnabled(true);
+    stopButton_->setEnabled(false);
 
     int recordingExposureTimeMicrosecs =
-        behaviorExposureTimeSpinBox->value() * 1000;
+        behaviorExposureTimeSpinBox_->value() * 1000;
 
-    runRecordingStopProcedure(serialPort, recordingExposureTimeMicrosecs);
+    runRecordingStopProcedure(serialPort_, recordingExposureTimeMicrosecs);
 }
 
 void Gui::closeEvent(QCloseEvent *event)
@@ -157,7 +157,7 @@ void Gui::browseDirectory()
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!dir.isEmpty())
     {
-        directoryLineEdit->setText(dir);
+        directoryLineEdit_->setText(dir);
         saveDirectory = dir.toStdString();
     }
     else
@@ -175,8 +175,8 @@ void Gui::updateImageDisplay()
     }
     QImage qImage = cvMatToQImage(latestFrame);
     QPixmap pixmap = QPixmap::fromImage(qImage)
-                         .scaled(behaviorImageDisplayLabel->size(),
+                         .scaled(behaviorImageDisplayLabel_->size(),
                                  Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
-    behaviorImageDisplayLabel->setPixmap(pixmap);
+    behaviorImageDisplayLabel_->setPixmap(pixmap);
 }
