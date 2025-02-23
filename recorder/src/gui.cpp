@@ -67,7 +67,6 @@ QImage cvMatToQImage(const cv::Mat &mat)
 
 Gui::Gui(QWidget *parent)
     : QWidget(parent),
-      directory("./images"),
       serialPort(new QSerialPort(this))
 {
     // Configure serial port
@@ -90,52 +89,70 @@ Gui::Gui(QWidget *parent)
         throw std::runtime_error("Failed to open serial port.");
     }
 
-    recordButton = new QPushButton("Record", this);
-    stopButton = new QPushButton("Stop", this);
-    stopButton->setEnabled(false); // initially disabled
-
+    // Behavior FPS widget
     behaviorFPSSpinBox = new QSpinBox(this);
     behaviorFPSSpinBox->setRange(1, 1000);
     behaviorFPSSpinBox->setValue(100);
-
-    behaviorExposureTimeSpinBox = new QDoubleSpinBox(this);
-    behaviorExposureTimeSpinBox->setRange(0.001, 1000.0);
-    behaviorExposureTimeSpinBox->setValue(1);
-
-    stopRecording(); // initialy stream images only, don't save
-
-    QVBoxLayout *layout = new QVBoxLayout(this);
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
     behaviorFPSLayout->addWidget(behaviorFPSSpinBox);
-    layout->addLayout(behaviorFPSLayout);
 
+    // Behavior exposure time widget
+    behaviorExposureTimeSpinBox = new QDoubleSpinBox(this);
+    behaviorExposureTimeSpinBox->setRange(0.001, 1000.0);
+    behaviorExposureTimeSpinBox->setValue(1);
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));
     behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox);
-    layout->addLayout(behaviorExposureTimeLayout);
 
+    // Save directory widget
+    directoryLineEdit = new QLineEdit(this);
+    directoryLineEdit->setText(saveDirectory.c_str());
+    QPushButton *browseButton = new QPushButton("Browse", this);
+
+    QHBoxLayout *directoryLayout = new QHBoxLayout();
+    directoryLayout->addWidget(new QLabel("Save Directory"));
+    directoryLayout->addWidget(directoryLineEdit);
+    directoryLayout->addWidget(browseButton);
+
+    connect(browseButton, &QPushButton::clicked, this, &Gui::browseDirectory);
+
+    // Live display widget
     behaviorImageDisplayLabel = new QLabel(this);
     behaviorImageDisplayLabel->setFixedSize(
         GUI_BEHAVIOR_CAMERA_PREVIEW_WIDTH,
         GUI_BEHAVIOR_CAMERA_PREVIEW_HEIGHT);
-    layout->addWidget(behaviorImageDisplayLabel);
 
-    // Timer to update the video display
+    // Record and stop buttons
+    recordButton = new QPushButton("Record", this);
+    stopButton = new QPushButton("Stop", this);
+    stopButton->setEnabled(false); // initially disabled
+    QHBoxLayout *recordStopButtonsLayout = new QHBoxLayout();
+    recordStopButtonsLayout->addWidget(recordButton);
+    recordStopButtonsLayout->addWidget(stopButton);
+
+    // Add timer to update image display
     imageDisplayTimer = new QTimer(this);
     connect(imageDisplayTimer,
-            &QTimer::timeout, this,
+            &QTimer::timeout,
+            this,
             &Gui::updateImageDisplay);
     imageDisplayTimer->start(1000 / BEHAVIOR_CAMERA_STREAMING_FPS);
-
-    layout->addWidget(recordButton);
-    layout->addWidget(stopButton);
-
     connect(recordButton, &QPushButton::clicked, this, &Gui::startRecording);
     connect(stopButton, &QPushButton::clicked, this, &Gui::stopRecording);
 
+    // Arrange layout
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->addLayout(behaviorFPSLayout);
+    layout->addLayout(behaviorExposureTimeLayout);
+    layout->addLayout(directoryLayout);
+    layout->addWidget(behaviorImageDisplayLabel);
+    layout->addLayout(recordStopButtonsLayout);
     setLayout(layout);
+
+    // Initialy stream images only, don't save
+    stopRecording();
 }
 
 void Gui::startRecording()
@@ -194,6 +211,24 @@ void Gui::stopRecording()
     std::string commandString = cameraAcquisitionConfig.toCommandString();
     sendCommand(serialPort, QString(commandString.c_str()));
     spdlog::info("Command sent to Arduino: {}", commandString);
+}
+
+void Gui::browseDirectory()
+{
+    QString dir = QFileDialog::getExistingDirectory(
+        this,
+        "Open Directory",
+        QString::fromStdString(saveDirectory),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (!dir.isEmpty())
+    {
+        directoryLineEdit->setText(dir);
+        saveDirectory = dir.toStdString();
+    }
+    else
+    {
+        spdlog::error("Directory is an empty string; failed to open.");
+    }
 }
 
 void Gui::updateImageDisplay()

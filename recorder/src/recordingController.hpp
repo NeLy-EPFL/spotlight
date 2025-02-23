@@ -15,9 +15,9 @@
 #include "global.hpp"
 
 void behaviorImageAcquierer();
-void behaviorImageSaver(const std::string &directory);
+void behaviorImageSaver();
 void muscleImageAcquierer();
-void muscleImageSaver(const std::string &directory);
+void muscleImageSaver();
 void flyTrackingController(int tolerancePx, int gainPx);
 
 #endif // RECORDING_CONTROLLER_HPP

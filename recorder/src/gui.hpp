@@ -13,8 +13,10 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSpinBox>
+#include <QLineEdit>
 #include <QLabel>
 #include <QTimer>
+#include <QFileDialog>
 
 #include "utils.hpp"
 #include "constants.hpp"
@@ -34,16 +36,16 @@ private slots:
     void startRecording();
     void stopRecording();
     void updateImageDisplay();
+    void browseDirectory();
 
 private:
-    std::shared_ptr<std::atomic<bool>> toQuit;
-    std::string directory;
     std::string serialPortName;
     QSerialPort serialPort;
-    QPushButton *recordButton;
-    QPushButton *stopButton;
     QSpinBox *behaviorFPSSpinBox;
     QDoubleSpinBox *behaviorExposureTimeSpinBox;
+    QLineEdit *directoryLineEdit;
+    QPushButton *recordButton;
+    QPushButton *stopButton;
     QLabel *behaviorImageDisplayLabel;
     QTimer *imageDisplayTimer;
 };

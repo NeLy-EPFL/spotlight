@@ -22,6 +22,7 @@ std::shared_ptr<std::atomic<bool>> toQuit =
     std::make_shared<std::atomic<bool>>(false);
 std::shared_ptr<std::atomic<bool>> isRecording =
     std::make_shared<std::atomic<bool>>(false);
+std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
 
 QApplication *application = nullptr;
 
@@ -54,7 +55,7 @@ int main(int argc, char **argv)
     std::vector<std::thread> behaviorImageSaverThreads;
     for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
     {
-        behaviorImageSaverThreads.emplace_back(behaviorImageSaver, "./images");
+        behaviorImageSaverThreads.push_back(std::thread(behaviorImageSaver));
     }
 
     // Create and show GUI

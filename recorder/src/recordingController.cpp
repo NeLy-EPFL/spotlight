@@ -117,7 +117,7 @@ void behaviorImageAcquierer()
     }
 }
 
-void behaviorImageSaver(const std::string &directory)
+void behaviorImageSaver()
 {
     while (!toQuit->load())
     {
@@ -139,7 +139,7 @@ void behaviorImageSaver(const std::string &directory)
         }
 
         std::string filenameStem =
-            directory +
+            saveDirectory +
             "/behavior_" +
             fmt::format("{:09}", frameGroup.frame0.frameId);
 
