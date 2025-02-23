@@ -190,6 +190,7 @@ void Gui::stopRecording()
         recordingExposureTimeMicrosecs);
     std::string commandString = cameraAcquisitionConfig.toCommandString();
     sendCommand(serialPort, QString(commandString.c_str()));
+    spdlog::info("Command sent to Arduino: {}", commandString);
 }
 
 void Gui::updateImageDisplay()

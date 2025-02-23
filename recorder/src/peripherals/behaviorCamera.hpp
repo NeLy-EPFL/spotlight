@@ -40,7 +40,6 @@ private:
     int yOffset_;
     std::string ioLine_;
     int currentFPS_;
-    long unsigned int currentFrameId_ = 0;
 
     template <typename Module>
     bool setIntegerAndCheck(const std::string key, int value);

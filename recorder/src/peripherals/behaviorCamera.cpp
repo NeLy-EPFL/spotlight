@@ -10,8 +10,7 @@ BehaviorCamera::BehaviorCamera(
       imageHeight_(imageHeight),
       xOffset_(xOffset),
       yOffset_(yOffset),
-      ioLine_(ioLine),
-      currentFPS_(0)
+      ioLine_(ioLine)
 {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
@@ -113,7 +112,6 @@ FrameData BehaviorCamera::waitForOneFrame()
     
     // Make FrameData object
     FrameData frameData;
-    frameData.frameId = currentFrameId_++;
     frameData.acquisitionTime = acquisitionTime;
     frameData.receivedTime = receivedTime;
     frameData.imagePtr = new cv::Mat(

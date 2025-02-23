@@ -72,6 +72,7 @@ void behaviorImageAcquierer()
 
     FrameData frameDataBuffer[3];
     size_t frameDataBufferIndex = 0;
+    long int currentFrameId = 0;
 
     while (!toQuit->load())
     {
@@ -86,6 +87,11 @@ void behaviorImageAcquierer()
 
         if (isRecording->load())
         {
+            // Assign frame ID only if recording. This way, for each recording
+            // session, the frame ID starts from 0 regardless of how many
+            // images the programs has received globally.
+            frameData.frameId = currentFrameId++;
+
             frameDataBuffer[frameDataBufferIndex++] = frameData;
 
             if (frameDataBufferIndex == 3)
@@ -104,7 +110,9 @@ void behaviorImageAcquierer()
                 frameDataBufferIndex = 0;
             }
         } else {
+            // Reset these to 0 in preparation for the next recording session
             frameDataBufferIndex = 0;
+            currentFrameId = 0;
         }
     }
 
