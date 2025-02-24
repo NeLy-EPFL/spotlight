@@ -81,14 +81,37 @@ void behaviorImageAcquierer()
 
 void behaviorImageSaver()
 {
+    std::thread::id myThreadId = std::this_thread::get_id();
+    std::stringstream ss;
+    ss << myThreadId;
+    std::string threadIdString = ss.str();
+    
+    // Define OpenCV JPEG saving parameters
+    std::vector<int> compressionParams;
+    compressionParams.push_back(cv::IMWRITE_JPEG_QUALITY);
+    compressionParams.push_back(100); // Maximum quality, minimal compression
+    compressionParams.push_back(cv::IMWRITE_JPEG_CHROMA_QUALITY);
+    compressionParams.push_back(100); // Maximum quality, minimal compression
+    // Unclear why OpenCV is built without this option. It should because I'm
+    // on OpenCV 4.8 with libjpeg ver 80. This option directly specifies the
+    // type of chroma subsampling used. This is about resolution of the chroma
+    // channels rather than compression quality. Common values: 444 = No chroma
+    // subsampling (full resolution for chroma channels)
+    // compressionParams.push_back(cv::IMWRITE_JPEG_SAMPLING_FACTOR);
+    // compressionParams.push_back(444); // Disable chroma subsampling (4:4:4)
+
+    int iterCount = 0;
+
     while (!toQuit->load())
     {
         GroupOfThreeFrames frameGroup;
+        int queueLength;
         {
             std::unique_lock<std::mutex> lock(behaviorImageQueueMutex);
             behaviorImageQueueCondVar.wait(
                 lock, []
                 { return !behaviorImageQueue.empty(); });
+            queueLength = behaviorImageQueue.size();
             frameGroup = behaviorImageQueue.front();
             behaviorImageQueue.pop();
         }
@@ -100,6 +123,7 @@ void behaviorImageSaver()
             break;
         }
 
+        uint64_t startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
             saveDirectory +
             "/behavior_" +
@@ -108,13 +132,26 @@ void behaviorImageSaver()
         // Save three frames as a single pseudo-RGB image
         std::string filename = filenameStem + ".jpg";
         cv::Mat image = makePseudoRGBImageFromThreeFrames(frameGroup);
-        cv::imwrite(filename, image);
+        cv::imwrite(filename, image, compressionParams);
 
         // Save metadata
         std::string metadataFilename = filenameStem + ".txt";
         std::ofstream metadataFile(metadataFilename);
         metadataFile << makeMetadataStringFromThreeFrames(frameGroup);
         metadataFile.close();
+
+        uint64_t walltime = getCurrentTimeMicroseconds() - startTime;
+        bool shouldLogPerformance =
+            iterCount % LOG_BEHAVIOR_CAMERA_SAVE_PERFORMANCE_INTERVAL == 0;
+        if (shouldLogPerformance)
+        {
+            spdlog::info(
+                "Behavior image saver thread (thread ID {}) reporting: "
+                "{} frames in queue; "
+                "it took {} us to save a group of three frames",
+                threadIdString, queueLength, walltime);
+        }
+        iterCount++;
     }
     spdlog::info("Behavior image saver thread stopped");
 }
