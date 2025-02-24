@@ -22,7 +22,7 @@ cv::Mat makePseudoRGBImageFromThreeFrames(
 std::string makeMetadataStringFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
-    std::string metadataString = "frameId,acquisitionTimeNs,receivedTimeNs\n";
+    std::string metadataString = "frameId,acquisitionTimeUs,receivedTimeUs\n";
     for (const FrameData &frameData : {
              groupOfThreeFrames.frame0,
              groupOfThreeFrames.frame1,

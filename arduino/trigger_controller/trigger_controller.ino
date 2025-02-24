@@ -35,7 +35,12 @@ void loop() {
         while (true) {
             String commandArduinoString = Serial.readStringUntil('\n');
             commandArduinoString.trim();
-            std::string commandString(commandArduinoString.c_str());
+            std::string commandString(commandArduinoString.c_str()); 
+            // // The following line is for debugging only. Using it with the
+            // // actuall GUI will not work because now the Arduino is saying
+            // // random things back to the computer that it does not expect.
+            // // Instead, debug by using the Serial Monitor of the Arduino
+            // // IDE to write messages to the board manually.
             // Serial.println("READBACK: " + String(commandString.c_str()));
             ArduinoMessage message(commandString.c_str());
 
