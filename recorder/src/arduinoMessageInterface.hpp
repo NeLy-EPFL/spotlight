@@ -5,6 +5,7 @@
 #include <string>
 #include <sstream>
 #include <cstring>
+#include <unordered_map>
 
 enum ArduinoMessageType
 {
@@ -14,6 +15,25 @@ enum ArduinoMessageType
     STOP_PULSING_ACK,
     UNDEFINED,
 };
+
+// Note: The message type strings cannot be longer than 29 characters! Modify the size
+// of messageTypeCString and change the string formatting pattern in the sscanf call
+// in the ArduinoMessage constructor if you need to increase the size.
+static const
+std::unordered_map<std::string, ArduinoMessageType> messageTypeStrToCode = {
+    {"START_PULSING", START_PULSING},
+    {"STOP_PULSING", STOP_PULSING},
+    {"START_PULSING_ACK", START_PULSING_ACK},
+    {"STOP_PULSING_ACK", STOP_PULSING_ACK},
+    {"UNDEFINED", UNDEFINED}};
+    
+static const
+std::unordered_map<ArduinoMessageType, std::string> messageTypeCodeToStr = {
+    {START_PULSING, "START_PULSING"},
+    {STOP_PULSING, "STOP_PULSING"},
+    {START_PULSING_ACK, "START_PULSING_ACK"},
+    {STOP_PULSING_ACK, "STOP_PULSING_ACK"},
+    {UNDEFINED, "UNDEFINED"}};
 
 class ArduinoMessage
 {

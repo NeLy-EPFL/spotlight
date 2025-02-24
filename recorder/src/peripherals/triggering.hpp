@@ -17,7 +17,7 @@ std::string getSerialPortName(
     std::string deviceManufacturer = "Arduino");
 void sendCommand(QSerialPort &serialPort, const std::string &command);
 ArduinoMessage waitForMessage(
-    QSerialPort &serialPort, int timeOutMillisecs = 1000);
+    QSerialPort &serialPort, int timeOutMillisecs = ARDUINO_COMM_TIMEOUT_MILLISECS);
 
 // High-level functions to run procedures that pause/restart triggering
 // pulses at the right frquencies when recording starts or stops

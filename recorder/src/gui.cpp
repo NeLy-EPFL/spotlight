@@ -33,7 +33,7 @@ Gui::Gui(QWidget *parent)
     // Configure serial port
     serialPortName_ = getSerialPortName();
     serialPort_.setPortName(QString::fromStdString(serialPortName_));
-    serialPort_.setBaudRate(QSerialPort::Baud9600);
+    serialPort_.setBaudRate(ARDUINO_BAUD_RATE_Q_ENUM);
     serialPort_.setDataBits(QSerialPort::Data8);
     serialPort_.setParity(QSerialPort::NoParity);
     serialPort_.setStopBits(QSerialPort::OneStop);

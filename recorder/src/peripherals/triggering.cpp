@@ -43,6 +43,7 @@ void sendCommand(QSerialPort &serialPort, const std::string &command)
     if (serialPort.isOpen())
     {
         serialPort.write(QString::fromStdString(command).toUtf8() + '\n');
+        spdlog::info("Message sent to Arduino: '{}'", command);
     }
     else
     {
@@ -52,13 +53,13 @@ void sendCommand(QSerialPort &serialPort, const std::string &command)
 
 ArduinoMessage waitForMessage(QSerialPort &serialPort, int timeOutMillisecs)
 {
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < ARDUINO_COMM_RETRIES; i++)
     {
         if (serialPort.waitForReadyRead(timeOutMillisecs))
         {
             QByteArray response = serialPort.readAll();
             std::string responseStr = response.trimmed().toStdString();
-            spdlog::info("Received message from Arduino: '{}'", responseStr);
+            spdlog::info("Message received from Arduino: '{}'", responseStr);
             if (!responseStr.empty())
             {
                 ArduinoMessage responseMessage(responseStr);
@@ -74,8 +75,8 @@ ArduinoMessage waitForMessage(QSerialPort &serialPort, int timeOutMillisecs)
     }
     spdlog::error(
         "Failed to receive message from Arduino within {} milliseconds. "
-        "Retried twice to no avail. Check communication with Arduino.",
-        timeOutMillisecs);
+        "Retried {} times to no avail. Check communication with Arduino.",
+        timeOutMillisecs, ARDUINO_COMM_RETRIES);
     throw std::runtime_error("Failed to receive message from Arduino.");
 }
 
@@ -89,10 +90,9 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
         "not receiving any frames anymore; then I will tell Arduino to "
         "continue.");
     std::string commandString = ArduinoMessage(STOP_PULSING).toCommString();
-    spdlog::info("Command sent to Arduino: `{}`", commandString);
     sendCommand(serialPort, commandString);
 
-    ArduinoMessage response = waitForMessage(serialPort, 1000);
+    ArduinoMessage response = waitForMessage(serialPort);
     if (response.messageType != STOP_PULSING_ACK || !response.isSyntaxValid)
     {
         spdlog::error(
@@ -120,7 +120,6 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
                                 recordingExposureTimeMicrosecs);
     commandString = startMessage.toCommString();
     sendCommand(serialPort, commandString);
-    spdlog::info("Command sent to Arduino: {}", commandString);
 
     response = waitForMessage(serialPort, 1000);
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)

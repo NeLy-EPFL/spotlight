@@ -19,7 +19,7 @@ bool behaviorTriggerState = LOW;
 bool waitingForCommand = false;
 
 void setup() {
-    Serial.begin(9600);
+    Serial.begin(ARDUINO_BAUD_RATE_INT);
 
     pinMode(behaviorCameraTriggerPin, OUTPUT);
     pinMode(irIlluminationTriggerPin, OUTPUT);
