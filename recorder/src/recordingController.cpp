@@ -37,7 +37,14 @@ void behaviorImageAcquierer()
     while (!toQuit->load())
     {
         // Acquire image data
+        // // Benchmark here shows that the waitForOneFrame() function takes
+        // // on average (triggeringCyclePeriod - 150) us to complete. So we
+        // // have plenty of margin and can theoretically record at
+        // // 1,000,000 / 200-ish = 5,000 fps.
+        // // uint64_t startTime = getCurrentTimeMicroseconds();
         FrameData frameData = behaviorCamera->waitForOneFrame();
+        // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
+        // spdlog::info("Behavior camera waited {} us", waitTime);
 
         // Update latest frame for live display
         {
@@ -85,7 +92,7 @@ void behaviorImageSaver()
     std::stringstream ss;
     ss << myThreadId;
     std::string threadIdString = ss.str();
-    
+
     // Define OpenCV JPEG saving parameters
     std::vector<int> compressionParams;
     compressionParams.push_back(cv::IMWRITE_JPEG_QUALITY);
