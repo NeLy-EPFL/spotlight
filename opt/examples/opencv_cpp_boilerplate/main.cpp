@@ -2,6 +2,8 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
+    std::cout << cv::getBuildInformation() << std::endl;
+
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <image_path>" << std::endl;
         return 1;

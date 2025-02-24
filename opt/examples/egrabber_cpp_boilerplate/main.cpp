@@ -11,10 +11,10 @@
 using namespace std;
 using namespace Euresys;
 
-double getCurrentTimeMilliseconds()
+uint64_t getCurrentTimeMicroseconds()
 {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::system_clock::now().time_since_epoch())
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::high_resolution_clock::now().time_since_epoch())
         .count();
 }
 
@@ -25,31 +25,50 @@ int roundToMultiplesOf64(int value)
 }
 
 void imageAcquirer(
-    EGrabber<CallbackOnDemand>* frameGrabberPtr,
+    EGrabber<CallbackOnDemand> *frameGrabberPtr,
     int imageWidth,
     int imageHeight)
 {
     frameGrabberPtr->reallocBuffers(20);
     frameGrabberPtr->start(MAX_FRAMES);
-    double lastCheckpointTime = getCurrentTimeMilliseconds();
+    double lastCheckpointTime = getCurrentTimeMicroseconds();
     for (int frameId = 0; frameId < MAX_FRAMES; ++frameId)
     {
         if (frameId % 100 == 0)
         {
-            double currentTime = getCurrentTimeMilliseconds();
-            double elapsedTime = (currentTime - lastCheckpointTime) / 1000.0;
+            double currentTime = getCurrentTimeMicroseconds();
+            double elapsedTime = (currentTime - lastCheckpointTime) / 1000000;
             double fps = 100.0 / elapsedTime;
             cout << "  Frame " << frameId << " - FPS: " << fps << endl;
             lastCheckpointTime = currentTime;
         }
-        ScopedBuffer buffer(*frameGrabberPtr);
+        uint64_t timeStart = getCurrentTimeMicroseconds();
+        ScopedBuffer buffer(*frameGrabberPtr);  // the main blocking call
+        uint64_t timeGotBuffer = getCurrentTimeMicroseconds();
         uint8_t *imagePtr = buffer.getInfo<uint8_t *>(gc::BUFFER_INFO_BASE);
+        uint64_t timeGotImagePtr = getCurrentTimeMicroseconds();
         cv::Mat frame(imageHeight, imageWidth, CV_8UC1, imagePtr);
+        uint64_t timeConvertedToMat = getCurrentTimeMicroseconds();
+        
+        // It takes about 8000us to display the image, so to get a good idea
+        // how long each step takes, comment out the following lines
         cv::imshow("JAI camera", frame);
         if (cv::waitKey(1) == 27)
         {
             break;
         }
+        // ^^^^^^^^^^
+
+        // The following numbers are taken from a run with the cv::imshow
+        // code above commented out. The triggering signal is at 50Hz.
+        // Taken together, it takes ~60us to get a single frame (excluding
+        // the time to push it to some kind of queue).
+        cout << "  Time spent getting buffer: "
+             << timeGotBuffer - timeStart << " us" << endl;  // ~19950us
+        cout << "  Time spent getting image pointer: "
+             << timeGotImagePtr - timeGotBuffer << " us" << endl;  // ~5us
+        cout << "  Time spent converting to cv::Mat: "
+             << timeConvertedToMat - timeGotImagePtr << " us" << endl;  // ~2us
     }
 
     cout << "Stopping acquisition..." << endl;
