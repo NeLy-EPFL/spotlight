@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "dataTypes.hpp"
+#include "constants.hpp"
 
 uint64_t getCurrentTimeMicroseconds();
 
@@ -19,4 +20,7 @@ std::string makeMetadataStringFromThreeFrames(
 
 std::string getSerialPortName(std::string deviceDescription,
                               std::string deviceManufacturer);
+
+std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime();
+
 #endif // UTILS_HPP

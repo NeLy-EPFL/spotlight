@@ -26,4 +26,24 @@ struct SerialPortInfo
     std::string manufacturer;
 };
 
+enum MotionStageRequestType
+{
+    SET_TARGET_POSITION,
+    GET_CURRENT_POSITION,
+    HOME,
+    QUIT,
+};
+
+struct MotionStagePosition
+{
+    float xPosAbsoluteMm = std::numeric_limits<double>::quiet_NaN();
+    float yPosAbsoluteMm = std::numeric_limits<double>::quiet_NaN();
+};
+
+struct MotionStageRequest
+{
+    MotionStageRequestType requestType;
+    MotionStagePosition position;
+};
+
 #endif // DATA_TYPES_HPP

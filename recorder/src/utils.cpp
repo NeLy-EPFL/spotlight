@@ -74,3 +74,21 @@ std::string getSerialPortName(std::string deviceDescription,
     }
     return "";
 }
+
+std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime()
+{
+    int getPositionWeight = 1;
+    int setPositionWeight = 2; // Set position is more time-consuming
+
+    int totalWeightedNumberOfOps =
+        MOTION_STAGE_LOGGING_FREQUENCY_HZ * getPositionWeight +
+        FLY_TRACKING_UPDATE_FREQUENCY_HZ *
+            (setPositionWeight + getPositionWeight) + // this needs to do both
+        GUI_MOTION_STAGE_PREVIEW_FREQUENCY_HZ * getPositionWeight;
+
+    int numMicrosecsAllowedPerUnitOp = 1000000 / totalWeightedNumberOfOps;
+
+    return std::make_tuple(
+        numMicrosecsAllowedPerUnitOp * getPositionWeight,
+        numMicrosecsAllowedPerUnitOp * setPositionWeight);
+}

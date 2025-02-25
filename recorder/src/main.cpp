@@ -12,9 +12,22 @@
 std::queue<GroupOfThreeFrames> behaviorImageQueue;
 std::mutex behaviorImageQueueMutex;
 std::condition_variable behaviorImageQueueCondVar;
+std::atomic<bool> behaviorCameraReady = false;
 std::queue<GroupOfThreeFrames> muscleImageQueue;
 std::mutex muscleImageQueueMutex;
 std::condition_variable muscleImageQueueCondVar;
+
+// TODO: remove these if not needed
+// std::mutex motionStageRequestMutex;
+// std::condition_variable motionStageRequestCondVar;
+// std::mutex motionStageResponseMutex;
+// std::condition_variable motionStageResponseCondVar;
+// std::atomic<bool> newRequestForMotionstage;
+// std::atomic<bool> newPositionFromMotionStage;
+// MotionStageRequest latestMotionStageRequest;
+// MotionStagePosition latestMotionStagePosition;
+std::atomic<bool> motionControlHandlerReady = false;
+
 FrameData latestFrameData = {0, 0, 0, nullptr, false};
 std::mutex latestFrameMutex;
 
@@ -48,6 +61,9 @@ int main(int argc, char **argv)
     QApplication localApplication(argc, argv);
     application = &localApplication;
 
+    // Start motion control IO thread
+    std::thread motionControlIOThread(motionControlRequestHandler);
+
     // Start behavior image acquirer
     std::thread behaviorImageAcquiererThread(behaviorImageAcquierer);
 
@@ -59,8 +75,8 @@ int main(int argc, char **argv)
     }
 
     // Create and show GUI
-    Gui gui(nullptr);
-    gui.show();
+    MainGUIWindow MainGUIWindow(nullptr);
+    MainGUIWindow.show();
 
     int result = application->exec();
 
