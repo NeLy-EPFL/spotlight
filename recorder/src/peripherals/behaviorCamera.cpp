@@ -78,6 +78,8 @@ BehaviorCamera::BehaviorCamera(
     spdlog::info("LinkConfig set");
 
     formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
+
+    behaviorCameraReady.store(true);
 }
 
 BehaviorCamera::~BehaviorCamera() {}

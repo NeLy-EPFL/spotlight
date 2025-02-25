@@ -18,6 +18,8 @@
 #include <QTimer>
 #include <QFileDialog>
 #include <QCloseEvent>
+#include <QMessageBox>
+#include <QPainter>
 
 #include "utils.hpp"
 #include "constants.hpp"
@@ -25,15 +27,35 @@
 #include "recordingController.hpp"
 #include "peripherals/triggering.hpp"
 
-cv::Mat getLatestFrame();
-QImage cvMatToQImage(const cv::Mat &mat);
+class MotionControlWidget : public QWidget
+{
+public:
+    MotionControlWidget(QWidget *parent = nullptr);
+    ~MotionControlWidget();
 
-class Gui : public QWidget
+protected:
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+
+private:
+    int mapToPixelX(float x) const;
+    int mapToPixelY(float y) const;
+    float mapToStageX(int x) const;
+    float mapToStageY(int y) const;
+
+    QTimer timer_;
+    float minXAbsoluteMm_ = MOTION_STAGE_X_MIN_PHYSICAL_MM;
+    float maxXAbsoluteMm_ = MOTION_STAGE_X_MAX_PHYSICAL_MM;
+    float minYAbsoluteMm_ = MOTION_STAGE_Y_MIN_PHYSICAL_MM;
+    float maxYAbsoluteMm_ = MOTION_STAGE_Y_MAX_PHYSICAL_MM;
+};
+
+class MainGUIWindow : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit Gui(QWidget *parent = nullptr);
+    explicit MainGUIWindow(QWidget *parent = nullptr);
 
 private slots:
     void startRecording();
@@ -47,6 +69,7 @@ private:
     QSpinBox *behaviorFPSSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
     QLineEdit *directoryLineEdit_;
+    MotionControlWidget *motionControlWidget_;
     QPushButton *recordButton_;
     QPushButton *stopButton_;
     QLabel *behaviorImageDisplayLabel_;

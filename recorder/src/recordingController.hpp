@@ -13,12 +13,19 @@
 #include "peripherals/behaviorCamera.hpp"
 #include "peripherals/motionControl.hpp"
 #include "global.hpp"
+#include "constants.hpp"
 
-void quitProgram();
 void behaviorImageAcquierer();
 void behaviorImageSaver();
+
 void muscleImageAcquierer();
 void muscleImageSaver();
+
+void motionControlRequestHandler();
+MotionStagePosition getCurrentMotionStagePosition();
+void setTargetMotionStagePosition(MotionStagePosition targetPosition);
 void flyTrackingController(int tolerancePx, int gainPx);
+
+void quitProgram();
 
 #endif // RECORDING_CONTROLLER_HPP
