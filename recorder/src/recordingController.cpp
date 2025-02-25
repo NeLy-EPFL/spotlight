@@ -43,7 +43,7 @@ void behaviorImageAcquierer()
     size_t frameDataBufferIndex = 0;
     long int currentFrameId = 0;
 
-    while (!toQuit->load())
+    while (!toQuit.load())
     {
         // Acquire image data
         // // Benchmark here shows that the waitForOneFrame() function takes
@@ -61,7 +61,7 @@ void behaviorImageAcquierer()
             std::swap(latestFrameData, frameData);
         }
 
-        if (isRecording->load())
+        if (isRecording.load())
         {
             // Assign frame ID only if recording. This way, for each recording
             // session, the frame ID starts from 0 regardless of how many
@@ -118,7 +118,7 @@ void behaviorImageSaver()
 
     int iterCount = 0;
 
-    while (!toQuit->load())
+    while (!toQuit.load())
     {
         GroupOfThreeFrames frameGroup;
         int queueLength;
@@ -180,7 +180,7 @@ void motionControlRequestHandler()
     MotionControl motionControl;
     motionControlHandlerReady.store(true);
 
-    while (!toQuit->load()) // TODO: remove this?
+    while (!toQuit.load()) // TODO: remove this?
     {
         MotionStageRequest myRequest;
         {
@@ -281,7 +281,7 @@ MotionStagePosition getCurrentMotionStagePosition()
         std::unique_lock<std::mutex> lock(motionStageResponseMutex);
         motionStageResponseCondVar.wait(
             lock, []
-            { return newPositionFromMotionStage.load() || toQuit->load(); });
+            { return newPositionFromMotionStage.load() || toQuit.load(); });
         newPositionFromMotionStage = false;
     }
 
@@ -313,7 +313,7 @@ void quitProgram()
     spdlog::info("SIGINT received by behavior camera acquisition thread. "
                  "eGrabber closing acquisition");
 
-    toQuit->store(true);
+    toQuit.store(true);
 
     // Stop behavior camera acquisition
     if (behaviorCamera)
