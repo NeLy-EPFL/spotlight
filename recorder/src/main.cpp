@@ -31,10 +31,8 @@ std::atomic<bool> motionControlHandlerReady = false;
 FrameData latestFrameData = {0, 0, 0, nullptr, false};
 std::mutex latestFrameMutex;
 
-std::shared_ptr<std::atomic<bool>> toQuit =
-    std::make_shared<std::atomic<bool>>(false);
-std::shared_ptr<std::atomic<bool>> isRecording =
-    std::make_shared<std::atomic<bool>>(false);
+std::atomic<bool> toQuit = false;
+std::atomic<bool> isRecording = false;
 std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
 
 QApplication *application = nullptr;
@@ -43,7 +41,7 @@ namespace
 {
     void handleSigint(int)
     {
-        toQuit->store(true);
+        toQuit.store(true);
         if (application)
         {
             application->quit();
@@ -54,9 +52,6 @@ namespace
 int main(int argc, char **argv)
 {
     std::signal(SIGINT, handleSigint);
-
-    isRecording = std::make_shared<std::atomic<bool>>(false);
-    toQuit = std::make_shared<std::atomic<bool>>(false);
 
     QApplication localApplication(argc, argv);
     application = &localApplication;

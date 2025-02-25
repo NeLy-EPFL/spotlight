@@ -76,7 +76,7 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
         "OK. I assume all pending frames have arrived. I'm marking my state "
         "as recording; this way, new frames that arrive now will be saved. "
         "I'm also telling Arduino to start sending trigger pulses again.");
-    isRecording->store(true);
+    isRecording.store(true);
     ArduinoMessage startMessage(START_PULSING,
                                 recordingFPS,
                                 recordingExposureTimeMicrosecs);
@@ -99,7 +99,7 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
 void runRecordingStopProcedure(QSerialPort &serialPort,
                                int recordingExposureTimeMicrosecs)
 {
-    isRecording->store(false);
+    isRecording.store(false);
 
     ArduinoMessage stopMessage(START_PULSING,
                                BEHAVIOR_CAMERA_STREAMING_FPS,

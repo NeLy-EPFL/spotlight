@@ -41,5 +41,5 @@ extern FrameData latestFrameData;
 extern std::mutex latestFrameMutex;
 
 // Program lifetime and state
-extern std::shared_ptr<std::atomic<bool>> toQuit;
-extern std::shared_ptr<std::atomic<bool>> isRecording;
+extern std::atomic<bool> toQuit;
+extern std::atomic<bool> isRecording;
