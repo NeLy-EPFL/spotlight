@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 import svgwrite
+from pathlib import Path
 
-output_dir = "./output/"
 
 def generate_aruco_grid_svg(
     num_rows,
@@ -88,14 +88,16 @@ def generate_aruco_board_given_size_and_scale(arena_width, arena_height, scale):
         spacing_vertical=spacing_vertical,
         spacing_horizontal=spacing_horizontal,
         scale=scale,
-        output_file=f"{output_dir}aruco_grid_{num_rows}x{num_cols}.svg"
+        output_file=output_dir / f"aruco_grid_{num_rows}x{num_cols}.svg"
     )
 
 if __name__ == "__main__":
-    arena_width = 72
-    arena_height = 48
+    output_dir = Path("./output/generated_aruco_board/")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    generate_aruco_board_given_size_and_scale(arena_width, arena_height, 0.6)
-    generate_aruco_board_given_size_and_scale(arena_width, arena_height, 0.5)
-    generate_aruco_board_given_size_and_scale(arena_width, arena_height, 0.4)
-    generate_aruco_board_given_size_and_scale(arena_width, arena_height, 0.3)
+    arena_width = 72  # mm
+    arena_height = 48  # mm
+    scales = [0.6, 0.5, 0.4, 0.3]
+
+    for scale in scales:
+        generate_aruco_board_given_size_and_scale(arena_width, arena_height, scale)
