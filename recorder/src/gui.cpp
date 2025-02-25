@@ -31,7 +31,8 @@ Gui::Gui(QWidget *parent)
       serialPort_(new QSerialPort(this))
 {
     // Configure serial port
-    serialPortName_ = getSerialPortName();
+    serialPortName_ = getSerialPortName(ARDUINO_DEVICE_DESCRIPTION,
+                                        ARDUINO_DEVICE_MANUFACTURER);
     serialPort_.setPortName(QString::fromStdString(serialPortName_));
     serialPort_.setBaudRate(ARDUINO_BAUD_RATE_Q_ENUM);
     serialPort_.setDataBits(QSerialPort::Data8);
