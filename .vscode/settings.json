@@ -96,6 +96,7 @@
         "valarray": "cpp",
         "qapplication": "cpp",
         "qvboxlayout": "cpp",
-        "queue": "cpp"
+        "queue": "cpp",
+        "qmessagebox": "cpp"
     }
 }

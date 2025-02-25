@@ -79,10 +79,10 @@ void MotionControlWidget::paintEvent(QPaintEvent *event)
 
     // Draw coordinate labels
     painter.setPen(Qt::black);
-    int minFieldWidth = 6;
+    int minFieldWidth = 0;
     int precision = 2;
     int textPositionX = 10;
-    int textPositionY = 10;
+    int textPositionY = 20;
     painter.drawText(
         textPositionX, textPositionY,
         QString("Position: (%1, %2) mm")
