@@ -12,9 +12,8 @@
 #include "../arduinoMessageInterface.hpp"
 
 // Low-level functions to communicate with Arduino
-std::string getSerialPortName(
-    std::string deviceDescription = "Nano ESP32",
-    std::string deviceManufacturer = "Arduino");
+std::string getSerialPortName(std::string deviceDescription,
+                              std::string deviceManufacturer);
 void sendCommand(QSerialPort &serialPort, const std::string &command);
 ArduinoMessage waitForMessage(
     QSerialPort &serialPort, int timeOutMillisecs = ARDUINO_COMM_TIMEOUT_MILLISECS);

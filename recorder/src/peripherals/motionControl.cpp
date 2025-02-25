@@ -1,10 +1,12 @@
 #include "motionControl.hpp"
 
-MotionControl::MotionControl(const std::string serialPort)
-    : serialPort_(serialPort)
+MotionControl::MotionControl()
 {
     // Open the serial connection
-    connection_ = zmASCII::Connection::openSerialPort(serialPort);
+    std::string serialPortName_ = getSerialPortName(
+        MOTION_STAGE_DEVICE_DESCRIPTION, MOTION_STAGE_DEVICE_MANUFACTURER);
+    connection_ = zmASCII::Connection::openSerialPort(
+        "/dev/" + serialPortName_);
     connection_.enableAlerts();
 
     // Detect devices
