@@ -2,13 +2,20 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <signal.h>
+#include <csignal>
 
 #include <QApplication>
+#include <spdlog/spdlog.h>
 
-#include "global.hpp"
-#include "recordingController.hpp"
+#include "main.hpp"
+#include "behaviorRecording.hpp"
+#include "muscleRecording.hpp"
+#include "trackingControl.hpp"
 #include "gui.hpp"
 
+// Define all global variables
+BehaviorCamera *behaviorCamera = nullptr;
 std::queue<GroupOfThreeFrames> behaviorImageQueue;
 std::mutex behaviorImageQueueMutex;
 std::condition_variable behaviorImageQueueCondVar;
@@ -17,15 +24,6 @@ std::queue<GroupOfThreeFrames> muscleImageQueue;
 std::mutex muscleImageQueueMutex;
 std::condition_variable muscleImageQueueCondVar;
 
-// TODO: remove these if not needed
-// std::mutex motionStageRequestMutex;
-// std::condition_variable motionStageRequestCondVar;
-// std::mutex motionStageResponseMutex;
-// std::condition_variable motionStageResponseCondVar;
-// std::atomic<bool> newRequestForMotionstage;
-// std::atomic<bool> newPositionFromMotionStage;
-// MotionStageRequest latestMotionStageRequest;
-// MotionStagePosition latestMotionStagePosition;
 std::atomic<bool> motionControlHandlerReady = false;
 
 FrameData latestFrameData = {0, 0, 0, nullptr, false};
@@ -37,21 +35,60 @@ std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
 
 QApplication *application = nullptr;
 
-namespace
+// Program control functions implementation
+void initializeProgram()
 {
-    void handleSigint(int)
+    // Initialize application-wide resources and settings
+    spdlog::info("Initializing application");
+
+    // Reset global state flags
+    toQuit.store(false);
+    isRecording.store(false);
+
+    // Other initialization code can be added here
+}
+
+void quitProgram()
+/**
+ * Quit gracefully by explicitly stopping acquisition on the behavior
+ * camera* and telling saver threads that the work is done.
+ *
+ * * Without stopping acquiisition explicitly, the frame grabber will
+ * think the device is still busy the next time we run the program.
+ */
+{
+    spdlog::info("SIGINT received. Initiating graceful shutdown");
+
+    toQuit.store(true);
+
+    // Stop behavior camera acquisition
+    if (behaviorCamera)
     {
-        toQuit.store(true);
-        if (application)
-        {
-            application->quit();
-        }
+        spdlog::info("Stopping acquisition on behavior camera");
+        behaviorCamera->stop();
     }
+
+    // Tell motion control request handler thread to stop
+    spdlog::info("Telling motion control request handler thread to stop "
+                    "by sending a QUIT request to it");
+    stopMotionControlRequestHandler();
+
+    // Tell behavior camera saver threads to stop
+    spdlog::info("Telling behavior image saver threads to stop by adding "
+                 "{} stoppers to behavior image queue",
+                 NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
+    stopBehaviorImageSaver();
+
+    std::exit(0);
 }
 
 int main(int argc, char **argv)
 {
-    std::signal(SIGINT, handleSigint);
+    std::signal(SIGINT, [](int)
+                { quitProgram(); });
+
+    // Initialize program
+    initializeProgram();
 
     QApplication localApplication(argc, argv);
     application = &localApplication;

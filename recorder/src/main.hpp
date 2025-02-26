@@ -1,13 +1,21 @@
+#ifndef MAIN_HPP
+#define MAIN_HPP
+
+#include <memory>
+#include <thread>
+#include <vector>
+#include <atomic>
 #include <queue>
 #include <mutex>
 #include <condition_variable>
-#include <atomic>
+#include <string>
 
-#include "dataTypes.hpp"
+#include "global.hpp"
+#include "constants.hpp"
+#include "peripherals/behaviorCamera.hpp"
 
-// peripherals/behaviorCamera.hpp includes this file so we can't include it
-// here. Make a forward declaration instead.
-class BehaviorCamera;
+// Forward declarations
+class QApplication;
 
 // Image acquisition
 extern BehaviorCamera *behaviorCamera;
@@ -39,3 +47,10 @@ extern std::mutex latestFrameMutex;
 // Program lifetime and state
 extern std::atomic<bool> toQuit;
 extern std::atomic<bool> isRecording;
+extern QApplication *application;
+
+// Program control functions
+void initializeProgram();
+void quitProgram();
+
+#endif // MAIN_HPP

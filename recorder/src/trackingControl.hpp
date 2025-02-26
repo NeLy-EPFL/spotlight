@@ -1,33 +1,23 @@
-#ifndef RECORDING_CONTROLLER_HPP
-#define RECORDING_CONTROLLER_HPP
+#ifndef TRACKING_CONTROL_HPP
+#define TRACKING_CONTROL_HPP
 
 #include <iostream>
 #include <mutex>
-#include <queue>
 #include <condition_variable>
 #include <atomic>
-#include <fstream>
 
 #include <spdlog/spdlog.h>
 
-#include "peripherals/behaviorCamera.hpp"
 #include "peripherals/motionControl.hpp"
 #include "global.hpp"
 #include "constants.hpp"
 
-void behaviorImageAcquierer();
-void behaviorImageSaver();
-
-void muscleImageAcquierer();
-void muscleImageSaver();
-
+// Function declarations
 void motionControlRequestHandler();
 MotionStagePosition getCurrentMotionStagePosition();
 void setTargetMotionStagePosition(MotionStagePosition targetPosition);
 void flyTrackingController(int tolerancePx, int gainPx);
-
 void runCalibrationScanProcedure();
+void stopMotionControlRequestHandler();
 
-void quitProgram();
-
-#endif // RECORDING_CONTROLLER_HPP
+#endif // TRACKING_CONTROL_HPP
