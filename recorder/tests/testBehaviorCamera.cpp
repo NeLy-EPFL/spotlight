@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <vector>
+#include <atomic>
 #include <opencv2/opencv.hpp>
 
 #include "../src/peripherals/behaviorCamera.hpp"
 #include "../src/constants.hpp"
 #include "../src/utils.hpp"
+#include "../src/global.hpp"
 
 TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64NoOp)
 {
@@ -47,12 +49,15 @@ TEST(TestBehaviorCamera, ConfigureBehaviorCamera)
     unsigned int xOffset = 0;
     unsigned int yOffset = 0;
 
+    std::atomic<bool> testCameraReadyFlag(false);
+
     BehaviorCamera behaviorCamera(
         imageWidth,
         imageHeight,
         xOffset,
         yOffset,
-        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE);
+        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE,
+        testCameraReadyFlag);
 }
 
 TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
@@ -75,12 +80,15 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
     std::vector<FrameData> frameDataVector;
     std::vector<int> blockingTimesMicroseconds;
 
+    std::atomic<bool> testCameraReadyFlag(false);
+
     BehaviorCamera behaviorCamera(
         imageWidth,
         imageHeight,
         xOffset,
         yOffset,
-        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE);
+        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE,
+        testCameraReadyFlag);
 
     behaviorCamera.start();
 
