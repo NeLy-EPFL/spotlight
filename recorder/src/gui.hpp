@@ -24,8 +24,12 @@
 #include "utils.hpp"
 #include "constants.hpp"
 #include "global.hpp"
-#include "recordingController.hpp"
+#include "behaviorRecording.hpp"
+#include "trackingControl.hpp"
 #include "peripherals/triggering.hpp"
+
+// Forward declaration from main.hpp
+void quitProgram();
 
 class MotionControlWidget : public QWidget
 {
