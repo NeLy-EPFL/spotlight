@@ -13,7 +13,7 @@
 
 uint64_t getCurrentTimeMicroseconds();
 
-cv::Mat correctImageRotation(cv::Mat image);
+cv::Mat correctImageRotationAndFlip(cv::Mat image);
 cv::Mat makePseudoRGBImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames);
 std::string makeMetadataStringFromThreeFrames(

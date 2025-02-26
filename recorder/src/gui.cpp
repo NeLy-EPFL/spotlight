@@ -302,8 +302,8 @@ void MainGUIWindow::updateImageDisplay()
     {
         return;
     }
-    cv::Mat rotatedFrame = correctImageRotation(latestFrame);
-    QImage qImage = cvMatToQImage(rotatedFrame);
+    cv::Mat correctedFrame = correctImageRotationAndFlip(latestFrame);
+    QImage qImage = cvMatToQImage(correctedFrame);
     QPixmap pixmap = QPixmap::fromImage(qImage)
                          .scaled(behaviorImageDisplayLabel_->size(),
                                  Qt::KeepAspectRatio,

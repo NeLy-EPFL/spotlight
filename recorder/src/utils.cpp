@@ -16,15 +16,17 @@ cv::Mat makePseudoRGBImageFromThreeFrames(
         *groupOfThreeFrames.frame2.imagePtr};
     cv::Mat pseudoRGBImage;
     cv::merge(channels, pseudoRGBImage);
-    cv::Mat rotatedImage = correctImageRotation(pseudoRGBImage);
-    return rotatedImage;
+    cv::Mat correctedImage = correctImageRotationAndFlip(pseudoRGBImage);
+    return correctedImage;
 }
 
-cv::Mat correctImageRotation(cv::Mat image)
+cv::Mat correctImageRotationAndFlip(cv::Mat image)
 {
     cv::Mat rotatedImage;
     cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
-    return rotatedImage;
+    cv::Mat horizontalFlippedImage;
+    cv::flip(rotatedImage, horizontalFlippedImage, 1); // dim 1 is horizontal)
+    return horizontalFlippedImage;
 }
 
 std::string makeMetadataStringFromThreeFrames(
