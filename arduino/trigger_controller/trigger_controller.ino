@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-#include "arduinoMessageInterface.hpp"
+#include "arduinoMessageProtocol.hpp"
 #include "constants.hpp"
 
 const int behaviorCameraTriggerPin = 2;

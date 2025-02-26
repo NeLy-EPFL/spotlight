@@ -29,8 +29,8 @@ file(GLOB SOURCES
     "gui.cpp"
     "gui.hpp"
     "main.cpp"
-    "arduinoMessageInterface.cpp"
-    "arduinoMessageInterface.hpp"
+    "arduinoMessageProtocol.cpp"
+    "arduinoMessageProtocol.hpp"
 )
 
 add_executable(SpotlightController ${SOURCES})
