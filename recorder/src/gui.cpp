@@ -37,7 +37,11 @@ MotionControlWidget::MotionControlWidget(QWidget *parent)
             this,
             QOverload<>::of(&MotionControlWidget::update));
     timer_.start(1000 / GUI_MOTION_STAGE_PREVIEW_FREQUENCY_HZ); // in ms
-    setFixedSize(GUI_MOTION_STAGE_PREVIEW_WIDTH,
+    int guiMotionStagePreviewWidth = calculateBehaviorCameraPreviewWidth(
+        GUI_MOTION_STAGE_PREVIEW_HEIGHT,
+        MOTION_STAGE_X_MAX_PHYSICAL_MM - MOTION_STAGE_X_MIN_PHYSICAL_MM,
+        MOTION_STAGE_Y_MAX_PHYSICAL_MM - MOTION_STAGE_Y_MIN_PHYSICAL_MM);
+    setFixedSize(guiMotionStagePreviewWidth,
                  GUI_MOTION_STAGE_PREVIEW_HEIGHT);
 }
 
@@ -298,7 +302,8 @@ void MainGUIWindow::updateImageDisplay()
     {
         return;
     }
-    QImage qImage = cvMatToQImage(latestFrame);
+    cv::Mat rotatedFrame = correctImageRotation(latestFrame);
+    QImage qImage = cvMatToQImage(rotatedFrame);
     QPixmap pixmap = QPixmap::fromImage(qImage)
                          .scaled(behaviorImageDisplayLabel_->size(),
                                  Qt::KeepAspectRatio,

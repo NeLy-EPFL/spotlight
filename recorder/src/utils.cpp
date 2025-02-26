@@ -16,7 +16,15 @@ cv::Mat makePseudoRGBImageFromThreeFrames(
         *groupOfThreeFrames.frame2.imagePtr};
     cv::Mat pseudoRGBImage;
     cv::merge(channels, pseudoRGBImage);
-    return pseudoRGBImage;
+    cv::Mat rotatedImage = correctImageRotation(pseudoRGBImage);
+    return rotatedImage;
+}
+
+cv::Mat correctImageRotation(cv::Mat image)
+{
+    cv::Mat rotatedImage;
+    cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
+    return rotatedImage;
 }
 
 std::string makeMetadataStringFromThreeFrames(
@@ -91,4 +99,13 @@ std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime()
     return std::make_tuple(
         numMicrosecsAllowedPerUnitOp * getPositionWeight,
         numMicrosecsAllowedPerUnitOp * setPositionWeight);
+}
+
+int calculateBehaviorCameraPreviewWidth(
+    int behaviorCameraPreviewHeight,
+    int motionStageXRange,
+    int motionStageYRange)
+{
+    return behaviorCameraPreviewHeight *
+           (static_cast<float>(motionStageXRange) / motionStageYRange);
 }
