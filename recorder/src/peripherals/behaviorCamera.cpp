@@ -5,12 +5,14 @@ BehaviorCamera::BehaviorCamera(
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
-    std::string ioLine)
+    std::string ioLine,
+    std::atomic<bool> &cameraReadyFlag)
     : imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       xOffset_(xOffset),
       yOffset_(yOffset),
-      ioLine_(ioLine)
+      ioLine_(ioLine),
+      cameraReadyFlag_(cameraReadyFlag)
 {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
@@ -79,7 +81,7 @@ BehaviorCamera::BehaviorCamera(
 
     formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
 
-    behaviorCameraReady.store(true);
+    cameraReadyFlag_.store(true);
 }
 
 BehaviorCamera::~BehaviorCamera() {}
