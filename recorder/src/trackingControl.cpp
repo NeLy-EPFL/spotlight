@@ -27,7 +27,16 @@ void motionControlRequestHandler()
             std::unique_lock<std::mutex> lock(motionStageRequestMutex);
             motionStageRequestCondVar.wait(
                 lock, []
-                { return newRequestForMotionstage.load(); });
+                { return newRequestForMotionstage.load() || toQuit.load(); });
+
+            if (toQuit.load())
+            {
+                spdlog::info(
+                    "motion control request handler thread "
+                    "is breaking out of loop.");
+                break;
+            }
+
             myRequest = latestMotionStageRequest;
             newRequestForMotionstage = false;
         }
@@ -61,12 +70,6 @@ void motionControlRequestHandler()
             motionControl.home(Y_AXIS);
             motionControl.waitUntilIdle(X_AXIS);
             motionControl.waitUntilIdle(Y_AXIS);
-        }
-        else if (myRequest.requestType == QUIT)
-        {
-            spdlog::info("Motion control request handler thread received "
-                         "QUIT request. Breaking out of loop.");
-            break;
         }
         else
         {
@@ -155,13 +158,13 @@ void runCalibrationScanProcedure()
 
 void stopMotionControlRequestHandler()
 {
-    // Tell motion control request handler thread to stop
-    MotionStageRequest stopper;
-    stopper.requestType = QUIT;
+    if (!toQuit.load())
     {
-        std::lock_guard<std::mutex> lock(motionStageRequestMutex);
-        latestMotionStageRequest = stopper;
-        newRequestForMotionstage.store(true);
+        spdlog::error("stopMotionControlRequestHandler() called but toQuit is "
+                      "not set to true. This shouldn't happen.");
     }
-    motionStageRequestCondVar.notify_one();
+    else
+    {
+        motionStageRequestCondVar.notify_all();
+    }
 }
