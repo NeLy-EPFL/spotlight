@@ -13,6 +13,7 @@
 
 uint64_t getCurrentTimeMicroseconds();
 
+cv::Mat correctImageRotation(cv::Mat image);
 cv::Mat makePseudoRGBImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames);
 std::string makeMetadataStringFromThreeFrames(
@@ -22,5 +23,9 @@ std::string getSerialPortName(std::string deviceDescription,
                               std::string deviceManufacturer);
 
 std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime();
+int calculateBehaviorCameraPreviewWidth(
+    int behaviorCameraPreviewHeight,
+    int motionStageXRange,
+    int motionStageYRange);
 
 #endif // UTILS_HPP
