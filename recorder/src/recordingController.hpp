@@ -26,6 +26,8 @@ MotionStagePosition getCurrentMotionStagePosition();
 void setTargetMotionStagePosition(MotionStagePosition targetPosition);
 void flyTrackingController(int tolerancePx, int gainPx);
 
+void runCalibrationScanProcedure();
+
 void quitProgram();
 
 #endif // RECORDING_CONTROLLER_HPP

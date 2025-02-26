@@ -301,6 +301,11 @@ void setTargetMotionStagePosition(MotionStagePosition targetPosition)
     motionStageRequestCondVar.notify_one();
 }
 
+void runCalibrationScanProcedure()
+{
+    // TODO
+}
+
 void quitProgram()
 /**
  * Quit gracefully by explicitly stopping acquisition on the behavior

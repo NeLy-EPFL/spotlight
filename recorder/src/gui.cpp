@@ -132,29 +132,10 @@ float MotionControlWidget::mapToStageY(int y) const
 
 MainGUIWindow::MainGUIWindow(QWidget *parent)
     : QWidget(parent),
-      serialPort_(new QSerialPort(this))
+      arduinoInterface_(
+          getSerialPortName(ARDUINO_DEVICE_DESCRIPTION,
+                            ARDUINO_DEVICE_MANUFACTURER))
 {
-    // Configure serial port
-    serialPortName_ = getSerialPortName(ARDUINO_DEVICE_DESCRIPTION,
-                                        ARDUINO_DEVICE_MANUFACTURER);
-    serialPort_.setPortName(QString::fromStdString(serialPortName_));
-    serialPort_.setBaudRate(ARDUINO_BAUD_RATE_Q_ENUM);
-    serialPort_.setDataBits(QSerialPort::Data8);
-    serialPort_.setParity(QSerialPort::NoParity);
-    serialPort_.setStopBits(QSerialPort::OneStop);
-    serialPort_.setFlowControl(QSerialPort::NoFlowControl);
-
-    bool serialPortOpened = serialPort_.open(QIODevice::ReadWrite);
-    if (serialPortOpened)
-    {
-        spdlog::info("Serial port opened successfully.");
-    }
-    else
-    {
-        spdlog::error("Failed to open serial port.");
-        throw std::runtime_error("Failed to open serial port.");
-    }
-
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
@@ -199,10 +180,12 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
     // Record and stop buttons
     recordButton_ = new QPushButton("Record", this);
     stopButton_ = new QPushButton("Stop", this);
+    calibrationScanButton_ = new QPushButton("Calibration Scan", this);
     stopButton_->setEnabled(false); // initially disabled
     QHBoxLayout *recordStopButtonsLayout = new QHBoxLayout();
     recordStopButtonsLayout->addWidget(recordButton_);
     recordStopButtonsLayout->addWidget(stopButton_);
+    recordStopButtonsLayout->addWidget(calibrationScanButton_);
 
     // Add timer to update image display
     imageDisplayTimer_ = new QTimer(this);
@@ -219,6 +202,10 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
             &QPushButton::clicked,
             this,
             &MainGUIWindow::stopRecording);
+    connect(calibrationScanButton_,
+            &QPushButton::clicked,
+            this,
+            &MainGUIWindow::doCalibrationScan);
 
     // Arrange layout
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -250,24 +237,35 @@ void MainGUIWindow::startRecording()
 
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
+    calibrationScanButton_->setEnabled(false);
 
     int recordingFPS = behaviorFPSSpinBox_->value();
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    runRecordingStartProcedure(
-        serialPort_, recordingFPS, recordingExposureTimeMicrosecs);
+    arduinoInterface_.startRecording(
+        recordingFPS, recordingExposureTimeMicrosecs);
 }
 
 void MainGUIWindow::stopRecording()
 {
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
+    calibrationScanButton_->setEnabled(true);
 
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    runRecordingStopProcedure(serialPort_, recordingExposureTimeMicrosecs);
+    arduinoInterface_.stopRecording(recordingExposureTimeMicrosecs);
+}
+
+void MainGUIWindow::doCalibrationScan()
+{
+    calibrationScanButton_->setEnabled(false);
+    recordButton_->setEnabled(false);
+    runCalibrationScanProcedure();
+    calibrationScanButton_->setEnabled(true);
+    recordButton_->setEnabled(true);
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)

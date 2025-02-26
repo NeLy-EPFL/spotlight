@@ -1,29 +1,79 @@
-#ifndef TRIGGERING_HPP
-#define TRIGGERING_HPP
+#ifndef ARDUINO_TRIGGER_CONTROLLER_INTERFACE_HPP
+#define ARDUINO_TRIGGER_CONTROLLER_INTERFACE_HPP
 
 #include <QSerialPort>
 #include <QSerialPortInfo>
 #include <QString>
 #include <spdlog/spdlog.h>
+#include <string>
+#include <stdexcept>
+#include <chrono>
+#include <thread>
 
 #include "../constants.hpp"
 #include "../global.hpp"
 #include "../utils.hpp"
-#include "../arduinoMessageInterface.hpp"
+#include "../arduinoMessageProtocol.hpp"
 
-// Low-level functions to communicate with Arduino
-std::string getSerialPortName(std::string deviceDescription,
-                              std::string deviceManufacturer);
-void sendCommand(QSerialPort &serialPort, const std::string &command);
-ArduinoMessage waitForMessage(
-    QSerialPort &serialPort, int timeOutMillisecs = ARDUINO_COMM_TIMEOUT_MILLISECS);
+/**
+ * @brief Interface for controlling Arduino-based camera triggering
+ *
+ * This class provides an interface for controlling the triggering of a camera
+ * via an Arduino. It encapsulates the communication with the Arduino and
+ * provides high-level functions for recording procedures.
+ */
+class ArduinoTriggerControllerInterface
+{
+public:
+    /**
+     * @brief Construct a new Arduino Trigger Controller Interface
+     *
+     * @param serialPort Reference to the serial port to use for communication
+     */
+    ArduinoTriggerControllerInterface(std::string serialPortName);
 
-// High-level functions to run procedures that pause/restart triggering
-// pulses at the right frquencies when recording starts or stops
-void runRecordingStartProcedure(QSerialPort &serialPort,
-                                int recordingFPS,
-                                int recordingExposureTimeMicrosecs);
-void runRecordingStopProcedure(QSerialPort &serialPort,
-                               int recordingExposureTimeMicrosecs);
+    /**
+     * @brief Start the recording procedure
+     *
+     * Pauses trigger pulses, waits for buffer flushing, then resumes pulses
+     * at recording settings
+     *
+     * @param recordingFPS The frames per second for the recording
+     * @param recordingExposureTimeMicrosecs Exposure time in microseconds
+     * @throws std::runtime_error if communication with Arduino fails
+     */
+    void startRecording(int recordingFPS, int recordingExposureTimeMicrosecs);
 
-#endif // TRIGGERING_HPP
+    /**
+     * @brief Stop the recording procedure
+     *
+     * Stops recording and returns to streaming mode
+     *
+     * @param recordingExposureTimeMicrosecs Exposure time in microseconds
+     * @throws std::runtime_error if communication with Arduino fails
+     */
+    void stopRecording(int recordingExposureTimeMicrosecs);
+
+private:
+    std::string serialPortName_;
+    QSerialPort serialPort_;
+
+    /**
+     * @brief Send a command to the Arduino
+     *
+     * @param command The command to send
+     */
+    void sendCommand(const std::string &command);
+
+    /**
+     * @brief Wait for a message from the Arduino
+     *
+     * @param timeOutMillisecs Timeout in milliseconds
+     * @return ArduinoMessage The received message
+     * @throws std::runtime_error if no message is received
+     */
+    ArduinoMessage waitForMessage(
+        int timeOutMillisecs = ARDUINO_COMM_TIMEOUT_MILLISECS);
+};
+
+#endif // ARDUINO_TRIGGER_CONTROLLER_INTERFACE_HPP

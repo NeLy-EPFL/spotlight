@@ -1,4 +1,4 @@
-#include "arduinoMessageInterface.hpp"
+#include "arduinoMessageProtocol.hpp"
 
 ArduinoMessage::ArduinoMessage(std::string message)
 {

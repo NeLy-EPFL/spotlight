@@ -1,10 +1,33 @@
 #include "triggering.hpp"
 
-void sendCommand(QSerialPort &serialPort, const std::string &command)
+ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface(
+    std::string serialPortName)
 {
-    if (serialPort.isOpen())
+    serialPortName_ = serialPortName;
+    serialPort_.setPortName(QString::fromStdString(serialPortName));
+    serialPort_.setBaudRate(ARDUINO_BAUD_RATE_Q_ENUM);
+    serialPort_.setDataBits(QSerialPort::Data8);
+    serialPort_.setParity(QSerialPort::NoParity);
+    serialPort_.setStopBits(QSerialPort::OneStop);
+    serialPort_.setFlowControl(QSerialPort::NoFlowControl);
+
+    if (serialPort_.open(QIODevice::ReadWrite))
     {
-        serialPort.write(QString::fromStdString(command).toUtf8() + '\n');
+        spdlog::info("Serial port opened successfully.");
+    }
+    else
+    {
+        spdlog::error("Failed to open serial port.");
+        throw std::runtime_error("Failed to open serial port.");
+    }
+}
+
+void ArduinoTriggerControllerInterface::sendCommand(
+    const std::string &command)
+{
+    if (serialPort_.isOpen())
+    {
+        serialPort_.write(QString::fromStdString(command).toUtf8() + '\n');
         spdlog::info("Message sent to Arduino: '{}'", command);
     }
     else
@@ -13,13 +36,14 @@ void sendCommand(QSerialPort &serialPort, const std::string &command)
     }
 }
 
-ArduinoMessage waitForMessage(QSerialPort &serialPort, int timeOutMillisecs)
+ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage(
+    int timeOutMillisecs)
 {
     for (int i = 0; i < ARDUINO_COMM_RETRIES; i++)
     {
-        if (serialPort.waitForReadyRead(timeOutMillisecs))
+        if (serialPort_.waitForReadyRead(timeOutMillisecs))
         {
-            QByteArray response = serialPort.readAll();
+            QByteArray response = serialPort_.readAll();
             std::string responseStr = response.trimmed().toStdString();
             spdlog::info("Message received from Arduino: '{}'", responseStr);
             if (!responseStr.empty())
@@ -42,9 +66,8 @@ ArduinoMessage waitForMessage(QSerialPort &serialPort, int timeOutMillisecs)
     throw std::runtime_error("Failed to receive message from Arduino.");
 }
 
-void runRecordingStartProcedure(QSerialPort &serialPort,
-                                int recordingFPS,
-                                int recordingExposureTimeMicrosecs)
+void ArduinoTriggerControllerInterface::startRecording(
+    int recordingFPS, int recordingExposureTimeMicrosecs)
 {
     spdlog::info(
         "Preparing for recording. I'm telling Arduino to pause trigger "
@@ -52,9 +75,9 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
         "not receiving any frames anymore; then I will tell Arduino to "
         "continue.");
     std::string commandString = ArduinoMessage(STOP_PULSING).toCommString();
-    sendCommand(serialPort, commandString);
+    sendCommand(commandString);
 
-    ArduinoMessage response = waitForMessage(serialPort);
+    ArduinoMessage response = waitForMessage();
     if (response.messageType != STOP_PULSING_ACK || !response.isSyntaxValid)
     {
         spdlog::error(
@@ -62,7 +85,6 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
             "It responded with message '{}'.",
             response.toCommString());
         throw std::runtime_error("Failed to pause trigger pulses.");
-        return;
     }
     spdlog::info(
         "Arduino acknowledged the STOP_PAUSING command. I will now wait {} "
@@ -81,9 +103,9 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
                                 recordingFPS,
                                 recordingExposureTimeMicrosecs);
     commandString = startMessage.toCommString();
-    sendCommand(serialPort, commandString);
+    sendCommand(commandString);
 
-    response = waitForMessage(serialPort, 1000);
+    response = waitForMessage(1000);
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
     {
         spdlog::error(
@@ -91,13 +113,12 @@ void runRecordingStartProcedure(QSerialPort &serialPort,
             "It responded with message '{}'.",
             response.toCommString());
         throw std::runtime_error("Failed to start trigger pulses.");
-        return;
     }
     spdlog::info("Arduino acknowledged the START_PAUSING command.");
 }
 
-void runRecordingStopProcedure(QSerialPort &serialPort,
-                               int recordingExposureTimeMicrosecs)
+void ArduinoTriggerControllerInterface::stopRecording(
+    int recordingExposureTimeMicrosecs)
 {
     isRecording.store(false);
 
@@ -105,10 +126,10 @@ void runRecordingStopProcedure(QSerialPort &serialPort,
                                BEHAVIOR_CAMERA_STREAMING_FPS,
                                recordingExposureTimeMicrosecs);
     std::string commandString = stopMessage.toCommString();
-    sendCommand(serialPort, commandString);
+    sendCommand(commandString);
     spdlog::info("Command sent to Arduino: {}", commandString);
 
-    ArduinoMessage response = waitForMessage(serialPort, 1000);
+    ArduinoMessage response = waitForMessage(1000);
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
     {
         spdlog::error(
@@ -116,7 +137,6 @@ void runRecordingStopProcedure(QSerialPort &serialPort,
             "It responded with message '{}'.",
             response.toCommString());
         throw std::runtime_error("Failed to start trigger pulses.");
-        return;
     }
     spdlog::info("Arduino acknowledged the START_PAUSING command.");
 }

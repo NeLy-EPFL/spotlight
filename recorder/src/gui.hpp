@@ -62,16 +62,17 @@ private slots:
     void stopRecording();
     void updateImageDisplay();
     void browseDirectory();
+    void doCalibrationScan();
 
 private:
-    std::string serialPortName_;
-    QSerialPort serialPort_;
+    ArduinoTriggerControllerInterface arduinoInterface_;
     QSpinBox *behaviorFPSSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
     QLineEdit *directoryLineEdit_;
     MotionControlWidget *motionControlWidget_;
     QPushButton *recordButton_;
     QPushButton *stopButton_;
+    QPushButton *calibrationScanButton_;
     QLabel *behaviorImageDisplayLabel_;
     QTimer *imageDisplayTimer_;
 
