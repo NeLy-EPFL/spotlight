@@ -112,17 +112,18 @@ void behaviorImageSaver()
             std::unique_lock<std::mutex> lock(behaviorImageQueueMutex);
             behaviorImageQueueCondVar.wait(
                 lock, []
-                { return !behaviorImageQueue.empty(); });
+                { return !behaviorImageQueue.empty() || toQuit.load(); });
+
+            if (toQuit.load())
+            {
+                spdlog::info(
+                    "Behavior image saver thread is breaking out of loop.");
+                break;
+            }
+
             queueLength = behaviorImageQueue.size();
             frameGroup = behaviorImageQueue.front();
             behaviorImageQueue.pop();
-        }
-
-        if (frameGroup.frame0.noMoreData)
-        {
-            spdlog::info("Behavior image saver received stopper; "
-                         "no more frame will come.");
-            break;
         }
 
         uint64_t startTime = getCurrentTimeMicroseconds();
@@ -160,17 +161,13 @@ void behaviorImageSaver()
 
 void stopBehaviorImageSaver()
 {
-    for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
+    if (!toQuit.load())
     {
-        FrameData stopper;
-        stopper.noMoreData = true;
-        // The behavior image queue actually keeps track of buffer groups
-        // of three images, so we just fill the buffer with stoppers here
-        GroupOfThreeFrames stopperBlock = {stopper, stopper, stopper};
-        {
-            std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
-            behaviorImageQueue.push(stopperBlock);
-        }
-        behaviorImageQueueCondVar.notify_one();
+        spdlog::error("stopBehaviorImageSaver() called but toQuit is "
+                      "not set to true. This shouldn't happen.");
+    }
+    else
+    {
+        behaviorImageQueueCondVar.notify_all();
     }
 }

@@ -26,7 +26,7 @@ std::condition_variable muscleImageQueueCondVar;
 
 std::atomic<bool> motionControlHandlerReady = false;
 
-FrameData latestFrameData = {0, 0, 0, nullptr, false};
+FrameData latestFrameData = {0, 0, 0, nullptr};
 std::mutex latestFrameMutex;
 
 std::atomic<bool> toQuit = false;
@@ -69,13 +69,11 @@ void quitProgram()
     }
 
     // Tell motion control request handler thread to stop
-    spdlog::info("Telling motion control request handler thread to stop "
-                    "by sending a QUIT request to it");
+    spdlog::info("Telling motion control request handler thread to stop.");
     stopMotionControlRequestHandler();
 
     // Tell behavior camera saver threads to stop
-    spdlog::info("Telling behavior image saver threads to stop by adding "
-                 "{} stoppers to behavior image queue",
+    spdlog::info("Telling behavior image saver threads to stop.",
                  NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
     stopBehaviorImageSaver();
 
