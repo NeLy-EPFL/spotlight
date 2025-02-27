@@ -33,6 +33,7 @@ enum MotionStageRequestType
     GET_CURRENT_POSITION,
     SET_TARGET_POSITION,
     WAIT_UNTIL_IDLE,
+    CHECK_IF_IDLE,
     START_HOMING
 };
 

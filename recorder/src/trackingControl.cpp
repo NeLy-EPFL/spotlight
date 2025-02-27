@@ -85,6 +85,11 @@ void motionControlRequestHandler()
             motionControl.waitUntilIdle(Y_AXIS);
             myResponse.isIdle = true;
         }
+        else if (myRequest.requestType == CHECK_IF_IDLE)
+        {
+            myResponse.isIdle = motionControl.checkIfIdle(X_AXIS) &&
+                                motionControl.checkIfIdle(Y_AXIS);
+        }
         else if (myRequest.requestType == START_HOMING)
         {
             bool waitForCompletion = false;
@@ -175,7 +180,7 @@ void setTargetMotionStagePosition(
     }
 }
 
-void waitUntilMotionStageIdle()
+void waitUntilMotionStageIdleSync()
 {
     size_t myThreadIdHash = getMyThreadIdHash();
 
@@ -208,6 +213,50 @@ void waitUntilMotionStageIdle()
             "Motion stage request handler thread responed to WAIT_UNTIL_IDLE "
             "request, but the stages are not idle.");
     }
+}
+
+/**
+ * @brief Waits asynchronously until the motion stage becomes idle.
+ *
+ * This function checks if the motion stage is idle by calling
+ * `checkIfMotionStageIdle` every 500 ms. Like waitUntilMotionStageIdleSync(),
+ * this function is blocking, but it doesn't block the thread that handles
+ * requests to read form / write to the hardware, so other threads who need to
+ * interface with the motion stages can still do it.
+ */
+void waitUntilMotionStageIdleAsync()
+{
+    while (!checkIfMotionStageIdle())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+}
+
+bool checkIfMotionStageIdle()
+{
+    size_t myThreadIdHash = getMyThreadIdHash();
+
+    // Push request
+    MotionStageRequest myRequest;
+    myRequest.clientIdHash = myThreadIdHash;
+    myRequest.requestType = CHECK_IF_IDLE;
+    {
+        std::lock_guard<std::mutex> lock(requestMutex);
+        requestQueue.push(myRequest);
+    }
+    requestCondVar.notify_one();
+
+    // Wait for response
+    MotionStageResponse myResponse;
+    {
+        std::unique_lock<std::mutex> lock(responseMutex);
+        responseCondVar.wait(lock, [myThreadIdHash]
+                             { return responseMap.find(myThreadIdHash) !=
+                                      responseMap.end(); });
+        myResponse = responseMap[myThreadIdHash];
+        responseMap.erase(myThreadIdHash);
+    }
+    return myResponse.isIdle;
 }
 
 void startHomingMotionStage()
@@ -261,36 +310,45 @@ void stopMotionControlRequestHandler()
 void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs)
 {
     // Go to the corner of the stage
+    spdlog::info("Moving to the corner of the stage.");
     MotionStagePosition cornerPosition = {MOTION_STAGE_X_MIN_PHYSICAL_MM,
                                           MOTION_STAGE_Y_MIN_PHYSICAL_MM,
                                           ABSOLUTE};
-    setTargetMotionStagePosition(cornerPosition);
-    waitUntilMotionStageIdle();
+    setTargetMotionStagePosition(cornerPosition,
+                                 CALIBRATION_SCAN_STAGE_SPEED);
+    waitUntilMotionStageIdleAsync();
+    spdlog::info("Moved to the corner of the stage.");
 
     // Start recording
+    spdlog::info("Starting recording for calibration scan.");
     fs::path scanSaveDirectory = prepareOutputFolder(SPOTLIGHT_ARUCO_SCAN_DIR,
                                                      true); // mkdir -p
     saveDirectory = scanSaveDirectory.string();
     triggerController->startRecording(
         CALIBRATION_SCAN_FPS, CALIBRATION_SCAN_EXPOSURE_TIME_MICROSECS);
+    spdlog::info("Recording started for calibration scan.");
 
-    // Scan column by column
+    // Scan row by row
     bool isXAtMin = true;
     for (float yPos = MOTION_STAGE_Y_MIN_PHYSICAL_MM;
          yPos < MOTION_STAGE_Y_MAX_PHYSICAL_MM;
          yPos += CALIBRATION_SCAN_STRIDE_MM)
     {
-        // Move to the next column
+        // Move to the next row
         float xPos = isXAtMin ? MOTION_STAGE_X_MIN_PHYSICAL_MM
                               : MOTION_STAGE_X_MAX_PHYSICAL_MM;
-        setTargetMotionStagePosition({xPos, yPos, ABSOLUTE});
-        waitUntilMotionStageIdle();
+        setTargetMotionStagePosition({xPos, yPos, ABSOLUTE},
+                                     CALIBRATION_SCAN_STAGE_SPEED);
+        waitUntilMotionStageIdleAsync();
 
-        // Scan the column
+        // Scan the row
         xPos = isXAtMin ? MOTION_STAGE_X_MAX_PHYSICAL_MM
                         : MOTION_STAGE_X_MIN_PHYSICAL_MM;
-        setTargetMotionStagePosition({xPos, yPos, ABSOLUTE});
-        waitUntilMotionStageIdle();
+        setTargetMotionStagePosition({xPos, yPos, ABSOLUTE},
+                                     CALIBRATION_SCAN_STAGE_SPEED);
+        waitUntilMotionStageIdleAsync();
+
+        isXAtMin = !isXAtMin;
     }
 
     // Stop recording (reset exposure time to the way it was)

@@ -36,6 +36,7 @@ std::atomic<bool> isRecording = false;
 std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
 
 QApplication *application = nullptr;
+MainGUIWindow *mainGUIWindow = nullptr;
 
 // Program control functions implementation
 void initializeProgram()
@@ -50,7 +51,7 @@ void initializeProgram()
     // Other initialization code can be added here
 }
 
-void quitProgram()
+bool quitProgram()
 /**
  * Quit gracefully by explicitly stopping acquisition on the behavior
  * camera* and telling saver threads that the work is done.
@@ -60,6 +61,18 @@ void quitProgram()
  */
 {
     spdlog::info("SIGINT received. Initiating graceful shutdown");
+
+    if (!mainGUIWindow->canQuitGracefully())
+    {
+        std::string errorMessage =
+            "Cannot quit gracefully because something is still running in "
+            "the background. Retry later or force quit (but then you "
+            "should manually reset camera acquisition state).";
+        spdlog::error(errorMessage);
+        QMessageBox::critical(
+            mainGUIWindow, "Error", QString(errorMessage.c_str()));
+        return false;
+    }
 
     toQuit.store(true);
 
@@ -111,8 +124,9 @@ int main(int argc, char **argv)
     triggerController = &localTriggerController;
 
     // Create and show GUI
-    MainGUIWindow MainGUIWindow(nullptr);
-    MainGUIWindow.show();
+    MainGUIWindow localMainGUIWindow(nullptr);
+    mainGUIWindow = &localMainGUIWindow;
+    mainGUIWindow->show();
 
     int result = application->exec();
 

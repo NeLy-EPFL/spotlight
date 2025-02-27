@@ -28,7 +28,9 @@ MotionStagePosition getCurrentMotionStagePosition();
 void setTargetMotionStagePosition(
     MotionStagePosition targetPosition,
     float velocity = MOTION_STAGE_DEFAULT_VELOCITY_MM_PER_SEC);
-void waitUntilMotionStageIdle();
+void waitUntilMotionStageIdleSync();
+void waitUntilMotionStageIdleAsync();
+bool checkIfMotionStageIdle();
 void startHomingMotionStage();
 void stopMotionControlRequestHandler();
 

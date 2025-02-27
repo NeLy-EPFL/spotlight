@@ -42,6 +42,7 @@ public:
     void home(MotionAxis axis, bool wait = true);
     double getPosition(MotionAxis axis);
     void waitUntilIdle(MotionAxis axis);
+    bool checkIfIdle(MotionAxis axis);
 
 private:
     std::string serialPortName_;
