@@ -29,7 +29,7 @@
 #include "peripherals/triggering.hpp"
 
 // Forward declaration from main.hpp
-void quitProgram();
+bool quitProgram();
 
 class MotionControlWidget : public QWidget
 {
@@ -60,6 +60,7 @@ class MainGUIWindow : public QWidget
 
 public:
     explicit MainGUIWindow(QWidget *parent = nullptr);
+    bool canQuitGracefully();
 
 private slots:
     void startRecording();
@@ -78,6 +79,7 @@ private:
     QPushButton *calibrationScanButton_;
     QLabel *behaviorImageDisplayLabel_;
     QTimer *imageDisplayTimer_;
+    std::atomic<bool> isRunningCalibrationScan_ = false;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

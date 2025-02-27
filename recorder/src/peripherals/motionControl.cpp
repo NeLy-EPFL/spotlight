@@ -118,3 +118,8 @@ void MotionControl::waitUntilIdle(MotionAxis axis)
 {
     axisPtrLookup_[axis]->waitUntilIdle();
 }
+
+bool MotionControl::checkIfIdle(MotionAxis axis)
+{
+    return !axisPtrLookup_[axis]->isBusy();
+}

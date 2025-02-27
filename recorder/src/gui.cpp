@@ -89,7 +89,7 @@ void MotionControlWidget::paintEvent(QPaintEvent *event)
     int textPositionY = 20;
     painter.drawText(
         textPositionX, textPositionY,
-        QString("Position: (%1, %2) mm")
+        QString("(%1, %2) mm")
             .arg(physicalX, minFieldWidth, 'f', precision)
             .arg(physicalY, minFieldWidth, 'f', precision));
 }
@@ -263,17 +263,36 @@ void MainGUIWindow::doCalibrationScan()
 
     int currentStreamingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
-    runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
 
-    calibrationScanButton_->setEnabled(true);
-    recordButton_->setEnabled(true);
+    // Run the calibration scan in a separate thread to avoid freezing the GUI
+    std::thread([this, currentStreamingExposureTimeMicrosecs]() {
+        isRunningCalibrationScan_.store(true);
+        spdlog::info("Starting calibration scan procedure in the background.");
+        runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
+
+        // Re-enable buttons in the GUI thread
+        QMetaObject::invokeMethod(this, [this]() {
+            calibrationScanButton_->setEnabled(true);
+            recordButton_->setEnabled(true);
+        });
+
+        isRunningCalibrationScan_.store(false);
+    }).detach();
+}
+
+bool MainGUIWindow::canQuitGracefully()
+{
+    return !isRunningCalibrationScan_.load();
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)
 {
     spdlog::info("User is closing GUI window. Quitting gracefully.");
+    if (!quitProgram()){
+        event->ignore();
+        return;
+    }
     event->accept();
-    quitProgram();
 }
 
 void MainGUIWindow::browseDirectory()

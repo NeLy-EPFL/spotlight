@@ -123,7 +123,10 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder)
         const char *homeDir = getenv("HOME");
         if (homeDir)
         {
-            processedDir = fs::path(homeDir) / directory.string().substr(1);
+            processedDir = fs::path(homeDir) / directory.string().substr(2);
+            spdlog::info("Expanded ~ in directory path '{}' to '{}'",
+                         directory.string(),
+                         processedDir.string());
         }
         else
         {
@@ -134,11 +137,17 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder)
                 directory.string());
         }
     }
-    fs::path absoluteDir = fs::absolute(directory);
+    else
+    {
+        processedDir = directory;
+    }
+    fs::path absoluteDir = fs::absolute(processedDir);
 
     try
     {
         fs::create_directories(absoluteDir);
+        spdlog::info("Created directory '{}' (if it didn't already exist)",
+                     absoluteDir.string());
 
         if (clearFolder)
         {
@@ -146,6 +155,8 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder)
             {
                 fs::remove_all(entry);
             }
+            spdlog::info("Cleared content of directory '{}'",
+                         absoluteDir.string());
         }
     }
     catch (const fs::filesystem_error &e)
