@@ -69,19 +69,20 @@ std::string getSerialPortName(std::string deviceDescription,
         allSerialPortInfo.push_back({portName, description, manufacturer});
     }
 
-    spdlog::error(
+    spdlog::critical(
         "Serial port not found. "
         "I'm looking for manufacturer '{}', description '{}'. "
         "Available ports are:",
         deviceManufacturer, deviceDescription);
     for (SerialPortInfo serialPortInfo : allSerialPortInfo)
     {
-        spdlog::error(
+        spdlog::critical(
             "* Port name: '{}', description: '{}', manufacturer: '{}'",
             serialPortInfo.portName,
             serialPortInfo.description,
             serialPortInfo.manufacturer);
     }
+    throw std::runtime_error("Serial port not found.");
     return "";
 }
 
@@ -110,4 +111,57 @@ int calculateBehaviorCameraPreviewWidth(
 {
     return behaviorCameraPreviewHeight *
            (static_cast<float>(motionStageXRange) / motionStageYRange);
+}
+
+fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder)
+{
+    fs::path processedDir;
+
+    // Expand ~ to home directory
+    if (!directory.empty() && directory.string().front() == '~')
+    {
+        const char *homeDir = getenv("HOME");
+        if (homeDir)
+        {
+            processedDir = fs::path(homeDir) / directory.string().substr(1);
+        }
+        else
+        {
+            spdlog::error(
+                "Failed to expand ~ in directory path '{}' because $HOME is "
+                "not defined. Set the $HOME environment variable or use "
+                "absolute path.",
+                directory.string());
+        }
+    }
+    fs::path absoluteDir = fs::absolute(directory);
+
+    try
+    {
+        fs::create_directories(absoluteDir);
+
+        if (clearFolder)
+        {
+            for (const auto &entry : fs::directory_iterator(absoluteDir))
+            {
+                fs::remove_all(entry);
+            }
+        }
+    }
+    catch (const fs::filesystem_error &e)
+    {
+        spdlog::error(
+            "Failed to create directory '{}' or clear its content: {}",
+            absoluteDir.string(), e.what());
+        throw;
+    }
+
+    return absoluteDir;
+}
+
+size_t getMyThreadIdHash()
+{
+    std::thread::id myThreadId = std::this_thread::get_id();
+    size_t myThreadIdHash = std::hash<std::thread::id>{}(myThreadId);
+    return myThreadIdHash;
 }

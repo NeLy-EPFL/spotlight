@@ -29,6 +29,8 @@ std::atomic<bool> motionControlHandlerReady = false;
 FrameData latestFrameData = {0, 0, 0, nullptr};
 std::mutex latestFrameMutex;
 
+ArduinoTriggerControllerInterface *triggerController;
+
 std::atomic<bool> toQuit = false;
 std::atomic<bool> isRecording = false;
 std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
@@ -104,6 +106,10 @@ int main(int argc, char **argv)
         behaviorImageSaverThreads.push_back(std::thread(behaviorImageSaver));
     }
 
+    // Start Arduino triggering interface
+    ArduinoTriggerControllerInterface localTriggerController;
+    triggerController = &localTriggerController;
+
     // Create and show GUI
     MainGUIWindow MainGUIWindow(nullptr);
     MainGUIWindow.show();
@@ -122,6 +128,11 @@ int main(int argc, char **argv)
         {
             thread.join();
         }
+    }
+
+    if (motionControlIOThread.joinable())
+    {
+        motionControlIOThread.join();
     }
 
     return result;

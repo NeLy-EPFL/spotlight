@@ -1,10 +1,10 @@
 #include "triggering.hpp"
 
-ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface(
-    std::string serialPortName)
+ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface()
 {
-    serialPortName_ = serialPortName;
-    serialPort_.setPortName(QString::fromStdString(serialPortName));
+    serialPortName_ = getSerialPortName(
+        ARDUINO_DEVICE_DESCRIPTION, ARDUINO_DEVICE_MANUFACTURER);
+    serialPort_.setPortName(QString::fromStdString(serialPortName_));
     serialPort_.setBaudRate(ARDUINO_BAUD_RATE_Q_ENUM);
     serialPort_.setDataBits(QSerialPort::Data8);
     serialPort_.setParity(QSerialPort::NoParity);
@@ -17,7 +17,7 @@ ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface(
     }
     else
     {
-        spdlog::error("Failed to open serial port.");
+        spdlog::critical("Failed to open serial port.");
         throw std::runtime_error("Failed to open serial port.");
     }
 }
@@ -32,7 +32,9 @@ void ArduinoTriggerControllerInterface::sendCommand(
     }
     else
     {
-        spdlog::error("Failed to send command; serial port not open.");
+        spdlog::critical("Failed to send command; serial port not open.");
+        throw std::runtime_error(
+            "Failed to send command; serial port not open.");
     }
 }
 
@@ -59,7 +61,7 @@ ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage(
             }
         }
     }
-    spdlog::error(
+    spdlog::critical(
         "Failed to receive message from Arduino within {} milliseconds. "
         "Retried {} times to no avail. Check communication with Arduino.",
         timeOutMillisecs, ARDUINO_COMM_RETRIES);
@@ -80,7 +82,7 @@ void ArduinoTriggerControllerInterface::startRecording(
     ArduinoMessage response = waitForMessage();
     if (response.messageType != STOP_PULSING_ACK || !response.isSyntaxValid)
     {
-        spdlog::error(
+        spdlog::critical(
             "Arduino didn't acknowledge the STOP_PAUSING command. "
             "It responded with message '{}'.",
             response.toCommString());
@@ -108,7 +110,7 @@ void ArduinoTriggerControllerInterface::startRecording(
     response = waitForMessage(1000);
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
     {
-        spdlog::error(
+        spdlog::critical(
             "Arduino didn't acknowledge the START_PAUSING command. "
             "It responded with message '{}'.",
             response.toCommString());
@@ -132,7 +134,7 @@ void ArduinoTriggerControllerInterface::stopRecording(
     ArduinoMessage response = waitForMessage(1000);
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
     {
-        spdlog::error(
+        spdlog::critical(
             "Arduino didn't acknowledge the START_PAUSING command. "
             "It responded with message '{}'.",
             response.toCommString());

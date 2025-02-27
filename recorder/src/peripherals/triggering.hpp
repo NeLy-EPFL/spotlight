@@ -27,10 +27,8 @@ class ArduinoTriggerControllerInterface
 public:
     /**
      * @brief Construct a new Arduino Trigger Controller Interface
-     *
-     * @param serialPort Reference to the serial port to use for communication
      */
-    ArduinoTriggerControllerInterface(std::string serialPortName);
+    ArduinoTriggerControllerInterface();
 
     /**
      * @brief Start the recording procedure

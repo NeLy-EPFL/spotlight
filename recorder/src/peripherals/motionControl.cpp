@@ -14,7 +14,7 @@ MotionControl::MotionControl()
 
     if (deviceList.size() != 1)
     {
-        spdlog::error(
+        spdlog::critical(
             "Expected 1 Zaber device, but found {}. Note that multiple stages "
             "controlled by the same controller constitute a single device.",
             deviceList.size());
@@ -34,7 +34,7 @@ MotionControl::MotionControl()
     // Configure axes
     if (numAxis != 2)
     {
-        spdlog::error("Expected 2 axes, found {}", numAxis);
+        spdlog::critical("Expected 2 axes, found {}", numAxis);
         throw std::runtime_error("Unexpected number of axes");
     }
     axisPtrLookup_[X_AXIS] = nullptr;
@@ -52,7 +52,7 @@ MotionControl::MotionControl()
         if (serialNumberToAxisLookup.find(serialNumber) ==
             serialNumberToAxisLookup.end())
         {
-            spdlog::error(
+            spdlog::critical(
                 "Motion stage serial number {} not mapped to any physically "
                 "meaningful axis (ie. X or Y). Check `constants.hpp` and "
                 "modify it as needed.",
@@ -67,7 +67,7 @@ MotionControl::MotionControl()
     }
     if (axisPtrLookup_[X_AXIS] == nullptr || axisPtrLookup_[Y_AXIS] == nullptr)
     {
-        spdlog::error(
+        spdlog::critical(
             "Failed to configure all axes. X axis OK? {}; Y axis OK? {}",
             axisPtrLookup_[X_AXIS] != nullptr,
             axisPtrLookup_[Y_AXIS] != nullptr);

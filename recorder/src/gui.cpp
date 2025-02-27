@@ -67,8 +67,8 @@ void MotionControlWidget::paintEvent(QPaintEvent *event)
 
     // Calculate where to draw the red dot representing the stage position
     MotionStagePosition currStagePosition = getCurrentMotionStagePosition();
-    float physicalX = currStagePosition.xPosAbsoluteMm;
-    float physicalY = currStagePosition.yPosAbsoluteMm;
+    float physicalX = currStagePosition.xPosMm;
+    float physicalY = currStagePosition.yPosMm;
     int pixelX = mapToPixelX(physicalX);
     int pixelY = mapToPixelY(physicalY);
 
@@ -100,7 +100,7 @@ void MotionControlWidget::mousePressEvent(QMouseEvent *event)
     {
         float stageX = mapToStageX(event->position().x());
         float stageY = mapToStageY(event->position().y());
-        setTargetMotionStagePosition({stageX, stageY});
+        setTargetMotionStagePosition({stageX, stageY, ABSOLUTE});
     }
 }
 
@@ -131,10 +131,7 @@ float MotionControlWidget::mapToStageY(int y) const
 }
 
 MainGUIWindow::MainGUIWindow(QWidget *parent)
-    : QWidget(parent),
-      arduinoInterface_(
-          getSerialPortName(ARDUINO_DEVICE_DESCRIPTION,
-                            ARDUINO_DEVICE_MANUFACTURER))
+    : QWidget(parent)
 {
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -243,7 +240,7 @@ void MainGUIWindow::startRecording()
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    arduinoInterface_.startRecording(
+    triggerController->startRecording(
         recordingFPS, recordingExposureTimeMicrosecs);
 }
 
@@ -256,14 +253,18 @@ void MainGUIWindow::stopRecording()
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    arduinoInterface_.stopRecording(recordingExposureTimeMicrosecs);
+    triggerController->stopRecording(recordingExposureTimeMicrosecs);
 }
 
 void MainGUIWindow::doCalibrationScan()
 {
     calibrationScanButton_->setEnabled(false);
     recordButton_->setEnabled(false);
-    runCalibrationScanProcedure();
+
+    int currentStreamingExposureTimeMicrosecs =
+        behaviorExposureTimeSpinBox_->value() * 1000;
+    runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
+
     calibrationScanButton_->setEnabled(true);
     recordButton_->setEnabled(true);
 }
