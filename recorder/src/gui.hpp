@@ -69,7 +69,6 @@ private slots:
     void doCalibrationScan();
 
 private:
-    ArduinoTriggerControllerInterface arduinoInterface_;
     QSpinBox *behaviorFPSSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
     QLineEdit *directoryLineEdit_;

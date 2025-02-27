@@ -3,6 +3,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "constants.hpp"
+
 struct FrameData
 {
     unsigned int frameId = -1;
@@ -25,23 +27,45 @@ struct SerialPortInfo
     std::string manufacturer;
 };
 
+// Request type enum
 enum MotionStageRequestType
 {
-    SET_TARGET_POSITION,
     GET_CURRENT_POSITION,
-    HOME,
+    SET_TARGET_POSITION,
+    WAIT_UNTIL_IDLE,
+    START_HOMING
+};
+
+// Position structure
+enum PositionType
+{
+    ABSOLUTE,
+    RELATIVE
 };
 
 struct MotionStagePosition
 {
-    float xPosAbsoluteMm = std::numeric_limits<double>::quiet_NaN();
-    float yPosAbsoluteMm = std::numeric_limits<double>::quiet_NaN();
+    double xPosMm;
+    double yPosMm;
+    PositionType positionType;
 };
 
+// Single request and response structure for all request types
 struct MotionStageRequest
 {
+    size_t clientIdHash;
     MotionStageRequestType requestType;
     MotionStagePosition position;
+    float velocity;
+};
+
+struct MotionStageResponse
+{
+    MotionStagePosition position = MotionStagePosition{
+        std::numeric_limits<double>::signaling_NaN(),
+        std::numeric_limits<double>::signaling_NaN()};
+    bool isIdle = false;
+    bool setSuccess = false;
 };
 
 #endif // DATA_TYPES_HPP

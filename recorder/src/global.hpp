@@ -5,9 +5,10 @@
 
 #include "dataTypes.hpp"
 
-// peripherals/behaviorCamera.hpp includes this file so we can't include it
-// here. Make a forward declaration instead.
+// Some .hpp includes this file so we can't include them here.
+// Make forward declarations instead.
 class BehaviorCamera;
+class ArduinoTriggerControllerInterface;
 
 // Image acquisition
 extern BehaviorCamera *behaviorCamera;
@@ -35,6 +36,9 @@ extern std::string saveDirectory;
 // Streaming latest data (for live display and motion control)
 extern FrameData latestFrameData;
 extern std::mutex latestFrameMutex;
+
+// Hardware trigger control
+extern ArduinoTriggerControllerInterface *triggerController;
 
 // Program lifetime and state
 extern std::atomic<bool> toQuit;

@@ -163,8 +163,12 @@ void stopBehaviorImageSaver()
 {
     if (!toQuit.load())
     {
-        spdlog::error("stopBehaviorImageSaver() called but toQuit is "
-                      "not set to true. This shouldn't happen.");
+        spdlog::critical(
+            "stopBehaviorImageSaver() called but toQuit is "
+            "not set to true. This shouldn't happen.");
+        throw std::runtime_error(
+            "stopBehaviorImageSaver() called but toQuit is "
+            "not set to true. This shouldn't happen.");
     }
     else
     {
