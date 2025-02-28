@@ -3,13 +3,14 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "constants.hpp"
+
 struct FrameData
 {
     unsigned int frameId = -1;
     uint64_t acquisitionTime = 0; // as returned by frame grabber
     uint64_t receivedTime = 0;    // as returned by frame grabber
-    cv::Mat *imagePtr;
-    bool noMoreData = false;
+    cv::Mat image;
 };
 
 struct GroupOfThreeFrames
@@ -24,6 +25,48 @@ struct SerialPortInfo
     std::string portName;
     std::string description;
     std::string manufacturer;
+};
+
+// Request type enum
+enum MotionStageRequestType
+{
+    GET_CURRENT_POSITION,
+    SET_TARGET_POSITION,
+    WAIT_UNTIL_IDLE,
+    CHECK_IF_IDLE,
+    START_HOMING
+};
+
+// Position structure
+enum PositionType
+{
+    ABSOLUTE,
+    RELATIVE
+};
+
+struct MotionStagePosition
+{
+    double xPosMm;
+    double yPosMm;
+    PositionType positionType;
+};
+
+// Single request and response structure for all request types
+struct MotionStageRequest
+{
+    size_t clientIdHash;
+    MotionStageRequestType requestType;
+    MotionStagePosition position;
+    float velocity;
+};
+
+struct MotionStageResponse
+{
+    MotionStagePosition position = MotionStagePosition{
+        std::numeric_limits<double>::signaling_NaN(),
+        std::numeric_limits<double>::signaling_NaN()};
+    bool isIdle = false;
+    bool setSuccess = false;
 };
 
 #endif // DATA_TYPES_HPP
