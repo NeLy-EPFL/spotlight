@@ -73,13 +73,13 @@ add_test(NAME testMotionControl COMMAND testMotionControl)
 
 # Test camera acquisition config
 file(GLOB MOTION_CONTROL_SOURCES "../src/arduinoMessageProtocol.*")
-add_executable(testarduinoMessageProtocol
+add_executable(testArduinoMessageProtocol
     ${COMMON_SOURCES}
     ${MOTION_CONTROL_SOURCES}
     "testArduinoMessageProtocol.cpp")
-target_include_directories(testarduinoMessageProtocol PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testarduinoMessageProtocol Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(testarduinoMessageProtocol ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testarduinoMessageProtocol ${OpenCV_LIBS})
-target_link_libraries(testarduinoMessageProtocol spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testarduinoMessageProtocol COMMAND testarduinoMessageProtocol)
+target_include_directories(testArduinoMessageProtocol PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testArduinoMessageProtocol Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(testArduinoMessageProtocol ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(testArduinoMessageProtocol ${OpenCV_LIBS})
+target_link_libraries(testArduinoMessageProtocol spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME testArduinoMessageProtocol COMMAND testArduinoMessageProtocol)
