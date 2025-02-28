@@ -11,9 +11,9 @@ cv::Mat makePseudoRGBImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
     std::vector<cv::Mat> channels = {
-        *groupOfThreeFrames.frame0.imagePtr,
-        *groupOfThreeFrames.frame1.imagePtr,
-        *groupOfThreeFrames.frame2.imagePtr};
+        groupOfThreeFrames.frame1.image,
+        groupOfThreeFrames.frame1.image,
+        groupOfThreeFrames.frame2.image};
     cv::Mat pseudoRGBImage;
     cv::merge(channels, pseudoRGBImage);
     cv::Mat correctedImage = correctImageRotationAndFlip(pseudoRGBImage);

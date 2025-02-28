@@ -6,11 +6,7 @@ namespace
     {
         {
             std::lock_guard<std::mutex> lock(latestFrameMutex);
-            if (latestFrameData.imagePtr == nullptr)
-            {
-                return cv::Mat();
-            }
-            cv::Mat latestFrameImage = latestFrameData.imagePtr->clone();
+            cv::Mat latestFrameImage = latestFrameData.image;
             return latestFrameImage;
         }
     }
