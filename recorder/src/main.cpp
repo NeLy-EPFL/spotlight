@@ -28,7 +28,7 @@ std::atomic<bool> motionControlHandlerReady = false;
 MotionStagePosition latestMotionStagePosition;
 std::mutex latestMotionStagePositionMutex;
 
-FrameData latestFrameData = {0, 0, 0, nullptr};
+FrameData latestFrameData = {0, 0, 0, cv::Mat()};
 std::mutex latestFrameMutex;
 
 ArduinoTriggerControllerInterface *triggerController;

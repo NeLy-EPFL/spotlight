@@ -114,8 +114,7 @@ FrameData BehaviorCamera::waitForOneFrame()
     FrameData frameData;
     frameData.acquisitionTime = acquisitionTime;
     frameData.receivedTime = receivedTime;
-    frameData.imagePtr = new cv::Mat(
-        imageHeight_, imageWidth_, CV_8UC1, dataPtr);
+    frameData.image = cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr);
     return frameData;
 }
 

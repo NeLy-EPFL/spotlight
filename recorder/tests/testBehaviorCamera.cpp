@@ -115,8 +115,8 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
     // Check if the frames are different from each other
     for (int i = 0; i < (int)frameDataVector.size() - 1; i++)
     {
-        cv::Mat thisImage = *frameDataVector[i].imagePtr;
-        cv::Mat nextImage = *frameDataVector[i + 1].imagePtr;
+        cv::Mat thisImage = frameDataVector[i].image;
+        cv::Mat nextImage = frameDataVector[i + 1].image;
         cv::Mat diffImage;
         cv::absdiff(thisImage, nextImage, diffImage);
         double diffSum = cv::sum(diffImage)[0];
