@@ -8,6 +8,7 @@
 #include <atomic>
 #include <fstream>
 #include <filesystem>
+#include <set>
 
 #include <spdlog/spdlog.h>
 

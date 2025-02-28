@@ -1,5 +1,27 @@
 #include "behaviorRecording.hpp"
 
+namespace
+{
+    std::set<std::string> intializedBaseDirectories;
+
+    std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
+    {
+        std::filesystem::path behaviorSaveDir;
+        {
+            std::lock_guard<std::mutex> lock(isIOInitializing);
+            if (intializedBaseDirectories.find(baseDirectory) ==
+                intializedBaseDirectories.end())
+            {
+                behaviorSaveDir = prepareOutputFolder(
+                    std::filesystem::path(baseDirectory) / "behavior_images",
+                    true);
+                intializedBaseDirectories.insert(baseDirectory);
+            }
+        }
+        return behaviorSaveDir;
+    }
+}
+
 void behaviorImageAcquierer()
 {
     unsigned int imageWidth = roundToMultiplesOf64(
@@ -53,7 +75,7 @@ void behaviorImageAcquierer()
                 // Reset these to 0 in preparation for the next recording session
                 frameDataBufferIndex = 0;
                 currentFrameId = 0;
-                isFristFrameRecorded = false;
+                isFristFrameRecorded = false; // toggle off
             }
 
             frameData.frameId = currentFrameId++;
@@ -92,14 +114,6 @@ void behaviorImageSaver()
     ss << myThreadId;
     std::string threadIdString = ss.str();
 
-    // Prepare output folder
-    std::filesystem::path behaviorSaveDir;
-    {
-        std::lock_guard<std::mutex> lock(isIOInitializing);
-        behaviorSaveDir = prepareOutputFolder(
-            std::filesystem::path(saveDirectory) / "behavior_images", true);
-    }
-
     // Define OpenCV JPEG saving parameters
     std::vector<int> compressionParams;
     compressionParams.push_back(cv::IMWRITE_JPEG_QUALITY);
@@ -115,6 +129,7 @@ void behaviorImageSaver()
     // compressionParams.push_back(444); // Disable chroma subsampling (4:4:4)
 
     int iterCount = 0;
+    std::filesystem::path behaviorSaveDir;
 
     while (!toQuit.load())
     {
@@ -139,6 +154,13 @@ void behaviorImageSaver()
         }
 
         uint64_t startTime = getCurrentTimeMicroseconds();
+
+        bool couldBeFirstFrame =
+            frameGroup.frame0.frameId < 3 * NUM_BEHAVIOR_IMAGE_SAVING_THREADS;
+        if (couldBeFirstFrame) {
+            behaviorSaveDir = prepareBehaviorImageDir(saveDirectory);
+        }
+
         std::string filenameStem =
             "behavior_frame_" +
             fmt::format("{:09}", frameGroup.frame0.frameId);

@@ -158,6 +158,11 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
     // Save directory widget
     directoryLineEdit_ = new QLineEdit(this);
     directoryLineEdit_->setText(saveDirectory.c_str());
+    connect(directoryLineEdit_,
+            &QLineEdit::textChanged,
+            this,
+            [this](const QString &text)
+            { saveDirectory = text.toStdString(); });
     QPushButton *browseButton = new QPushButton("Browse", this);
 
     QHBoxLayout *directoryLayout = new QHBoxLayout();
@@ -269,7 +274,8 @@ void MainGUIWindow::doCalibrationScan()
         behaviorExposureTimeSpinBox_->value() * 1000;
 
     // Run the calibration scan in a separate thread to avoid freezing the GUI
-    std::thread([this, currentStreamingExposureTimeMicrosecs]() {
+    std::thread([this, currentStreamingExposureTimeMicrosecs]()
+                {
         isRunningCalibrationScan_.store(true);
         spdlog::info("Starting calibration scan procedure in the background.");
         runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
@@ -280,8 +286,8 @@ void MainGUIWindow::doCalibrationScan()
             recordButton_->setEnabled(true);
         });
 
-        isRunningCalibrationScan_.store(false);
-    }).detach();
+        isRunningCalibrationScan_.store(false); })
+        .detach();
 }
 
 bool MainGUIWindow::canQuitGracefully()
@@ -292,7 +298,8 @@ bool MainGUIWindow::canQuitGracefully()
 void MainGUIWindow::closeEvent(QCloseEvent *event)
 {
     spdlog::info("User is closing GUI window. Quitting gracefully.");
-    if (!quitProgram()){
+    if (!quitProgram())
+    {
         event->ignore();
         return;
     }
