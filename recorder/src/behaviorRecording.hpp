@@ -1,5 +1,5 @@
-#ifndef RECORDING_CONTROLLER_HPP
-#define RECORDING_CONTROLLER_HPP
+#ifndef BEHAVIOR_RECORDING_HPP
+#define BEHAVIOR_RECORDING_HPP
 
 #include <iostream>
 #include <mutex>
@@ -7,18 +7,18 @@
 #include <condition_variable>
 #include <atomic>
 #include <fstream>
+#include <filesystem>
+#include <set>
 
 #include <spdlog/spdlog.h>
 
 #include "peripherals/behaviorCamera.hpp"
-#include "peripherals/motionControl.hpp"
 #include "global.hpp"
+#include "constants.hpp"
 
-void quitProgram();
+// Function declarations
 void behaviorImageAcquierer();
 void behaviorImageSaver();
-void muscleImageAcquierer();
-void muscleImageSaver();
-void flyTrackingController(int tolerancePx, int gainPx);
+void stopBehaviorImageSaver();
 
-#endif // RECORDING_CONTROLLER_HPP
+#endif // BEHAVIOR_RECORDING_HPP

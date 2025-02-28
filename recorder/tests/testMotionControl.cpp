@@ -7,12 +7,12 @@ const float positionTolerance = 0.001;
 
 TEST(TestMotionStages, ConfigureMotionStages)
 {
-    MotionControl motionControl(MOTION_STAGE_SERIAL_PORT_NAME);
+    MotionControl motionControl;
 }
 
 TEST(TestMotionStages, Homing)
 {
-    MotionControl motionControl(MOTION_STAGE_SERIAL_PORT_NAME);
+    MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
     double xPosition = motionControl.getPosition(X_AXIS);
@@ -23,7 +23,7 @@ TEST(TestMotionStages, Homing)
 
 TEST(TestMotionStages, MoveAbsolute)
 {
-    MotionControl motionControl(MOTION_STAGE_SERIAL_PORT_NAME);
+    MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
     motionControl.moveAbsolute(X_AXIS, 10.0);
@@ -36,7 +36,7 @@ TEST(TestMotionStages, MoveAbsolute)
 
 TEST(TestMotionStages, MoveRelative)
 {
-    MotionControl motionControl(MOTION_STAGE_SERIAL_PORT_NAME);
+    MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
     motionControl.moveRelative(X_AXIS, 10.0);
@@ -55,7 +55,7 @@ TEST(TestMotionStages, MoveRelative)
 
 TEST(TestMotionStages, WaitOrNotWait)
 {
-    MotionControl motionControl(MOTION_STAGE_SERIAL_PORT_NAME);
+    MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
 
@@ -88,7 +88,7 @@ TEST(TestMotionStages, WaitOrNotWait)
 
 TEST(TestMotionStages, MoveBothSyncAndAsync)
 {
-    MotionControl motionControl(MOTION_STAGE_SERIAL_PORT_NAME);
+    MotionControl motionControl;
     uint64_t startTime, endTime;
 
     motionControl.home(X_AXIS);

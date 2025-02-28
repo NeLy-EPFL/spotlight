@@ -1,10 +1,12 @@
 #include "motionControl.hpp"
 
-MotionControl::MotionControl(const std::string serialPort)
-    : serialPort_(serialPort)
+MotionControl::MotionControl()
 {
     // Open the serial connection
-    connection_ = zmASCII::Connection::openSerialPort(serialPort);
+    std::string serialPortName_ = getSerialPortName(
+        MOTION_STAGE_DEVICE_DESCRIPTION, MOTION_STAGE_DEVICE_MANUFACTURER);
+    connection_ = zmASCII::Connection::openSerialPort(
+        "/dev/" + serialPortName_);
     connection_.enableAlerts();
 
     // Detect devices
@@ -12,7 +14,7 @@ MotionControl::MotionControl(const std::string serialPort)
 
     if (deviceList.size() != 1)
     {
-        spdlog::error(
+        spdlog::critical(
             "Expected 1 Zaber device, but found {}. Note that multiple stages "
             "controlled by the same controller constitute a single device.",
             deviceList.size());
@@ -32,7 +34,7 @@ MotionControl::MotionControl(const std::string serialPort)
     // Configure axes
     if (numAxis != 2)
     {
-        spdlog::error("Expected 2 axes, found {}", numAxis);
+        spdlog::critical("Expected 2 axes, found {}", numAxis);
         throw std::runtime_error("Unexpected number of axes");
     }
     axisPtrLookup_[X_AXIS] = nullptr;
@@ -50,7 +52,7 @@ MotionControl::MotionControl(const std::string serialPort)
         if (serialNumberToAxisLookup.find(serialNumber) ==
             serialNumberToAxisLookup.end())
         {
-            spdlog::error(
+            spdlog::critical(
                 "Motion stage serial number {} not mapped to any physically "
                 "meaningful axis (ie. X or Y). Check `constants.hpp` and "
                 "modify it as needed.",
@@ -65,7 +67,7 @@ MotionControl::MotionControl(const std::string serialPort)
     }
     if (axisPtrLookup_[X_AXIS] == nullptr || axisPtrLookup_[Y_AXIS] == nullptr)
     {
-        spdlog::error(
+        spdlog::critical(
             "Failed to configure all axes. X axis OK? {}; Y axis OK? {}",
             axisPtrLookup_[X_AXIS] != nullptr,
             axisPtrLookup_[Y_AXIS] != nullptr);
@@ -115,4 +117,9 @@ double MotionControl::getPosition(MotionAxis axis)
 void MotionControl::waitUntilIdle(MotionAxis axis)
 {
     axisPtrLookup_[axis]->waitUntilIdle();
+}
+
+bool MotionControl::checkIfIdle(MotionAxis axis)
+{
+    return !axisPtrLookup_[axis]->isBusy();
 }

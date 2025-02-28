@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "../constants.hpp"
+#include "../utils.hpp"
 
 namespace zmASCII = zaber::motion::ascii;
 
@@ -26,7 +27,7 @@ const std::unordered_map<unsigned int, MotionAxis>
 class MotionControl
 {
 public:
-    MotionControl(const std::string serialPort);
+    MotionControl();
     ~MotionControl();
     void moveAbsolute(
         MotionAxis axis,
@@ -41,9 +42,10 @@ public:
     void home(MotionAxis axis, bool wait = true);
     double getPosition(MotionAxis axis);
     void waitUntilIdle(MotionAxis axis);
+    bool checkIfIdle(MotionAxis axis);
 
 private:
-    std::string serialPort_;
+    std::string serialPortName_;
     zmASCII::Connection connection_;
     std::unordered_map<MotionAxis, std::unique_ptr<zmASCII::Axis>> axisPtrLookup_;
 };

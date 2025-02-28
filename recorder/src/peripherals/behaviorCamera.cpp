@@ -5,12 +5,14 @@ BehaviorCamera::BehaviorCamera(
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
-    std::string ioLine)
+    std::string ioLine,
+    std::atomic<bool> &cameraReadyFlag)
     : imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       xOffset_(xOffset),
       yOffset_(yOffset),
-      ioLine_(ioLine)
+      ioLine_(ioLine),
+      cameraReadyFlag_(cameraReadyFlag)
 {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
@@ -78,6 +80,8 @@ BehaviorCamera::BehaviorCamera(
     spdlog::info("LinkConfig set");
 
     formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
+
+    cameraReadyFlag_.store(true);
 }
 
 BehaviorCamera::~BehaviorCamera() {}
@@ -110,8 +114,7 @@ FrameData BehaviorCamera::waitForOneFrame()
     FrameData frameData;
     frameData.acquisitionTime = acquisitionTime;
     frameData.receivedTime = receivedTime;
-    frameData.imagePtr = new cv::Mat(
-        imageHeight_, imageWidth_, CV_8UC1, dataPtr);
+    frameData.image = cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr);
     return frameData;
 }
 

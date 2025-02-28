@@ -15,6 +15,7 @@
 
 #include "../dataTypes.hpp"
 #include "../utils.hpp"
+#include "../global.hpp"
 
 class BehaviorCamera
 {
@@ -24,7 +25,8 @@ public:
         unsigned int imageHeight,
         unsigned int xOffset,
         unsigned int yOffset,
-        std::string ioLine);
+        std::string ioLine,
+        std::atomic<bool> &cameraReadyFlag = behaviorCameraReady);
     ~BehaviorCamera();
     void start(size_t bufferCount = 20);
     void stop();
@@ -41,6 +43,7 @@ private:
     int yOffset_;
     std::string ioLine_;
     int currentFPS_;
+    std::atomic<bool> &cameraReadyFlag_;
 
     template <typename Module>
     bool setIntegerAndCheck(const std::string key, int value);

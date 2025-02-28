@@ -1,15 +1,29 @@
-#include "recordingController.hpp"
+#include "behaviorRecording.hpp"
 
 namespace
 {
-    BehaviorCamera *behaviorCamera = nullptr;
+    std::set<std::string> intializedBaseDirectories;
+
+    std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
+    {
+        std::filesystem::path behaviorSaveDir;
+        {
+            std::lock_guard<std::mutex> lock(isIOInitializing);
+            if (intializedBaseDirectories.find(baseDirectory) ==
+                intializedBaseDirectories.end())
+            {
+                behaviorSaveDir = prepareOutputFolder(
+                    std::filesystem::path(baseDirectory) / "behavior_images",
+                    true);
+                intializedBaseDirectories.insert(baseDirectory);
+            }
+        }
+        return behaviorSaveDir;
+    }
 }
 
 void behaviorImageAcquierer()
 {
-    std::signal(SIGINT, [](int)
-                { quitProgram(); });
-
     unsigned int imageWidth = roundToMultiplesOf64(
         BEHAVIOR_CAMERA_ROI_WIDTH);
     unsigned int imageHeight = roundToMultiplesOf64(
@@ -34,7 +48,9 @@ void behaviorImageAcquierer()
     size_t frameDataBufferIndex = 0;
     long int currentFrameId = 0;
 
-    while (!toQuit->load())
+    bool isFristFrameRecorded = true;
+
+    while (!toQuit.load())
     {
         // Acquire image data
         // // Benchmark here shows that the waitForOneFrame() function takes
@@ -49,14 +65,19 @@ void behaviorImageAcquierer()
         // Update latest frame for live display
         {
             std::lock_guard<std::mutex> lock(latestFrameMutex);
-            std::swap(latestFrameData, frameData);
+            latestFrameData = frameData;
         }
 
-        if (isRecording->load())
+        if (isRecording.load())
         {
-            // Assign frame ID only if recording. This way, for each recording
-            // session, the frame ID starts from 0 regardless of how many
-            // images the programs has received globally.
+            if (isFristFrameRecorded)
+            {
+                // Reset these to 0 in preparation for the next recording session
+                frameDataBufferIndex = 0;
+                currentFrameId = 0;
+                isFristFrameRecorded = false; // toggle off
+            }
+
             frameData.frameId = currentFrameId++;
 
             frameDataBuffer[frameDataBufferIndex++] = frameData;
@@ -108,8 +129,9 @@ void behaviorImageSaver()
     // compressionParams.push_back(444); // Disable chroma subsampling (4:4:4)
 
     int iterCount = 0;
+    std::filesystem::path behaviorSaveDir;
 
-    while (!toQuit->load())
+    while (!toQuit.load())
     {
         GroupOfThreeFrames frameGroup;
         int queueLength;
@@ -117,32 +139,40 @@ void behaviorImageSaver()
             std::unique_lock<std::mutex> lock(behaviorImageQueueMutex);
             behaviorImageQueueCondVar.wait(
                 lock, []
-                { return !behaviorImageQueue.empty(); });
+                { return !behaviorImageQueue.empty() || toQuit.load(); });
+
+            if (toQuit.load())
+            {
+                spdlog::info(
+                    "Behavior image saver thread is breaking out of loop.");
+                break;
+            }
+
             queueLength = behaviorImageQueue.size();
             frameGroup = behaviorImageQueue.front();
             behaviorImageQueue.pop();
         }
 
-        if (frameGroup.frame0.noMoreData)
-        {
-            spdlog::info("Behavior image saver received stopper; "
-                         "no more frame will come.");
-            break;
+        uint64_t startTime = getCurrentTimeMicroseconds();
+
+        bool couldBeFirstFrame =
+            frameGroup.frame0.frameId < 3 * NUM_BEHAVIOR_IMAGE_SAVING_THREADS;
+        if (couldBeFirstFrame) {
+            behaviorSaveDir = prepareBehaviorImageDir(saveDirectory);
         }
 
-        uint64_t startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
-            saveDirectory +
-            "/behavior_" +
+            "behavior_frame_" +
             fmt::format("{:09}", frameGroup.frame0.frameId);
 
         // Save three frames as a single pseudo-RGB image
-        std::string filename = filenameStem + ".jpg";
+        std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
         cv::Mat image = makePseudoRGBImageFromThreeFrames(frameGroup);
         cv::imwrite(filename, image, compressionParams);
 
         // Save metadata
-        std::string metadataFilename = filenameStem + ".txt";
+        std::string metadataFilename =
+            behaviorSaveDir / (filenameStem + ".csv");
         std::ofstream metadataFile(metadataFilename);
         metadataFile << makeMetadataStringFromThreeFrames(frameGroup);
         metadataFile.close();
@@ -163,42 +193,19 @@ void behaviorImageSaver()
     spdlog::info("Behavior image saver thread stopped");
 }
 
-void quitProgram()
-/**
- * Quit gracefully by explicitly stopping acquisition on the behavior
- * camera* and telling saver threads that the work is done.
- *
- * * Without stopping acquiisition explicitly, the frame grabber will
- * think the device is still busy the next time we run the program.
- */
+void stopBehaviorImageSaver()
 {
-    spdlog::info("SIGINT received by behavior camera acquisition thread. "
-                 "eGrabber closing acquisition");
-
-    // Stop behavior camera acquisition
-    if (behaviorCamera)
+    if (!toQuit.load())
     {
-        spdlog::info("Stopping acquisition on behavior camera");
-        behaviorCamera->stop();
+        spdlog::critical(
+            "stopBehaviorImageSaver() called but toQuit is "
+            "not set to true. This shouldn't happen.");
+        throw std::runtime_error(
+            "stopBehaviorImageSaver() called but toQuit is "
+            "not set to true. This shouldn't happen.");
     }
-
-    // Tell behavior camera saver threads to stop
-    spdlog::info("Telling behavior image saver threads to stop by adding "
-                 "{} stoppers to behavior image queue",
-                 NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
-    for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
+    else
     {
-        FrameData stopper;
-        stopper.noMoreData = true;
-        // The behavior image queue actually keeps track of buffer groups
-        // of three images, so we just fill the buffer with stoppers here
-        GroupOfThreeFrames stopperBlock = {stopper, stopper, stopper};
-        {
-            std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
-            behaviorImageQueue.push(stopperBlock);
-        }
-        behaviorImageQueueCondVar.notify_one();
+        behaviorImageQueueCondVar.notify_all();
     }
-
-    std::exit(0);
 }

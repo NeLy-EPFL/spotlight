@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "../src/arduinoMessageInterface.hpp"
+#include "../src/arduinoMessageProtocol.hpp"
 
-TEST(ArduinoMessageInterfaceTest, InitFromValues)
+TEST(arduinoMessageProtocolTest, InitFromValues)
 {
     ArduinoMessage message = ArduinoMessage(START_PULSING, 10, 2000);
     EXPECT_EQ(message.messageType, START_PULSING);
@@ -11,7 +11,7 @@ TEST(ArduinoMessageInterfaceTest, InitFromValues)
     EXPECT_EQ(message.isSyntaxValid, true);
 }
 
-TEST(ArduinoMessageInterfaceTest, InitFromCommandString)
+TEST(arduinoMessageProtocolTest, InitFromCommandString)
 {
     ArduinoMessage message = ArduinoMessage("STOP_PULSING -1 -1");
     EXPECT_EQ(message.messageType, STOP_PULSING);
@@ -20,13 +20,13 @@ TEST(ArduinoMessageInterfaceTest, InitFromCommandString)
     EXPECT_EQ(message.isSyntaxValid, true);
 }
 
-TEST(ArduinoMessageInterfaceTest, ToCommandString)
+TEST(arduinoMessageProtocolTest, ToCommandString)
 {
     ArduinoMessage message = ArduinoMessage(START_PULSING_ACK);
     EXPECT_EQ(message.toCommString(), "START_PULSING_ACK -1 -1");
 }
 
-TEST(ArduinoMessageInterfaceTest, StopPulsingAck)
+TEST(arduinoMessageProtocolTest, StopPulsingAck)
 {
     ArduinoMessage message = ArduinoMessage("STOP_PULSING_ACK -1 -1");
     EXPECT_EQ(message.messageType, STOP_PULSING_ACK);
