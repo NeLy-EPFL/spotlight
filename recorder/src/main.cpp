@@ -25,6 +25,8 @@ std::mutex muscleImageQueueMutex;
 std::condition_variable muscleImageQueueCondVar;
 
 std::atomic<bool> motionControlHandlerReady = false;
+MotionStagePosition latestMotionStagePosition;
+std::mutex latestMotionStagePositionMutex;
 
 FrameData latestFrameData = {0, 0, 0, nullptr};
 std::mutex latestFrameMutex;
@@ -37,6 +39,8 @@ std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
 
 QApplication *application = nullptr;
 MainGUIWindow *mainGUIWindow = nullptr;
+
+std::mutex isIOInitializing;
 
 // Program control functions implementation
 void initializeProgram()
@@ -109,6 +113,9 @@ int main(int argc, char **argv)
     // Start motion control IO thread
     std::thread motionControlIOThread(motionControlRequestHandler);
 
+    // Start motion stage position logger thread
+    std::thread motionStagePositionLoggerThread(motionStagePositionLogger);
+
     // Start behavior image acquirer
     std::thread behaviorImageAcquiererThread(behaviorImageAcquierer);
 
@@ -147,6 +154,11 @@ int main(int argc, char **argv)
     if (motionControlIOThread.joinable())
     {
         motionControlIOThread.join();
+    }
+
+    if (motionStagePositionLoggerThread.joinable())
+    {
+        motionStagePositionLoggerThread.join();
     }
 
     return result;
