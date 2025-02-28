@@ -2,9 +2,6 @@
 
 void behaviorImageAcquierer()
 {
-    // std::signal(SIGINT, [](int)
-    //             { quitProgram(); });
-
     unsigned int imageWidth = roundToMultiplesOf64(
         BEHAVIOR_CAMERA_ROI_WIDTH);
     unsigned int imageHeight = roundToMultiplesOf64(
@@ -29,6 +26,8 @@ void behaviorImageAcquierer()
     size_t frameDataBufferIndex = 0;
     long int currentFrameId = 0;
 
+    bool isFristFrameRecorded = true;
+
     while (!toQuit.load())
     {
         // Acquire image data
@@ -44,14 +43,19 @@ void behaviorImageAcquierer()
         // Update latest frame for live display
         {
             std::lock_guard<std::mutex> lock(latestFrameMutex);
-            std::swap(latestFrameData, frameData);
+            latestFrameData = frameData;
         }
 
         if (isRecording.load())
         {
-            // Assign frame ID only if recording. This way, for each recording
-            // session, the frame ID starts from 0 regardless of how many
-            // images the programs has received globally.
+            if (isFristFrameRecorded)
+            {
+                // Reset these to 0 in preparation for the next recording session
+                frameDataBufferIndex = 0;
+                currentFrameId = 0;
+                isFristFrameRecorded = false;
+            }
+
             frameData.frameId = currentFrameId++;
 
             frameDataBuffer[frameDataBufferIndex++] = frameData;
@@ -93,7 +97,7 @@ void behaviorImageSaver()
     {
         std::lock_guard<std::mutex> lock(isIOInitializing);
         behaviorSaveDir = prepareOutputFolder(
-        std::filesystem::path(saveDirectory) / "behavior_images", true);
+            std::filesystem::path(saveDirectory) / "behavior_images", true);
     }
 
     // Define OpenCV JPEG saving parameters

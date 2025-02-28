@@ -176,6 +176,7 @@ void motionStagePositionLogger()
                     saveDirectory);
                 logFile = initializeMotionStageLogFile();
                 initializedSaveDirectories.insert(saveDirectory);
+                spdlog::info("Stage position logging starts now!");
             }
 
             logFile << startTime << ","
