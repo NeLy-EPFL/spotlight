@@ -66,7 +66,11 @@ void MotionControlWidget::paintEvent(QPaintEvent *event)
     painter.drawRect(rect().adjusted(0, 0, -1, -1));
 
     // Calculate where to draw the red dot representing the stage position
-    MotionStagePosition currStagePosition = getCurrentMotionStagePosition();
+    MotionStagePosition currStagePosition;
+    {
+        std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
+        currStagePosition = latestMotionStagePosition;
+    }
     float physicalX = currStagePosition.xPosMm;
     float physicalY = currStagePosition.yPosMm;
     int pixelX = mapToPixelX(physicalX);

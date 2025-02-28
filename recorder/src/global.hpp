@@ -22,6 +22,8 @@ extern std::condition_variable muscleImageQueueCondVar;
 
 // Motion control
 extern std::atomic<bool> motionControlHandlerReady;
+extern MotionStagePosition latestMotionStagePosition;
+extern std::mutex latestMotionStagePositionMutex;
 
 // Saving to disk
 // Note: For simplicity, `saveDirectory` is not thread-safe. Realistically,
@@ -43,3 +45,6 @@ extern ArduinoTriggerControllerInterface *triggerController;
 // Program lifetime and state
 extern std::atomic<bool> toQuit;
 extern std::atomic<bool> isRecording;
+
+// IO
+extern std::mutex isIOInitializing;

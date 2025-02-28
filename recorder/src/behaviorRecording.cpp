@@ -88,6 +88,14 @@ void behaviorImageSaver()
     ss << myThreadId;
     std::string threadIdString = ss.str();
 
+    // Prepare output folder
+    std::filesystem::path behaviorSaveDir;
+    {
+        std::lock_guard<std::mutex> lock(isIOInitializing);
+        behaviorSaveDir = prepareOutputFolder(
+        std::filesystem::path(saveDirectory) / "behavior_images", true);
+    }
+
     // Define OpenCV JPEG saving parameters
     std::vector<int> compressionParams;
     compressionParams.push_back(cv::IMWRITE_JPEG_QUALITY);
@@ -128,17 +136,17 @@ void behaviorImageSaver()
 
         uint64_t startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
-            saveDirectory +
-            "/behavior_" +
+            "behavior_frame_" +
             fmt::format("{:09}", frameGroup.frame0.frameId);
 
         // Save three frames as a single pseudo-RGB image
-        std::string filename = filenameStem + ".jpg";
+        std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
         cv::Mat image = makePseudoRGBImageFromThreeFrames(frameGroup);
         cv::imwrite(filename, image, compressionParams);
 
         // Save metadata
-        std::string metadataFilename = filenameStem + ".txt";
+        std::string metadataFilename =
+            behaviorSaveDir / (filenameStem + ".csv");
         std::ofstream metadataFile(metadataFilename);
         metadataFile << makeMetadataStringFromThreeFrames(frameGroup);
         metadataFile.close();

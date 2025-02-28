@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <fstream>
+#include <filesystem>
 
 #include <spdlog/spdlog.h>
 

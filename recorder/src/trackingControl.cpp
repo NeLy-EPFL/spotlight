@@ -9,6 +9,33 @@ namespace
     std::condition_variable responseCondVar;
     std::queue<MotionStageRequest> requestQueue;
     std::map<int, MotionStageResponse> responseMap;
+
+    std::ofstream initializeMotionStageLogFile()
+    {
+        std::filesystem::path motionStageLogDir;
+        {
+            std::lock_guard<std::mutex> lock(isIOInitializing);
+            motionStageLogDir = prepareOutputFolder(
+                fs::path(saveDirectory) / "stage_position", true);
+            spdlog::info("Motion stage log directory: {}",
+                         motionStageLogDir.string());
+        }
+        std::filesystem::path filename =
+            motionStageLogDir / "stage_position.csv";
+        std::ofstream logFile((filename).string(), std::ios_base::app);
+        if (!logFile.is_open())
+        {
+            spdlog::error("Failed to open motion stage log file: {}",
+                          filename.string());
+        }
+        else
+        {
+            spdlog::info("Opened motion stage log file: {}",
+                         filename.string());
+        }
+        logFile << "timestamp_us,x_pos_mm,y_pos_mm\n";
+        return logFile;
+    }
 }
 
 void motionControlRequestHandler()
@@ -116,6 +143,75 @@ void motionControlRequestHandler()
         responseCondVar.notify_all();
     }
     spdlog::info("Motion stage request handler thread stopped.");
+}
+
+void motionStagePositionLogger()
+{
+    int loggingIntervalMicrosecs = 1e6 / MOTION_STAGE_LOGGING_FREQUENCY_HZ;
+    std::set<std::string> initializedSaveDirectories; // root save directories
+    std::ofstream logFile;
+
+    while (!toQuit.load())
+    {
+        // Get current position
+        uint64_t startTime = getCurrentTimeMicroseconds();
+        MotionStagePosition currentPosition = getCurrentMotionStagePosition();
+        uint64_t endTime = getCurrentTimeMicroseconds();
+
+        // Update latest position for other threads
+        {
+            std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
+            latestMotionStagePosition = currentPosition;
+        }
+
+        // Log position
+        if (isRecording.load())
+        {
+            if (initializedSaveDirectories.find(saveDirectory) ==
+                initializedSaveDirectories.end())
+            {
+                spdlog::info(
+                    "Stage position log directory not initialized under {}. "
+                    "Creating a folder now.",
+                    saveDirectory);
+                logFile = initializeMotionStageLogFile();
+                initializedSaveDirectories.insert(saveDirectory);
+            }
+
+            logFile << startTime << ","
+                    << currentPosition.xPosMm << ","
+                    << currentPosition.yPosMm << "\n";
+            logFile.flush();
+        }
+        else
+        {
+            if (logFile.is_open())
+            {
+                logFile.close();
+            }
+        }
+
+        // Wait for the next logging interval
+        uint64_t elapsedTime = endTime - startTime;
+        long int timeToSleepMicrosecs = loggingIntervalMicrosecs - elapsedTime;
+        if (timeToSleepMicrosecs > 0)
+        {
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(timeToSleepMicrosecs));
+        }
+        else
+        {
+            spdlog::warn(
+                "Motion stage position logging thread is running behind. "
+                "I'm updating stage position at {} Hz, so I have only {} us) "
+                "to complete each update. It took {} us this cycle. If this "
+                "only happens sporadically, it's harmless.",
+                MOTION_STAGE_LOGGING_FREQUENCY_HZ,
+                loggingIntervalMicrosecs,
+                elapsedTime);
+        }
+    }
+    spdlog::info("Motion stage position logging thread stopped.");
 }
 
 MotionStagePosition getCurrentMotionStagePosition()

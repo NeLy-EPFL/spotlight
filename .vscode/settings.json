@@ -97,6 +97,7 @@
         "qapplication": "cpp",
         "qvboxlayout": "cpp",
         "queue": "cpp",
-        "qmessagebox": "cpp"
+        "qmessagebox": "cpp",
+        "filesystem": "cpp"
     }
 }

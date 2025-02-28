@@ -9,6 +9,8 @@
 #include <future>
 #include <thread>
 #include <limits>
+#include <filesystem>
+#include <set>
 
 #include <spdlog/spdlog.h>
 
@@ -19,8 +21,11 @@
 #include "utils.hpp"
 #include "behaviorRecording.hpp"
 
-// Request handler class
+// Hardware controller thread
 void motionControlRequestHandler();
+
+// Position logging thread
+void motionStagePositionLogger();
 
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
@@ -34,6 +39,7 @@ bool checkIfMotionStageIdle();
 void startHomingMotionStage();
 void stopMotionControlRequestHandler();
 
+// High-level helper functions
 void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs);
 
 #endif // TRACKING_CONTROL_HPP
