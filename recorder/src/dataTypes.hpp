@@ -69,4 +69,10 @@ struct MotionStageResponse
     bool setSuccess = false;
 };
 
+enum CalibrationScanDirection
+{
+    ROW_BY_ROW,
+    COLUMN_BY_COLUMN
+};
+
 #endif // DATA_TYPES_HPP
