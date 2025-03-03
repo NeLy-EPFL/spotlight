@@ -404,8 +404,25 @@ void stopMotionControlRequestHandler()
     }
 }
 
-void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs)
+void runCalibrationScanProcedureOneDirection(
+    int currentlySetExposureTimeMicrosecs,
+    CalibrationScanDirection scanDirection)
 {
+    bool isByRow = scanDirection == ROW_BY_ROW;
+    // Start recording
+    spdlog::info("Starting recording for calibration scan.");
+    std::string directionStr = isByRow ? "row_by_row" : "column_by_column";
+    fs::path scanSaveDirectory = prepareOutputFolder(
+        fs::path(SPOTLIGHT_ARUCO_SCAN_DIR) / directionStr,
+        true); // mkdir -p
+    saveDirectory = scanSaveDirectory.string();
+    spdlog::debug("Setting saveDirectory to {}", saveDirectory);
+    // Wait for the reset directory to take effect
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    triggerController->startRecording(
+        CALIBRATION_SCAN_FPS, CALIBRATION_SCAN_EXPOSURE_TIME_MICROSECS);
+    spdlog::info("Recording started for calibration scan.");
+
     // Go to the corner of the stage
     spdlog::info("Moving to the corner of the stage.");
     MotionStagePosition cornerPosition = {MOTION_STAGE_X_MIN_PHYSICAL_MM,
@@ -416,38 +433,78 @@ void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs)
     waitUntilMotionStageIdleAsync();
     spdlog::info("Moved to the corner of the stage.");
 
-    // Start recording
-    spdlog::info("Starting recording for calibration scan.");
-    fs::path scanSaveDirectory = prepareOutputFolder(SPOTLIGHT_ARUCO_SCAN_DIR,
-                                                     true); // mkdir -p
-    saveDirectory = scanSaveDirectory.string();
-    triggerController->startRecording(
-        CALIBRATION_SCAN_FPS, CALIBRATION_SCAN_EXPOSURE_TIME_MICROSECS);
-    spdlog::info("Recording started for calibration scan.");
-
     // Scan row by row
-    bool isXAtMin = true;
-    for (float yPos = MOTION_STAGE_Y_MIN_PHYSICAL_MM;
-         yPos < MOTION_STAGE_Y_MAX_PHYSICAL_MM;
-         yPos += CALIBRATION_SCAN_STRIDE_MM)
+    bool isSecondaryAxisAtMin = true;
+    float primaryAxisMin, primaryAxisMax, secondaryAxisMin, secondaryAxisMax;
+    if (isByRow) {
+        primaryAxisMin = MOTION_STAGE_Y_MIN_PHYSICAL_MM;
+        primaryAxisMax = MOTION_STAGE_Y_MAX_PHYSICAL_MM;
+        secondaryAxisMin = MOTION_STAGE_X_MIN_PHYSICAL_MM;
+        secondaryAxisMax = MOTION_STAGE_X_MAX_PHYSICAL_MM;
+    } else {
+        primaryAxisMin = MOTION_STAGE_X_MIN_PHYSICAL_MM;
+        primaryAxisMax = MOTION_STAGE_X_MAX_PHYSICAL_MM;
+        secondaryAxisMin = MOTION_STAGE_Y_MIN_PHYSICAL_MM;
+        secondaryAxisMax = MOTION_STAGE_Y_MAX_PHYSICAL_MM;
+    }
+    spdlog::debug("primaryAxisMin: {}, primaryAxisMax: {}, "
+                  "secondaryAxisMin: {}, secondaryAxisMax: {}",
+                  primaryAxisMin, primaryAxisMax,
+                  secondaryAxisMin, secondaryAxisMax);
+
+    for (float primaryPos = primaryAxisMin;
+         primaryPos < primaryAxisMax;
+         primaryPos += CALIBRATION_SCAN_STRIDE_MM)
     {
+        float secondaryPos;
+        MotionStagePosition targetPosition;
+
         // Move to the next row
-        float xPos = isXAtMin ? MOTION_STAGE_X_MIN_PHYSICAL_MM
-                              : MOTION_STAGE_X_MAX_PHYSICAL_MM;
-        setTargetMotionStagePosition({xPos, yPos, ABSOLUTE},
+        spdlog::debug("primaryPos: {}, "
+                      "secondaryAxisMin: {}, secondaryAxisMax: {}",
+                      primaryPos, secondaryAxisMin, secondaryAxisMax);
+        if (isSecondaryAxisAtMin) {
+            secondaryPos = secondaryAxisMin;
+        } else {
+            secondaryPos = secondaryAxisMax;
+        }
+        if (isByRow) {
+            targetPosition = {secondaryPos, primaryPos, ABSOLUTE};
+        } else {
+            targetPosition = {primaryPos, secondaryPos, ABSOLUTE};
+        }
+        spdlog::debug("secondaryPos: {}", secondaryPos);
+        setTargetMotionStagePosition(targetPosition,
                                      CALIBRATION_SCAN_STAGE_SPEED);
         waitUntilMotionStageIdleAsync();
 
         // Scan the row
-        xPos = isXAtMin ? MOTION_STAGE_X_MAX_PHYSICAL_MM
-                        : MOTION_STAGE_X_MIN_PHYSICAL_MM;
-        setTargetMotionStagePosition({xPos, yPos, ABSOLUTE},
+        if (isSecondaryAxisAtMin) {
+            secondaryPos = secondaryAxisMax;
+        } else {
+            secondaryPos = secondaryAxisMin;
+        }
+        if (isByRow) {
+            targetPosition = {secondaryPos, primaryPos, ABSOLUTE};
+        } else {
+            targetPosition = {primaryPos, secondaryPos, ABSOLUTE};
+        }
+        setTargetMotionStagePosition(targetPosition,
                                      CALIBRATION_SCAN_STAGE_SPEED);
         waitUntilMotionStageIdleAsync();
 
-        isXAtMin = !isXAtMin;
+        isSecondaryAxisAtMin = !isSecondaryAxisAtMin;
     }
 
     // Stop recording (reset exposure time to the way it was)
     triggerController->stopRecording(currentlySetExposureTimeMicrosecs);
+    spdlog::info("Recording stopped for calibration scan.");
+}
+
+void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs)
+{
+    // runCalibrationScanProcedureOneDirection(
+    //     currentlySetExposureTimeMicrosecs, ROW_BY_ROW);
+    runCalibrationScanProcedureOneDirection(
+        currentlySetExposureTimeMicrosecs, COLUMN_BY_COLUMN);
 }

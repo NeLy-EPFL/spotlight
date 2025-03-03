@@ -28,6 +28,7 @@ void ArduinoTriggerControllerInterface::sendCommand(
     if (serialPort_.isOpen())
     {
         serialPort_.write(QString::fromStdString(command).toUtf8() + '\n');
+        serialPort_.flush();
         spdlog::info("Message sent to Arduino: '{}'", command);
     }
     else

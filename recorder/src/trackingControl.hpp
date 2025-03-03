@@ -40,6 +40,9 @@ void startHomingMotionStage();
 void stopMotionControlRequestHandler();
 
 // High-level helper functions
+void runCalibrationScanProcedureOneDirection(
+    int currentlySetExposureTimeMicrosecs,
+    CalibrationScanDirection scanDirection);
 void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs);
 
 #endif // TRACKING_CONTROL_HPP

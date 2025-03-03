@@ -51,6 +51,7 @@ void loop() {
                 waitingForCommand = false; // carry on
                 ArduinoMessage response(START_PULSING_ACK);
                 Serial.println(response.toCommString().c_str());
+                Serial.flush();
                 return;
             }
             else if (message.messageType == STOP_PULSING) {
@@ -61,6 +62,7 @@ void loop() {
                 waitingForCommand = true; // keep checking until told to restart
                 ArduinoMessage response(STOP_PULSING_ACK);
                 Serial.println(response.toCommString().c_str());
+                Serial.flush();
                 return;
             }
         }

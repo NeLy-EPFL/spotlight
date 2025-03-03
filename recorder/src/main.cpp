@@ -104,6 +104,10 @@ int main(int argc, char **argv)
     std::signal(SIGINT, [](int)
                 { quitProgram(); });
 
+    // Set spdlog level to DEBUG
+    spdlog::set_level(spdlog::level::debug);
+    spdlog::debug("Debug level logging enabled");
+
     // Initialize program
     initializeProgram();
 
