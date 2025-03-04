@@ -22,6 +22,7 @@ file(GLOB SOURCES
     "*.cpp"
     "*.hpp"
 )
+# message(STATUS "SOURCES: ${SOURCES}")
 
 add_executable(SpotlightController ${SOURCES})
 target_link_libraries(SpotlightController pthread rt dl)

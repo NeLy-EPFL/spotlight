@@ -100,7 +100,11 @@ void MotionControlWidget::mousePressEvent(QMouseEvent *event)
     {
         float stageX = mapToStageX(event->position().x());
         float stageY = mapToStageY(event->position().y());
-        setTargetMotionStagePosition({stageX, stageY, ABSOLUTE});
+        spdlog::debug("Clicked at ({}, {})", stageX, stageY);
+        // setTargetMotionStagePosition({stageX, stageY, ABSOLUTE});
+        overrideXPosAbsolute.store(stageX);
+        overrideYPosAbsolute.store(stageY);
+        shouldOverrideTracking.store(true);
     }
 }
 
@@ -320,6 +324,52 @@ void MainGUIWindow::browseDirectory()
     }
 }
 
+cv::Mat addCornerMarker(cv::Mat image, MotionStagePosition stagePosition)
+{
+    cv::Mat imageForDisplay = image.clone();
+    assert(imageForDisplay.size() == image.size());
+
+    std::vector<std::tuple<double, double>> cornerPositions = {
+        {0, 0}, {48, 0}, {48, 72}, {0, 72}};
+    std::vector<cv::Point> pixelPoints;
+    for (auto [x, y] : cornerPositions)
+    {
+        int pixelRow, pixelCol;
+        std::tie(pixelRow, pixelCol) = stagePosAndPhysicalPosToPixelPos(
+            stagePosition.xPosMm, stagePosition.yPosMm, x, y);
+        pixelPoints.emplace_back(pixelRow, pixelCol);
+        cv::circle(imageForDisplay,
+                   cv::Point(pixelCol, pixelRow),
+                   5,
+                   cv::Scalar(255, 255, 255),
+                   -1);
+
+        // if (0 <= pixelCol && pixelCol < imageForDisplay.cols &&
+        //     0 <= pixelRow && pixelRow < imageForDisplay.rows)
+        // {
+        //     spdlog::info(
+        //         "Corner marker drawn: "
+        //         "(stagePos=({:.2f}, {:.2f}), physicalPos=({:.2f}, {:.2f})) "
+        //         "-> pixelPos(r{}, c{})",
+        //         stagePosition.xPosMm,
+        //         stagePosition.yPosMm,
+        //         x,
+        //         y,
+        //         pixelRow,
+        //         pixelCol);
+        // }
+    }
+    for (size_t i = 0; i < pixelPoints.size(); ++i)
+    {
+        cv::line(imageForDisplay,
+                 pixelPoints[i],
+                 pixelPoints[(i + 1) % pixelPoints.size()],
+                 cv::Scalar(255, 0, 0), 2);
+    }
+
+    return imageForDisplay;
+}
+
 void MainGUIWindow::updateImageDisplay()
 {
     cv::Mat latestFrame = getLatestFrame();
@@ -328,7 +378,20 @@ void MainGUIWindow::updateImageDisplay()
         return;
     }
     cv::Mat correctedFrame = correctImageRotationAndFlip(latestFrame);
-    QImage qImage = cvMatToQImage(correctedFrame);
+
+    MotionStagePosition myStagePosition;
+    {
+        std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
+        myStagePosition = latestMotionStagePosition;
+    }
+
+    cv::Mat maskedImage = blackoutOutside(correctedFrame,
+                                          myStagePosition);
+
+    cv::Mat imageForDisplay = addCornerMarker(maskedImage,
+                                              myStagePosition);
+
+    QImage qImage = cvMatToQImage(imageForDisplay);
     QPixmap pixmap = QPixmap::fromImage(qImage)
                          .scaled(behaviorImageDisplayLabel_->size(),
                                  Qt::KeepAspectRatio,

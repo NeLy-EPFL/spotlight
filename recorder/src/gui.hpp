@@ -5,6 +5,7 @@
 #include <atomic>
 #include <queue>
 #include <mutex>
+#include <tuple>
 
 #include <QWidget>
 #include <QPushButton>
@@ -26,6 +27,7 @@
 #include "global.hpp"
 #include "behaviorRecording.hpp"
 #include "trackingControl.hpp"
+#include "calibration.hpp"
 #include "peripherals/triggering.hpp"
 
 // Forward declaration from main.hpp
@@ -84,5 +86,8 @@ private:
 protected:
     void closeEvent(QCloseEvent *event) override;
 };
+
+// Helpers
+cv::Mat addCornerMarker(cv::Mat image, MotionStagePosition stagePosition);
 
 #endif // GUI_HPP
