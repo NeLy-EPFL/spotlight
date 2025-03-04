@@ -20,9 +20,14 @@
 #include "constants.hpp"
 #include "utils.hpp"
 #include "behaviorRecording.hpp"
+#include "calibration.hpp"
 
 // Hardware controller thread
 void motionControlRequestHandler();
+
+// Tracking thread
+void trackingController();
+cv::Mat blackoutOutside(cv::Mat image, MotionStagePosition stagePos);
 
 // Position logging thread
 void motionStagePositionLogger();
@@ -44,5 +49,7 @@ void runCalibrationScanProcedureOneDirection(
     int currentlySetExposureTimeMicrosecs,
     CalibrationScanDirection scanDirection);
 void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs);
+std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
+    cv::Mat behaviorImage, MotionStagePosition stagePosition);
 
 #endif // TRACKING_CONTROL_HPP

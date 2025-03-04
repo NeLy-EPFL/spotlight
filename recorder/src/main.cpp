@@ -27,6 +27,10 @@ std::condition_variable muscleImageQueueCondVar;
 std::atomic<bool> motionControlHandlerReady = false;
 MotionStagePosition latestMotionStagePosition;
 std::mutex latestMotionStagePositionMutex;
+std::atomic<bool> isCalibrating = false;
+std::atomic<bool> shouldOverrideTracking = false;
+std::atomic<double> overrideXPosAbsolute;
+std::atomic<double> overrideYPosAbsolute;
 
 FrameData latestFrameData = {0, 0, 0, cv::Mat()};
 std::mutex latestFrameMutex;
@@ -120,6 +124,9 @@ int main(int argc, char **argv)
     // Start motion stage position logger thread
     std::thread motionStagePositionLoggerThread(motionStagePositionLogger);
 
+    // Start tracking controller
+    std::thread trackingControllerThread(trackingController);
+
     // Start behavior image acquirer
     std::thread behaviorImageAcquiererThread(behaviorImageAcquierer);
 
@@ -163,6 +170,11 @@ int main(int argc, char **argv)
     if (motionStagePositionLoggerThread.joinable())
     {
         motionStagePositionLoggerThread.join();
+    }
+
+    if (trackingControllerThread.joinable())
+    {
+        trackingControllerThread.join();
     }
 
     return result;

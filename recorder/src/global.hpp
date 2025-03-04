@@ -24,6 +24,10 @@ extern std::condition_variable muscleImageQueueCondVar;
 extern std::atomic<bool> motionControlHandlerReady;
 extern MotionStagePosition latestMotionStagePosition;
 extern std::mutex latestMotionStagePositionMutex;
+extern std::atomic<bool> isCalibrating;
+extern std::atomic<bool> shouldOverrideTracking;
+extern std::atomic<double> overrideXPosAbsolute;
+extern std::atomic<double> overrideYPosAbsolute;
 
 // Saving to disk
 // Note: For simplicity, `saveDirectory` is not thread-safe. Realistically,
