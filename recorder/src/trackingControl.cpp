@@ -190,16 +190,16 @@ void trackingController()
                     myMotionStagePosition.yPosMm + dy,
                     ABSOLUTE};
 
-                spdlog::debug(
-                    "Fly found at physical ({:.2}, {:.2}). "
-                    "Current center of view is at physical ({:.2}, {:.2}). "
-                    "dx={:.2}, dy={:.2}. ",
-                    physicalPosX,
-                    physicalPosY,
-                    currentPhysicalPosX,
-                    currentPhysicalPosY,
-                    dx,
-                    dy);
+                // spdlog::debug(
+                //     "Fly found at physical ({:.2}, {:.2}). "
+                //     "Current center of view is at physical ({:.2}, {:.2}). "
+                //     "dx={:.2}, dy={:.2}. ",
+                //     physicalPosX,
+                //     physicalPosY,
+                //     currentPhysicalPosX,
+                //     currentPhysicalPosY,
+                //     dx,
+                //     dy);
                 setTargetMotionStagePosition(targetMotionStagePosition);
             }
         }
