@@ -2,24 +2,24 @@
 
 namespace
 {
-    std::set<std::string> intializedBaseDirectories;
+    // std::set<std::string> intializedBaseDirectories;
 
-    std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
-    {
-        std::filesystem::path behaviorSaveDir;
-        {
-            std::lock_guard<std::mutex> lock(isIOInitializing);
-            if (intializedBaseDirectories.find(baseDirectory) ==
-                intializedBaseDirectories.end())
-            {
-                behaviorSaveDir = prepareOutputFolder(
-                    std::filesystem::path(baseDirectory) / "behavior_images",
-                    true);
-                intializedBaseDirectories.insert(baseDirectory);
-            }
-        }
-        return behaviorSaveDir;
-    }
+    // std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
+    // {
+    //     std::filesystem::path behaviorSaveDir;
+    //     {
+    //         std::lock_guard<std::mutex> lock(isIOInitializing);
+    //         if (intializedBaseDirectories.find(baseDirectory) ==
+    //             intializedBaseDirectories.end())
+    //         {
+    //             behaviorSaveDir = prepareOutputFolder(
+    //                 std::filesystem::path(baseDirectory) / "behavior_images",
+    //                 true);
+    //             intializedBaseDirectories.insert(baseDirectory);
+    //         }
+    //     }
+    //     return behaviorSaveDir;
+    // }
 }
 
 void behaviorImageAcquierer()
@@ -129,7 +129,6 @@ void behaviorImageSaver()
     // compressionParams.push_back(444); // Disable chroma subsampling (4:4:4)
 
     int iterCount = 0;
-    std::filesystem::path behaviorSaveDir;
 
     while (!toQuit.load())
     {
@@ -155,15 +154,17 @@ void behaviorImageSaver()
 
         uint64_t startTime = getCurrentTimeMicroseconds();
 
-        bool couldBeFirstFrame =
-            frameGroup.frame0.frameId < 3 * NUM_BEHAVIOR_IMAGE_SAVING_THREADS;
-        if (couldBeFirstFrame) {
-            behaviorSaveDir = prepareBehaviorImageDir(saveDirectory);
-        }
+        // bool couldBeFirstFrame =
+        //     frameGroup.frame0.frameId < 3 * NUM_BEHAVIOR_IMAGE_SAVING_THREADS;
+        // if (couldBeFirstFrame) {
+        //     behaviorSaveDir = prepareBehaviorImageDir(saveDirectory);
+        // }
 
         std::string filenameStem =
             "behavior_frame_" +
             fmt::format("{:09}", frameGroup.frame0.frameId);
+        std::filesystem::path behaviorSaveDir =
+            std::filesystem::path(saveDirectory) / "behavior_images";
 
         // Save three frames as a single pseudo-RGB image
         std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
