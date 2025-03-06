@@ -23,6 +23,18 @@ namespace
                       mat.step,
                       QImage::Format_Grayscale8);
     }
+
+    std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
+    {
+        std::filesystem::path behaviorSaveDir;
+        {
+            std::lock_guard<std::mutex> lock(isIOInitializing);
+            behaviorSaveDir = prepareOutputFolder(
+                std::filesystem::path(baseDirectory) / "behavior_images",
+                true);
+        }
+        return behaviorSaveDir;
+    }
 }
 
 MotionControlWidget::MotionControlWidget(QWidget *parent)
@@ -162,7 +174,8 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
             &QLineEdit::textChanged,
             this,
             [this](const QString &text)
-            { saveDirectory = text.toStdString(); });
+            { spdlog::debug("saveDirectory changed to {}", text.toStdString());
+                saveDirectory = text.toStdString(); });
     QPushButton *browseButton = new QPushButton("Browse", this);
 
     QHBoxLayout *directoryLayout = new QHBoxLayout();
@@ -240,6 +253,8 @@ void MainGUIWindow::startRecording()
             "error persists, something has gone wrong. Check logs for info.");
         return;
     }
+
+    prepareBehaviorImageDir(saveDirectory);
 
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);

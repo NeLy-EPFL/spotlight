@@ -23,11 +23,18 @@ unsigned long lastBehaviorExposureStartTimeMicrosecs = 0;
 bool behaviorTriggerState = LOW;
 bool waitingForCommand = false;
 
+// unsigned long optoSequenceStartTime = 0;
+// bool isRunningOptoSequence = false;
+// const int optoToggleOnTime = 5 * 1000000;
+// const int optoToggleOffTime = 10 * 1000000;
+// const int allDoneToggleTime = 35 * 1000000;
+
 unsigned long optoSequenceStartTime = 0;
 bool isRunningOptoSequence = false;
-const int optoToggleOnTime = 5 * 1000000;
-const int optoToggleOffTime = 10 * 1000000;
-const int allDoneToggleTime = 15 * 1000000;
+const int optoInitialOffDuration = 5 * 1000000;
+const int optoOnDuration = 5 * 1000000;
+const int optoOffDuration = 25 * 1000000;
+const int optoRepeatTimes = 10;
 
 enum Color {
     RED,
@@ -152,22 +159,86 @@ void loop() {
         }
     }
     
-    if (isRunningOptoSequence &&
-             currentTimeMicrosecs - optoSequenceStartTime >= allDoneToggleTime)
-    {
-        isRunningOptoSequence = false;
-        behaviorCycleTimeMicrosecs = INT_MAX;
-        setLEDColor(OFF);
-    }
-    else if (isRunningOptoSequence &&
-             currentTimeMicrosecs - optoSequenceStartTime >= optoToggleOffTime)
-    {
-        digitalWrite(optoTriggerPin, LOW);
-    }
-    else if (isRunningOptoSequence &&
-        currentTimeMicrosecs - optoSequenceStartTime >= optoToggleOnTime)
-    {
-        digitalWrite(optoTriggerPin, HIGH);
+    // if (isRunningOptoSequence &&
+    //          currentTimeMicrosecs - optoSequenceStartTime >= allDoneToggleTime)
+    // {
+    //     isRunningOptoSequence = false;
+    //     behaviorCycleTimeMicrosecs = INT_MAX;
+    //     setLEDColor(OFF);
+    // }
+    // else if (isRunningOptoSequence &&
+    //          currentTimeMicrosecs - optoSequenceStartTime >= optoToggleOffTime)
+    // {
+    //     digitalWrite(optoTriggerPin, LOW);
+    // }
+    // else if (isRunningOptoSequence &&
+    //     currentTimeMicrosecs - optoSequenceStartTime >= optoToggleOnTime)
+    // {
+    //     digitalWrite(optoTriggerPin, HIGH);
+    // }
+
+    if (isRunningOptoSequence) {
+        if (currentTimeMicrosecs - optoSequenceStartTime < optoInitialOffDuration) {
+            digitalWrite(optoTriggerPin, LOW);
+        }
+        else {
+            for (int i = optoRepeatTimes; i >= 0; --i) {
+                unsigned long startTimeThisCycle =
+                    optoSequenceStartTime +
+                    optoInitialOffDuration +
+                    i * (optoOnDuration + optoOffDuration);
+
+                if (currentTimeMicrosecs < startTimeThisCycle) {
+                    continue;
+                }
+
+                if (i == optoRepeatTimes) {
+                    isRunningOptoSequence = false;
+                    behaviorCycleTimeMicrosecs = INT_MAX;
+                    setLEDColor(OFF);
+                    break;
+                }
+
+                if (currentTimeMicrosecs - startTimeThisCycle >= optoOnDuration) {
+                    digitalWrite(optoTriggerPin, LOW);
+                }
+                else {
+                    digitalWrite(optoTriggerPin, HIGH);
+                }
+            }
+        }
     }
 }
+//     if (isRunningOptoSequence) {
+//         for (int i = optoRepeatTimes - 1; i >= 0; --i) {
+//             unsigned long timeSinceStart = currentTimeMicrosecs - optoSequenceStartTime;
+//             unsigned long cycleStartTime =
+//                 i * (optoOnDuration + optoOffDuration) + optoInitialOffDuration;
+//             if (timeSinceStart >= cycleStartTime) {
+//                 if (timeSinceStart >= cycleStartTime + optoOnDuration + optoOffDuration) {
+//                     digitalWrite(optoTriggerPin, HIGH);
+//                     setLEDColor(RED);
+//                 }
+//                 else if (timeSinceStart >= cycleStartTime + optoOnDuration) {
+//                     digitalWrite(optoTriggerPin, LOW);
+//                     setLEDColor(BLUE);
+//                 }
+
+//                 if (i == optoRepeatTimes - 1) {
+//                     digitalWrite(optoTriggerPin, LOW);
+//                     isRunningOptoSequence = false;
+//                     behaviorCycleTimeMicrosecs = INT_MAX;
+//                     setLEDColor(OFF);
+//                 }
+//                 break;
+//             }
+//         }
+//     }
+// }
+// unsigned long optoSequenceStartTime = 0;
+// bool isRunningOptoSequence = false;
+// const int optoInitialOffDuration = 5 * 1000000;
+// const int optoOnDuration = 5 * 1000000;
+// const int optoOffDuration = 25 * 1000000;
+// const int optoRepeatTimes = 10;
 
