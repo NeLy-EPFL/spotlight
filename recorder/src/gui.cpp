@@ -254,6 +254,19 @@ void MainGUIWindow::startRecording()
         return;
     }
 
+    if (!updateCalibrationParams())
+    {
+        std::string errorMessage =
+            "Calibration data do not exist. Cannot start recording. "
+            "To calibrate the system, first click the 'Calibration Scan' "
+            "button. When the scan finishes, run 'fit_calibration.py' to "
+            "fit the calibration model. The result should be saved at " +
+            std::string(SPOTLIGHT_CALIBRATION_FILE) + ".";
+        spdlog::error(errorMessage);
+        QMessageBox::critical(this, "Error", errorMessage.c_str());
+        return;
+    }
+
     prepareBehaviorImageDir(saveDirectory);
 
     recordButton_->setEnabled(false);
@@ -349,15 +362,19 @@ cv::Mat addCornerMarker(cv::Mat image, MotionStagePosition stagePosition)
     std::vector<cv::Point> pixelPoints;
     for (auto [x, y] : cornerPositions)
     {
-        int pixelRow, pixelCol;
-        std::tie(pixelRow, pixelCol) = stagePosAndPhysicalPosToPixelPos(
-            stagePosition.xPosMm, stagePosition.yPosMm, x, y);
-        pixelPoints.emplace_back(pixelRow, pixelCol);
-        cv::circle(imageForDisplay,
-                   cv::Point(pixelCol, pixelRow),
-                   5,
-                   cv::Scalar(255, 255, 255),
-                   -1);
+        if (behaviorCamCalibrationParams.isDefined)
+        {
+            int pixelRow, pixelCol;
+            std::tie(pixelRow, pixelCol) =
+                behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+                    stagePosition.xPosMm, stagePosition.yPosMm, x, y);
+            pixelPoints.emplace_back(pixelRow, pixelCol);
+            cv::circle(imageForDisplay,
+                       cv::Point(pixelCol, pixelRow),
+                       5,
+                       cv::Scalar(255, 255, 255),
+                       -1);
+        }
 
         // if (0 <= pixelCol && pixelCol < imageForDisplay.cols &&
         //     0 <= pixelRow && pixelRow < imageForDisplay.rows)

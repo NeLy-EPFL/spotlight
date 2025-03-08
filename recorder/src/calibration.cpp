@@ -1,52 +1,100 @@
 #include "calibration.hpp"
 
-std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(
-    double stagePosX, double stagePosY, int pixelPosRow, int pixelPosCol)
+CalibrationParams::CalibrationParams()
+    : isDefined(false)
 {
-    // array([[-1.00612784e+00,  2.06745867e-03, -1.00007277e-02,
-    //     -7.27075788e-05,  1.17869514e+02],
-    //    [ 5.51134434e-03,  1.00529191e+00, -7.93647261e-05,
-    //      1.00037441e-02, -5.22831388e+01]])
-    double physicalPosX =
-        -1.00612784e+00 * stagePosX +
-        2.06745867e-03 * stagePosY +
-        -1.00007277e-02 * pixelPosRow +
-        -7.27075788e-05 * pixelPosCol +
-        1.17869514e+02;
+}
 
+CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
+    : isDefined(true)
+{
+    // spdlog::critical("trying to load")
+    try
+    {
+        calibration_ = YAML::LoadFile(calibrationFilePath);
+
+        // Validate that all required sections exist
+        if (!calibration_["stage_and_pixel_to_physical"] ||
+            !calibration_["stage_and_physical_to_pixel"])
+        {
+            throw std::runtime_error("Missing required calibration sections");
+        }
+    }
+    catch (const YAML::Exception &e)
+    {
+        throw std::runtime_error(
+            "Failed to load calibration file: " + std::string(e.what()));
+    }
+}
+
+std::tuple<double, double>
+CalibrationParams::stagePosAndPixelPosToPhysicalPos(
+    double stagePosX,
+    double stagePosY,
+    int pixelPosRow,
+    int pixelPosCol) const
+{
+    // Check if calibration data is loaded
+    if (!calibration_.IsDefined())
+    {
+        throw std::runtime_error("Calibration data not loaded");
+    }
+
+    // Access the calibration parameters for physical_pos_x
+    auto physicalPosXParams =
+        calibration_["stage_and_pixel_to_physical"]["physical_pos_x"];
+    double physicalPosX =
+        physicalPosXParams["stage_pos_x"].as<double>() * stagePosX +
+        physicalPosXParams["stage_pos_y"].as<double>() * stagePosY +
+        physicalPosXParams["pixel_pos_row"].as<double>() * pixelPosRow +
+        physicalPosXParams["pixel_pos_col"].as<double>() * pixelPosCol +
+        physicalPosXParams["bias"].as<double>();
+
+    // Access the calibration parameters for physical_pos_y
+    auto physicalPosYParams =
+        calibration_["stage_and_pixel_to_physical"]["physical_pos_y"];
     double physicalPosY =
-        5.51134434e-03 * stagePosX +
-        1.00529191e+00 * stagePosY +
-        -7.93647261e-05 * pixelPosRow +
-        1.00037441e-02 * pixelPosCol +
-        -5.22831388e+01;
+        physicalPosYParams["stage_pos_x"].as<double>() * stagePosX +
+        physicalPosYParams["stage_pos_y"].as<double>() * stagePosY +
+        physicalPosYParams["pixel_pos_row"].as<double>() * pixelPosRow +
+        physicalPosYParams["pixel_pos_col"].as<double>() * pixelPosCol +
+        physicalPosYParams["bias"].as<double>();
 
     return std::make_tuple(physicalPosX, physicalPosY);
 }
 
-std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(
+std::tuple<int, int>
+CalibrationParams::stagePosAndPhysicalPosToPixelPos(
     double stagePosX,
     double stagePosY,
     double physicalPosX,
-    double physicalPosY)
+    double physicalPosY) const
 {
-    // array([[-1.00595655e+02,  9.37273442e-01, -9.99869562e+01,
-    //     -7.26708864e-01,  1.17474193e+04],
-    //    [-1.34900401e+00, -1.00484130e+02, -7.93246740e-01,
-    //      9.99568077e+01,  5.31955526e+03]])
-    int pixelPosRow =
-        -1.00595655e+02 * stagePosX +
-        9.37273442e-01 * stagePosY +
-        -9.99869562e+01 * physicalPosX +
-        -7.26708864e-01 * physicalPosY +
-        1.17474193e+04;
+    // Check if calibration data is loaded
+    if (!calibration_.IsDefined())
+    {
+        throw std::runtime_error("Calibration data not loaded");
+    }
 
-    int pixelPosCol =
-        -1.34900401e+00 * stagePosX +
-        -1.00484130e+02 * stagePosY +
-        -7.93246740e-01 * physicalPosX +
-        9.99568077e+01 * physicalPosY +
-        5.31955526e+03;
+    // Access the calibration parameters for pixel_pos_row
+    auto pixelPosRowParams =
+        calibration_["stage_and_physical_to_pixel"]["pixel_pos_row"];
+    int pixelPosRow = static_cast<int>(
+        pixelPosRowParams["stage_pos_x"].as<double>() * stagePosX +
+        pixelPosRowParams["stage_pos_y"].as<double>() * stagePosY +
+        pixelPosRowParams["physical_pos_x"].as<double>() * physicalPosX +
+        pixelPosRowParams["physical_pos_y"].as<double>() * physicalPosY +
+        pixelPosRowParams["bias"].as<double>());
+
+    // Access the calibration parameters for pixel_pos_col
+    auto pixelPosColParams =
+        calibration_["stage_and_physical_to_pixel"]["pixel_pos_col"];
+    int pixelPosCol = static_cast<int>(
+        pixelPosColParams["stage_pos_x"].as<double>() * stagePosX +
+        pixelPosColParams["stage_pos_y"].as<double>() * stagePosY +
+        pixelPosColParams["physical_pos_x"].as<double>() * physicalPosX +
+        pixelPosColParams["physical_pos_y"].as<double>() * physicalPosY +
+        pixelPosColParams["bias"].as<double>());
 
     return std::make_tuple(pixelPosRow, pixelPosCol);
 }

@@ -1,15 +1,9 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import pickle
-import seaborn as sns
-from itertools import product
-from scipy.interpolate import interp1d
+import yaml
 from pathlib import Path
 from tqdm import tqdm
-from joblib import Parallel, delayed
-from sklearn.linear_model import LinearRegression, RANSACRegressor
-from sklearn.metrics import mean_squared_error, r2_score
 
 from calibration.resample_images import (
     make_spatial_grid,
@@ -158,30 +152,71 @@ if __name__ == "__main__":
 
     mat_physical_to_pixel = A_to_B(mat_pixel_to_physical)
 
-    params_str_lines = [
-        f"physicalPosX_wStagePosX {mat_pixel_to_physical[0, 0]}",
-        f"physicalPosX_wStagePosY {mat_pixel_to_physical[0, 1]}",
-        f"physicalPosX_wPixelPosRow {mat_pixel_to_physical[0, 2]}",
-        f"physicalPosX_wPixelPosCol {mat_pixel_to_physical[0, 3]}",
-        f"physicalPosX_bias {mat_pixel_to_physical[0, 4]}",
-        f"physicalPosY_wStagePosX {mat_pixel_to_physical[1, 0]}",
-        f"physicalPosY_wStagePosY {mat_pixel_to_physical[1, 1]}",
-        f"physicalPosY_wPixelPosRow {mat_pixel_to_physical[1, 2]}",
-        f"physicalPosY_wPixelPosCol {mat_pixel_to_physical[1, 3]}",
-        f"physicalPosY_bias {mat_pixel_to_physical[1, 4]}",
+    calibration_results = {
+        "stage_and_pixel_to_physical": {
+            "physical_pos_x": {
+                "stage_pos_x": float(mat_pixel_to_physical[0, 0]),
+                "stage_pos_y": float(mat_pixel_to_physical[0, 1]),
+                "pixel_pos_row": float(mat_pixel_to_physical[0, 2]),
+                "pixel_pos_col": float(mat_pixel_to_physical[0, 3]),
+                "bias": float(mat_pixel_to_physical[0, 4]),
+            },
+            "physical_pos_y": {
+                "stage_pos_x": float(mat_pixel_to_physical[1, 0]),
+                "stage_pos_y": float(mat_pixel_to_physical[1, 1]),
+                "pixel_pos_row": float(mat_pixel_to_physical[1, 2]),
+                "pixel_pos_col": float(mat_pixel_to_physical[1, 3]),
+                "bias": float(mat_pixel_to_physical[1, 4]),
+            },
+        },
+        "stage_and_physical_to_pixel": {
+            "pixel_pos_row": {
+                "stage_pos_x": float(mat_physical_to_pixel[0, 0]),
+                "stage_pos_y": float(mat_physical_to_pixel[0, 1]),
+                "physical_pos_x": float(mat_physical_to_pixel[0, 2]),
+                "physical_pos_y": float(mat_physical_to_pixel[0, 3]),
+                "bias": float(mat_physical_to_pixel[0, 4]),
+            },
+            "pixel_pos_col": {
+                "stage_pos_x": float(mat_physical_to_pixel[1, 0]),
+                "stage_pos_y": float(mat_physical_to_pixel[1, 1]),
+                "physical_pos_x": float(mat_physical_to_pixel[1, 2]),
+                "physical_pos_y": float(mat_physical_to_pixel[1, 3]),
+                "bias": float(mat_physical_to_pixel[1, 4]),
+            },
+        },
+    }
 
-        f"pixelPosRow_wStagePosX {mat_physical_to_pixel[0, 0]}",
-        f"pixelPosRow_wStagePosY {mat_physical_to_pixel[0, 1]}",
-        f"pixelPosRow_wPhysicalPosX {mat_physical_to_pixel[0, 2]}",
-        f"pixelPosRow_wPhysicalPosY {mat_physical_to_pixel[0, 3]}",
-        f"pixelPosRow_bias {mat_physical_to_pixel[0, 4]}",
-        f"pixelPosCol_wStagePosX {mat_physical_to_pixel[1, 0]}",
-        f"pixelPosCol_wStagePosY {mat_physical_to_pixel[1, 1]}",
-        f"pixelPosCol_wPhysicalPosX {mat_physical_to_pixel[1, 2]}",
-        f"pixelPosCol_wPhysicalPosY {mat_physical_to_pixel[1, 3]}",
-        f"pixelPosCol_bias {mat_physical_to_pixel[1, 4]}",
-    ]
+    calibration_results_path = (
+        Path.home() / "Spotlight/calibration/calibration_result.yaml"
+    )
+    with open(calibration_results_path, "w") as f:
+        yaml.dump(calibration_results, f)
 
-    calibration_result_path = Path.home() / "Spotlight/calibration/calibration_result.txt"
-    with open(calibration_result_path, "w") as f:
-        f.write("\n".join(params_str_lines))
+    # params_str_lines = [
+    #     f"physicalPosX_wStagePosX {mat_pixel_to_physical[0, 0]}",
+    #     f"physicalPosX_wStagePosY {mat_pixel_to_physical[0, 1]}",
+    #     f"physicalPosX_wPixelPosRow {mat_pixel_to_physical[0, 2]}",
+    #     f"physicalPosX_wPixelPosCol {mat_pixel_to_physical[0, 3]}",
+    #     f"physicalPosX_bias {mat_pixel_to_physical[0, 4]}",
+    #     f"physicalPosY_wStagePosX {mat_pixel_to_physical[1, 0]}",
+    #     f"physicalPosY_wStagePosY {mat_pixel_to_physical[1, 1]}",
+    #     f"physicalPosY_wPixelPosRow {mat_pixel_to_physical[1, 2]}",
+    #     f"physicalPosY_wPixelPosCol {mat_pixel_to_physical[1, 3]}",
+    #     f"physicalPosY_bias {mat_pixel_to_physical[1, 4]}",
+
+    #     f"pixelPosRow_wStagePosX {mat_physical_to_pixel[0, 0]}",
+    #     f"pixelPosRow_wStagePosY {mat_physical_to_pixel[0, 1]}",
+    #     f"pixelPosRow_wPhysicalPosX {mat_physical_to_pixel[0, 2]}",
+    #     f"pixelPosRow_wPhysicalPosY {mat_physical_to_pixel[0, 3]}",
+    #     f"pixelPosRow_bias {mat_physical_to_pixel[0, 4]}",
+    #     f"pixelPosCol_wStagePosX {mat_physical_to_pixel[1, 0]}",
+    #     f"pixelPosCol_wStagePosY {mat_physical_to_pixel[1, 1]}",
+    #     f"pixelPosCol_wPhysicalPosX {mat_physical_to_pixel[1, 2]}",
+    #     f"pixelPosCol_wPhysicalPosY {mat_physical_to_pixel[1, 3]}",
+    #     f"pixelPosCol_bias {mat_physical_to_pixel[1, 4]}",
+    # ]
+
+    # calibration_result_path = Path.home() / "Spotlight/calibration/calibration_result.txt"
+    # with open(calibration_result_path, "w") as f:
+    #     f.write("\n".join(params_str_lines))

@@ -36,6 +36,11 @@ namespace
         logFile << "timestamp_us,x_pos_mm,y_pos_mm\n";
         return logFile;
     }
+
+    double calculateDistance(double x1, double y1, double x2, double y2)
+    {
+        return std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2));
+    }
 }
 
 void motionControlRequestHandler()
@@ -152,9 +157,7 @@ void trackingController()
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    int updateFreq = 25;            // Hz
-    double distanceThreshold = 0.1; // mm
-    uint64_t updateIntervalMicrosecs = 1e6 / updateFreq;
+    uint64_t updateIntervalMicrosecs = 1e6 / TRACKING_UPDATE_FREQUENCY_HZ;
 
     while (!toQuit.load())
     {
@@ -169,20 +172,38 @@ void trackingController()
             }
             MotionStagePosition myMotionStagePosition;
             {
-                std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
+                std::lock_guard<std::mutex> lock(
+                    latestMotionStagePositionMutex);
                 myMotionStagePosition = latestMotionStagePosition;
             }
 
-            auto [isFound, physicalPosX, physicalPosY] = calculateFlyPositionAbsoluteMm(
-                myBehaviorImage, myMotionStagePosition);
+            auto [isFound, physicalPosX, physicalPosY] =
+                calculateFlyPositionAbsoluteMm(
+                    myBehaviorImage, myMotionStagePosition);
             if (isFound)
             {
                 auto [currentPhysicalPosX, currentPhysicalPosY] =
-                    stagePosAndPixelPosToPhysicalPos(
-                        myMotionStagePosition.xPosMm,
-                        myMotionStagePosition.yPosMm,
-                        myBehaviorImage.rows / 2,
-                        myBehaviorImage.cols / 2);
+                    behaviorCamCalibrationParams
+                        .stagePosAndPixelPosToPhysicalPos(
+                            myMotionStagePosition.xPosMm,
+                            myMotionStagePosition.yPosMm,
+                            myBehaviorImage.rows / 2,
+                            myBehaviorImage.cols / 2);
+
+                double distanceToTarget = calculateDistance(
+                    physicalPosX,
+                    physicalPosY,
+                    currentPhysicalPosX,
+                    currentPhysicalPosY);
+
+                if (distanceToTarget < TRACKING_DISTANCE_THRESHOLD_MM)
+                {
+                    // If the fly is close enough to the center of the view,
+                    // don't move. This helps avoid jittering, reduces wear on
+                    // the motors, and reduces mechanical resonance.
+                    continue;
+                }
+
                 double dx = physicalPosX - currentPhysicalPosX;
                 double dy = physicalPosY - currentPhysicalPosY;
                 MotionStagePosition targetMotionStagePosition = {
@@ -205,14 +226,17 @@ void trackingController()
         }
         else if (!isCalibrating.load())
         {
-            spdlog::debug("Tracking controller is overriding tracking.");
+            // spdlog::debug("Tracking controller is overriding tracking.");
             MotionStagePosition currentPos = getCurrentMotionStagePosition();
             double distanceToTarget =
-                std::sqrt(
-                    std::pow(overrideXPosAbsolute.load() - currentPos.xPosMm, 2) +
-                    std::pow(overrideYPosAbsolute.load() - currentPos.yPosMm, 2));
+                calculateDistance(
+                    overrideXPosAbsolute.load(),
+                    overrideYPosAbsolute.load(),
+                    currentPos.xPosMm,
+                    currentPos.yPosMm);
 
-            if ((distanceToTarget < distanceThreshold) && checkIfMotionStageIdle())
+            if (distanceToTarget < TRACKING_DISTANCE_THRESHOLD_MM &&
+                checkIfMotionStageIdle())
             {
                 shouldOverrideTracking.store(false);
                 continue;
@@ -241,50 +265,33 @@ void trackingController()
                 "I'm updating stage position at {} Hz, so I have only {} us) "
                 "to complete each update. It took {} us this cycle. If this "
                 "only happens sporadically, it's harmless.",
-                updateFreq,
+                TRACKING_UPDATE_FREQUENCY_HZ,
                 updateIntervalMicrosecs,
                 elapsedTime);
         }
     }
 }
 
-// cv::Mat blackoutOutside(cv::Mat image, MotionStagePosition stagePos)
-// {
-//     double xMinPhysical = 1;
-//     double xMaxPhysical = 48 - 1;
-//     double yMinPhysical = 1;
-//     double yMaxPhysical = 72 - 1;
-
-//     int rowMinPixel, rowMaxPixel, colMinPixel, colMaxPixel;
-//     std::tie(rowMinPixel, colMinPixel) = stagePosAndPhysicalPosToPixelPos(
-//         stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMinPhysical);
-//     std::tie(rowMaxPixel, colMaxPixel) = stagePosAndPhysicalPosToPixelPos(
-//         stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
-
-//     // TODO: Make a mask. Initialize it as all 255.
-//     // Mark all rows < rowMinPixel as 0
-//     // Mark all rows > rowMaxPixel as 0
-//     // Mark all cols < colMinPixel as 0
-//     // Mark all cols > colMaxPixel as 0
-
-//     // TODO: Apply mask
-//     // Keep only pixels in range
-
-//     return blackedOutImage;
-// }
-
 cv::Mat blackoutOutside(cv::Mat image, MotionStagePosition stagePos)
 {
-    double xMinPhysical = 1;
-    double xMaxPhysical = 48 - 1;
-    double yMinPhysical = 1;
-    double yMaxPhysical = 72 - 1;
+    if (!behaviorCamCalibrationParams.isDefined)
+    {
+        // If calibration is not defined, don't do anything because we don't
+        // know where the boundaries are in pixel coordinates
+        return image;
+    }
+    double xMinPhysical = TRACKING_BOUNDARY_MARGIN_MM;
+    double xMaxPhysical = ARENA_SIZE_X_MM - TRACKING_BOUNDARY_MARGIN_MM;
+    double yMinPhysical = TRACKING_BOUNDARY_MARGIN_MM;
+    double yMaxPhysical = ARENA_SIZE_Y_MM - TRACKING_BOUNDARY_MARGIN_MM;
 
     int xMinPixel, xMaxPixel, yMinPixel, yMaxPixel;
-    std::tie(xMinPixel, yMinPixel) = stagePosAndPhysicalPosToPixelPos(
-        stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMinPhysical);
-    std::tie(xMaxPixel, yMaxPixel) = stagePosAndPhysicalPosToPixelPos(
-        stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
+    std::tie(xMinPixel, yMinPixel) =
+        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+            stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMinPhysical);
+    std::tie(xMaxPixel, yMaxPixel) =
+        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+            stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
     std::swap(xMinPixel, xMaxPixel); // note: mirrored horizontally
 
     // Clamp values to image boundaries
@@ -303,20 +310,19 @@ cv::Mat blackoutOutside(cv::Mat image, MotionStagePosition stagePos)
                  yMaxPixel - yMinPixel + 1);
 
     // Copy the ROI from the original image to the blacked out image
-    // image(roi).copyTo(blackedOutImage(roi));
-    // cv::Mat temp = image(roi).clone();
-    // temp.copyTo(blackedOutImage(roi));
     for (int y = yMinPixel; y <= yMaxPixel; y++)
     {
         for (int x = xMinPixel; x <= xMaxPixel; x++)
         {
             if (image.channels() == 1)
             {
-                blackedOutImage.at<uchar>(y, x) = image.at<uchar>(y, x);
+                blackedOutImage.at<uchar>(y, x) =
+                    image.at<uchar>(y, x);
             }
             else if (image.channels() == 3)
             {
-                blackedOutImage.at<cv::Vec3b>(y, x) = image.at<cv::Vec3b>(y, x);
+                blackedOutImage.at<cv::Vec3b>(y, x) =
+                    image.at<cv::Vec3b>(y, x);
             }
         }
     }
@@ -394,21 +400,6 @@ void motionStagePositionLogger()
     spdlog::info("Motion stage position logging thread stopped.");
 }
 
-// MotionStagePosition calculateFlyPositionAbsoluteMm(
-//     cv::Mat behaviorImage, MotionStagePosition stagePosition)
-// {
-//     cv::Mat blackedOutImage = blackoutOutside(behaviorImage, stagePosition);
-
-//     // Threshold the image at a cutout of 100; apply morphological opening and
-//     // closing to remove noise (let's say with a 9x9 kernel); find the largest
-//     // connected component; find the center of mass of the connected component
-//     // in pixel x-y (ie. col-row) coordinates. Then, convert the pixel x-y
-//     // coordinates and stage x-y coordinates to physical coordinates using
-//     // the following
-//     auto [physicalPosXMm, physicalPosYMm] = stagePosAndPixelPosToPhysicalPos(
-//         stagePosition.xPosMm, stagePosition.yPosMm, centerOfMassRow, centerOfMassCol);
-// }
-
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage, MotionStagePosition stagePosition)
 {
@@ -422,6 +413,13 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         {
             spdlog::error("Input behavior image is empty");
         }
+        return {isFound, physicalPosXMm, physicalPosYMm};
+    }
+
+    if (!behaviorCamCalibrationParams.isDefined)
+    {
+        // Cannot map pixel positions to physical positions because the
+        // calibration model has not been defined yet
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
 
@@ -439,22 +437,19 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::threshold(blackedOutImage, binaryImage, 100, 255, cv::THRESH_BINARY);
     if (binaryImage.empty())
     {
-        // spdlog::error("Binary image after thresholding is empty");
-        // toQuit.store(true);
+        spdlog::error("Binary image after thresholding is empty");
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
     // display binaryImage for debugging
     // cv::imshow("binaryImage", binaryImage);
     if (cv::countNonZero(binaryImage) == 0)
     {
-        // spdlog::debug("Binary image after thresholding has no non-zero pixels");
-        // toQuit.store(true);
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
 
     // Apply morphological opening and closing with a smaller kernel
     // spdlog::debug("Getting kernel for morphological operations");
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)); // Smaller kernel
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
 
     // spdlog::debug("Applying morphological opening");
     cv::Mat openedImage;
@@ -466,9 +461,11 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
 
     // spdlog::debug("Finding connected components");
     cv::Mat labels, stats, centroids;
-    int numLabels = cv::connectedComponentsWithStats(morphedImage, labels, stats, centroids);
+    int numLabels = cv::connectedComponentsWithStats(
+        morphedImage, labels, stats, centroids);
 
-    // Find the largest connected component (excluding the background which is label 0)
+    // Find the largest connected component (excluding the background which is
+    // label 0).
     // spdlog::debug("Finding the largest connected component");
     int maxArea = 0;
     int maxLabel = 0;
@@ -482,138 +479,32 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         }
     }
 
-    // If the largest connected component is at least 200 pixels, this is the fly
-    if (maxLabel > 0 && maxArea > 200)
+    // If the largest connected component is large enough, this is the fly
+    if (maxLabel > 0 && maxArea > MIN_FLY_SIZE_SQ_PIXELS)
     {
-        // spdlog::debug("Getting the center of mass of the largest connected component");
-        double centerOfMassCol = centroids.at<double>(maxLabel, 0); // x coordinate
-        double centerOfMassRow = centroids.at<double>(maxLabel, 1); // y coordinate
+        // spdlog::debug(
+        //     "Getting the center of mass of the largest connected component");
+        double centerOfMassCol = centroids.at<double>(maxLabel, 0); // x
+        double centerOfMassRow = centroids.at<double>(maxLabel, 1); // y
 
-        auto [x, y] = stagePosAndPixelPosToPhysicalPos(
-            stagePosition.xPosMm, stagePosition.yPosMm, centerOfMassCol, centerOfMassRow);
+        auto [x, y] = behaviorCamCalibrationParams
+                          .stagePosAndPixelPosToPhysicalPos(
+                              stagePosition.xPosMm,
+                              stagePosition.yPosMm,
+                              centerOfMassCol,
+                              centerOfMassRow);
         isFound = true;
         physicalPosXMm = x;
         physicalPosYMm = y;
 
-        // spdlog::debug("Fly found at pixel ({:.2f}, {:.2f}), physical ({:.2f}, {:.2f})",
-        //               centerOfMassCol, centerOfMassRow, physicalPosXMm, physicalPosYMm);
+        // spdlog::debug(
+        //     "Fly found at pixel ({:.2f}, {:.2f}), physical ({:.2f}, {:.2f})",
+        //     centerOfMassCol, centerOfMassRow, physicalPosXMm, physicalPosYMm
+        // );
     }
 
-    // isFound = false; // TODO: remove this line
     return std::make_tuple(isFound, physicalPosXMm, physicalPosYMm);
 }
-
-// MotionStagePosition calculateFlyPositionAbsoluteMm(
-//     cv::Mat behaviorImage, MotionStagePosition stagePosition)
-// {
-//     MotionStagePosition currentPosition = getCurrentMotionStagePosition();
-
-//     // spdlog::debug("Calculating fly position in absolute mm");
-
-//     // Check if input image is valid
-//     if (behaviorImage.empty()) {
-//         spdlog::error("Input behavior image is empty");
-//         return stagePosition;
-//     }
-
-//     // Make sure we're working with a deep copy of the input image
-//     cv::Mat blackedOutImage = blackoutOutside(behaviorImage.clone(), stagePosition);
-
-//     // Check if blackedOutImage is valid
-//     if (blackedOutImage.empty()) {
-//         spdlog::error("Blacked out image is empty");
-//         return stagePosition;
-//     }
-
-//     // Convert to grayscale if it's a color image
-//     // spdlog::debug("Converting image to grayscale");
-//     cv::Mat grayImage;
-//     if (blackedOutImage.channels() > 1) {
-//         cv::cvtColor(blackedOutImage, grayImage, cv::COLOR_BGR2GRAY);
-//     } else {
-//         grayImage = blackedOutImage.clone();
-//     }
-
-//     // Check if grayImage is valid
-//     if (grayImage.empty()) {
-//         spdlog::error("Gray image is empty");
-//         return stagePosition;
-//     }
-
-//     // 1. Threshold the image at a cutout of 100
-//     // spdlog::debug("Thresholding");
-//     cv::Mat binaryImage;
-//     cv::threshold(grayImage, binaryImage, 100, 255, cv::THRESH_BINARY);
-
-//     // Check if binaryImage is valid and has non-zero pixels
-//     if (binaryImage.empty()) {
-//         spdlog::debug("Binary image after thresholding is empty");
-//         return stagePosition;
-//     }
-
-//     // 2. Apply morphological opening and closing with a smaller kernel
-//     // spdlog::debug("Getting kernel for morphological operations");
-//     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5)); // Smaller kernel
-
-//     // Use separate matrices for input and output of morphological operations
-//     // spdlog::debug("Applying morphological opening");
-//     cv::Mat openedImage;
-
-//     try {
-//         cv::morphologyEx(binaryImage, openedImage, cv::MORPH_OPEN, kernel);
-
-//         // spdlog::debug("Applying morphological closing");
-//         cv::Mat morphedImage;
-//         cv::morphologyEx(openedImage, morphedImage, cv::MORPH_CLOSE, kernel);
-
-//         // 3. Find connected components
-//         // spdlog::debug("Finding connected components");
-//         cv::Mat labels, stats, centroids;
-//         int numLabels = cv::connectedComponentsWithStats(morphedImage, labels, stats, centroids);
-
-//         // 4. Find the largest connected component (excluding the background which is label 0)
-//         // spdlog::debug("Finding the largest connected component");
-//         int maxArea = 0;
-//         int maxLabel = 0;
-//         for (int i = 1; i < numLabels; i++) {
-//             int area = stats.at<int>(i, cv::CC_STAT_AREA);
-//             if (area > maxArea) {
-//                 maxArea = area;
-//                 maxLabel = i;
-//             }
-//         }
-
-//         if (maxArea < 20*20) {
-//             // spdlog::debug("Largest connected component is too small");
-//             return currentPosition;
-//         }
-
-//         // 5. Get the center of mass of the largest component
-//         if (maxLabel > 0 && maxArea > 0) {  // Ensure we have a valid component
-//             // spdlog::debug("Getting the center of mass of the largest connected component");
-//             double centerOfMassCol = centroids.at<double>(maxLabel, 0); // x coordinate
-//             double centerOfMassRow = centroids.at<double>(maxLabel, 1); // y coordinate
-
-//             // 6. Convert pixel coordinates to physical coordinates
-//             // spdlog::debug("Converting pixel coordinates to physical coordinates");
-//             auto [physicalPosXMm, physicalPosYMm] = stagePosAndPixelPosToPhysicalPos(
-//                 stagePosition.xPosMm, stagePosition.yPosMm, centerOfMassRow, centerOfMassCol);
-
-//             // Update the position
-//             MotionStagePosition flyPosition;
-//             flyPosition.xPosMm = physicalPosXMm;
-//             flyPosition.yPosMm = physicalPosYMm;
-
-//             return flyPosition;
-//         }
-
-//         return stagePosition;
-//     }
-//     catch (const cv::Exception& e) {
-//         spdlog::error("OpenCV exception: {}", e.what());
-//         return stagePosition;
-//     }
-// }
 
 MotionStagePosition getCurrentMotionStagePosition()
 {

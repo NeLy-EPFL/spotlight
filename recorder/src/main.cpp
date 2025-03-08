@@ -4,6 +4,7 @@
 #include <atomic>
 #include <signal.h>
 #include <csignal>
+#include <filesystem>
 
 #include <QApplication>
 #include <spdlog/spdlog.h>

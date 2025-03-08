@@ -12,6 +12,7 @@
 
 #include "global.hpp"
 #include "constants.hpp"
+#include "calibration.hpp"
 #include "peripherals/behaviorCamera.hpp"
 #include "peripherals/triggering.hpp"
 
