@@ -11,7 +11,7 @@ cv::Mat makePseudoRGBImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
     std::vector<cv::Mat> channels = {
-        groupOfThreeFrames.frame1.image,
+        groupOfThreeFrames.frame0.image,
         groupOfThreeFrames.frame1.image,
         groupOfThreeFrames.frame2.image};
     cv::Mat pseudoRGBImage;
