@@ -13,6 +13,8 @@
 
 #include "dataTypes.hpp"
 #include "constants.hpp"
+#include "global.hpp"
+#include "calibration.hpp"
 
 namespace fs = std::filesystem;
 
@@ -36,5 +38,7 @@ int calculateBehaviorCameraPreviewWidth(
 fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 
 size_t getMyThreadIdHash();
+
+bool updateCalibrationParams();
 
 #endif // UTILS_HPP

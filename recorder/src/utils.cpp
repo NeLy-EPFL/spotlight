@@ -1,5 +1,7 @@
 #include "utils.hpp"
 
+CalibrationParams behaviorCamCalibrationParams;
+
 uint64_t getCurrentTimeMicroseconds()
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(
@@ -175,4 +177,22 @@ size_t getMyThreadIdHash()
     std::thread::id myThreadId = std::this_thread::get_id();
     size_t myThreadIdHash = std::hash<std::thread::id>{}(myThreadId);
     return myThreadIdHash;
+}
+
+bool updateCalibrationParams()
+{
+    if (std::filesystem::exists(SPOTLIGHT_CALIBRATION_FILE))
+    {
+        behaviorCamCalibrationParams =
+            CalibrationParams(SPOTLIGHT_CALIBRATION_FILE);
+        return true;
+    }
+    else
+    {
+        spdlog::warn(
+            "Calibration file ({}) doesn't exist. User must run calibration "
+            "before recording.",
+            SPOTLIGHT_CALIBRATION_FILE);
+        return false;
+    }
 }

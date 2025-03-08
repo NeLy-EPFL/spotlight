@@ -3,6 +3,10 @@
 
 #include <iostream>
 
+// Experimental arena
+#define ARENA_SIZE_X_MM 48
+#define ARENA_SIZE_Y_MM 72
+
 // Behavior camera / frame grabber
 #define BEHAVIOR_CAMERA_FULL_FRAME_WIDTH 2560
 #define BEHAVIOR_CAMERA_FULL_FRAME_HEIGHT 2048
@@ -34,6 +38,12 @@
 #define CALIBRATION_SCAN_EXPOSURE_TIME_MICROSECS 1000
 #define MOTION_STAGE_POSITION_SAVE_FREQUENCY 100
 
+// TRACKING CONTROL
+#define TRACKING_UPDATE_FREQUENCY_HZ 25
+#define TRACKING_DISTANCE_THRESHOLD_MM 0.2
+#define MIN_FLY_SIZE_SQ_PIXELS 200
+#define TRACKING_BOUNDARY_MARGIN_MM 1
+
 // Triggering
 #define BUFFER_FLUSHING_WAIT_TIME_MILLISECS 100
 #define ARDUINO_BAUD_RATE_Q_ENUM QSerialPort::Baud9600
@@ -45,6 +55,7 @@
 #define SPOTLIGHT_DATA_DIR "~/Spotlight/"
 #define SPOTLIGHT_CALIBRATION_DIR "~/Spotlight/calibration"
 #define SPOTLIGHT_ARUCO_SCAN_DIR "~/Spotlight/calibration/aruco_scan"
+#define SPOTLIGHT_CALIBRATION_FILE "~/Spotlight/calibration/calibration_result.yaml"
 #define DEFAULT_SAVE_DIRECTORY "./images/"
 #define LOG_BEHAVIOR_CAMERA_SAVE_PERFORMANCE_INTERVAL 100
 #define ARDUINO_DEVICE_MANUFACTURER "Arduino"

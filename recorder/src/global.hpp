@@ -4,6 +4,7 @@
 #include <atomic>
 
 #include "dataTypes.hpp"
+#include "calibration.hpp"
 
 // Some .hpp includes this file so we can't include them here.
 // Make forward declarations instead.
@@ -28,6 +29,9 @@ extern std::atomic<bool> isCalibrating;
 extern std::atomic<bool> shouldOverrideTracking;
 extern std::atomic<double> overrideXPosAbsolute;
 extern std::atomic<double> overrideYPosAbsolute;
+
+// Calibration
+extern CalibrationParams behaviorCamCalibrationParams;
 
 // Saving to disk
 // Note: For simplicity, `saveDirectory` is not thread-safe. Realistically,
