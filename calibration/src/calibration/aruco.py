@@ -40,6 +40,11 @@ def detect_aruco(image, horizontal_flip=False, dictionary=cv2.aruco.DICT_4X4_100
 
     # Create the detector parameters
     parameters = cv2.aruco.DetectorParameters()
+    # parameters.minMarkerPerimeterRate=1.0
+    # parameters.maxMarkerPerimeterRate=4 #40.0
+    parameters.perspectiveRemovePixelPerCell=40 #40 #10 #default:4
+    # parameters.adaptiveThreshWinSizeMin=3#10
+    # parameters.adaptiveThreshWinSizeMax=23#53
 
     # Detect ArUco markers
     detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
@@ -125,17 +130,13 @@ def plot_aruco_detections(fig, ax, image, ids, coords):
             fontsize=8,
             ha="center",
             va="center",
-            bbox=dict(facecolor="black", alpha=0.7, pad=2),
+            bbox=dict(facecolor="black", alpha=0.3, pad=2),
         )
 
     # Set title and labels
     ax.set_title(f"Detected {len(ids)} ArUco Markers")
     ax.set_xlabel("X (pixels)")
     ax.set_ylabel("Y (pixels)")
-
-    # Remove ticks for cleaner visualization
-    ax.set_xticks([])
-    ax.set_yticks([])
 
     plt.tight_layout()
 
@@ -148,15 +149,16 @@ import svgwrite
 class ArUcoBoard:
     code_size_unitblk = 6
 
-    def __init__(self, arena_dim_mm, scale_mm):
+    def __init__(self, arena_dim_mm, scale_mm, spacing_unitblk):
         self.arena_dim_mm = arena_dim_mm  # (width, height)
         self.scale_mm = scale_mm
+        self.spacing_unitblk = spacing_unitblk
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
 
         # Calculate how many codes fit in each dimension
         self.grid_dim_ncodes = (
-            int(self.arena_dim_mm[0] / (self.scale_mm * (self.code_size_unitblk + 1))),
-            int(self.arena_dim_mm[1] / (self.scale_mm * (self.code_size_unitblk + 1))),
+            int(self.arena_dim_mm[0] / (self.scale_mm * (self.code_size_unitblk + spacing_unitblk))),
+            int(self.arena_dim_mm[1] / (self.scale_mm * (self.code_size_unitblk + spacing_unitblk))),
         )
 
         # Check if we have enough markers
@@ -168,8 +170,8 @@ class ArUcoBoard:
 
         # Calculate grid dimensions without margins
         self.grid_dim_no_margin_unitblk = (
-            self.grid_dim_ncodes[0] * (self.code_size_unitblk + 1) - 1,
-            self.grid_dim_ncodes[1] * (self.code_size_unitblk + 1) - 1,
+            self.grid_dim_ncodes[0] * (self.code_size_unitblk + spacing_unitblk) - spacing_unitblk,
+            self.grid_dim_ncodes[1] * (self.code_size_unitblk + spacing_unitblk) - spacing_unitblk,
         )
 
         # Calculate margins to center the grid
@@ -186,8 +188,8 @@ class ArUcoBoard:
         col = grid_id % self.grid_dim_ncodes[0]
 
         # Calculate x, y coordinates in mm
-        x_mm = self.margins[0] + col * (self.code_size_unitblk + 1) * self.scale_mm
-        y_mm = self.margins[1] + row * (self.code_size_unitblk + 1) * self.scale_mm
+        x_mm = self.margins[0] + col * (self.code_size_unitblk + self.spacing_unitblk) * self.scale_mm
+        y_mm = self.margins[1] + row * (self.code_size_unitblk + self.spacing_unitblk) * self.scale_mm
 
         return (x_mm, y_mm)
 
