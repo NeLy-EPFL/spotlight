@@ -410,7 +410,9 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     {
         if (behaviorCameraReady.load())
         {
-            spdlog::error("Input behavior image is empty");
+            spdlog::warning(
+                "Input behavior image is empty. It's normal if this happens "
+                "only one or two times at the start of recording.");
         }
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
