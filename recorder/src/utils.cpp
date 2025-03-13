@@ -181,10 +181,12 @@ size_t getMyThreadIdHash()
 
 bool updateCalibrationParams()
 {
-    if (std::filesystem::exists(SPOTLIGHT_CALIBRATION_FILE))
+    std::filesystem::path calibrationFilePath =
+        expandPath(SPOTLIGHT_CALIBRATION_FILE);
+    if (std::filesystem::exists(calibrationFilePath))
     {
         behaviorCamCalibrationParams =
-            CalibrationParams(SPOTLIGHT_CALIBRATION_FILE);
+            CalibrationParams(calibrationFilePath);
         return true;
     }
     else
@@ -192,7 +194,36 @@ bool updateCalibrationParams()
         spdlog::warn(
             "Calibration file ({}) doesn't exist. User must run calibration "
             "before recording.",
-            SPOTLIGHT_CALIBRATION_FILE);
+            calibrationFilePath.c_str());
         return false;
     }
+}
+
+std::string expandPath(const std::string &path)
+{
+    // Check if the path starts with "~/"
+    if (path.size() >= 2 && path[0] == '~' && path[1] == '/')
+    {
+        // Get the HOME environment variable
+        const char *homeDir = std::getenv("HOME");
+
+        // If HOME is available, replace "~/" with the home directory
+        if (homeDir)
+        {
+            std::filesystem::path expandedPath =
+                std::filesystem::path(homeDir) / path.substr(2);
+            return expandedPath.string();
+        }
+        else
+        {
+            spdlog::error(
+                "Failed to expand ~ in directory path '{}' because $HOME is "
+                "not defined. Set the $HOME environment variable or use "
+                "absolute path.",
+                path.c_str());
+        }
+    }
+
+    // Return the original path if it doesn't start with "~/"
+    return path;
 }

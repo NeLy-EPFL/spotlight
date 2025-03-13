@@ -47,19 +47,24 @@ ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage(
         if (serialPort_.waitForReadyRead(timeOutMillisecs))
         {
             QByteArray response = serialPort_.readAll();
-            std::string responseStr = response.trimmed().toStdString();
-            spdlog::info("Message received from Arduino: '{}'", responseStr);
-            if (!responseStr.empty())
+            QList<QByteArray> lines = response.split('\n');
+            
+            for (const QByteArray& line : lines)
             {
-                ArduinoMessage responseMessage(responseStr);
-                return responseMessage;
+                std::string responseStr = line.trimmed().toStdString();
+                if (!responseStr.empty())
+                {
+                    spdlog::info("Message received from Arduino: '{}'", responseStr);
+                    ArduinoMessage responseMessage(responseStr);
+                    if (responseMessage.isSyntaxValid)
+                    {
+                        return responseMessage;
+                    }
+                }
             }
-            else
-            {
-                spdlog::warn(
-                    "Received an empty message from Arduino. This could just "
-                    "be harmless unflushed bits in the buffer; retrying...");
-            }
+            
+            // If no valid message found in any line
+            spdlog::warn("No valid message found in Arduino response; retrying...");
         }
     }
     spdlog::critical(

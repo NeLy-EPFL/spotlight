@@ -119,6 +119,15 @@ int main(int argc, char **argv)
     QApplication localApplication(argc, argv);
     application = &localApplication;
 
+    // Load calibration parameters
+    if (!updateCalibrationParams())
+    {
+        std::string errorMessage =
+            "Calibration data do not exist. Cannot start recording.";
+        spdlog::error(errorMessage);
+        return 1;
+    }
+
     // Start motion control IO thread
     std::thread motionControlIOThread(motionControlRequestHandler);
 

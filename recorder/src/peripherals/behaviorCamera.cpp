@@ -1,5 +1,14 @@
 #include "behaviorCamera.hpp"
 
+namespace mine {
+    uint64_t getCurrentTimeMicroseconds()
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::high_resolution_clock::now().time_since_epoch())
+        .count();
+}
+}
+
 BehaviorCamera::BehaviorCamera(
     unsigned int imageWidth,
     unsigned int imageHeight,
@@ -103,7 +112,7 @@ FrameData BehaviorCamera::waitForOneFrame()
     Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
 
     // Get image data and metadata
-    uint64_t receivedTime = getCurrentTimeMicroseconds();
+    uint64_t receivedTime = mine::getCurrentTimeMicroseconds();
     uint8_t *dataPtr = buffer.getInfo<uint8_t *>(
         Euresys::gc::BUFFER_INFO_BASE);
     uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(

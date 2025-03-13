@@ -41,4 +41,6 @@ size_t getMyThreadIdHash();
 
 bool updateCalibrationParams();
 
+std::string expandPath(const std::string& path);
+
 #endif // UTILS_HPP

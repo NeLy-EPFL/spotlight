@@ -21,8 +21,7 @@ file(GLOB SOURCES
     "peripherals/*.cpp"
     "peripherals/*.hpp"
     "*.cpp"
-    "*.hpp"
-)
+    "*.hpp")
 # message(STATUS "SOURCES: ${SOURCES}")
 
 add_executable(SpotlightController ${SOURCES})
@@ -33,3 +32,18 @@ target_link_libraries(SpotlightController ${ZABER_MOTION_LIB})
 target_link_libraries(SpotlightController spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(SpotlightController yaml-cpp)
 set_target_properties(SpotlightController PROPERTIES AUTOMOC ON)
+
+file(GLOB RUN_CALIBRATION_SOURCES
+    "calibrationProcedure/runCalibration_main.cpp"
+    "calibrationProcedure/runCalibration.hpp"
+    "constants.hpp"
+    "peripherals/behaviorCamera.cpp"
+    "peripherals/behaviorCamera.hpp")
+add_executable(RunCalibration ${RUN_CALIBRATION_SOURCES})
+# target_link_libraries(RunCalibration pthread rt dl)
+target_link_libraries(RunCalibration Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(RunCalibration ${OpenCV_LIBS})
+target_link_libraries(RunCalibration ${ZABER_MOTION_LIB})
+target_link_libraries(RunCalibration spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(RunCalibration yaml-cpp)
+set_target_properties(RunCalibration PROPERTIES AUTOMOC ON)
