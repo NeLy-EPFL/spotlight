@@ -207,7 +207,7 @@ void trackingController()
                 double dx = physicalPosX - currentPhysicalPosX;
                 double dy = physicalPosY - currentPhysicalPosY;
                 MotionStagePosition targetMotionStagePosition = {
-                    myMotionStagePosition.xPosMm - dx, // note the flip
+                    myMotionStagePosition.xPosMm + dx,
                     myMotionStagePosition.yPosMm + dy,
                     ABSOLUTE};
 
@@ -292,13 +292,12 @@ cv::Mat blackoutOutside(cv::Mat image, MotionStagePosition stagePos)
     std::tie(xMaxPixel, yMaxPixel) =
         behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
             stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
-    std::swap(xMinPixel, xMaxPixel); // note: mirrored horizontally
 
     // Clamp values to image boundaries
     xMinPixel = std::max(0, xMinPixel);
-    xMaxPixel = std::min(image.cols - 1, xMaxPixel); // Note the -1
+    xMaxPixel = std::min(image.cols - 1, xMaxPixel);
     yMinPixel = std::max(0, yMinPixel);
-    yMaxPixel = std::min(image.rows - 1, yMaxPixel); // Note the -1
+    yMaxPixel = std::min(image.rows - 1, yMaxPixel);
 
     // Create black image
     cv::Mat blackedOutImage = cv::Mat::zeros(image.size(), image.type());
@@ -415,14 +414,12 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         }
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
-
     if (!behaviorCamCalibrationParams.isDefined)
     {
         // Cannot map pixel positions to physical positions because the
         // calibration model has not been defined yet
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
-
     cv::Mat correctedImage = correctImageRotationAndFlip(behaviorImage);
 
     // Remove pixels outside the stage boundaries
@@ -815,8 +812,8 @@ void runCalibrationScanProcedureOneDirection(
 
 void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs)
 {
-    runCalibrationScanProcedureOneDirection(
-        currentlySetExposureTimeMicrosecs, ROW_BY_ROW);
+    // runCalibrationScanProcedureOneDirection(
+    //     currentlySetExposureTimeMicrosecs, ROW_BY_ROW);
     runCalibrationScanProcedureOneDirection(
         currentlySetExposureTimeMicrosecs, COLUMN_BY_COLUMN);
 }

@@ -23,18 +23,6 @@ namespace
                       mat.step,
                       QImage::Format_Grayscale8);
     }
-
-    std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
-    {
-        std::filesystem::path behaviorSaveDir;
-        {
-            std::lock_guard<std::mutex> lock(isIOInitializing);
-            behaviorSaveDir = prepareOutputFolder(
-                std::filesystem::path(baseDirectory) / "behavior_images",
-                true);
-        }
-        return behaviorSaveDir;
-    }
 }
 
 MotionControlWidget::MotionControlWidget(QWidget *parent)
@@ -254,21 +242,6 @@ void MainGUIWindow::startRecording()
         return;
     }
 
-    if (!updateCalibrationParams())
-    {
-        std::string errorMessage =
-            "Calibration data do not exist. Cannot start recording. "
-            "To calibrate the system, first click the 'Calibration Scan' "
-            "button. When the scan finishes, run 'fit_calibration.py' to "
-            "fit the calibration model. The result should be saved at " +
-            std::string(SPOTLIGHT_CALIBRATION_FILE) + ".";
-        spdlog::error(errorMessage);
-        QMessageBox::critical(this, "Error", errorMessage.c_str());
-        return;
-    }
-
-    prepareBehaviorImageDir(saveDirectory);
-
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
     calibrationScanButton_->setEnabled(false);
@@ -295,27 +268,28 @@ void MainGUIWindow::stopRecording()
 
 void MainGUIWindow::doCalibrationScan()
 {
-    calibrationScanButton_->setEnabled(false);
-    recordButton_->setEnabled(false);
+    // runCalibrationScan();
+    // calibrationScanButton_->setEnabled(false);
+    // recordButton_->setEnabled(false);
 
-    int currentStreamingExposureTimeMicrosecs =
-        behaviorExposureTimeSpinBox_->value() * 1000;
+    // int currentStreamingExposureTimeMicrosecs =
+    //     behaviorExposureTimeSpinBox_->value() * 1000;
 
-    // Run the calibration scan in a separate thread to avoid freezing the GUI
-    std::thread([this, currentStreamingExposureTimeMicrosecs]()
-                {
-        isRunningCalibrationScan_.store(true);
-        spdlog::info("Starting calibration scan procedure in the background.");
-        runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
+    // // Run the calibration scan in a separate thread to avoid freezing the GUI
+    // std::thread([this, currentStreamingExposureTimeMicrosecs]()
+    //             {
+    //     isRunningCalibrationScan_.store(true);
+    //     spdlog::info("Starting calibration scan procedure in the background.");
+    //     runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
 
-        // Re-enable buttons in the GUI thread
-        QMetaObject::invokeMethod(this, [this]() {
-            calibrationScanButton_->setEnabled(true);
-            recordButton_->setEnabled(true);
-        });
+    //     // Re-enable buttons in the GUI thread
+    //     QMetaObject::invokeMethod(this, [this]() {
+    //         calibrationScanButton_->setEnabled(true);
+    //         recordButton_->setEnabled(true);
+    //     });
 
-        isRunningCalibrationScan_.store(false); })
-        .detach();
+    //     isRunningCalibrationScan_.store(false); })
+    //     .detach();
 }
 
 bool MainGUIWindow::canQuitGracefully()
