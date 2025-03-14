@@ -15,12 +15,12 @@ namespace
     }
 }
 
-void behaviorImageAcquierer()
+void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
 {
     unsigned int imageWidth = roundToMultiplesOf64(
-        BEHAVIOR_CAMERA_ROI_WIDTH);
+        recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
     unsigned int imageHeight = roundToMultiplesOf64(
-        BEHAVIOR_CAMERA_ROI_HEIGHT);
+        recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
     unsigned int xOffset = 0;
     unsigned int yOffset = 0;
 
@@ -29,7 +29,8 @@ void behaviorImageAcquierer()
         imageHeight,
         xOffset,
         yOffset,
-        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE);
+        recorderConfig.getParameter<std::string>("behavior_camera",
+                                                 "frame_grabber_trigger_line"));
     behaviorCamera = &localBehaviorCamera;
 
     spdlog::info("Behavior camera configured");

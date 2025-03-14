@@ -71,18 +71,6 @@ bool quitProgram()
 {
     spdlog::info("SIGINT received. Initiating graceful shutdown");
 
-    if (!mainGUIWindow->canQuitGracefully())
-    {
-        std::string errorMessage =
-            "Cannot quit gracefully because something is still running in "
-            "the background. Retry later or force quit (but then you "
-            "should manually reset camera acquisition state).";
-        spdlog::error(errorMessage);
-        QMessageBox::critical(
-            mainGUIWindow, "Error", QString(errorMessage.c_str()));
-        return false;
-    }
-
     toQuit.store(true);
 
     // Stop behavior camera acquisition
@@ -119,6 +107,17 @@ int main(int argc, char **argv)
     QApplication localApplication(argc, argv);
     application = &localApplication;
 
+    // Load recorder configuration
+    std::filesystem::path configPAth = expandPath(RECORDER_CONFIG_PATH);
+    RecorderConfig recorderConfig(configPAth);
+    if (!recorderConfig.isDefined)
+    {
+        std::string errorMessage =
+            "Failed to load recorder configuration. Cannot start recording.";
+        spdlog::error(errorMessage);
+        return 1;
+    }
+
     // Load calibration parameters
     if (!updateCalibrationParams())
     {
@@ -129,16 +128,19 @@ int main(int argc, char **argv)
     }
 
     // Start motion control IO thread
-    std::thread motionControlIOThread(motionControlRequestHandler);
+    std::thread motionControlIOThread(motionControlRequestHandler,
+                                      recorderConfig);
 
     // Start motion stage position logger thread
-    std::thread motionStagePositionLoggerThread(motionStagePositionLogger);
+    std::thread motionStagePositionLoggerThread(motionStagePositionLogger,
+                                                recorderConfig);
 
     // Start tracking controller
-    std::thread trackingControllerThread(trackingController);
+    std::thread trackingControllerThread(trackingController, recorderConfig);
 
     // Start behavior image acquirer
-    std::thread behaviorImageAcquiererThread(behaviorImageAcquierer);
+    std::thread behaviorImageAcquiererThread(behaviorImageAcquierer,
+                                             recorderConfig);
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
@@ -148,11 +150,11 @@ int main(int argc, char **argv)
     }
 
     // Start Arduino triggering interface
-    ArduinoTriggerControllerInterface localTriggerController;
+    ArduinoTriggerControllerInterface localTriggerController(recorderConfig);
     triggerController = &localTriggerController;
 
     // Create and show GUI
-    MainGUIWindow localMainGUIWindow(nullptr);
+    MainGUIWindow localMainGUIWindow(recorderConfig, nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
 

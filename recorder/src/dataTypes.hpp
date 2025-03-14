@@ -3,8 +3,6 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "constants.hpp"
-
 struct FrameData
 {
     unsigned int frameId = -1;

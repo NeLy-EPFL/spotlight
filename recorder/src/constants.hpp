@@ -3,6 +3,8 @@
 
 #include <iostream>
 
+#define RECORDER_CONFIG_PATH "~/Spotlight/recorder_config.yaml"
+
 // Experimental arena
 #define ARENA_SIZE_X_MM 48
 #define ARENA_SIZE_Y_MM 72

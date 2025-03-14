@@ -8,7 +8,7 @@
 #include <zaber/motion/ascii.h>
 #include <spdlog/spdlog.h>
 
-#include "../constants.hpp"
+#include "../recorderConfig.hpp"
 #include "../utils.hpp"
 
 namespace zmASCII = zaber::motion::ascii;
@@ -19,15 +19,10 @@ enum MotionAxis
     Y_AXIS
 };
 
-const std::unordered_map<unsigned int, MotionAxis>
-    serialNumberToAxisLookup = {
-        {MOTION_STAGE_SERIAL_NUMBER_X_AXIS, X_AXIS},
-        {MOTION_STAGE_SERIAL_NUMBER_Y_AXIS, Y_AXIS}};
-
 class MotionControl
 {
 public:
-    MotionControl();
+    MotionControl(const RecorderConfig &recorderConfig);
     ~MotionControl();
     void moveAbsolute(
         MotionAxis axis,
@@ -45,9 +40,14 @@ public:
     bool checkIfIdle(MotionAxis axis);
 
 private:
+    RecorderConfig recorderConfig_;
+    std::unordered_map<unsigned int, MotionAxis> serialNumberToAxisLookup_;
     std::string serialPortName_;
     zmASCII::Connection connection_;
-    std::unordered_map<MotionAxis, std::unique_ptr<zmASCII::Axis>> axisPtrLookup_;
+    std::unordered_map<MotionAxis, std::unique_ptr<zmASCII::Axis>>
+        axisPtrLookup_;
+    zaber::motion::Units lengthUnitEnum_;
+    zaber::motion::Units velocityUnitEnum_;
 };
 
 #endif // MOTION_CONTROL_HPP

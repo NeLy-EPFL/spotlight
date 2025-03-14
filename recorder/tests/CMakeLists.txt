@@ -83,3 +83,14 @@ target_link_libraries(testArduinoMessageProtocol ${GTEST_LIB} ${GTEST_MAIN_LIB})
 target_link_libraries(testArduinoMessageProtocol ${OpenCV_LIBS})
 target_link_libraries(testArduinoMessageProtocol spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 add_test(NAME testArduinoMessageProtocol COMMAND testArduinoMessageProtocol)
+
+# Test parameter loading
+file(GLOB PARAMETERS_SOURCES "../src/parameters.*")
+add_executable(testParameters
+    ${COMMON_SOURCES}
+    ${MOTION_CONTROL_SOURCES}
+    "testParameters.cpp")
+target_include_directories(testParameters PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(testParameters ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(testParameters spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME testParameters COMMAND testParameters)
