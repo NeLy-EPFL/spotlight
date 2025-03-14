@@ -1,11 +1,45 @@
 #include "triggering.hpp"
 
-ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface()
+namespace
 {
-    serialPortName_ = getSerialPortName(
-        ARDUINO_DEVICE_DESCRIPTION, ARDUINO_DEVICE_MANUFACTURER);
+    int getBaudRateQEnum(int baudRateInt)
+    {
+        switch (baudRateInt)
+        {
+        case 9600:
+            return QSerialPort::Baud9600;
+        case 19200:
+            return QSerialPort::Baud19200;
+        case 38400:
+            return QSerialPort::Baud38400;
+        case 57600:
+            return QSerialPort::Baud57600;
+        case 115200:
+            return QSerialPort::Baud115200;
+        default:
+            spdlog::critical("Invalid baud rate: {}", baudRateInt);
+            throw std::runtime_error("Invalid baud rate.");
+        }
+    }
+}
+
+ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface(
+    const RecorderConfig &recorderConfig)
+{
+    recorderConfig_ = recorderConfig;
+    std::string arduinoDeviceManufacturer =
+        recorderConfig.getParameter<std::string>("triggering",
+                                                 "arduino_device_manufacturer");
+    std::string arduinoDeviceDescription =
+        recorderConfig.getParameter<std::string>("triggering",
+                                                 "arduino_device_description");
+    int arduinoBaudRateInt =
+        recorderConfig.getParameter<int>("triggering", "arduino_baud_rate");
+
+    serialPortName_ = getSerialPortName(arduinoDeviceDescription,
+                                        arduinoDeviceManufacturer);
     serialPort_.setPortName(QString::fromStdString(serialPortName_));
-    serialPort_.setBaudRate(ARDUINO_BAUD_RATE_Q_ENUM);
+    serialPort_.setBaudRate(getBaudRateQEnum(arduinoBaudRateInt));
     serialPort_.setDataBits(QSerialPort::Data8);
     serialPort_.setParity(QSerialPort::NoParity);
     serialPort_.setStopBits(QSerialPort::OneStop);
@@ -39,22 +73,27 @@ void ArduinoTriggerControllerInterface::sendCommand(
     }
 }
 
-ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage(
-    int timeOutMillisecs)
+ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage()
 {
-    for (int i = 0; i < ARDUINO_COMM_RETRIES; i++)
+    int timeoutMillisecs = recorderConfig_.getParameter<int>(
+        "triggering", "arduino_comm_timeout_ms");
+    int numRetries = recorderConfig_.getParameter<int>(
+        "triggering", "arduino_comm_retries");
+
+    for (int i = 0; i < numRetries; i++)
     {
-        if (serialPort_.waitForReadyRead(timeOutMillisecs))
+        if (serialPort_.waitForReadyRead(timeoutMillisecs))
         {
             QByteArray response = serialPort_.readAll();
             QList<QByteArray> lines = response.split('\n');
-            
-            for (const QByteArray& line : lines)
+
+            for (const QByteArray &line : lines)
             {
                 std::string responseStr = line.trimmed().toStdString();
                 if (!responseStr.empty())
                 {
-                    spdlog::info("Message received from Arduino: '{}'", responseStr);
+                    spdlog::info("Message received from Arduino: '{}'",
+                                 responseStr);
                     ArduinoMessage responseMessage(responseStr);
                     if (responseMessage.isSyntaxValid)
                     {
@@ -62,15 +101,16 @@ ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage(
                     }
                 }
             }
-            
+
             // If no valid message found in any line
-            spdlog::warn("No valid message found in Arduino response; retrying...");
+            spdlog::warn(
+                "No valid message found in Arduino response; retrying...");
         }
     }
     spdlog::critical(
         "Failed to receive message from Arduino within {} milliseconds. "
         "Retried {} times to no avail. Check communication with Arduino.",
-        timeOutMillisecs, ARDUINO_COMM_RETRIES);
+        timeoutMillisecs, numRetries);
     throw std::runtime_error("Failed to receive message from Arduino.");
 }
 
@@ -94,13 +134,15 @@ void ArduinoTriggerControllerInterface::startRecording(
             response.toCommString());
         throw std::runtime_error("Failed to pause trigger pulses.");
     }
+    int bufferFlushingWaitTimeMs = recorderConfig_.getParameter<int>(
+        "triggering", "image_buffer_flushing_wait_time_ms");
     spdlog::info(
         "Arduino acknowledged the STOP_PAUSING command. I will now wait {} "
         "milliseconds to make sure the camera image acquisition thread is "
         "not receiving any frames anymore.",
-        BUFFER_FLUSHING_WAIT_TIME_MILLISECS);
+        bufferFlushingWaitTimeMs);
     std::this_thread::sleep_for(
-        std::chrono::milliseconds(BUFFER_FLUSHING_WAIT_TIME_MILLISECS));
+        std::chrono::milliseconds(bufferFlushingWaitTimeMs));
 
     spdlog::info(
         "OK. I assume all pending frames have arrived. I'm marking my state "
@@ -113,7 +155,7 @@ void ArduinoTriggerControllerInterface::startRecording(
     commandString = startMessage.toCommString();
     sendCommand(commandString);
 
-    response = waitForMessage(1000);
+    response = waitForMessage();
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
     {
         spdlog::critical(
@@ -130,14 +172,16 @@ void ArduinoTriggerControllerInterface::stopRecording(
 {
     isRecording.store(false);
 
+    int streamingFrameRate = recorderConfig_.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
     ArduinoMessage stopMessage(START_PULSING,
-                               BEHAVIOR_CAMERA_STREAMING_FPS,
+                               streamingFrameRate,
                                recordingExposureTimeMicrosecs);
     std::string commandString = stopMessage.toCommString();
     sendCommand(commandString);
     spdlog::info("Command sent to Arduino: {}", commandString);
 
-    ArduinoMessage response = waitForMessage(1000);
+    ArduinoMessage response = waitForMessage();
     if (response.messageType != START_PULSING_ACK || !response.isSyntaxValid)
     {
         spdlog::critical(

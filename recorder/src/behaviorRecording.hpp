@@ -14,10 +14,10 @@
 
 #include "peripherals/behaviorCamera.hpp"
 #include "global.hpp"
-#include "constants.hpp"
+#include "recorderConfig.hpp"
 
 // Function declarations
-void behaviorImageAcquierer();
+void behaviorImageAcquierer(const RecorderConfig &recorderConfig);
 void behaviorImageSaver();
 void stopBehaviorImageSaver();
 

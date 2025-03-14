@@ -17,20 +17,22 @@
 #include "peripherals/motionControl.hpp"
 #include "peripherals/triggering.hpp"
 #include "global.hpp"
-#include "constants.hpp"
 #include "utils.hpp"
 #include "behaviorRecording.hpp"
 #include "calibration.hpp"
+#include "recorderConfig.hpp"
 
 // Hardware controller thread
-void motionControlRequestHandler();
+void motionControlRequestHandler(const RecorderConfig &recorderConfig);
 
 // Tracking thread
-void trackingController();
-cv::Mat blackoutOutside(cv::Mat image, MotionStagePosition stagePos);
+void trackingController(const RecorderConfig &recorderConfig);
+cv::Mat blackoutOutside(cv::Mat image,
+                        MotionStagePosition stagePos,
+                        const RecorderConfig &recorderConfig);
 
 // Position logging thread
-void motionStagePositionLogger();
+void motionStagePositionLogger(const RecorderConfig &recorderConfig);
 
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
@@ -45,11 +47,9 @@ void startHomingMotionStage();
 void stopMotionControlRequestHandler();
 
 // High-level helper functions
-void runCalibrationScanProcedureOneDirection(
-    int currentlySetExposureTimeMicrosecs,
-    CalibrationScanDirection scanDirection);
-void runCalibrationScanProcedure(int currentlySetExposureTimeMicrosecs);
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    cv::Mat behaviorImage, MotionStagePosition stagePosition);
+    cv::Mat behaviorImage,
+    MotionStagePosition stagePosition,
+    const RecorderConfig &recorderConfig);
 
 #endif // TRACKING_CONTROL_HPP

@@ -15,6 +15,7 @@
 #include "calibration.hpp"
 #include "peripherals/behaviorCamera.hpp"
 #include "peripherals/triggering.hpp"
+#include "recorderConfig.hpp"
 
 // Forward declarations
 class QApplication;

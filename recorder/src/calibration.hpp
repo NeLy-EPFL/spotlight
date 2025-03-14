@@ -27,8 +27,6 @@ public:
 
 private:
     YAML::Node calibration_;
-
-    void loadCalibration(const std::string &filename);
 };
 
 #endif // CALIBRATION_HPP

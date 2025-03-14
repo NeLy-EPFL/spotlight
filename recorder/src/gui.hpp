@@ -24,12 +24,11 @@
 
 #include "utils.hpp"
 #include "constants.hpp"
-#include "global.hpp"
+#include "recorderConfig.hpp"
 #include "behaviorRecording.hpp"
 #include "trackingControl.hpp"
 #include "calibration.hpp"
 #include "peripherals/triggering.hpp"
-// #include "calibrationProcedure/runCalibration.hpp"
 
 // Forward declaration from main.hpp
 bool quitProgram();
@@ -37,7 +36,8 @@ bool quitProgram();
 class MotionControlWidget : public QWidget
 {
 public:
-    MotionControlWidget(QWidget *parent = nullptr);
+    MotionControlWidget(const RecorderConfig &recorderConfig,
+                        QWidget *parent = nullptr);
     ~MotionControlWidget();
 
 protected:
@@ -51,10 +51,10 @@ private:
     float mapToStageY(int y) const;
 
     QTimer timer_;
-    float minXAbsoluteMm_ = MOTION_STAGE_X_MIN_PHYSICAL_MM;
-    float maxXAbsoluteMm_ = MOTION_STAGE_X_MAX_PHYSICAL_MM;
-    float minYAbsoluteMm_ = MOTION_STAGE_Y_MIN_PHYSICAL_MM;
-    float maxYAbsoluteMm_ = MOTION_STAGE_Y_MAX_PHYSICAL_MM;
+    float minXAbsoluteMm_;
+    float maxXAbsoluteMm_;
+    float minYAbsoluteMm_;
+    float maxYAbsoluteMm_;
 };
 
 class MainGUIWindow : public QWidget
@@ -62,15 +62,14 @@ class MainGUIWindow : public QWidget
     Q_OBJECT
 
 public:
-    explicit MainGUIWindow(QWidget *parent = nullptr);
-    bool canQuitGracefully();
+    explicit MainGUIWindow(const RecorderConfig &recorderConfig,
+                           QWidget *parent = nullptr);
 
 private slots:
     void startRecording();
     void stopRecording();
     void updateImageDisplay();
     void browseDirectory();
-    void doCalibrationScan();
 
 private:
     QSpinBox *behaviorFPSSpinBox_;
@@ -79,10 +78,9 @@ private:
     MotionControlWidget *motionControlWidget_;
     QPushButton *recordButton_;
     QPushButton *stopButton_;
-    QPushButton *calibrationScanButton_;
     QLabel *behaviorImageDisplayLabel_;
     QTimer *imageDisplayTimer_;
-    std::atomic<bool> isRunningCalibrationScan_ = false;
+    RecorderConfig recorderConfig_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
