@@ -107,9 +107,9 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
         }
     }
 }
-
 void behaviorImageSaver(const RecorderConfig &recorderConfig,
-                        BehaviorRecordingState &behaviorRecordingState)
+                        BehaviorRecordingState &behaviorRecordingState,
+                        std::shared_ptr<SaveDirectory> saveDirectory)
 {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
@@ -169,16 +169,17 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
             "behavior_frame_" +
             fmt::format("{:09}", frameGroup.frame0.frameId);
         std::filesystem::path behaviorSaveDir =
-            std::filesystem::path(saveDirectory) / "behavior_images";
+            std::filesystem::path(saveDirectory->getDirectory()) /
+            "behavior_images";
 
-        if (initializedSaveDirectories.find(saveDirectory) ==
-            initializedSaveDirectories.end())
-        {
-            spdlog::info("Creating behavior image save directory: {}",
-                         behaviorSaveDir.string());
-            prepareBehaviorImageDir(saveDirectory);
-            initializedSaveDirectories.insert(saveDirectory);
-        }
+        // if (initializedSaveDirectories.find(saveDirectory.getDirectory()) ==
+        //     initializedSaveDirectories.end())
+        // {
+        //     spdlog::info("Creating behavior image save directory: {}",
+        //                  behaviorSaveDir.string());
+        //     prepareBehaviorImageDir(saveDirectory.getDirectory());
+        //     initializedSaveDirectories.insert(saveDirectory.getDirectory());
+        // }
 
         // Save three frames as a single pseudo-RGB image
         std::string filename = behaviorSaveDir / (filenameStem + ".jpg");

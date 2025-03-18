@@ -16,6 +16,7 @@
 #include "peripherals/behaviorCamera.hpp"
 #include "global.hpp"
 #include "recorderConfig.hpp"
+#include "utils.hpp"
 
 struct BehaviorRecordingState
 {
@@ -32,7 +33,8 @@ struct BehaviorRecordingState
 void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
                            BehaviorRecordingState &behaviorRecordingState);
 void behaviorImageSaver(const RecorderConfig &recorderConfig,
-                        BehaviorRecordingState &behaviorRecordingState);
+                        BehaviorRecordingState &behaviorRecordingState,
+                        std::shared_ptr<SaveDirectory> saveDirectory);
 void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState);
 
 #endif // BEHAVIOR_RECORDING_HPP

@@ -41,7 +41,7 @@ class ArduinoTriggerControllerInterface;
 // time it's accessed when recording starts. This makes the saving threads to
 // slightly faster (probably 100us or so per 3 frames?) because there's no
 // mutex to acquire/release.
-extern std::string saveDirectory;
+// extern std::string saveDirectory;
 
 // Streaming latest data (for live display and motion control)
 extern FrameData latestFrameData;

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <iostream>
 #include <thread>
+#include <mutex>
 
 #include <QSerialPort>
 #include <QSerialPortInfo>
@@ -36,5 +37,19 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 size_t getMyThreadIdHash();
 
 std::string expandPath(const std::string& path);
+
+class SaveDirectory
+{
+public:
+    SaveDirectory(std::string directory);
+    void setDirectory(std::string directory);
+    std::filesystem::path getDirectory();
+
+private:
+    std::mutex mutex_;
+    fs::path directory_;
+
+    void initialize();
+};
 
 #endif // UTILS_HPP
