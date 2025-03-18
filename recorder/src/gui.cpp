@@ -25,9 +25,12 @@ namespace
     }
 }
 
-MotionControlWidget::MotionControlWidget(const RecorderConfig &recorderConfig,
-                                         QWidget *parent)
-    : QWidget(parent)
+MotionControlWidget::MotionControlWidget(
+    const RecorderConfig &recorderConfig,
+    TrackingControlState &trackingControlState,
+    QWidget *parent)
+    : QWidget(parent),
+      trackingControlState_(trackingControlState)
 {
     minXAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
                                                           "x_min_mm");
@@ -62,7 +65,7 @@ MotionControlWidget::~MotionControlWidget()
 
 void MotionControlWidget::paintEvent(QPaintEvent *event)
 {
-    if (!motionControlHandlerReady.load())
+    if (!trackingControlState_.motionControlHandlerReady.load())
     {
         return;
     }
@@ -78,8 +81,9 @@ void MotionControlWidget::paintEvent(QPaintEvent *event)
     // Calculate where to draw the red dot representing the stage position
     MotionStagePosition currStagePosition;
     {
-        std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
-        currStagePosition = latestMotionStagePosition;
+        std::lock_guard<std::mutex> lock(
+            trackingControlState_.latestMotionStagePositionMutex);
+        currStagePosition = trackingControlState_.latestMotionStagePosition;
     }
     float physicalX = currStagePosition.xPosMm;
     float physicalY = currStagePosition.yPosMm;
@@ -115,9 +119,9 @@ void MotionControlWidget::mousePressEvent(QMouseEvent *event)
         float stageX = mapToStageX(event->position().x());
         float stageY = mapToStageY(event->position().y());
         spdlog::debug("Clicked at ({}, {})", stageX, stageY);
-        overrideXPosAbsolute.store(stageX);
-        overrideYPosAbsolute.store(stageY);
-        shouldOverrideTracking.store(true);
+        trackingControlState_.overridingPosX.store(stageX);
+        trackingControlState_.overridingPosY.store(stageY);
+        trackingControlState_.shouldOverrideTracking.store(true);
     }
 }
 
@@ -149,10 +153,12 @@ float MotionControlWidget::mapToStageY(int y) const
 
 MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
                              BehaviorRecordingState &behaviorRecordingState,
+                             TrackingControlState &trackingControlState,
                              QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
-      behaviorRecordingState_(behaviorRecordingState)
+      behaviorRecordingState_(behaviorRecordingState),
+      trackingControlState_(trackingControlState)
 {
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -207,7 +213,9 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
     behaviorImageDisplayLabel_->setFixedSize(behaviorCameraPreviewWidth,
                                              behaviorCameraPreviewHeight);
 
-    motionControlWidget_ = new MotionControlWidget(recorderConfig, this);
+    motionControlWidget_ = new MotionControlWidget(recorderConfig,
+                                                   trackingControlState,
+                                                   this);
 
     // Record and stop buttons
     recordButton_ = new QPushButton("Record", this);
@@ -376,8 +384,9 @@ void MainGUIWindow::updateImageDisplay()
 
     MotionStagePosition myStagePosition;
     {
-        std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
-        myStagePosition = latestMotionStagePosition;
+        std::lock_guard<std::mutex> lock(
+            trackingControlState_.latestMotionStagePositionMutex);
+        myStagePosition = trackingControlState_.latestMotionStagePosition;
     }
 
     cv::Mat maskedImage = blackoutOutside(
