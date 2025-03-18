@@ -31,7 +31,7 @@ class ArduinoTriggerControllerInterface;
 // extern std::atomic<double> overrideYPosAbsolute;
 
 // Calibration
-extern CalibrationParams behaviorCamCalibrationParams;
+// extern CalibrationParams behaviorCamCalibrationParams;
 
 // Saving to disk
 // Note: For simplicity, `saveDirectory` is not thread-safe. Realistically,

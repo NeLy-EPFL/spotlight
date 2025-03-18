@@ -40,7 +40,8 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
 // Tracking thread
 void trackingController(const RecorderConfig &recorderConfig,
                         BehaviorRecordingState &behaviorRecordingState,
-                        TrackingControlState &trackingControlState);
+                        TrackingControlState &trackingControlState,
+                        CalibrationParams &behaviorCamCalibrationParams);
 
 // Position logging thread
 void motionStagePositionLogger(const RecorderConfig &recorderConfig,
@@ -49,9 +50,8 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
 MotionStagePosition getCurrentMotionStagePosition();
-void setTargetMotionStagePosition(
-    MotionStagePosition targetPosition,
-    float velocity = MOTION_STAGE_DEFAULT_VELOCITY_MM_PER_SEC);
+void setTargetMotionStagePosition(MotionStagePosition targetPosition,
+                                  float velocity);
 void waitUntilMotionStageIdleSync();
 void waitUntilMotionStageIdleAsync();
 bool checkIfMotionStageIdle();
@@ -62,10 +62,12 @@ void stopMotionControlRequestHandler();
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
+    CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig);
 
 cv::Mat blackoutOutside(cv::Mat image,
                         MotionStagePosition stagePos,
+                        CalibrationParams &behaviorCamCalibrationParams,
                         const RecorderConfig &recorderConfig);
 
 #endif // TRACKING_CONTROL_HPP

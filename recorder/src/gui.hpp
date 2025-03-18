@@ -68,6 +68,7 @@ public:
     explicit MainGUIWindow(const RecorderConfig &recorderConfig,
                            BehaviorRecordingState &behaviorRecordingState,
                            TrackingControlState &trackingControlState,
+                           CalibrationParams &behaviorCamCalibrationParams,
                            QWidget *parent = nullptr);
 
 private slots:
@@ -88,12 +89,15 @@ private:
     RecorderConfig recorderConfig_;
     BehaviorRecordingState &behaviorRecordingState_;
     TrackingControlState &trackingControlState_;
+    CalibrationParams &behaviorCamCalibrationParams_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
 };
 
 // Helpers
-cv::Mat addCornerMarker(cv::Mat image, MotionStagePosition stagePosition);
+cv::Mat addCornerMarker(cv::Mat image,
+                        MotionStagePosition stagePosition,
+                        CalibrationParams &behaviorCamCalibrationParams);
 
 #endif // GUI_HPP

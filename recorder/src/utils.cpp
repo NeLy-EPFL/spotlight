@@ -1,7 +1,5 @@
 #include "utils.hpp"
 
-CalibrationParams behaviorCamCalibrationParams;
-
 uint64_t getCurrentTimeMicroseconds()
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(
@@ -88,24 +86,6 @@ std::string getSerialPortName(std::string deviceDescription,
     return "";
 }
 
-std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime()
-{
-    int getPositionWeight = 1;
-    int setPositionWeight = 2; // Set position is more time-consuming
-
-    int totalWeightedNumberOfOps =
-        MOTION_STAGE_LOGGING_FREQUENCY_HZ * getPositionWeight +
-        FLY_TRACKING_UPDATE_FREQUENCY_HZ *
-            (setPositionWeight + getPositionWeight) + // this needs to do both
-        GUI_MOTION_STAGE_PREVIEW_FREQUENCY_HZ * getPositionWeight;
-
-    int numMicrosecsAllowedPerUnitOp = 1000000 / totalWeightedNumberOfOps;
-
-    return std::make_tuple(
-        numMicrosecsAllowedPerUnitOp * getPositionWeight,
-        numMicrosecsAllowedPerUnitOp * setPositionWeight);
-}
-
 int calculateBehaviorCameraPreviewWidth(
     int behaviorCameraPreviewHeight,
     int motionStageXRange,
@@ -177,26 +157,6 @@ size_t getMyThreadIdHash()
     std::thread::id myThreadId = std::this_thread::get_id();
     size_t myThreadIdHash = std::hash<std::thread::id>{}(myThreadId);
     return myThreadIdHash;
-}
-
-bool updateCalibrationParams()
-{
-    std::filesystem::path calibrationFilePath =
-        expandPath(SPOTLIGHT_CALIBRATION_FILE);
-    if (std::filesystem::exists(calibrationFilePath))
-    {
-        behaviorCamCalibrationParams =
-            CalibrationParams(calibrationFilePath);
-        return true;
-    }
-    else
-    {
-        spdlog::warn(
-            "Calibration file ({}) doesn't exist. User must run calibration "
-            "before recording.",
-            calibrationFilePath.c_str());
-        return false;
-    }
 }
 
 std::string expandPath(const std::string &path)

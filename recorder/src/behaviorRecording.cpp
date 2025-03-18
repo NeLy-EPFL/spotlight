@@ -108,7 +108,8 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
     }
 }
 
-void behaviorImageSaver(BehaviorRecordingState &behaviorRecordingState)
+void behaviorImageSaver(const RecorderConfig &recorderConfig,
+                        BehaviorRecordingState &behaviorRecordingState)
 {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
@@ -134,6 +135,9 @@ void behaviorImageSaver(BehaviorRecordingState &behaviorRecordingState)
     int iterCount = 0;
 
     std::set<std::string> initializedSaveDirectories; // root save directories
+
+    int performanceLoggingInterval = recorderConfig.getParameter<int>(
+        "behavior_camera", "saving_performance_logging_interval");
 
     while (!toQuit.load())
     {
@@ -189,9 +193,7 @@ void behaviorImageSaver(BehaviorRecordingState &behaviorRecordingState)
         metadataFile.close();
 
         uint64_t walltime = getCurrentTimeMicroseconds() - startTime;
-        bool shouldLogPerformance =
-            iterCount % LOG_BEHAVIOR_CAMERA_SAVE_PERFORMANCE_INTERVAL == 0;
-        if (shouldLogPerformance)
+        if (iterCount % performanceLoggingInterval == 0)
         {
             spdlog::info(
                 "Behavior image saver thread (thread ID {}) reporting: "

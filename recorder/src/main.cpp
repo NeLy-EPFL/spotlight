@@ -113,6 +113,7 @@ int main(int argc, char **argv)
 
     // Load recorder configuration
     std::filesystem::path configPath = expandPath(RECORDER_CONFIG_PATH);
+    spdlog::info("Loading recorder configuration from {}", configPath.c_str());
     RecorderConfig recorderConfig(configPath);
     if (!recorderConfig.isDefined)
     {
@@ -124,39 +125,55 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
-    // Load calibration parameters
-    if (!updateCalibrationParams())
+    // Load position mapping/calibration parameters
+    std::string calibrationParamsFilePath =
+        recorderConfig.getParameter<std::string>("io", "calibration_file");
+    calibrationParamsFilePath = expandPath(calibrationParamsFilePath);
+    spdlog::info("Loading spatial calibration parameters from {}",
+                 calibrationParamsFilePath);
+    CalibrationParams behaviorCamCalibrationParams(calibrationParamsFilePath);
+    if (!behaviorCamCalibrationParams.isDefined)
     {
-        std::string errorMessage =
-            "Calibration data do not exist. Cannot start recording.";
-        spdlog::error(errorMessage);
-        return 1;
+        std::string errorMessage = fmt::format(
+            "Spatial calibration data not found or malformed. This is required "
+            "for tracking and recording. Expected valid calibration file at {} "
+            "based on the recorder configuration file.",
+            calibrationParamsFilePath);
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
     }
 
     // Start tracking & motion control threads
     TrackingControlState trackingControlState;
-    std::thread motionControlIOThread(motionControlRequestHandler,
-                                      recorderConfig,
-                                      std::ref(trackingControlState));
-    std::thread motionStagePositionLoggerThread(motionStagePositionLogger,
-                                                recorderConfig,
-                                                std::ref(trackingControlState));
-    std::thread trackingControllerThread(trackingController,
-                                         recorderConfig,
-                                         std::ref(behaviorRecordingState),
-                                         std::ref(trackingControlState));
+    std::thread motionControlIOThread(
+        motionControlRequestHandler,
+        recorderConfig,
+        std::ref(trackingControlState));
+    std::thread motionStagePositionLoggerThread(
+        motionStagePositionLogger,
+        recorderConfig,
+        std::ref(trackingControlState));
+    std::thread trackingControllerThread(
+        trackingController,
+        recorderConfig,
+        std::ref(behaviorRecordingState),
+        std::ref(trackingControlState),
+        std::ref(behaviorCamCalibrationParams));
 
     // Start behavior image acquirer
-    std::thread behaviorImageAcquirerThread(behaviorImageAcquirer,
-                                            std::ref(recorderConfig),
-                                            std::ref(behaviorRecordingState));
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
+        std::ref(recorderConfig),
+        std::ref(behaviorRecordingState));
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
     for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
     {
         behaviorImageSaverThreads.push_back(
-            std::thread(behaviorImageSaver, std::ref(behaviorRecordingState)));
+            std::thread(behaviorImageSaver,
+                        recorderConfig,
+                        std::ref(behaviorRecordingState)));
     }
 
     // Start Arduino triggering interface
@@ -167,6 +184,7 @@ int main(int argc, char **argv)
     MainGUIWindow localMainGUIWindow(recorderConfig,
                                      std::ref(behaviorRecordingState),
                                      std::ref(trackingControlState),
+                                     std::ref(behaviorCamCalibrationParams),
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
