@@ -30,13 +30,13 @@ namespace
 // std::mutex muscleImageQueueMutex;
 // std::condition_variable muscleImageQueueCondVar;
 
-std::atomic<bool> motionControlHandlerReady = false;
-MotionStagePosition latestMotionStagePosition;
-std::mutex latestMotionStagePositionMutex;
-std::atomic<bool> isCalibrating = false;
-std::atomic<bool> shouldOverrideTracking = false;
-std::atomic<double> overrideXPosAbsolute;
-std::atomic<double> overrideYPosAbsolute;
+// std::atomic<bool> motionControlHandlerReady = false;
+// MotionStagePosition latestMotionStagePosition;
+// std::mutex latestMotionStagePositionMutex;
+// std::atomic<bool> isCalibrating = false;
+// std::atomic<bool> shouldOverrideTracking = false;
+// std::atomic<double> overrideXPosAbsolute;
+// std::atomic<double> overrideYPosAbsolute;
 
 FrameData latestFrameData = {0, 0, 0, cv::Mat()};
 std::mutex latestFrameMutex;
@@ -114,7 +114,8 @@ int main(int argc, char **argv)
     // Load recorder configuration
     std::filesystem::path configPath = expandPath(RECORDER_CONFIG_PATH);
     RecorderConfig recorderConfig(configPath);
-    if (!recorderConfig.isDefined) {
+    if (!recorderConfig.isDefined)
+    {
         std::string errorMessage = fmt::format(
             "Failed to load recorder configuration. Cannot start recording. "
             "Expected valid recorder configuration file at {}",
@@ -132,18 +133,18 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // Start motion control IO thread
+    // Start tracking & motion control threads
+    TrackingControlState trackingControlState;
     std::thread motionControlIOThread(motionControlRequestHandler,
-                                      recorderConfig);
-
-    // Start motion stage position logger thread
+                                      recorderConfig,
+                                      std::ref(trackingControlState));
     std::thread motionStagePositionLoggerThread(motionStagePositionLogger,
-                                                recorderConfig);
-
-    // Start tracking controller
+                                                recorderConfig,
+                                                std::ref(trackingControlState));
     std::thread trackingControllerThread(trackingController,
                                          recorderConfig,
-                                         std::ref(behaviorRecordingState));
+                                         std::ref(behaviorRecordingState),
+                                         std::ref(trackingControlState));
 
     // Start behavior image acquirer
     std::thread behaviorImageAcquirerThread(behaviorImageAcquirer,
@@ -164,7 +165,8 @@ int main(int argc, char **argv)
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
-                                     behaviorRecordingState,
+                                     std::ref(behaviorRecordingState),
+                                     std::ref(trackingControlState),
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();

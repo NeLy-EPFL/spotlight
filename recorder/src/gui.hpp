@@ -37,6 +37,7 @@ class MotionControlWidget : public QWidget
 {
 public:
     MotionControlWidget(const RecorderConfig &recorderConfig,
+                        TrackingControlState &trackingControlState,
                         QWidget *parent = nullptr);
     ~MotionControlWidget();
 
@@ -55,6 +56,8 @@ private:
     float maxXAbsoluteMm_;
     float minYAbsoluteMm_;
     float maxYAbsoluteMm_;
+
+    TrackingControlState &trackingControlState_;
 };
 
 class MainGUIWindow : public QWidget
@@ -64,6 +67,7 @@ class MainGUIWindow : public QWidget
 public:
     explicit MainGUIWindow(const RecorderConfig &recorderConfig,
                            BehaviorRecordingState &behaviorRecordingState,
+                           TrackingControlState &trackingControlState,
                            QWidget *parent = nullptr);
 
 private slots:
@@ -83,6 +87,7 @@ private:
     QTimer *imageDisplayTimer_;
     RecorderConfig recorderConfig_;
     BehaviorRecordingState &behaviorRecordingState_;
+    TrackingControlState &trackingControlState_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

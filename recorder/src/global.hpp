@@ -22,13 +22,13 @@ class ArduinoTriggerControllerInterface;
 // extern std::condition_variable muscleImageQueueCondVar;
 
 // Motion control
-extern std::atomic<bool> motionControlHandlerReady;
-extern MotionStagePosition latestMotionStagePosition;
-extern std::mutex latestMotionStagePositionMutex;
-extern std::atomic<bool> isCalibrating;
-extern std::atomic<bool> shouldOverrideTracking;
-extern std::atomic<double> overrideXPosAbsolute;
-extern std::atomic<double> overrideYPosAbsolute;
+// extern std::atomic<bool> motionControlHandlerReady;
+// extern MotionStagePosition latestMotionStagePosition;
+// extern std::mutex latestMotionStagePositionMutex;
+// extern std::atomic<bool> isCalibrating;
+// extern std::atomic<bool> shouldOverrideTracking;
+// extern std::atomic<double> overrideXPosAbsolute;
+// extern std::atomic<double> overrideYPosAbsolute;
 
 // Calibration
 extern CalibrationParams behaviorCamCalibrationParams;

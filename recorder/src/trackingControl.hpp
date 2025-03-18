@@ -11,6 +11,7 @@
 #include <limits>
 #include <filesystem>
 #include <set>
+#include <tuple>
 
 #include <spdlog/spdlog.h>
 
@@ -22,18 +23,28 @@
 #include "calibration.hpp"
 #include "recorderConfig.hpp"
 
+struct TrackingControlState
+{
+    std::atomic<bool> motionControlHandlerReady = false;
+    MotionStagePosition latestMotionStagePosition;
+    std::mutex latestMotionStagePositionMutex;
+    std::atomic<bool> shouldOverrideTracking = false;
+    std::atomic<double> overridingPosX; // in mm
+    std::atomic<double> overridingPosY; // in mm
+};
+
 // Hardware controller thread
-void motionControlRequestHandler(const RecorderConfig &recorderConfig);
+void motionControlRequestHandler(const RecorderConfig &recorderConfig,
+                                 TrackingControlState &trackingControlState);
 
 // Tracking thread
 void trackingController(const RecorderConfig &recorderConfig,
-                        BehaviorRecordingState &behaviorRecordingState);
-cv::Mat blackoutOutside(cv::Mat image,
-                        MotionStagePosition stagePos,
-                        const RecorderConfig &recorderConfig);
+                        BehaviorRecordingState &behaviorRecordingState,
+                        TrackingControlState &trackingControlState);
 
 // Position logging thread
-void motionStagePositionLogger(const RecorderConfig &recorderConfig);
+void motionStagePositionLogger(const RecorderConfig &recorderConfig,
+                               TrackingControlState &trackingControlState);
 
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
@@ -52,5 +63,9 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
     const RecorderConfig &recorderConfig);
+
+cv::Mat blackoutOutside(cv::Mat image,
+                        MotionStagePosition stagePos,
+                        const RecorderConfig &recorderConfig);
 
 #endif // TRACKING_CONTROL_HPP
