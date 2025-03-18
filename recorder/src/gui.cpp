@@ -147,11 +147,13 @@ float MotionControlWidget::mapToStageY(int y) const
            minYAbsoluteMm_;
 }
 
-MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig, QWidget *parent)
-    : QWidget(parent)
+MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
+                             BehaviorRecordingState &behaviorRecordingState,
+                             QWidget *parent)
+    : QWidget(parent),
+      recorderConfig_(recorderConfig),
+      behaviorRecordingState_(behaviorRecordingState)
 {
-    recorderConfig_ = recorderConfig;
-
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
@@ -249,7 +251,8 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig, QWidget *pare
 
 void MainGUIWindow::startRecording()
 {
-    if (!behaviorCameraReady.load())
+    if (!behaviorRecordingState_.behaviorCamera ||
+        !behaviorRecordingState_.behaviorCamera->isReady())
     {
         spdlog::error("Behavior camera not ready. Cannot start recording.");
         // Make a pop-up error window

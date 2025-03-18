@@ -14,14 +14,12 @@ BehaviorCamera::BehaviorCamera(
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
-    std::string ioLine,
-    std::atomic<bool> &cameraReadyFlag)
+    std::string ioLine)
     : imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       xOffset_(xOffset),
       yOffset_(yOffset),
-      ioLine_(ioLine),
-      cameraReadyFlag_(cameraReadyFlag)
+      ioLine_(ioLine)
 {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
@@ -125,6 +123,11 @@ FrameData BehaviorCamera::waitForOneFrame()
     frameData.receivedTime = receivedTime;
     frameData.image = cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr);
     return frameData;
+}
+
+bool BehaviorCamera::isReady() const
+{
+    return cameraReadyFlag_.load();
 }
 
 template <typename Module>

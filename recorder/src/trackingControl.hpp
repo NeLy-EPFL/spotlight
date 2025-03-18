@@ -26,7 +26,8 @@
 void motionControlRequestHandler(const RecorderConfig &recorderConfig);
 
 // Tracking thread
-void trackingController(const RecorderConfig &recorderConfig);
+void trackingController(const RecorderConfig &recorderConfig,
+                        BehaviorRecordingState &behaviorRecordingState);
 cv::Mat blackoutOutside(cv::Mat image,
                         MotionStagePosition stagePos,
                         const RecorderConfig &recorderConfig);

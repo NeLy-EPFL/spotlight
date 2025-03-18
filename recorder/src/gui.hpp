@@ -63,6 +63,7 @@ class MainGUIWindow : public QWidget
 
 public:
     explicit MainGUIWindow(const RecorderConfig &recorderConfig,
+                           BehaviorRecordingState &behaviorRecordingState,
                            QWidget *parent = nullptr);
 
 private slots:
@@ -81,6 +82,7 @@ private:
     QLabel *behaviorImageDisplayLabel_;
     QTimer *imageDisplayTimer_;
     RecorderConfig recorderConfig_;
+    BehaviorRecordingState &behaviorRecordingState_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

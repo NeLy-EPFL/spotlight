@@ -8,18 +8,18 @@
 
 // Some .hpp includes this file so we can't include them here.
 // Make forward declarations instead.
-class BehaviorCamera;
+// class BehaviorCamera;
 class ArduinoTriggerControllerInterface;
 
 // Image acquisition
-extern BehaviorCamera *behaviorCamera;
-extern std::queue<GroupOfThreeFrames> behaviorImageQueue;
-extern std::mutex behaviorImageQueueMutex;
-extern std::condition_variable behaviorImageQueueCondVar;
-extern std::atomic<bool> behaviorCameraReady;
-extern std::queue<GroupOfThreeFrames> muscleImageQueue;
-extern std::mutex muscleImageQueueMutex;
-extern std::condition_variable muscleImageQueueCondVar;
+// extern BehaviorCamera *behaviorCamera;
+// extern std::queue<GroupOfThreeFrames> behaviorImageQueue;
+// extern std::mutex behaviorImageQueueMutex;
+// extern std::condition_variable behaviorImageQueueCondVar;
+// extern std::atomic<bool> behaviorCameraReady;
+// extern std::queue<GroupOfThreeFrames> muscleImageQueue;
+// extern std::mutex muscleImageQueueMutex;
+// extern std::condition_variable muscleImageQueueCondVar;
 
 // Motion control
 extern std::atomic<bool> motionControlHandlerReady;

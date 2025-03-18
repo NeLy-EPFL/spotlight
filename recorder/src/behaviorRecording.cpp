@@ -15,8 +15,10 @@ namespace
     }
 }
 
-void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
+void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
+                           BehaviorRecordingState &behaviorRecordingState)
 {
+    spdlog::info("Behavior image acquirer thread started");
     unsigned int imageWidth = roundToMultiplesOf64(
         recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
     unsigned int imageHeight = roundToMultiplesOf64(
@@ -24,18 +26,19 @@ void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
     unsigned int xOffset = 0;
     unsigned int yOffset = 0;
 
-    BehaviorCamera localBehaviorCamera(
-        imageWidth,
-        imageHeight,
-        xOffset,
-        yOffset,
+    std::string frameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>("behavior_camera",
-                                                 "frame_grabber_trigger_line"));
-    behaviorCamera = &localBehaviorCamera;
+                                                 "frame_grabber_trigger_line");
+    behaviorRecordingState.behaviorCamera =
+        std::make_shared<BehaviorCamera>(imageWidth,
+                                         imageHeight,
+                                         xOffset,
+                                         yOffset,
+                                         frameGrabberTriggerLine);
 
     spdlog::info("Behavior camera configured");
 
-    behaviorCamera->start();
+    behaviorRecordingState.behaviorCamera->start();
     spdlog::info("Behavior camera started");
 
     FrameData frameDataBuffer[3];
@@ -52,7 +55,8 @@ void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
         // // have plenty of margin and can theoretically record at
         // // 1,000,000 / 200-ish = 5,000 fps.
         // // uint64_t startTime = getCurrentTimeMicroseconds();
-        FrameData frameData = behaviorCamera->waitForOneFrame();
+        FrameData frameData =
+            behaviorRecordingState.behaviorCamera->waitForOneFrame();
         // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
         // spdlog::info("Behavior camera waited {} us", waitTime);
 
@@ -66,7 +70,8 @@ void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
         {
             if (isFristFrameRecorded)
             {
-                // Reset these to 0 in preparation for the next recording session
+                // Reset these to 0 in preparation for the next recording
+                // session
                 frameDataBufferIndex = 0;
                 currentFrameId = 0;
                 isFristFrameRecorded = false; // toggle off
@@ -84,10 +89,12 @@ void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
                     frameDataBuffer[1],
                     frameDataBuffer[2]};
                 {
-                    std::lock_guard<std::mutex> lock(behaviorImageQueueMutex);
-                    behaviorImageQueue.push(groupOfThreeFrames);
+                    std::lock_guard<std::mutex> lock(
+                        behaviorRecordingState.behaviorImageQueueMutex);
+                    behaviorRecordingState.behaviorImageQueue.push(
+                        groupOfThreeFrames);
                 }
-                behaviorImageQueueCondVar.notify_one();
+                behaviorRecordingState.behaviorImageQueueCondVar.notify_one();
 
                 frameDataBufferIndex = 0;
             }
@@ -101,12 +108,14 @@ void behaviorImageAcquierer(const RecorderConfig &recorderConfig)
     }
 }
 
-void behaviorImageSaver()
+void behaviorImageSaver(BehaviorRecordingState &behaviorRecordingState)
 {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
     ss << myThreadId;
     std::string threadIdString = ss.str();
+    spdlog::info("Behavior image saver thread started (thread ID {})",
+                 threadIdString);
 
     // Define OpenCV JPEG saving parameters
     std::vector<int> compressionParams;
@@ -131,10 +140,12 @@ void behaviorImageSaver()
         GroupOfThreeFrames frameGroup;
         int queueLength;
         {
-            std::unique_lock<std::mutex> lock(behaviorImageQueueMutex);
-            behaviorImageQueueCondVar.wait(
-                lock, []
-                { return !behaviorImageQueue.empty() || toQuit.load(); });
+            std::unique_lock<std::mutex> lock(
+                behaviorRecordingState.behaviorImageQueueMutex);
+            behaviorRecordingState.behaviorImageQueueCondVar.wait(
+                lock, [&behaviorRecordingState]
+                { return !behaviorRecordingState.behaviorImageQueue.empty() ||
+                         toQuit.load(); });
 
             if (toQuit.load())
             {
@@ -143,9 +154,9 @@ void behaviorImageSaver()
                 break;
             }
 
-            queueLength = behaviorImageQueue.size();
-            frameGroup = behaviorImageQueue.front();
-            behaviorImageQueue.pop();
+            queueLength = behaviorRecordingState.behaviorImageQueue.size();
+            frameGroup = behaviorRecordingState.behaviorImageQueue.front();
+            behaviorRecordingState.behaviorImageQueue.pop();
         }
 
         uint64_t startTime = getCurrentTimeMicroseconds();
@@ -193,7 +204,7 @@ void behaviorImageSaver()
     spdlog::info("Behavior image saver thread stopped");
 }
 
-void stopBehaviorImageSaver()
+void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState)
 {
     if (!toQuit.load())
     {
@@ -206,6 +217,6 @@ void stopBehaviorImageSaver()
     }
     else
     {
-        behaviorImageQueueCondVar.notify_all();
+        behaviorRecordingState.behaviorImageQueueCondVar.notify_all();
     }
 }
