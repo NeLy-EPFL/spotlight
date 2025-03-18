@@ -187,3 +187,39 @@ std::string expandPath(const std::string &path)
     // Return the original path if it doesn't start with "~/"
     return path;
 }
+
+SaveDirectory::SaveDirectory(std::string directory)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    directory_ = expandPath(directory);
+    initialize();
+}
+
+void SaveDirectory::setDirectory(std::string directory)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    directory_ = expandPath(directory);
+    initialize();
+}
+
+std::filesystem::path SaveDirectory::getDirectory()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return directory_;
+}
+
+void SaveDirectory::initialize()
+{
+    try
+    {
+        fs::create_directories(directory_ / "behavior_images");
+        fs::create_directories(directory_ / "stage_position");
+    }
+    catch (const fs::filesystem_error &e)
+    {
+        spdlog::error(
+            "Failed to create directories in '{}': {}",
+            directory_.string(), e.what());
+        throw;
+    }
+}

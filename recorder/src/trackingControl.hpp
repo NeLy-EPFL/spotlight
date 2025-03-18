@@ -34,18 +34,22 @@ struct TrackingControlState
 };
 
 // Hardware controller thread
-void motionControlRequestHandler(const RecorderConfig &recorderConfig,
-                                 TrackingControlState &trackingControlState);
+void motionControlRequestHandler(
+    const RecorderConfig &recorderConfig,
+    TrackingControlState &trackingControlState);
 
 // Tracking thread
-void trackingController(const RecorderConfig &recorderConfig,
-                        BehaviorRecordingState &behaviorRecordingState,
-                        TrackingControlState &trackingControlState,
-                        CalibrationParams &behaviorCamCalibrationParams);
+void trackingController(
+    const RecorderConfig &recorderConfig,
+    BehaviorRecordingState &behaviorRecordingState,
+    TrackingControlState &trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams);
 
 // Position logging thread
-void motionStagePositionLogger(const RecorderConfig &recorderConfig,
-                               TrackingControlState &trackingControlState);
+void motionStagePositionLogger(
+    const RecorderConfig &recorderConfig,
+    TrackingControlState &trackingControlState,
+    std::shared_ptr<SaveDirectory> saveDirectory);
 
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.

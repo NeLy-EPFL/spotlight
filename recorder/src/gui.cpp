@@ -155,12 +155,14 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
                              BehaviorRecordingState &behaviorRecordingState,
                              TrackingControlState &trackingControlState,
                              CalibrationParams &behaviorCamCalibrationParams,
+                             std::shared_ptr<SaveDirectory> saveDirectory,
                              QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
       behaviorRecordingState_(behaviorRecordingState),
       trackingControlState_(trackingControlState),
-      behaviorCamCalibrationParams_(behaviorCamCalibrationParams)
+      behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
+      saveDirectory_(saveDirectory)
 {
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -187,13 +189,13 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
 
     // Save directory widget
     directoryLineEdit_ = new QLineEdit(this);
-    directoryLineEdit_->setText(saveDirectory.c_str());
+    directoryLineEdit_->setText(saveDirectory->getDirectory().c_str());
     connect(directoryLineEdit_,
             &QLineEdit::textChanged,
             this,
-            [this](const QString &text)
+            [this, saveDirectory](const QString &text)
             { spdlog::debug("saveDirectory changed to {}", text.toStdString());
-                saveDirectory = text.toStdString(); });
+                saveDirectory->setDirectory(text.toStdString()); });
     QPushButton *browseButton = new QPushButton("Browse", this);
 
     QHBoxLayout *directoryLayout = new QHBoxLayout();
@@ -309,15 +311,19 @@ void MainGUIWindow::closeEvent(QCloseEvent *event)
 
 void MainGUIWindow::browseDirectory()
 {
+    std::string currentDirectory = saveDirectory_->getDirectory();
     QString dir = QFileDialog::getExistingDirectory(
         this,
         "Open Directory",
-        QString::fromStdString(saveDirectory),
+        QString::fromStdString(currentDirectory),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!dir.isEmpty())
     {
         directoryLineEdit_->setText(dir);
-        saveDirectory = dir.toStdString();
+
+        saveDirectory_->setDirectory(dir.toStdString());
+        spdlog::info("Directory changed to '{}'", dir.toStdString());
+
     }
     else
     {

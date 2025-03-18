@@ -45,7 +45,7 @@ ArduinoTriggerControllerInterface *triggerController;
 
 std::atomic<bool> toQuit = false;
 std::atomic<bool> isRecording = false;
-std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
+// std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
 
 QApplication *application = nullptr;
 MainGUIWindow *mainGUIWindow = nullptr;
@@ -125,6 +125,13 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
+    // Make atomic variable that holds the save directory
+    std::string defaultSaveDirectory =
+        recorderConfig.getParameter<std::string>("io", "default_save_dir");
+    // SaveDirectory saveDirectory(defaultSaveDirectory);
+    std::shared_ptr<SaveDirectory> saveDirectory =
+        std::make_shared<SaveDirectory>(defaultSaveDirectory);
+
     // Load position mapping/calibration parameters
     std::string calibrationParamsFilePath =
         recorderConfig.getParameter<std::string>("io", "calibration_file");
@@ -151,8 +158,9 @@ int main(int argc, char **argv)
         std::ref(trackingControlState));
     std::thread motionStagePositionLoggerThread(
         motionStagePositionLogger,
-        recorderConfig,
-        std::ref(trackingControlState));
+        std::ref(recorderConfig),
+        std::ref(trackingControlState),
+        saveDirectory);
     std::thread trackingControllerThread(
         trackingController,
         recorderConfig,
@@ -173,7 +181,8 @@ int main(int argc, char **argv)
         behaviorImageSaverThreads.push_back(
             std::thread(behaviorImageSaver,
                         recorderConfig,
-                        std::ref(behaviorRecordingState)));
+                        std::ref(behaviorRecordingState),
+                        saveDirectory));
     }
 
     // Start Arduino triggering interface
@@ -185,6 +194,7 @@ int main(int argc, char **argv)
                                      std::ref(behaviorRecordingState),
                                      std::ref(trackingControlState),
                                      std::ref(behaviorCamCalibrationParams),
+                                     saveDirectory,
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();

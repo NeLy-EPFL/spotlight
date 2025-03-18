@@ -10,18 +10,18 @@ namespace
     std::queue<MotionStageRequest> requestQueue;
     std::map<int, MotionStageResponse> responseMap;
 
-    std::ofstream initializeMotionStageLogFile()
+    std::ofstream initializeMotionStageLogFile(std::string saveDirectory)
     {
-        std::filesystem::path motionStageLogDir;
-        {
-            std::lock_guard<std::mutex> lock(isIOInitializing);
-            motionStageLogDir = prepareOutputFolder(
-                fs::path(saveDirectory) / "stage_position", true);
-            spdlog::info("Motion stage log directory: {}",
-                         motionStageLogDir.string());
-        }
+        // std::filesystem::path motionStageLogDir;
+        // {
+        //     std::lock_guard<std::mutex> lock(isIOInitializing);
+        //     motionStageLogDir = prepareOutputFolder(
+        //         fs::path(saveDirectory) / "stage_position", true);
+        //     spdlog::info("Motion stage log directory: {}",
+        //                  motionStageLogDir.string());
+        // }
         std::filesystem::path filename =
-            motionStageLogDir / "stage_position.csv";
+            fs::path(saveDirectory) / "stage_position" / "stage_position.csv";
         std::ofstream logFile((filename).string(), std::ios_base::app);
         if (!logFile.is_open())
         {
@@ -363,7 +363,8 @@ cv::Mat blackoutOutside(cv::Mat image,
 }
 
 void motionStagePositionLogger(const RecorderConfig &recorderConfig,
-                               TrackingControlState &trackingControlState)
+                               TrackingControlState &trackingControlState,
+                               std::shared_ptr<SaveDirectory> saveDirectory)
 {
     int positionLoggingFreq = recorderConfig.getParameter<int>(
         "motion_control", "position_logging_frequency_hz");
@@ -389,15 +390,16 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
         // Log position
         if (isRecording.load())
         {
-            if (initializedSaveDirectories.find(saveDirectory) ==
+            if (initializedSaveDirectories.find(saveDirectory->getDirectory()) ==
                 initializedSaveDirectories.end())
             {
                 spdlog::info(
-                    "Stage position log directory not initialized under {}. "
-                    "Creating a folder now.",
-                    saveDirectory);
-                logFile = initializeMotionStageLogFile();
-                initializedSaveDirectories.insert(saveDirectory);
+                    "Stage position log file not initialized under {}. "
+                    "Creating one now.",
+                    saveDirectory->getDirectory().c_str());
+                logFile = initializeMotionStageLogFile(
+                    saveDirectory->getDirectory());
+                initializedSaveDirectories.insert(saveDirectory->getDirectory());
                 spdlog::info("Stage position logging starts now!");
             }
 

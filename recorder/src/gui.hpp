@@ -69,6 +69,7 @@ public:
                            BehaviorRecordingState &behaviorRecordingState,
                            TrackingControlState &trackingControlState,
                            CalibrationParams &behaviorCamCalibrationParams,
+                           std::shared_ptr<SaveDirectory> saveDirectory,
                            QWidget *parent = nullptr);
 
 private slots:
@@ -90,6 +91,7 @@ private:
     BehaviorRecordingState &behaviorRecordingState_;
     TrackingControlState &trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
+    std::shared_ptr<SaveDirectory> saveDirectory_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
