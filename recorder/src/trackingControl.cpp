@@ -150,7 +150,8 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig)
     spdlog::info("Motion stage request handler thread stopped.");
 }
 
-void trackingController(const RecorderConfig &recorderConfig)
+void trackingController(const RecorderConfig &recorderConfig,
+                        BehaviorRecordingState &behaviorRecordingState)
 {
     while (!motionControlHandlerReady.load())
     {
@@ -182,10 +183,18 @@ void trackingController(const RecorderConfig &recorderConfig)
                 myMotionStagePosition = latestMotionStagePosition;
             }
 
-            auto [isFound, physicalPosX, physicalPosY] =
-                calculateFlyPositionAbsoluteMm(myBehaviorImage,
-                                               myMotionStagePosition,
-                                               recorderConfig);
+            bool isFound = false;
+            double physicalPosX = 0;
+            double physicalPosY = 0;
+            if (behaviorRecordingState.behaviorCamera &&
+                behaviorRecordingState.behaviorCamera->isReady())
+            {
+                std::tie(isFound, physicalPosX, physicalPosY) =
+                    calculateFlyPositionAbsoluteMm(myBehaviorImage,
+                                                   myMotionStagePosition,
+                                                   recorderConfig);
+            }
+
             if (isFound)
             {
                 auto [currentPhysicalPosX, currentPhysicalPosY] =
@@ -424,12 +433,9 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
 
     if (behaviorImage.empty())
     {
-        if (behaviorCameraReady.load())
-        {
-            spdlog::warn(
-                "Input behavior image is empty. It's normal if this happens "
-                "only one or two times at the start of recording.");
-        }
+        spdlog::warn(
+            "Input behavior image is empty. It's normal if this happens "
+            "only one or two times at the start of recording.");
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
     if (!behaviorCamCalibrationParams.isDefined)

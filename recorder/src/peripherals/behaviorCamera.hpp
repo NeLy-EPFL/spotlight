@@ -25,12 +25,12 @@ public:
         unsigned int imageHeight,
         unsigned int xOffset,
         unsigned int yOffset,
-        std::string ioLine,
-        std::atomic<bool> &cameraReadyFlag = behaviorCameraReady);
+        std::string ioLine);
     ~BehaviorCamera();
     void start(size_t bufferCount = 20);
     void stop();
     FrameData waitForOneFrame();
+    bool isReady() const;
 
 private:
     Euresys::EGenTL genTL_;
@@ -43,7 +43,7 @@ private:
     int yOffset_;
     std::string ioLine_;
     int currentFPS_;
-    std::atomic<bool> &cameraReadyFlag_;
+    std::atomic<bool> cameraReadyFlag_{false};
 
     template <typename Module>
     bool setIntegerAndCheck(const std::string key, int value);

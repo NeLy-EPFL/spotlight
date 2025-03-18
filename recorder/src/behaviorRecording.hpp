@@ -9,6 +9,7 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+// #include <memory>
 
 #include <spdlog/spdlog.h>
 
@@ -16,9 +17,21 @@
 #include "global.hpp"
 #include "recorderConfig.hpp"
 
+struct BehaviorRecordingState
+{
+    std::shared_ptr<BehaviorCamera> behaviorCamera = nullptr;
+    std::queue<GroupOfThreeFrames> behaviorImageQueue;
+    std::mutex behaviorImageQueueMutex;
+    std::condition_variable behaviorImageQueueCondVar;
+    std::queue<GroupOfThreeFrames> muscleImageQueue;
+    std::mutex muscleImageQueueMutex;
+    std::condition_variable muscleImageQueueCondVar;
+};
+
 // Function declarations
-void behaviorImageAcquierer(const RecorderConfig &recorderConfig);
-void behaviorImageSaver();
-void stopBehaviorImageSaver();
+void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
+                           BehaviorRecordingState &behaviorRecordingState);
+void behaviorImageSaver(BehaviorRecordingState &behaviorRecordingState);
+void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState);
 
 #endif // BEHAVIOR_RECORDING_HPP

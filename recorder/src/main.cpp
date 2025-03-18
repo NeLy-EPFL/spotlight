@@ -15,15 +15,20 @@
 #include "trackingControl.hpp"
 #include "gui.hpp"
 
+namespace
+{
+    BehaviorRecordingState behaviorRecordingState;
+}
+
 // Define all global variables
-BehaviorCamera *behaviorCamera = nullptr;
-std::queue<GroupOfThreeFrames> behaviorImageQueue;
-std::mutex behaviorImageQueueMutex;
-std::condition_variable behaviorImageQueueCondVar;
-std::atomic<bool> behaviorCameraReady = false;
-std::queue<GroupOfThreeFrames> muscleImageQueue;
-std::mutex muscleImageQueueMutex;
-std::condition_variable muscleImageQueueCondVar;
+// BehaviorCamera *behaviorCamera = nullptr;
+// std::queue<GroupOfThreeFrames> behaviorImageQueue;
+// std::mutex behaviorImageQueueMutex;
+// std::condition_variable behaviorImageQueueCondVar;
+// std::atomic<bool> behaviorCameraReady = false;
+// std::queue<GroupOfThreeFrames> muscleImageQueue;
+// std::mutex muscleImageQueueMutex;
+// std::condition_variable muscleImageQueueCondVar;
 
 std::atomic<bool> motionControlHandlerReady = false;
 MotionStagePosition latestMotionStagePosition;
@@ -65,7 +70,7 @@ bool quitProgram()
  * Quit gracefully by explicitly stopping acquisition on the behavior
  * camera* and telling saver threads that the work is done.
  *
- * * Without stopping acquiisition explicitly, the frame grabber will
+ * * Without stopping acquisition explicitly, the frame grabber will
  * think the device is still busy the next time we run the program.
  */
 {
@@ -74,10 +79,10 @@ bool quitProgram()
     toQuit.store(true);
 
     // Stop behavior camera acquisition
-    if (behaviorCamera)
+    if (behaviorRecordingState.behaviorCamera)
     {
         spdlog::info("Stopping acquisition on behavior camera");
-        behaviorCamera->stop();
+        behaviorRecordingState.behaviorCamera->stop();
     }
 
     // Tell motion control request handler thread to stop
@@ -85,9 +90,8 @@ bool quitProgram()
     stopMotionControlRequestHandler();
 
     // Tell behavior camera saver threads to stop
-    spdlog::info("Telling behavior image saver threads to stop.",
-                 NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
-    stopBehaviorImageSaver();
+    spdlog::info("Telling behavior image saver threads to stop.");
+    stopBehaviorImageSaver(behaviorRecordingState);
 
     std::exit(0);
 }
@@ -108,14 +112,15 @@ int main(int argc, char **argv)
     application = &localApplication;
 
     // Load recorder configuration
-    std::filesystem::path configPAth = expandPath(RECORDER_CONFIG_PATH);
-    RecorderConfig recorderConfig(configPAth);
-    if (!recorderConfig.isDefined)
-    {
-        std::string errorMessage =
-            "Failed to load recorder configuration. Cannot start recording.";
-        spdlog::error(errorMessage);
-        return 1;
+    std::filesystem::path configPath = expandPath(RECORDER_CONFIG_PATH);
+    RecorderConfig recorderConfig(configPath);
+    if (!recorderConfig.isDefined) {
+        std::string errorMessage = fmt::format(
+            "Failed to load recorder configuration. Cannot start recording. "
+            "Expected valid recorder configuration file at {}",
+            configPath.c_str());
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
     }
 
     // Load calibration parameters
@@ -136,17 +141,21 @@ int main(int argc, char **argv)
                                                 recorderConfig);
 
     // Start tracking controller
-    std::thread trackingControllerThread(trackingController, recorderConfig);
+    std::thread trackingControllerThread(trackingController,
+                                         recorderConfig,
+                                         std::ref(behaviorRecordingState));
 
     // Start behavior image acquirer
-    std::thread behaviorImageAcquiererThread(behaviorImageAcquierer,
-                                             recorderConfig);
+    std::thread behaviorImageAcquirerThread(behaviorImageAcquirer,
+                                            std::ref(recorderConfig),
+                                            std::ref(behaviorRecordingState));
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
     for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
     {
-        behaviorImageSaverThreads.push_back(std::thread(behaviorImageSaver));
+        behaviorImageSaverThreads.push_back(
+            std::thread(behaviorImageSaver, std::ref(behaviorRecordingState)));
     }
 
     // Start Arduino triggering interface
@@ -154,16 +163,18 @@ int main(int argc, char **argv)
     triggerController = &localTriggerController;
 
     // Create and show GUI
-    MainGUIWindow localMainGUIWindow(recorderConfig, nullptr);
+    MainGUIWindow localMainGUIWindow(recorderConfig,
+                                     behaviorRecordingState,
+                                     nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
 
     int result = application->exec();
 
     // Wait for threads to finish
-    if (behaviorImageAcquiererThread.joinable())
+    if (behaviorImageAcquirerThread.joinable())
     {
-        behaviorImageAcquiererThread.join();
+        behaviorImageAcquirerThread.join();
     }
 
     for (auto &thread : behaviorImageSaverThreads)
