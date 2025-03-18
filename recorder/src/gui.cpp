@@ -154,11 +154,13 @@ float MotionControlWidget::mapToStageY(int y) const
 MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
                              BehaviorRecordingState &behaviorRecordingState,
                              TrackingControlState &trackingControlState,
+                             CalibrationParams &behaviorCamCalibrationParams,
                              QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
       behaviorRecordingState_(behaviorRecordingState),
-      trackingControlState_(trackingControlState)
+      trackingControlState_(trackingControlState),
+      behaviorCamCalibrationParams_(behaviorCamCalibrationParams)
 {
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -323,7 +325,9 @@ void MainGUIWindow::browseDirectory()
     }
 }
 
-cv::Mat addCornerMarker(cv::Mat image, MotionStagePosition stagePosition)
+cv::Mat addCornerMarker(cv::Mat image,
+                        MotionStagePosition stagePosition,
+                        CalibrationParams &behaviorCamCalibrationParams)
 {
     cv::Mat imageForDisplay = image.clone();
     assert(imageForDisplay.size() == image.size());
@@ -333,19 +337,16 @@ cv::Mat addCornerMarker(cv::Mat image, MotionStagePosition stagePosition)
     std::vector<cv::Point> pixelPoints;
     for (auto [x, y] : cornerPositions)
     {
-        if (behaviorCamCalibrationParams.isDefined)
-        {
-            int pixelRow, pixelCol;
-            std::tie(pixelRow, pixelCol) =
-                behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
-                    stagePosition.xPosMm, stagePosition.yPosMm, x, y);
-            pixelPoints.emplace_back(pixelRow, pixelCol);
-            cv::circle(imageForDisplay,
-                       cv::Point(pixelCol, pixelRow),
-                       5,
-                       cv::Scalar(255, 255, 255),
-                       -1);
-        }
+        int pixelRow, pixelCol;
+        std::tie(pixelRow, pixelCol) =
+            behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+                stagePosition.xPosMm, stagePosition.yPosMm, x, y);
+        pixelPoints.emplace_back(pixelRow, pixelCol);
+        cv::circle(imageForDisplay,
+                   cv::Point(pixelCol, pixelRow),
+                   5,
+                   cv::Scalar(255, 255, 255),
+                   -1);
 
         // if (0 <= pixelCol && pixelCol < imageForDisplay.cols &&
         //     0 <= pixelRow && pixelRow < imageForDisplay.rows)
@@ -390,10 +391,14 @@ void MainGUIWindow::updateImageDisplay()
     }
 
     cv::Mat maskedImage = blackoutOutside(
-        correctedFrame, myStagePosition, recorderConfig_);
+        correctedFrame,
+        myStagePosition,
+        behaviorCamCalibrationParams_,
+        recorderConfig_);
 
     cv::Mat imageForDisplay = addCornerMarker(maskedImage,
-                                              myStagePosition);
+                                              myStagePosition,
+                                              behaviorCamCalibrationParams_);
 
     QImage qImage = cvMatToQImage(imageForDisplay);
     QPixmap pixmap = QPixmap::fromImage(qImage)

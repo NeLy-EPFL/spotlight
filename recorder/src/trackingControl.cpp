@@ -153,7 +153,8 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
 
 void trackingController(const RecorderConfig &recorderConfig,
                         BehaviorRecordingState &behaviorRecordingState,
-                        TrackingControlState &trackingControlState)
+                        TrackingControlState &trackingControlState,
+                        CalibrationParams &behaviorCamCalibrationParams)
 {
     while (!trackingControlState.motionControlHandlerReady.load())
     {
@@ -166,6 +167,9 @@ void trackingController(const RecorderConfig &recorderConfig,
 
     float trackingDistanceThresholdMm = recorderConfig.getParameter<float>(
         "tracking", "distance_threshold_for_moving_mm");
+
+    float defaultVelocity = recorderConfig.getParameter<float>(
+        "motion_control", "default_velocity_mm_per_sec");
 
     while (!toQuit.load())
     {
@@ -195,6 +199,7 @@ void trackingController(const RecorderConfig &recorderConfig,
                 std::tie(isFound, physicalPosX, physicalPosY) =
                     calculateFlyPositionAbsoluteMm(myBehaviorImage,
                                                    myMotionStagePosition,
+                                                   behaviorCamCalibrationParams,
                                                    recorderConfig);
             }
 
@@ -239,7 +244,8 @@ void trackingController(const RecorderConfig &recorderConfig,
                 //     currentPhysicalPosY,
                 //     dx,
                 //     dy);
-                setTargetMotionStagePosition(targetMotionStagePosition);
+                setTargetMotionStagePosition(targetMotionStagePosition,
+                                             defaultVelocity);
             }
         }
         else
@@ -265,7 +271,8 @@ void trackingController(const RecorderConfig &recorderConfig,
                     trackingControlState.overridingPosX.load(),
                     trackingControlState.overridingPosY.load(),
                     ABSOLUTE};
-                setTargetMotionStagePosition(targetPos);
+                setTargetMotionStagePosition(targetPos,
+                                             defaultVelocity);
             }
         }
         uint64_t currentTime = getCurrentTimeMicroseconds();
@@ -290,6 +297,7 @@ void trackingController(const RecorderConfig &recorderConfig,
 
 cv::Mat blackoutOutside(cv::Mat image,
                         MotionStagePosition stagePos,
+                        CalibrationParams &behaviorCamCalibrationParams,
                         const RecorderConfig &recorderConfig)
 {
     if (!behaviorCamCalibrationParams.isDefined)
@@ -430,6 +438,7 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
+    CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig)
 {
     bool isFound = false;
@@ -454,6 +463,7 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     // Remove pixels outside the stage boundaries
     cv::Mat blackedOutImage = blackoutOutside(correctedImage.clone(),
                                               stagePosition,
+                                              behaviorCamCalibrationParams,
                                               recorderConfig);
 
     assert(blackedOutImage.channels() == 1);
@@ -563,8 +573,8 @@ MotionStagePosition getCurrentMotionStagePosition()
     return myResponse.position;
 }
 
-void setTargetMotionStagePosition(
-    MotionStagePosition targetPosition, float velocity)
+void setTargetMotionStagePosition(MotionStagePosition targetPosition,
+                                  float velocity)
 {
     size_t myThreadIdHash = getMyThreadIdHash();
 

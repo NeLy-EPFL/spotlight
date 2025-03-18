@@ -31,7 +31,8 @@ struct BehaviorRecordingState
 // Function declarations
 void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
                            BehaviorRecordingState &behaviorRecordingState);
-void behaviorImageSaver(BehaviorRecordingState &behaviorRecordingState);
+void behaviorImageSaver(const RecorderConfig &recorderConfig,
+                        BehaviorRecordingState &behaviorRecordingState);
 void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState);
 
 #endif // BEHAVIOR_RECORDING_HPP

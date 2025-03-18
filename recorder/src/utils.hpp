@@ -12,9 +12,6 @@
 #include <spdlog/spdlog.h>
 
 #include "dataTypes.hpp"
-#include "constants.hpp"
-#include "global.hpp"
-#include "calibration.hpp"
 
 namespace fs = std::filesystem;
 
@@ -29,7 +26,6 @@ std::string makeMetadataStringFromThreeFrames(
 std::string getSerialPortName(std::string deviceDescription,
                               std::string deviceManufacturer);
 
-std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime();
 int calculateBehaviorCameraPreviewWidth(
     int behaviorCameraPreviewHeight,
     int motionStageXRange,
@@ -38,8 +34,6 @@ int calculateBehaviorCameraPreviewWidth(
 fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 
 size_t getMyThreadIdHash();
-
-bool updateCalibrationParams();
 
 std::string expandPath(const std::string& path);
 
