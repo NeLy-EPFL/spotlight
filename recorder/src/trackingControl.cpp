@@ -12,14 +12,6 @@ namespace
 
     std::ofstream initializeMotionStageLogFile(std::string saveDirectory)
     {
-        // std::filesystem::path motionStageLogDir;
-        // {
-        //     std::lock_guard<std::mutex> lock(isIOInitializing);
-        //     motionStageLogDir = prepareOutputFolder(
-        //         fs::path(saveDirectory) / "stage_position", true);
-        //     spdlog::info("Motion stage log directory: {}",
-        //                  motionStageLogDir.string());
-        // }
         std::filesystem::path filename =
             fs::path(saveDirectory) / "stage_position" / "stage_position.csv";
         std::ofstream logFile((filename).string(), std::ios_base::app);
@@ -44,20 +36,21 @@ namespace
 }
 
 void motionControlRequestHandler(const RecorderConfig &recorderConfig,
-                                 TrackingControlState &trackingControlState)
+                                 TrackingControlState &trackingControlState,
+                                 std::shared_ptr<ProgramState> programState)
 {
     MotionControl motionControl(recorderConfig);
     trackingControlState.motionControlHandlerReady.store(true);
 
-    while (!toQuit.load())
+    while (!programState->toQuit.load())
     {
         MotionStageRequest myRequest;
         // Wait for a request
         {
             std::unique_lock<std::mutex> lock(requestMutex);
-            requestCondVar.wait(lock, []
+            requestCondVar.wait(lock, [programState]
                                 { return !requestQueue.empty() ||
-                                         toQuit.load(); });
+                                         programState->toQuit.load(); });
 
             // If there's still work to do, finish it even if told to stop
             if (!requestQueue.empty())
@@ -68,7 +61,7 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
             else
             {
                 // Only way to reach here is if toQuit is true
-                assert(toQuit.load());
+                assert(programState->toQuit.load());
                 spdlog::info(
                     "Motion stage request handler thread "
                     "is breaking out of loop.");
@@ -155,7 +148,8 @@ void trackingController(const RecorderConfig &recorderConfig,
                         BehaviorRecordingState &behaviorRecordingState,
                         TrackingControlState &trackingControlState,
                         CalibrationParams &behaviorCamCalibrationParams,
-                        LatestFrame &latestBehaviorFrameHolder)
+                        LatestFrame &latestBehaviorFrameHolder,
+                        std::shared_ptr<ProgramState> programState)
 {
     while (!trackingControlState.motionControlHandlerReady.load())
     {
@@ -172,7 +166,7 @@ void trackingController(const RecorderConfig &recorderConfig,
     float defaultVelocity = recorderConfig.getParameter<float>(
         "motion_control", "default_velocity_mm_per_sec");
 
-    while (!toQuit.load())
+    while (!programState->toQuit.load())
     {
         uint64_t startTime = getCurrentTimeMicroseconds();
 
@@ -365,7 +359,8 @@ cv::Mat blackoutOutside(cv::Mat image,
 
 void motionStagePositionLogger(const RecorderConfig &recorderConfig,
                                TrackingControlState &trackingControlState,
-                               std::shared_ptr<SaveDirectory> saveDirectory)
+                               std::shared_ptr<SaveDirectory> saveDirectory,
+                               std::shared_ptr<ProgramState> programState)
 {
     int positionLoggingFreq = recorderConfig.getParameter<int>(
         "motion_control", "position_logging_frequency_hz");
@@ -374,7 +369,7 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
     std::set<std::string> initializedSaveDirectories; // root save directories
     std::ofstream logFile;
 
-    while (!toQuit.load())
+    while (!programState->toQuit.load())
     {
         // Get current position
         uint64_t startTime = getCurrentTimeMicroseconds();
@@ -389,7 +384,7 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
         }
 
         // Log position
-        if (isRecording.load())
+        if (programState->isRecording.load())
         {
             if (initializedSaveDirectories.find(saveDirectory->getDirectory()) ==
                 initializedSaveDirectories.end())
@@ -721,9 +716,9 @@ void startHomingMotionStage()
     }
 }
 
-void stopMotionControlRequestHandler()
+void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState)
 {
-    if (!toQuit.load())
+    if (!programState->toQuit.load())
     {
         spdlog::critical(
             "stopMotionControlRequestHandler() called but toQuit "

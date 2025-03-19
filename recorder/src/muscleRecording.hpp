@@ -10,7 +10,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include "global.hpp"
 #include "recorderConfig.hpp"
 
 // Function declarations

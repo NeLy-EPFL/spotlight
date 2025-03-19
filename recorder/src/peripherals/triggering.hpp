@@ -11,7 +11,6 @@
 #include <thread>
 
 #include "../recorderConfig.hpp"
-#include "../global.hpp"
 #include "../utils.hpp"
 #include "../arduinoMessageProtocol.hpp"
 
@@ -28,7 +27,8 @@ public:
     /**
      * @brief Construct a new Arduino Trigger Controller Interface
      */
-    ArduinoTriggerInterface(const RecorderConfig &recorderConfig);
+    ArduinoTriggerInterface(const RecorderConfig &recorderConfig,
+                            std::shared_ptr<ProgramState> programState);
 
     /**
      * @brief Start the recording procedure
@@ -56,6 +56,7 @@ private:
     std::string serialPortName_;
     QSerialPort serialPort_;
     RecorderConfig recorderConfig_;
+    std::shared_ptr<ProgramState> programState_;
 
     /**
      * @brief Send a command to the Arduino

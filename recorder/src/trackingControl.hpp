@@ -17,7 +17,6 @@
 
 #include "peripherals/motionControl.hpp"
 #include "peripherals/triggering.hpp"
-#include "global.hpp"
 #include "utils.hpp"
 #include "behaviorRecording.hpp"
 #include "calibration.hpp"
@@ -36,7 +35,8 @@ struct TrackingControlState
 // Hardware controller thread
 void motionControlRequestHandler(
     const RecorderConfig &recorderConfig,
-    TrackingControlState &trackingControlState);
+    TrackingControlState &trackingControlState,
+    std::shared_ptr<ProgramState> programState);
 
 // Tracking thread
 void trackingController(
@@ -44,13 +44,15 @@ void trackingController(
     BehaviorRecordingState &behaviorRecordingState,
     TrackingControlState &trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
-    LatestFrame &latestBehaviorFrameHolder);
+    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<ProgramState> programState);
 
 // Position logging thread
 void motionStagePositionLogger(
     const RecorderConfig &recorderConfig,
     TrackingControlState &trackingControlState,
-    std::shared_ptr<SaveDirectory> saveDirectory);
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState);
 
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
@@ -61,7 +63,7 @@ void waitUntilMotionStageIdleSync();
 void waitUntilMotionStageIdleAsync();
 bool checkIfMotionStageIdle();
 void startHomingMotionStage();
-void stopMotionControlRequestHandler();
+void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState);
 
 // High-level helper functions
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
