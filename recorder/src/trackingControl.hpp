@@ -41,7 +41,7 @@ void motionControlRequestHandler(
 // Tracking thread
 void trackingController(
     const RecorderConfig &recorderConfig,
-    BehaviorRecordingState &behaviorRecordingState,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     TrackingControlState &trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     LatestFrame &latestBehaviorFrameHolder,

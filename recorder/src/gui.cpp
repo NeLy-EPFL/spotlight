@@ -144,7 +144,7 @@ float MotionControlWidget::mapToStageY(int y) const
 
 MainGUIWindow::MainGUIWindow(
     const RecorderConfig &recorderConfig,
-    BehaviorRecordingState &behaviorRecordingState,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     TrackingControlState &trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
@@ -259,8 +259,8 @@ MainGUIWindow::MainGUIWindow(
 
 void MainGUIWindow::startRecording()
 {
-    if (!behaviorRecordingState_.behaviorCamera ||
-        !behaviorRecordingState_.behaviorCamera->isReady())
+    if (!behaviorRecordingState_->behaviorCamera ||
+        !behaviorRecordingState_->behaviorCamera->isReady())
     {
         spdlog::error("Behavior camera not ready. Cannot start recording.");
         // Make a pop-up error window

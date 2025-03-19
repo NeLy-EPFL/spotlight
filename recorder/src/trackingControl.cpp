@@ -144,12 +144,13 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
     spdlog::info("Motion stage request handler thread stopped.");
 }
 
-void trackingController(const RecorderConfig &recorderConfig,
-                        BehaviorRecordingState &behaviorRecordingState,
-                        TrackingControlState &trackingControlState,
-                        CalibrationParams &behaviorCamCalibrationParams,
-                        LatestFrame &latestBehaviorFrameHolder,
-                        std::shared_ptr<ProgramState> programState)
+void trackingController(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    TrackingControlState &trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams,
+    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<ProgramState> programState)
 {
     while (!trackingControlState.motionControlHandlerReady.load())
     {
@@ -188,8 +189,8 @@ void trackingController(const RecorderConfig &recorderConfig,
             bool isFound = false;
             double physicalPosX = 0;
             double physicalPosY = 0;
-            if (behaviorRecordingState.behaviorCamera &&
-                behaviorRecordingState.behaviorCamera->isReady())
+            if (behaviorRecordingState->behaviorCamera &&
+                behaviorRecordingState->behaviorCamera->isReady())
             {
                 std::tie(isFound, physicalPosX, physicalPosY) =
                     calculateFlyPositionAbsoluteMm(myBehaviorImage,
