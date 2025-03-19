@@ -32,7 +32,7 @@ struct BehaviorRecordingState
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState);
 void behaviorImageSaver(
     const RecorderConfig &recorderConfig,

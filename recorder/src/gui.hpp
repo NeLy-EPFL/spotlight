@@ -72,7 +72,7 @@ public:
         std::shared_ptr<TrackingControlState> trackingControlState,
         CalibrationParams &behaviorCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
-        LatestFrame &latestBehaviorFrameHolder,
+        std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
         std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
         QWidget *parent = nullptr);
 
@@ -96,7 +96,7 @@ private:
     std::shared_ptr<TrackingControlState> trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
-    LatestFrame &latestBehaviorFrameHolder_;
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder_;
     std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface_;
 
 protected:

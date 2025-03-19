@@ -150,7 +150,7 @@ void trackingController(
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
-    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState)
 {
     while (!trackingControlState->motionControlHandlerReady.load())
@@ -177,7 +177,7 @@ void trackingController(
             cv::Mat myBehaviorImage;
             {
                 myBehaviorImage =
-                    latestBehaviorFrameHolder.getLatestFrameData().image;
+                    latestBehaviorFrameHolder->getLatestFrameData().image;
             }
             MotionStagePosition myMotionStagePosition;
             {
