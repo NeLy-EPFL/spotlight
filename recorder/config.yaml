@@ -46,15 +46,9 @@ triggering:
   arduino_device_manufacturer: "Arduino"
   arduino_device_description: "Nano ESP32"
 
-io:
-  data_base_dir: "~/Spotlight/"
-  calibration_dir: "~/Spotlight/calibration"
-  aruco_scan_dir: "~/Spotlight/calibration/aruco_scan"
-  calibration_file: "~/Spotlight/calibration/calibration_result.yaml"
-  default_save_dir: "./images/"
-
 gui:
   behavior_camera_preview_width: 640
   behavior_camera_preview_height: 480
   motion_stage_preview_height: 200
   motion_stage_preview_update_frequency_hz: 25
+  default_save_dir: "./images/"
