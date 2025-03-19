@@ -28,6 +28,7 @@ CLIOptions parseCLI(int argc, char** argv) {
     
     // Use default config path
     options.profileDir = "~/Spotlight/default/";
+    options.logLevel = spdlog::level::info;
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
