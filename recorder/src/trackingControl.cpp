@@ -35,12 +35,13 @@ namespace
     }
 }
 
-void motionControlRequestHandler(const RecorderConfig &recorderConfig,
-                                 TrackingControlState &trackingControlState,
-                                 std::shared_ptr<ProgramState> programState)
+void motionControlRequestHandler(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    std::shared_ptr<ProgramState> programState)
 {
     MotionControl motionControl(recorderConfig);
-    trackingControlState.motionControlHandlerReady.store(true);
+    trackingControlState->motionControlHandlerReady.store(true);
 
     while (!programState->toQuit.load())
     {
@@ -147,12 +148,12 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
 void trackingController(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    TrackingControlState &trackingControlState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     LatestFrame &latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState)
 {
-    while (!trackingControlState.motionControlHandlerReady.load())
+    while (!trackingControlState->motionControlHandlerReady.load())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -171,7 +172,7 @@ void trackingController(
     {
         uint64_t startTime = getCurrentTimeMicroseconds();
 
-        if (!trackingControlState.shouldOverrideTracking.load())
+        if (!trackingControlState->shouldOverrideTracking.load())
         {
             cv::Mat myBehaviorImage;
             {
@@ -181,9 +182,9 @@ void trackingController(
             MotionStagePosition myMotionStagePosition;
             {
                 std::lock_guard<std::mutex> lock(
-                    trackingControlState.latestMotionStagePositionMutex);
+                    trackingControlState->latestMotionStagePositionMutex);
                 myMotionStagePosition =
-                    trackingControlState.latestMotionStagePosition;
+                    trackingControlState->latestMotionStagePosition;
             }
 
             bool isFound = false;
@@ -250,22 +251,22 @@ void trackingController(
             MotionStagePosition currentPos = getCurrentMotionStagePosition();
             double distanceToTarget =
                 calculateDistance(
-                    trackingControlState.overridingPosX.load(),
-                    trackingControlState.overridingPosY.load(),
+                    trackingControlState->overridingPosX.load(),
+                    trackingControlState->overridingPosY.load(),
                     currentPos.xPosMm,
                     currentPos.yPosMm);
 
             if (distanceToTarget < trackingDistanceThresholdMm &&
                 checkIfMotionStageIdle())
             {
-                trackingControlState.shouldOverrideTracking.store(false);
+                trackingControlState->shouldOverrideTracking.store(false);
                 continue;
             }
             else
             {
                 MotionStagePosition targetPos = {
-                    trackingControlState.overridingPosX.load(),
-                    trackingControlState.overridingPosY.load(),
+                    trackingControlState->overridingPosX.load(),
+                    trackingControlState->overridingPosY.load(),
                     ABSOLUTE};
                 setTargetMotionStagePosition(targetPos,
                                              defaultVelocity);
@@ -358,10 +359,11 @@ cv::Mat blackoutOutside(cv::Mat image,
     return blackedOutImage;
 }
 
-void motionStagePositionLogger(const RecorderConfig &recorderConfig,
-                               TrackingControlState &trackingControlState,
-                               std::shared_ptr<SaveDirectory> saveDirectory,
-                               std::shared_ptr<ProgramState> programState)
+void motionStagePositionLogger(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState)
 {
     int positionLoggingFreq = recorderConfig.getParameter<int>(
         "motion_control", "position_logging_frequency_hz");
@@ -380,8 +382,8 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
         // Update latest position for other threads
         {
             std::lock_guard<std::mutex> lock(
-                trackingControlState.latestMotionStagePositionMutex);
-            trackingControlState.latestMotionStagePosition = currentPosition;
+                trackingControlState->latestMotionStagePositionMutex);
+            trackingControlState->latestMotionStagePosition = currentPosition;
         }
 
         // Log position

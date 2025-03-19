@@ -35,14 +35,14 @@ struct TrackingControlState
 // Hardware controller thread
 void motionControlRequestHandler(
     const RecorderConfig &recorderConfig,
-    TrackingControlState &trackingControlState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
     std::shared_ptr<ProgramState> programState);
 
 // Tracking thread
 void trackingController(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    TrackingControlState &trackingControlState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     LatestFrame &latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState);
@@ -50,7 +50,7 @@ void trackingController(
 // Position logging thread
 void motionStagePositionLogger(
     const RecorderConfig &recorderConfig,
-    TrackingControlState &trackingControlState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
     std::shared_ptr<SaveDirectory> saveDirectory,
     std::shared_ptr<ProgramState> programState);
 

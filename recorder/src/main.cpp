@@ -114,23 +114,24 @@ int main(int argc, char **argv)
     LatestFrame latestBehaviorFrameHolder;
 
     // Start tracking & motion control threads
-    TrackingControlState trackingControlState;
+    std::shared_ptr<TrackingControlState> trackingControlState =
+        std::make_shared<TrackingControlState>();
     std::thread motionControlIOThread(
         motionControlRequestHandler,
         recorderConfig,
-        std::ref(trackingControlState),
+        trackingControlState,
         programState);
     std::thread motionStagePositionLoggerThread(
         motionStagePositionLogger,
         std::ref(recorderConfig),
-        std::ref(trackingControlState),
+        trackingControlState,
         saveDirectory,
         programState);
     std::thread trackingControllerThread(
         trackingController,
         recorderConfig,
         behaviorRecordingState,
-        std::ref(trackingControlState),
+        trackingControlState,
         std::ref(behaviorCamCalibrationParams),
         std::ref(latestBehaviorFrameHolder),
         programState);
@@ -162,7 +163,7 @@ int main(int argc, char **argv)
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
                                      behaviorRecordingState,
-                                     std::ref(trackingControlState),
+                                     trackingControlState,
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
                                      latestBehaviorFrameHolder,
