@@ -43,6 +43,7 @@ namespace
         if (behaviorCamera)
         {
             behaviorCamera->stop();
+            behaviorCamera.reset();
         }
         std::exit(0);
     }
