@@ -69,7 +69,9 @@ int main(int argc, char **argv)
     behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
 
     // Load recorder configuration
-    std::filesystem::path configPath = expandPath(options.configPath);
+    std::filesystem::path profileDir =
+        std::filesystem::path(expandPath(options.profileDir));
+    std::filesystem::path configPath = profileDir / "recorder_config.yaml";
     spdlog::info("Loading recorder configuration from {}", configPath.string());
     RecorderConfig recorderConfig(configPath);
     if (!recorderConfig.isDefined)
@@ -84,15 +86,14 @@ int main(int argc, char **argv)
 
     // Make atomic variable that holds the save directory
     std::string defaultSaveDirectory =
-        recorderConfig.getParameter<std::string>("io", "default_save_dir");
+        recorderConfig.getParameter<std::string>("gui", "default_save_dir");
     // SaveDirectory saveDirectory(defaultSaveDirectory);
     std::shared_ptr<SaveDirectory> saveDirectory =
         std::make_shared<SaveDirectory>(defaultSaveDirectory);
 
     // Load position mapping/calibration parameters
     std::string calibrationParamsFilePath =
-        recorderConfig.getParameter<std::string>("io", "calibration_file");
-    calibrationParamsFilePath = expandPath(calibrationParamsFilePath);
+        profileDir / "calibration/calibration_result.yaml";
     spdlog::info("Loading spatial calibration parameters from {}",
                  calibrationParamsFilePath);
     CalibrationParams behaviorCamCalibrationParams(calibrationParamsFilePath);

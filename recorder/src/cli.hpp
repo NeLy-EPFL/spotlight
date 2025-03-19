@@ -4,7 +4,7 @@
 #include <spdlog/spdlog.h>
 
 struct CLIOptions {
-    std::string configPath;
+    std::string profileDir;
     spdlog::level::level_enum logLevel;
 };
 

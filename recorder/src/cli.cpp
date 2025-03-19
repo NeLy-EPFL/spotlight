@@ -4,7 +4,7 @@ void printHelp(const char* programName) {
     std::cout << "Usage: " << programName << " [OPTIONS]\n"
               << "Options:\n"
               << "  -h, --help                 Display this help message\n"
-              << "  -c, --config PATH          Path to configuration file (default: ~/Spotlight/recorder_config.yaml)\n"
+              << "  -p, --profile PATH         Path to profile directory (default: ~/Spotlight/default/)\n"
               << "  -v, --verbose              Enable verbose output (debug level)\n"
               << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
               << std::endl;
@@ -27,7 +27,7 @@ CLIOptions parseCLI(int argc, char** argv) {
     CLIOptions options;
     
     // Use default config path
-    options.configPath = "~/Spotlight/recorder_config.yaml";
+    options.profileDir = "~/Spotlight/default/";
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -40,10 +40,10 @@ CLIOptions parseCLI(int argc, char** argv) {
         } else if (arg == "--verbosity" && i + 1 < argc) {
             options.logLevel = parseLogLevel(argv[++i]);
         } else if ((arg == "-c" || arg == "--config") && i + 1 < argc) {
-            options.configPath = argv[++i];
+            options.profileDir = argv[++i];
         } else if (i == 1 && arg[0] != '-') {
             // Support for positional argument (for backward compatibility)
-            options.configPath = arg;
+            options.profileDir = arg;
         } else {
             std::cerr << "Unknown option: " << arg << std::endl;
             printHelp(argv[0]);
