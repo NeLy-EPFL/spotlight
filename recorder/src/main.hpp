@@ -10,11 +10,15 @@
 #include <condition_variable>
 #include <string>
 
-#include "constants.hpp"
 #include "calibration.hpp"
 #include "peripherals/behaviorCamera.hpp"
 #include "peripherals/triggering.hpp"
 #include "recorderConfig.hpp"
+#include "cli.hpp"
+#include "behaviorRecording.hpp"
+#include "muscleRecording.hpp"
+#include "trackingControl.hpp"
+#include "gui.hpp"
 
 // Forward declarations
 class QApplication;
