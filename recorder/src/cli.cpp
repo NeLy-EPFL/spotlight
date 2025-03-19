@@ -4,7 +4,7 @@ void printHelp(const char* programName) {
     std::cout << "Usage: " << programName << " [OPTIONS]\n"
               << "Options:\n"
               << "  -h, --help                 Display this help message\n"
-              << "  -p, --profile PATH         Path to profile directory (default: ~/Spotlight/default/)\n"
+              << "  -p, --profile-dir PATH     Path to profile directory (default: ~/Spotlight/default/)\n"
               << "  -v, --verbose              Enable verbose output (debug level)\n"
               << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
               << std::endl;
@@ -40,7 +40,7 @@ CLIOptions parseCLI(int argc, char** argv) {
             options.logLevel = spdlog::level::debug;
         } else if (arg == "--verbosity" && i + 1 < argc) {
             options.logLevel = parseLogLevel(argv[++i]);
-        } else if ((arg == "-c" || arg == "--config") && i + 1 < argc) {
+        } else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc) {
             options.profileDir = argv[++i];
         } else if (i == 1 && arg[0] != '-') {
             // Support for positional argument (for backward compatibility)
