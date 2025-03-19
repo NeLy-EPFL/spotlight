@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 
+#include "constants.h"
 #include "arduinoMessageProtocol.hpp"
 
 const int behaviorCameraTriggerPin = 2;
@@ -15,9 +16,9 @@ const int indicatorLEDPinGreen = 11;
 const int indicatorLEDPinBlue = 12;
 
 int behaviorCycleTimeMicrosecs =
-    1000000 / BEHAVIOR_CAMERA_STREAMING_FPS;
+    1000000 / BEHAVIOR_CAMERA_STREAMING_FRAME_RATE;
 int behaviorExposureTimeMicrosecs =
-    BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_MICROSECS;
+    BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_US;
 unsigned long lastBehaviorExposureStartTimeMicrosecs = 0;
 bool behaviorTriggerState = LOW;
 bool waitingForCommand = false;
@@ -43,7 +44,7 @@ enum Color {
 };
 
 void setup() {
-    Serial.begin(ARDUINO_BAUD_RATE_INT);
+    Serial.begin(TRIGGERING_ARDUINO_BAUD_RATE);
 
     pinMode(behaviorCameraTriggerPin, OUTPUT);
     pinMode(irIlluminationTriggerPin, OUTPUT);
@@ -157,24 +158,6 @@ void loop() {
             lastBehaviorExposureStartTimeMicrosecs = currentTimeMicrosecs;
         }
     }
-    
-    // if (isRunningOptoSequence &&
-    //          currentTimeMicrosecs - optoSequenceStartTime >= allDoneToggleTime)
-    // {
-    //     isRunningOptoSequence = false;
-    //     behaviorCycleTimeMicrosecs = INT_MAX;
-    //     setLEDColor(OFF);
-    // }
-    // else if (isRunningOptoSequence &&
-    //          currentTimeMicrosecs - optoSequenceStartTime >= optoToggleOffTime)
-    // {
-    //     digitalWrite(optoTriggerPin, LOW);
-    // }
-    // else if (isRunningOptoSequence &&
-    //     currentTimeMicrosecs - optoSequenceStartTime >= optoToggleOnTime)
-    // {
-    //     digitalWrite(optoTriggerPin, HIGH);
-    // }
 
     if (isRunningOptoSequence) {
         if (currentTimeMicrosecs - optoSequenceStartTime < optoInitialOffDuration) {
@@ -208,36 +191,3 @@ void loop() {
         }
     }
 }
-//     if (isRunningOptoSequence) {
-//         for (int i = optoRepeatTimes - 1; i >= 0; --i) {
-//             unsigned long timeSinceStart = currentTimeMicrosecs - optoSequenceStartTime;
-//             unsigned long cycleStartTime =
-//                 i * (optoOnDuration + optoOffDuration) + optoInitialOffDuration;
-//             if (timeSinceStart >= cycleStartTime) {
-//                 if (timeSinceStart >= cycleStartTime + optoOnDuration + optoOffDuration) {
-//                     digitalWrite(optoTriggerPin, HIGH);
-//                     setLEDColor(RED);
-//                 }
-//                 else if (timeSinceStart >= cycleStartTime + optoOnDuration) {
-//                     digitalWrite(optoTriggerPin, LOW);
-//                     setLEDColor(BLUE);
-//                 }
-
-//                 if (i == optoRepeatTimes - 1) {
-//                     digitalWrite(optoTriggerPin, LOW);
-//                     isRunningOptoSequence = false;
-//                     behaviorCycleTimeMicrosecs = INT_MAX;
-//                     setLEDColor(OFF);
-//                 }
-//                 break;
-//             }
-//         }
-//     }
-// }
-// unsigned long optoSequenceStartTime = 0;
-// bool isRunningOptoSequence = false;
-// const int optoInitialOffDuration = 5 * 1000000;
-// const int optoOnDuration = 5 * 1000000;
-// const int optoOffDuration = 25 * 1000000;
-// const int optoRepeatTimes = 10;
-
