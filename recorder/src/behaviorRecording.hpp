@@ -9,16 +9,38 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+// #include <memory>
 
 #include <spdlog/spdlog.h>
 
 #include "peripherals/behaviorCamera.hpp"
-#include "global.hpp"
-#include "constants.hpp"
+#include "recorderConfig.hpp"
+#include "utils.hpp"
+
+struct BehaviorRecordingState
+{
+    std::shared_ptr<BehaviorCamera> behaviorCamera = nullptr;
+    std::queue<GroupOfThreeFrames> behaviorImageQueue;
+    std::mutex behaviorImageQueueMutex;
+    std::condition_variable behaviorImageQueueCondVar;
+    std::queue<GroupOfThreeFrames> muscleImageQueue;
+    std::mutex muscleImageQueueMutex;
+    std::condition_variable muscleImageQueueCondVar;
+};
 
 // Function declarations
-void behaviorImageAcquierer();
-void behaviorImageSaver();
-void stopBehaviorImageSaver();
+void behaviorImageAcquirer(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
+    std::shared_ptr<ProgramState> programState);
+void behaviorImageSaver(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState);
+void stopBehaviorImageSaver(
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<ProgramState> programState);
 
 #endif // BEHAVIOR_RECORDING_HPP

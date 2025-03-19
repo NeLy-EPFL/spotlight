@@ -2,15 +2,6 @@
 
 namespace
 {
-    cv::Mat getLatestFrame()
-    {
-        {
-            std::lock_guard<std::mutex> lock(latestFrameMutex);
-            cv::Mat latestFrameImage = latestFrameData.image;
-            return latestFrameImage;
-        }
-    }
-
     QImage cvMatToQImage(const cv::Mat &mat)
     {
         if (mat.empty())
@@ -25,20 +16,37 @@ namespace
     }
 }
 
-MotionControlWidget::MotionControlWidget(QWidget *parent)
-    : QWidget(parent)
+MotionControlWidget::MotionControlWidget(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    QWidget *parent)
+    : QWidget(parent),
+      trackingControlState_(trackingControlState)
 {
+    minXAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
+                                                          "x_min_mm");
+    maxXAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
+                                                          "x_max_mm");
+    minYAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
+                                                          "y_min_mm");
+    maxYAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
+                                                          "y_max_mm");
+
+    int guiMotionStagePreviewUpdateFreq = recorderConfig.getParameter<int>(
+        "gui", "motion_stage_preview_update_frequency_hz");
+    int guiMotionStagePreviewHeight = recorderConfig.getParameter<int>(
+        "gui", "motion_stage_preview_height");
+
     connect(&timer_,
             &QTimer::timeout,
             this,
             QOverload<>::of(&MotionControlWidget::update));
-    timer_.start(1000 / GUI_MOTION_STAGE_PREVIEW_FREQUENCY_HZ); // in ms
+    timer_.start(1000 / guiMotionStagePreviewUpdateFreq); // in ms
     int guiMotionStagePreviewWidth = calculateBehaviorCameraPreviewWidth(
-        GUI_MOTION_STAGE_PREVIEW_HEIGHT,
-        MOTION_STAGE_X_MAX_PHYSICAL_MM - MOTION_STAGE_X_MIN_PHYSICAL_MM,
-        MOTION_STAGE_Y_MAX_PHYSICAL_MM - MOTION_STAGE_Y_MIN_PHYSICAL_MM);
-    setFixedSize(guiMotionStagePreviewWidth,
-                 GUI_MOTION_STAGE_PREVIEW_HEIGHT);
+        guiMotionStagePreviewHeight,
+        maxXAbsoluteMm_ - minXAbsoluteMm_,
+        maxYAbsoluteMm_ - minYAbsoluteMm_);
+    setFixedSize(guiMotionStagePreviewWidth, guiMotionStagePreviewHeight);
 }
 
 MotionControlWidget::~MotionControlWidget()
@@ -48,7 +56,7 @@ MotionControlWidget::~MotionControlWidget()
 
 void MotionControlWidget::paintEvent(QPaintEvent *event)
 {
-    if (!motionControlHandlerReady.load())
+    if (!trackingControlState_->motionControlHandlerReady.load())
     {
         return;
     }
@@ -64,8 +72,9 @@ void MotionControlWidget::paintEvent(QPaintEvent *event)
     // Calculate where to draw the red dot representing the stage position
     MotionStagePosition currStagePosition;
     {
-        std::lock_guard<std::mutex> lock(latestMotionStagePositionMutex);
-        currStagePosition = latestMotionStagePosition;
+        std::lock_guard<std::mutex> lock(
+            trackingControlState_->latestMotionStagePositionMutex);
+        currStagePosition = trackingControlState_->latestMotionStagePosition;
     }
     float physicalX = currStagePosition.xPosMm;
     float physicalY = currStagePosition.yPosMm;
@@ -100,7 +109,10 @@ void MotionControlWidget::mousePressEvent(QMouseEvent *event)
     {
         float stageX = mapToStageX(event->position().x());
         float stageY = mapToStageY(event->position().y());
-        setTargetMotionStagePosition({stageX, stageY, ABSOLUTE});
+        spdlog::debug("Clicked at ({}, {})", stageX, stageY);
+        trackingControlState_->overridingPosX.store(stageX);
+        trackingControlState_->overridingPosY.store(stageY);
+        trackingControlState_->shouldOverrideTracking.store(true);
     }
 }
 
@@ -130,13 +142,31 @@ float MotionControlWidget::mapToStageY(int y) const
            minYAbsoluteMm_;
 }
 
-MainGUIWindow::MainGUIWindow(QWidget *parent)
-    : QWidget(parent)
+MainGUIWindow::MainGUIWindow(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
+    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
+    QWidget *parent)
+    : QWidget(parent),
+      recorderConfig_(recorderConfig),
+      behaviorRecordingState_(behaviorRecordingState),
+      trackingControlState_(trackingControlState),
+      behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
+      saveDirectory_(saveDirectory),
+      latestBehaviorFrameHolder_(latestBehaviorFrameHolder),
+      arduinoTriggerInterface_(arduinoTriggerInterface)
 {
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
-    behaviorFPSSpinBox_->setValue(BEHAVIOR_CAMERA_DEFAULT_FPS);
+    int behaviorCameraDefaultRecordingFrameRate =
+        recorderConfig.getParameter<int>("behavior_camera",
+                                         "default_recording_fps");
+    behaviorFPSSpinBox_->setValue(behaviorCameraDefaultRecordingFrameRate);
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
     behaviorFPSLayout->addWidget(behaviorFPSSpinBox_);
@@ -144,8 +174,10 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
     // Behavior exposure time widget
     behaviorExposureTimeSpinBox_ = new QDoubleSpinBox(this);
     behaviorExposureTimeSpinBox_->setRange(0.001, 1000.0);
+    int behaviorCameraDefaultExposureTimeUs = recorderConfig.getParameter<int>(
+        "behavior_camera", "default_exposure_time_us");
     behaviorExposureTimeSpinBox_->setValue(
-        BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_MICROSECS / 1000.0);
+        behaviorCameraDefaultExposureTimeUs / 1000.0);
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));
@@ -153,12 +185,13 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
 
     // Save directory widget
     directoryLineEdit_ = new QLineEdit(this);
-    directoryLineEdit_->setText(saveDirectory.c_str());
+    directoryLineEdit_->setText(saveDirectory->getDirectory().c_str());
     connect(directoryLineEdit_,
             &QLineEdit::textChanged,
             this,
-            [this](const QString &text)
-            { saveDirectory = text.toStdString(); });
+            [this, saveDirectory](const QString &text)
+            { spdlog::debug("saveDirectory changed to {}", text.toStdString());
+                saveDirectory->setDirectory(text.toStdString()); });
     QPushButton *browseButton = new QPushButton("Browse", this);
 
     QHBoxLayout *directoryLayout = new QHBoxLayout();
@@ -173,29 +206,34 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
 
     // Live display widget
     behaviorImageDisplayLabel_ = new QLabel(this);
-    behaviorImageDisplayLabel_->setFixedSize(
-        GUI_BEHAVIOR_CAMERA_PREVIEW_WIDTH,
-        GUI_BEHAVIOR_CAMERA_PREVIEW_HEIGHT);
+    int behaviorCameraPreviewWidth = recorderConfig.getParameter<int>(
+        "gui", "behavior_camera_preview_width");
+    int behaviorCameraPreviewHeight = recorderConfig.getParameter<int>(
+        "gui", "behavior_camera_preview_height");
+    behaviorImageDisplayLabel_->setFixedSize(behaviorCameraPreviewWidth,
+                                             behaviorCameraPreviewHeight);
 
-    motionControlWidget_ = new MotionControlWidget(this);
+    motionControlWidget_ = new MotionControlWidget(recorderConfig,
+                                                   trackingControlState,
+                                                   this);
 
     // Record and stop buttons
     recordButton_ = new QPushButton("Record", this);
     stopButton_ = new QPushButton("Stop", this);
-    calibrationScanButton_ = new QPushButton("Calibration Scan", this);
     stopButton_->setEnabled(false); // initially disabled
     QHBoxLayout *recordStopButtonsLayout = new QHBoxLayout();
     recordStopButtonsLayout->addWidget(recordButton_);
     recordStopButtonsLayout->addWidget(stopButton_);
-    recordStopButtonsLayout->addWidget(calibrationScanButton_);
 
-    // Add timer to update image display
+    // Add timer to update image displaylatestBehaviorFrameHolder_
     imageDisplayTimer_ = new QTimer(this);
     connect(imageDisplayTimer_,
             &QTimer::timeout,
             this,
             &MainGUIWindow::updateImageDisplay);
-    imageDisplayTimer_->start(1000 / BEHAVIOR_CAMERA_STREAMING_FPS);
+    int behaviorCameraStreamingFrameRate = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    imageDisplayTimer_->start(1000 / behaviorCameraStreamingFrameRate);
     connect(recordButton_,
             &QPushButton::clicked,
             this,
@@ -204,10 +242,6 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
             &QPushButton::clicked,
             this,
             &MainGUIWindow::stopRecording);
-    connect(calibrationScanButton_,
-            &QPushButton::clicked,
-            this,
-            &MainGUIWindow::doCalibrationScan);
 
     // Arrange layout
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -225,7 +259,8 @@ MainGUIWindow::MainGUIWindow(QWidget *parent)
 
 void MainGUIWindow::startRecording()
 {
-    if (!behaviorCameraReady.load())
+    if (!behaviorRecordingState_->behaviorCamera ||
+        !behaviorRecordingState_->behaviorCamera->isReady())
     {
         spdlog::error("Behavior camera not ready. Cannot start recording.");
         // Make a pop-up error window
@@ -239,13 +274,12 @@ void MainGUIWindow::startRecording()
 
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
-    calibrationScanButton_->setEnabled(false);
 
     int recordingFPS = behaviorFPSSpinBox_->value();
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    triggerController->startRecording(
+    arduinoTriggerInterface_->startRecording(
         recordingFPS, recordingExposureTimeMicrosecs);
 }
 
@@ -253,42 +287,11 @@ void MainGUIWindow::stopRecording()
 {
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
-    calibrationScanButton_->setEnabled(true);
 
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    triggerController->stopRecording(recordingExposureTimeMicrosecs);
-}
-
-void MainGUIWindow::doCalibrationScan()
-{
-    calibrationScanButton_->setEnabled(false);
-    recordButton_->setEnabled(false);
-
-    int currentStreamingExposureTimeMicrosecs =
-        behaviorExposureTimeSpinBox_->value() * 1000;
-
-    // Run the calibration scan in a separate thread to avoid freezing the GUI
-    std::thread([this, currentStreamingExposureTimeMicrosecs]()
-                {
-        isRunningCalibrationScan_.store(true);
-        spdlog::info("Starting calibration scan procedure in the background.");
-        runCalibrationScanProcedure(currentStreamingExposureTimeMicrosecs);
-
-        // Re-enable buttons in the GUI thread
-        QMetaObject::invokeMethod(this, [this]() {
-            calibrationScanButton_->setEnabled(true);
-            recordButton_->setEnabled(true);
-        });
-
-        isRunningCalibrationScan_.store(false); })
-        .detach();
-}
-
-bool MainGUIWindow::canQuitGracefully()
-{
-    return !isRunningCalibrationScan_.load();
+    arduinoTriggerInterface_->stopRecording(recordingExposureTimeMicrosecs);
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)
@@ -304,15 +307,18 @@ void MainGUIWindow::closeEvent(QCloseEvent *event)
 
 void MainGUIWindow::browseDirectory()
 {
+    std::string currentDirectory = saveDirectory_->getDirectory();
     QString dir = QFileDialog::getExistingDirectory(
         this,
         "Open Directory",
-        QString::fromStdString(saveDirectory),
+        QString::fromStdString(currentDirectory),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!dir.isEmpty())
     {
         directoryLineEdit_->setText(dir);
-        saveDirectory = dir.toStdString();
+
+        saveDirectory_->setDirectory(dir.toStdString());
+        spdlog::info("Directory changed to '{}'", dir.toStdString());
     }
     else
     {
@@ -320,15 +326,83 @@ void MainGUIWindow::browseDirectory()
     }
 }
 
+cv::Mat addCornerMarker(cv::Mat image,
+                        MotionStagePosition stagePosition,
+                        CalibrationParams &behaviorCamCalibrationParams)
+{
+    cv::Mat imageForDisplay = image.clone();
+    assert(imageForDisplay.size() == image.size());
+
+    std::vector<std::tuple<double, double>> cornerPositions = {
+        {0, 0}, {48, 0}, {48, 72}, {0, 72}};
+    std::vector<cv::Point> pixelPoints;
+    for (auto [x, y] : cornerPositions)
+    {
+        int pixelRow, pixelCol;
+        std::tie(pixelRow, pixelCol) =
+            behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+                stagePosition.xPosMm, stagePosition.yPosMm, x, y);
+        pixelPoints.emplace_back(pixelRow, pixelCol);
+        cv::circle(imageForDisplay,
+                   cv::Point(pixelCol, pixelRow),
+                   5,
+                   cv::Scalar(255, 255, 255),
+                   -1);
+
+        // if (0 <= pixelCol && pixelCol < imageForDisplay.cols &&
+        //     0 <= pixelRow && pixelRow < imageForDisplay.rows)
+        // {
+        //     spdlog::info(
+        //         "Corner marker drawn: "
+        //         "(stagePos=({:.2f}, {:.2f}), physicalPos=({:.2f}, {:.2f})) "
+        //         "-> pixelPos(r{}, c{})",
+        //         stagePosition.xPosMm,
+        //         stagePosition.yPosMm,
+        //         x,
+        //         y,
+        //         pixelRow,
+        //         pixelCol);
+        // }
+    }
+    for (size_t i = 0; i < pixelPoints.size(); ++i)
+    {
+        cv::line(imageForDisplay,
+                 pixelPoints[i],
+                 pixelPoints[(i + 1) % pixelPoints.size()],
+                 cv::Scalar(255, 0, 0), 2);
+    }
+
+    return imageForDisplay;
+}
+
 void MainGUIWindow::updateImageDisplay()
 {
-    cv::Mat latestFrame = getLatestFrame();
+    cv::Mat latestFrame =
+        latestBehaviorFrameHolder_->getLatestFrameData().image;
     if (latestFrame.empty())
     {
         return;
     }
     cv::Mat correctedFrame = correctImageRotationAndFlip(latestFrame);
-    QImage qImage = cvMatToQImage(correctedFrame);
+
+    MotionStagePosition myStagePosition;
+    {
+        std::lock_guard<std::mutex> lock(
+            trackingControlState_->latestMotionStagePositionMutex);
+        myStagePosition = trackingControlState_->latestMotionStagePosition;
+    }
+
+    cv::Mat maskedImage = blackoutOutside(
+        correctedFrame,
+        myStagePosition,
+        behaviorCamCalibrationParams_,
+        recorderConfig_);
+
+    cv::Mat imageForDisplay = addCornerMarker(maskedImage,
+                                              myStagePosition,
+                                              behaviorCamCalibrationParams_);
+
+    QImage qImage = cvMatToQImage(imageForDisplay);
     QPixmap pixmap = QPixmap::fromImage(qImage)
                          .scaled(behaviorImageDisplayLabel_->size(),
                                  Qt::KeepAspectRatio,

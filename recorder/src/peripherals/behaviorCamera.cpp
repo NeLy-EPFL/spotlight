@@ -1,18 +1,25 @@
 #include "behaviorCamera.hpp"
 
+namespace mine {
+    uint64_t getCurrentTimeMicroseconds()
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::high_resolution_clock::now().time_since_epoch())
+        .count();
+}
+}
+
 BehaviorCamera::BehaviorCamera(
     unsigned int imageWidth,
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
-    std::string ioLine,
-    std::atomic<bool> &cameraReadyFlag)
+    std::string ioLine)
     : imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       xOffset_(xOffset),
       yOffset_(yOffset),
-      ioLine_(ioLine),
-      cameraReadyFlag_(cameraReadyFlag)
+      ioLine_(ioLine)
 {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
@@ -84,7 +91,10 @@ BehaviorCamera::BehaviorCamera(
     cameraReadyFlag_.store(true);
 }
 
-BehaviorCamera::~BehaviorCamera() {}
+BehaviorCamera::~BehaviorCamera() {
+    spdlog::debug("Behavior camera destructor called");
+    cameraReadyFlag_.store(false);
+}
 
 void BehaviorCamera::start(size_t bufferCount)
 {
@@ -103,7 +113,7 @@ FrameData BehaviorCamera::waitForOneFrame()
     Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
 
     // Get image data and metadata
-    uint64_t receivedTime = getCurrentTimeMicroseconds();
+    uint64_t receivedTime = mine::getCurrentTimeMicroseconds();
     uint8_t *dataPtr = buffer.getInfo<uint8_t *>(
         Euresys::gc::BUFFER_INFO_BASE);
     uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(
@@ -116,6 +126,11 @@ FrameData BehaviorCamera::waitForOneFrame()
     frameData.receivedTime = receivedTime;
     frameData.image = cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr);
     return frameData;
+}
+
+bool BehaviorCamera::isReady() const
+{
+    return cameraReadyFlag_.load();
 }
 
 template <typename Module>

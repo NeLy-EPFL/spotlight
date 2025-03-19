@@ -11,7 +11,7 @@ cv::Mat makePseudoRGBImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
     std::vector<cv::Mat> channels = {
-        groupOfThreeFrames.frame1.image,
+        groupOfThreeFrames.frame0.image,
         groupOfThreeFrames.frame1.image,
         groupOfThreeFrames.frame2.image};
     cv::Mat pseudoRGBImage;
@@ -86,24 +86,6 @@ std::string getSerialPortName(std::string deviceDescription,
     return "";
 }
 
-std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime()
-{
-    int getPositionWeight = 1;
-    int setPositionWeight = 2; // Set position is more time-consuming
-
-    int totalWeightedNumberOfOps =
-        MOTION_STAGE_LOGGING_FREQUENCY_HZ * getPositionWeight +
-        FLY_TRACKING_UPDATE_FREQUENCY_HZ *
-            (setPositionWeight + getPositionWeight) + // this needs to do both
-        GUI_MOTION_STAGE_PREVIEW_FREQUENCY_HZ * getPositionWeight;
-
-    int numMicrosecsAllowedPerUnitOp = 1000000 / totalWeightedNumberOfOps;
-
-    return std::make_tuple(
-        numMicrosecsAllowedPerUnitOp * getPositionWeight,
-        numMicrosecsAllowedPerUnitOp * setPositionWeight);
-}
-
 int calculateBehaviorCameraPreviewWidth(
     int behaviorCameraPreviewHeight,
     int motionStageXRange,
@@ -175,4 +157,83 @@ size_t getMyThreadIdHash()
     std::thread::id myThreadId = std::this_thread::get_id();
     size_t myThreadIdHash = std::hash<std::thread::id>{}(myThreadId);
     return myThreadIdHash;
+}
+
+std::string expandPath(const std::string &path)
+{
+    // Check if the path starts with "~/"
+    if (path.size() >= 2 && path[0] == '~' && path[1] == '/')
+    {
+        // Get the HOME environment variable
+        const char *homeDir = std::getenv("HOME");
+
+        // If HOME is available, replace "~/" with the home directory
+        if (homeDir)
+        {
+            std::filesystem::path expandedPath =
+                std::filesystem::path(homeDir) / path.substr(2);
+            return expandedPath.string();
+        }
+        else
+        {
+            spdlog::error(
+                "Failed to expand ~ in directory path '{}' because $HOME is "
+                "not defined. Set the $HOME environment variable or use "
+                "absolute path.",
+                path.c_str());
+        }
+    }
+
+    // Return the original path if it doesn't start with "~/"
+    return path;
+}
+
+SaveDirectory::SaveDirectory(std::string directory)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    directory_ = expandPath(directory);
+    initialize();
+}
+
+void SaveDirectory::setDirectory(std::string directory)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    directory_ = expandPath(directory);
+    initialize();
+}
+
+std::filesystem::path SaveDirectory::getDirectory()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return directory_;
+}
+
+void SaveDirectory::initialize()
+{
+    try
+    {
+        fs::create_directories(directory_ / "behavior_images");
+        fs::create_directories(directory_ / "stage_position");
+    }
+    catch (const fs::filesystem_error &e)
+    {
+        spdlog::error(
+            "Failed to create directories in '{}': {}",
+            directory_.string(), e.what());
+        throw;
+    }
+}
+
+LatestFrame::LatestFrame() : latestFrameData_({0, 0, 0, cv::Mat()}) {}
+
+FrameData LatestFrame::getLatestFrameData()
+{
+    std::lock_guard<std::mutex> lock(latestFrameMutex_);
+    return latestFrameData_;
+}
+
+void LatestFrame::setLatestFrameData(FrameData frameData)
+{
+    std::lock_guard<std::mutex> lock(latestFrameMutex_);
+    latestFrameData_ = frameData;
 }

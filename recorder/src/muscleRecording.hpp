@@ -10,8 +10,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "global.hpp"
-#include "constants.hpp"
+#include "recorderConfig.hpp"
 
 // Function declarations
 void muscleImageAcquierer();
