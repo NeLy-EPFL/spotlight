@@ -67,7 +67,7 @@ class MainGUIWindow : public QWidget
 public:
     explicit MainGUIWindow(
         const RecorderConfig &recorderConfig,
-        BehaviorRecordingState &behaviorRecordingState,
+        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
         TrackingControlState &trackingControlState,
         CalibrationParams &behaviorCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
@@ -91,7 +91,7 @@ private:
     QLabel *behaviorImageDisplayLabel_;
     QTimer *imageDisplayTimer_;
     RecorderConfig recorderConfig_;
-    BehaviorRecordingState &behaviorRecordingState_;
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState_;
     TrackingControlState &trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;

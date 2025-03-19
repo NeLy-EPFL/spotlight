@@ -1,9 +1,10 @@
 #include "behaviorRecording.hpp"
 
-void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
-                           BehaviorRecordingState &behaviorRecordingState,
-                           LatestFrame &latestBehaviorFrameHolder,
-                           std::shared_ptr<ProgramState> programState)
+void behaviorImageAcquirer(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<ProgramState> programState)
 {
     spdlog::info("Behavior image acquirer thread started");
     unsigned int imageWidth = roundToMultiplesOf64(
@@ -16,7 +17,7 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
     std::string frameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>("behavior_camera",
                                                  "frame_grabber_trigger_line");
-    behaviorRecordingState.behaviorCamera =
+    behaviorRecordingState->behaviorCamera =
         std::make_shared<BehaviorCamera>(imageWidth,
                                          imageHeight,
                                          xOffset,
@@ -25,7 +26,7 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
 
     spdlog::info("Behavior camera configured");
 
-    behaviorRecordingState.behaviorCamera->start();
+    behaviorRecordingState->behaviorCamera->start();
     spdlog::info("Behavior camera started");
 
     FrameData frameDataBuffer[3];
@@ -43,7 +44,7 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
         // // 1,000,000 / 200-ish = 5,000 fps.
         // // uint64_t startTime = getCurrentTimeMicroseconds();
         FrameData frameData =
-            behaviorRecordingState.behaviorCamera->waitForOneFrame();
+            behaviorRecordingState->behaviorCamera->waitForOneFrame();
         // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
         // spdlog::info("Behavior camera waited {} us", waitTime);
 
@@ -76,11 +77,11 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
                     frameDataBuffer[2]};
                 {
                     std::lock_guard<std::mutex> lock(
-                        behaviorRecordingState.behaviorImageQueueMutex);
-                    behaviorRecordingState.behaviorImageQueue.push(
+                        behaviorRecordingState->behaviorImageQueueMutex);
+                    behaviorRecordingState->behaviorImageQueue.push(
                         groupOfThreeFrames);
                 }
-                behaviorRecordingState.behaviorImageQueueCondVar.notify_one();
+                behaviorRecordingState->behaviorImageQueueCondVar.notify_one();
 
                 frameDataBufferIndex = 0;
             }
@@ -93,10 +94,11 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
         }
     }
 }
-void behaviorImageSaver(const RecorderConfig &recorderConfig,
-                        BehaviorRecordingState &behaviorRecordingState,
-                        std::shared_ptr<SaveDirectory> saveDirectory,
-                        std::shared_ptr<ProgramState> programState)
+void behaviorImageSaver(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState)
 {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
@@ -132,10 +134,10 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
         int queueLength;
         {
             std::unique_lock<std::mutex> lock(
-                behaviorRecordingState.behaviorImageQueueMutex);
-            behaviorRecordingState.behaviorImageQueueCondVar.wait(
+                behaviorRecordingState->behaviorImageQueueMutex);
+            behaviorRecordingState->behaviorImageQueueCondVar.wait(
                 lock, [&behaviorRecordingState, programState]
-                { return !behaviorRecordingState.behaviorImageQueue.empty() ||
+                { return !behaviorRecordingState->behaviorImageQueue.empty() ||
                          programState->toQuit.load(); });
 
             if (programState->toQuit.load())
@@ -145,9 +147,9 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
                 break;
             }
 
-            queueLength = behaviorRecordingState.behaviorImageQueue.size();
-            frameGroup = behaviorRecordingState.behaviorImageQueue.front();
-            behaviorRecordingState.behaviorImageQueue.pop();
+            queueLength = behaviorRecordingState->behaviorImageQueue.size();
+            frameGroup = behaviorRecordingState->behaviorImageQueue.front();
+            behaviorRecordingState->behaviorImageQueue.pop();
         }
 
         uint64_t startTime = getCurrentTimeMicroseconds();
@@ -185,8 +187,9 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
     spdlog::info("Behavior image saver thread stopped");
 }
 
-void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState,
-                            std::shared_ptr<ProgramState> programState)
+void stopBehaviorImageSaver(
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<ProgramState> programState)
 {
     if (!programState->toQuit.load())
     {
@@ -199,6 +202,6 @@ void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState,
     }
     else
     {
-        behaviorRecordingState.behaviorImageQueueCondVar.notify_all();
+        behaviorRecordingState->behaviorImageQueueCondVar.notify_all();
     }
 }

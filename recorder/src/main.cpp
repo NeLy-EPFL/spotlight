@@ -20,7 +20,7 @@ namespace
     QApplication *application = nullptr;
     MainGUIWindow *mainGUIWindow = nullptr;
     std::shared_ptr<ProgramState> programState;
-    BehaviorRecordingState behaviorRecordingState;
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState;
 }
 
 bool quitProgram()
@@ -37,10 +37,10 @@ bool quitProgram()
     programState->toQuit.store(true);
 
     // Stop behavior camera acquisition
-    if (behaviorRecordingState.behaviorCamera)
+    if (behaviorRecordingState->behaviorCamera)
     {
         spdlog::info("Stopping acquisition on behavior camera");
-        behaviorRecordingState.behaviorCamera->stop();
+        behaviorRecordingState->behaviorCamera->stop();
     }
 
     // Tell motion control request handler thread to stop
@@ -68,6 +68,7 @@ int main(int argc, char **argv)
 
     // Make program state holder
     programState = std::make_shared<ProgramState>();
+    behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
 
     // Load recorder configuration
     std::filesystem::path configPath = expandPath(RECORDER_CONFIG_PATH);
@@ -128,7 +129,7 @@ int main(int argc, char **argv)
     std::thread trackingControllerThread(
         trackingController,
         recorderConfig,
-        std::ref(behaviorRecordingState),
+        behaviorRecordingState,
         std::ref(trackingControlState),
         std::ref(behaviorCamCalibrationParams),
         std::ref(latestBehaviorFrameHolder),
@@ -138,7 +139,7 @@ int main(int argc, char **argv)
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
         std::ref(recorderConfig),
-        std::ref(behaviorRecordingState),
+        behaviorRecordingState,
         std::ref(latestBehaviorFrameHolder),
         programState);
 
@@ -149,7 +150,7 @@ int main(int argc, char **argv)
         behaviorImageSaverThreads.push_back(
             std::thread(behaviorImageSaver,
                         recorderConfig,
-                        std::ref(behaviorRecordingState),
+                        behaviorRecordingState,
                         saveDirectory,
                         programState));
     }
@@ -160,7 +161,7 @@ int main(int argc, char **argv)
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
-                                     std::ref(behaviorRecordingState),
+                                     behaviorRecordingState,
                                      std::ref(trackingControlState),
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
@@ -173,33 +174,43 @@ int main(int argc, char **argv)
     int result = application->exec();
 
     // Wait for threads to finish
+    spdlog::debug("Waiting for threads to finish");
     if (behaviorImageAcquirerThread.joinable())
     {
         behaviorImageAcquirerThread.join();
     }
+    spdlog::debug("Behavior image acquirer thread finished");
 
     for (auto &thread : behaviorImageSaverThreads)
     {
+        spdlog::debug("Waiting for behavior image saver thread to finish");
         if (thread.joinable())
         {
             thread.join();
         }
+        spdlog::debug("Behavior image saver thread finished");
     }
 
+    spdlog::debug("Waiting for motion control IO thread to finish");
     if (motionControlIOThread.joinable())
     {
         motionControlIOThread.join();
     }
+    spdlog::debug("Motion control IO thread finished");
 
+    spdlog::debug("Waiting for motion stage position logger thread to finish");
     if (motionStagePositionLoggerThread.joinable())
     {
         motionStagePositionLoggerThread.join();
     }
+    spdlog::debug("Motion stage position logger thread finished");
 
+    spdlog::debug("Waiting for tracking controller thread to finish");
     if (trackingControllerThread.joinable())
     {
         trackingControllerThread.join();
     }
+    spdlog::debug("Tracking controller thread finished");
 
     return result;
 }
