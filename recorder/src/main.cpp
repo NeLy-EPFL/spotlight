@@ -124,7 +124,7 @@ int main(int argc, char **argv)
         programState);
     std::thread motionStagePositionLoggerThread(
         motionStagePositionLogger,
-        std::ref(recorderConfig),
+        recorderConfig,
         trackingControlState,
         saveDirectory,
         programState);
@@ -140,7 +140,7 @@ int main(int argc, char **argv)
     // Start behavior image acquirer
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
-        std::ref(recorderConfig),
+        recorderConfig,
         behaviorRecordingState,
         latestBehaviorFrameHolder,
         programState);
