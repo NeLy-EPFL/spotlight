@@ -65,12 +65,15 @@ class MainGUIWindow : public QWidget
     Q_OBJECT
 
 public:
-    explicit MainGUIWindow(const RecorderConfig &recorderConfig,
-                           BehaviorRecordingState &behaviorRecordingState,
-                           TrackingControlState &trackingControlState,
-                           CalibrationParams &behaviorCamCalibrationParams,
-                           std::shared_ptr<SaveDirectory> saveDirectory,
-                           QWidget *parent = nullptr);
+    explicit MainGUIWindow(
+        const RecorderConfig &recorderConfig,
+        BehaviorRecordingState &behaviorRecordingState,
+        TrackingControlState &trackingControlState,
+        CalibrationParams &behaviorCamCalibrationParams,
+        std::shared_ptr<SaveDirectory> saveDirectory,
+        LatestFrame &latestBehaviorFrameHolder,
+        std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
+        QWidget *parent = nullptr);
 
 private slots:
     void startRecording();
@@ -92,6 +95,8 @@ private:
     TrackingControlState &trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
+    LatestFrame &latestBehaviorFrameHolder_;
+    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

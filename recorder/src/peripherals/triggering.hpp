@@ -22,13 +22,13 @@
  * via an Arduino. It encapsulates the communication with the Arduino and
  * provides high-level functions for recording procedures.
  */
-class ArduinoTriggerControllerInterface
+class ArduinoTriggerInterface
 {
 public:
     /**
      * @brief Construct a new Arduino Trigger Controller Interface
      */
-    ArduinoTriggerControllerInterface(const RecorderConfig &recorderConfig);
+    ArduinoTriggerInterface(const RecorderConfig &recorderConfig);
 
     /**
      * @brief Start the recording procedure

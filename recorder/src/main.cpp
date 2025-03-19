@@ -38,10 +38,10 @@ namespace
 // std::atomic<double> overrideXPosAbsolute;
 // std::atomic<double> overrideYPosAbsolute;
 
-FrameData latestFrameData = {0, 0, 0, cv::Mat()};
-std::mutex latestFrameMutex;
+// FrameData latestFrameData = {0, 0, 0, cv::Mat()};
+// std::mutex latestFrameMutex;
 
-ArduinoTriggerControllerInterface *triggerController;
+// ArduinoTriggerInterface *triggerController;
 
 std::atomic<bool> toQuit = false;
 std::atomic<bool> isRecording = false;
@@ -150,6 +150,10 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
+    // Initialize holder for latest frame data (used for live streaming) and
+    // fly tracking
+    LatestFrame latestBehaviorFrameHolder;
+
     // Start tracking & motion control threads
     TrackingControlState trackingControlState;
     std::thread motionControlIOThread(
@@ -166,13 +170,15 @@ int main(int argc, char **argv)
         recorderConfig,
         std::ref(behaviorRecordingState),
         std::ref(trackingControlState),
-        std::ref(behaviorCamCalibrationParams));
+        std::ref(behaviorCamCalibrationParams),
+        std::ref(latestBehaviorFrameHolder));
 
     // Start behavior image acquirer
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
         std::ref(recorderConfig),
-        std::ref(behaviorRecordingState));
+        std::ref(behaviorRecordingState),
+        std::ref(latestBehaviorFrameHolder));
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
@@ -186,8 +192,8 @@ int main(int argc, char **argv)
     }
 
     // Start Arduino triggering interface
-    ArduinoTriggerControllerInterface localTriggerController(recorderConfig);
-    triggerController = &localTriggerController;
+    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface =
+        std::make_shared<ArduinoTriggerInterface>(recorderConfig);
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
@@ -195,6 +201,8 @@ int main(int argc, char **argv)
                                      std::ref(trackingControlState),
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
+                                     latestBehaviorFrameHolder,
+                                     arduinoTriggerInterface,
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();

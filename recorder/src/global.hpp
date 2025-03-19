@@ -9,7 +9,7 @@
 // Some .hpp includes this file so we can't include them here.
 // Make forward declarations instead.
 // class BehaviorCamera;
-class ArduinoTriggerControllerInterface;
+// class ArduinoTriggerInterface;
 
 // Image acquisition
 // extern BehaviorCamera *behaviorCamera;
@@ -44,11 +44,11 @@ class ArduinoTriggerControllerInterface;
 // extern std::string saveDirectory;
 
 // Streaming latest data (for live display and motion control)
-extern FrameData latestFrameData;
-extern std::mutex latestFrameMutex;
+// extern FrameData latestFrameData;
+// extern std::mutex latestFrameMutex;
 
 // Hardware trigger control
-extern ArduinoTriggerControllerInterface *triggerController;
+// extern ArduinoTriggerInterface *triggerController;
 
 // Program lifetime and state
 extern std::atomic<bool> toQuit;

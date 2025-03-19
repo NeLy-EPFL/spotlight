@@ -23,7 +23,7 @@ namespace
     }
 }
 
-ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface(
+ArduinoTriggerInterface::ArduinoTriggerInterface(
     const RecorderConfig &recorderConfig)
 {
     recorderConfig_ = recorderConfig;
@@ -56,7 +56,7 @@ ArduinoTriggerControllerInterface::ArduinoTriggerControllerInterface(
     }
 }
 
-void ArduinoTriggerControllerInterface::sendCommand(
+void ArduinoTriggerInterface::sendCommand(
     const std::string &command)
 {
     if (serialPort_.isOpen())
@@ -73,7 +73,7 @@ void ArduinoTriggerControllerInterface::sendCommand(
     }
 }
 
-ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage()
+ArduinoMessage ArduinoTriggerInterface::waitForMessage()
 {
     int timeoutMillisecs = recorderConfig_.getParameter<int>(
         "triggering", "arduino_comm_timeout_ms");
@@ -114,7 +114,7 @@ ArduinoMessage ArduinoTriggerControllerInterface::waitForMessage()
     throw std::runtime_error("Failed to receive message from Arduino.");
 }
 
-void ArduinoTriggerControllerInterface::startRecording(
+void ArduinoTriggerInterface::startRecording(
     int recordingFPS, int recordingExposureTimeMicrosecs)
 {
     spdlog::info(
@@ -167,7 +167,7 @@ void ArduinoTriggerControllerInterface::startRecording(
     spdlog::info("Arduino acknowledged the START_PAUSING command.");
 }
 
-void ArduinoTriggerControllerInterface::stopRecording(
+void ArduinoTriggerInterface::stopRecording(
     int recordingExposureTimeMicrosecs)
 {
     isRecording.store(false);

@@ -52,4 +52,16 @@ private:
     void initialize();
 };
 
+class LatestFrame
+{
+public:
+    LatestFrame();
+    FrameData getLatestFrameData();
+    void setLatestFrameData(FrameData frameData);
+
+private:
+    FrameData latestFrameData_;
+    std::mutex latestFrameMutex_;
+};
+
 #endif // UTILS_HPP
