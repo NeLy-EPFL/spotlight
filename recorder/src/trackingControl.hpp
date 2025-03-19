@@ -43,7 +43,8 @@ void trackingController(
     const RecorderConfig &recorderConfig,
     BehaviorRecordingState &behaviorRecordingState,
     TrackingControlState &trackingControlState,
-    CalibrationParams &behaviorCamCalibrationParams);
+    CalibrationParams &behaviorCamCalibrationParams,
+    LatestFrame &latestBehaviorFrameHolder);
 
 // Position logging thread
 void motionStagePositionLogger(

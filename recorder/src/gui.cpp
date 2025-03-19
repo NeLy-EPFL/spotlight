@@ -2,15 +2,6 @@
 
 namespace
 {
-    cv::Mat getLatestFrame()
-    {
-        {
-            std::lock_guard<std::mutex> lock(latestFrameMutex);
-            cv::Mat latestFrameImage = latestFrameData.image;
-            return latestFrameImage;
-        }
-    }
-
     QImage cvMatToQImage(const cv::Mat &mat)
     {
         if (mat.empty())
@@ -151,18 +142,23 @@ float MotionControlWidget::mapToStageY(int y) const
            minYAbsoluteMm_;
 }
 
-MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
-                             BehaviorRecordingState &behaviorRecordingState,
-                             TrackingControlState &trackingControlState,
-                             CalibrationParams &behaviorCamCalibrationParams,
-                             std::shared_ptr<SaveDirectory> saveDirectory,
-                             QWidget *parent)
+MainGUIWindow::MainGUIWindow(
+    const RecorderConfig &recorderConfig,
+    BehaviorRecordingState &behaviorRecordingState,
+    TrackingControlState &trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
+    QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
       behaviorRecordingState_(behaviorRecordingState),
       trackingControlState_(trackingControlState),
       behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
-      saveDirectory_(saveDirectory)
+      saveDirectory_(saveDirectory),
+      latestBehaviorFrameHolder_(latestBehaviorFrameHolder),
+      arduinoTriggerInterface_(arduinoTriggerInterface)
 {
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -283,7 +279,7 @@ void MainGUIWindow::startRecording()
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    triggerController->startRecording(
+    arduinoTriggerInterface_->startRecording(
         recordingFPS, recordingExposureTimeMicrosecs);
 }
 
@@ -295,7 +291,7 @@ void MainGUIWindow::stopRecording()
     int recordingExposureTimeMicrosecs =
         behaviorExposureTimeSpinBox_->value() * 1000;
 
-    triggerController->stopRecording(recordingExposureTimeMicrosecs);
+    arduinoTriggerInterface_->stopRecording(recordingExposureTimeMicrosecs);
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)
@@ -323,7 +319,6 @@ void MainGUIWindow::browseDirectory()
 
         saveDirectory_->setDirectory(dir.toStdString());
         spdlog::info("Directory changed to '{}'", dir.toStdString());
-
     }
     else
     {
@@ -382,7 +377,7 @@ cv::Mat addCornerMarker(cv::Mat image,
 
 void MainGUIWindow::updateImageDisplay()
 {
-    cv::Mat latestFrame = getLatestFrame();
+    cv::Mat latestFrame = latestBehaviorFrameHolder_.getLatestFrameData().image;
     if (latestFrame.empty())
     {
         return;

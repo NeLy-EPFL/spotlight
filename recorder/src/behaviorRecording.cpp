@@ -16,7 +16,8 @@ namespace
 }
 
 void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
-                           BehaviorRecordingState &behaviorRecordingState)
+                           BehaviorRecordingState &behaviorRecordingState,
+                           LatestFrame &latestBehaviorFrameHolder)
 {
     spdlog::info("Behavior image acquirer thread started");
     unsigned int imageWidth = roundToMultiplesOf64(
@@ -62,8 +63,7 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
 
         // Update latest frame for live display
         {
-            std::lock_guard<std::mutex> lock(latestFrameMutex);
-            latestFrameData = frameData;
+            latestBehaviorFrameHolder.setLatestFrameData(frameData);
         }
 
         if (isRecording.load())

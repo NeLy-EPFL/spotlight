@@ -223,3 +223,17 @@ void SaveDirectory::initialize()
         throw;
     }
 }
+
+LatestFrame::LatestFrame() : latestFrameData_({0, 0, 0, cv::Mat()}) {}
+
+FrameData LatestFrame::getLatestFrameData()
+{
+    std::lock_guard<std::mutex> lock(latestFrameMutex_);
+    return latestFrameData_;
+}
+
+void LatestFrame::setLatestFrameData(FrameData frameData)
+{
+    std::lock_guard<std::mutex> lock(latestFrameMutex_);
+    latestFrameData_ = frameData;
+}

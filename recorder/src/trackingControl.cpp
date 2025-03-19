@@ -154,7 +154,8 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
 void trackingController(const RecorderConfig &recorderConfig,
                         BehaviorRecordingState &behaviorRecordingState,
                         TrackingControlState &trackingControlState,
-                        CalibrationParams &behaviorCamCalibrationParams)
+                        CalibrationParams &behaviorCamCalibrationParams,
+                        LatestFrame &latestBehaviorFrameHolder)
 {
     while (!trackingControlState.motionControlHandlerReady.load())
     {
@@ -179,8 +180,8 @@ void trackingController(const RecorderConfig &recorderConfig,
         {
             cv::Mat myBehaviorImage;
             {
-                std::lock_guard<std::mutex> lock(latestFrameMutex);
-                myBehaviorImage = latestFrameData.image;
+                myBehaviorImage =
+                    latestBehaviorFrameHolder.getLatestFrameData().image;
             }
             MotionStagePosition myMotionStagePosition;
             {
