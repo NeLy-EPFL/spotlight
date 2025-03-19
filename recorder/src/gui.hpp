@@ -36,9 +36,10 @@ bool quitProgram();
 class MotionControlWidget : public QWidget
 {
 public:
-    MotionControlWidget(const RecorderConfig &recorderConfig,
-                        TrackingControlState &trackingControlState,
-                        QWidget *parent = nullptr);
+    MotionControlWidget(
+        const RecorderConfig &recorderConfig,
+        std::shared_ptr<TrackingControlState> trackingControlState,
+        QWidget *parent = nullptr);
     ~MotionControlWidget();
 
 protected:
@@ -57,7 +58,7 @@ private:
     float minYAbsoluteMm_;
     float maxYAbsoluteMm_;
 
-    TrackingControlState &trackingControlState_;
+    std::shared_ptr<TrackingControlState> trackingControlState_;
 };
 
 class MainGUIWindow : public QWidget
@@ -68,7 +69,7 @@ public:
     explicit MainGUIWindow(
         const RecorderConfig &recorderConfig,
         std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-        TrackingControlState &trackingControlState,
+        std::shared_ptr<TrackingControlState> trackingControlState,
         CalibrationParams &behaviorCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
         LatestFrame &latestBehaviorFrameHolder,
@@ -92,7 +93,7 @@ private:
     QTimer *imageDisplayTimer_;
     RecorderConfig recorderConfig_;
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState_;
-    TrackingControlState &trackingControlState_;
+    std::shared_ptr<TrackingControlState> trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
     LatestFrame &latestBehaviorFrameHolder_;
