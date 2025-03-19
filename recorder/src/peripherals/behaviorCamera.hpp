@@ -15,7 +15,6 @@
 
 #include "../dataTypes.hpp"
 #include "../utils.hpp"
-#include "../global.hpp"
 
 class BehaviorCamera
 {

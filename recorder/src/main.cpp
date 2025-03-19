@@ -17,52 +17,10 @@
 
 namespace
 {
+    QApplication *application = nullptr;
+    MainGUIWindow *mainGUIWindow = nullptr;
+    std::shared_ptr<ProgramState> programState;
     BehaviorRecordingState behaviorRecordingState;
-}
-
-// Define all global variables
-// BehaviorCamera *behaviorCamera = nullptr;
-// std::queue<GroupOfThreeFrames> behaviorImageQueue;
-// std::mutex behaviorImageQueueMutex;
-// std::condition_variable behaviorImageQueueCondVar;
-// std::atomic<bool> behaviorCameraReady = false;
-// std::queue<GroupOfThreeFrames> muscleImageQueue;
-// std::mutex muscleImageQueueMutex;
-// std::condition_variable muscleImageQueueCondVar;
-
-// std::atomic<bool> motionControlHandlerReady = false;
-// MotionStagePosition latestMotionStagePosition;
-// std::mutex latestMotionStagePositionMutex;
-// std::atomic<bool> isCalibrating = false;
-// std::atomic<bool> shouldOverrideTracking = false;
-// std::atomic<double> overrideXPosAbsolute;
-// std::atomic<double> overrideYPosAbsolute;
-
-// FrameData latestFrameData = {0, 0, 0, cv::Mat()};
-// std::mutex latestFrameMutex;
-
-// ArduinoTriggerInterface *triggerController;
-
-std::atomic<bool> toQuit = false;
-std::atomic<bool> isRecording = false;
-// std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
-
-QApplication *application = nullptr;
-MainGUIWindow *mainGUIWindow = nullptr;
-
-std::mutex isIOInitializing;
-
-// Program control functions implementation
-void initializeProgram()
-{
-    // Initialize application-wide resources and settings
-    spdlog::info("Initializing application");
-
-    // Reset global state flags
-    toQuit.store(false);
-    isRecording.store(false);
-
-    // Other initialization code can be added here
 }
 
 bool quitProgram()
@@ -76,7 +34,7 @@ bool quitProgram()
 {
     spdlog::info("SIGINT received. Initiating graceful shutdown");
 
-    toQuit.store(true);
+    programState->toQuit.store(true);
 
     // Stop behavior camera acquisition
     if (behaviorRecordingState.behaviorCamera)
@@ -87,11 +45,11 @@ bool quitProgram()
 
     // Tell motion control request handler thread to stop
     spdlog::info("Telling motion control request handler thread to stop.");
-    stopMotionControlRequestHandler();
+    stopMotionControlRequestHandler(programState);
 
     // Tell behavior camera saver threads to stop
     spdlog::info("Telling behavior image saver threads to stop.");
-    stopBehaviorImageSaver(behaviorRecordingState);
+    stopBehaviorImageSaver(behaviorRecordingState, programState);
 
     std::exit(0);
 }
@@ -105,11 +63,11 @@ int main(int argc, char **argv)
     spdlog::set_level(spdlog::level::debug);
     spdlog::debug("Debug level logging enabled");
 
-    // Initialize program
-    initializeProgram();
-
     QApplication localApplication(argc, argv);
     application = &localApplication;
+
+    // Make program state holder
+    programState = std::make_shared<ProgramState>();
 
     // Load recorder configuration
     std::filesystem::path configPath = expandPath(RECORDER_CONFIG_PATH);
@@ -159,26 +117,30 @@ int main(int argc, char **argv)
     std::thread motionControlIOThread(
         motionControlRequestHandler,
         recorderConfig,
-        std::ref(trackingControlState));
+        std::ref(trackingControlState),
+        programState);
     std::thread motionStagePositionLoggerThread(
         motionStagePositionLogger,
         std::ref(recorderConfig),
         std::ref(trackingControlState),
-        saveDirectory);
+        saveDirectory,
+        programState);
     std::thread trackingControllerThread(
         trackingController,
         recorderConfig,
         std::ref(behaviorRecordingState),
         std::ref(trackingControlState),
         std::ref(behaviorCamCalibrationParams),
-        std::ref(latestBehaviorFrameHolder));
+        std::ref(latestBehaviorFrameHolder),
+        programState);
 
     // Start behavior image acquirer
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
         std::ref(recorderConfig),
         std::ref(behaviorRecordingState),
-        std::ref(latestBehaviorFrameHolder));
+        std::ref(latestBehaviorFrameHolder),
+        programState);
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
@@ -188,12 +150,13 @@ int main(int argc, char **argv)
             std::thread(behaviorImageSaver,
                         recorderConfig,
                         std::ref(behaviorRecordingState),
-                        saveDirectory));
+                        saveDirectory,
+                        programState));
     }
 
     // Start Arduino triggering interface
     std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface =
-        std::make_shared<ArduinoTriggerInterface>(recorderConfig);
+        std::make_shared<ArduinoTriggerInterface>(recorderConfig, programState);
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,

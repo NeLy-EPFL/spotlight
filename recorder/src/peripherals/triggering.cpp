@@ -24,7 +24,9 @@ namespace
 }
 
 ArduinoTriggerInterface::ArduinoTriggerInterface(
-    const RecorderConfig &recorderConfig)
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<ProgramState> programState)
+    : programState_(programState)
 {
     recorderConfig_ = recorderConfig;
     std::string arduinoDeviceManufacturer =
@@ -148,7 +150,7 @@ void ArduinoTriggerInterface::startRecording(
         "OK. I assume all pending frames have arrived. I'm marking my state "
         "as recording; this way, new frames that arrive now will be saved. "
         "I'm also telling Arduino to start sending trigger pulses again.");
-    isRecording.store(true);
+    programState_->isRecording.store(true);
     ArduinoMessage startMessage(START_PULSING,
                                 recordingFPS,
                                 recordingExposureTimeMicrosecs);
@@ -170,7 +172,7 @@ void ArduinoTriggerInterface::startRecording(
 void ArduinoTriggerInterface::stopRecording(
     int recordingExposureTimeMicrosecs)
 {
-    isRecording.store(false);
+    programState_->isRecording.store(false);
 
     int streamingFrameRate = recorderConfig_.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");

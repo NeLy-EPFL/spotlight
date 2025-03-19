@@ -10,7 +10,6 @@
 #include <condition_variable>
 #include <string>
 
-#include "global.hpp"
 #include "constants.hpp"
 #include "calibration.hpp"
 #include "peripherals/behaviorCamera.hpp"

@@ -14,7 +14,6 @@
 #include <spdlog/spdlog.h>
 
 #include "peripherals/behaviorCamera.hpp"
-#include "global.hpp"
 #include "recorderConfig.hpp"
 #include "utils.hpp"
 
