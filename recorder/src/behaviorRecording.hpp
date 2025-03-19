@@ -32,10 +32,13 @@ struct BehaviorRecordingState
 // Function declarations
 void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
                            BehaviorRecordingState &behaviorRecordingState,
-                           LatestFrame &latestBehaviorFrameHolder);
+                           LatestFrame &latestBehaviorFrameHolder,
+                           std::shared_ptr<ProgramState> programState);
 void behaviorImageSaver(const RecorderConfig &recorderConfig,
                         BehaviorRecordingState &behaviorRecordingState,
-                        std::shared_ptr<SaveDirectory> saveDirectory);
-void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState);
+                        std::shared_ptr<SaveDirectory> saveDirectory,
+                        std::shared_ptr<ProgramState> programState);
+void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState,
+                            std::shared_ptr<ProgramState> programState);
 
 #endif // BEHAVIOR_RECORDING_HPP

@@ -73,4 +73,10 @@ enum CalibrationScanDirection
     COLUMN_BY_COLUMN
 };
 
+struct ProgramState
+{
+    std::atomic<bool> toQuit = false;
+    std::atomic<bool> isRecording = false;
+};
+
 #endif // DATA_TYPES_HPP

@@ -1,23 +1,9 @@
 #include "behaviorRecording.hpp"
 
-namespace
-{
-    std::filesystem::path prepareBehaviorImageDir(std::string baseDirectory)
-    {
-        std::filesystem::path behaviorSaveDir;
-        {
-            std::lock_guard<std::mutex> lock(isIOInitializing);
-            behaviorSaveDir = prepareOutputFolder(
-                std::filesystem::path(baseDirectory) / "behavior_images",
-                true);
-        }
-        return behaviorSaveDir;
-    }
-}
-
 void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
                            BehaviorRecordingState &behaviorRecordingState,
-                           LatestFrame &latestBehaviorFrameHolder)
+                           LatestFrame &latestBehaviorFrameHolder,
+                           std::shared_ptr<ProgramState> programState)
 {
     spdlog::info("Behavior image acquirer thread started");
     unsigned int imageWidth = roundToMultiplesOf64(
@@ -48,7 +34,7 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
 
     bool isFristFrameRecorded = true;
 
-    while (!toQuit.load())
+    while (!programState->toQuit.load())
     {
         // Acquire image data
         // // Benchmark here shows that the waitForOneFrame() function takes
@@ -66,7 +52,7 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
             latestBehaviorFrameHolder.setLatestFrameData(frameData);
         }
 
-        if (isRecording.load())
+        if (programState->isRecording.load())
         {
             if (isFristFrameRecorded)
             {
@@ -109,7 +95,8 @@ void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
 }
 void behaviorImageSaver(const RecorderConfig &recorderConfig,
                         BehaviorRecordingState &behaviorRecordingState,
-                        std::shared_ptr<SaveDirectory> saveDirectory)
+                        std::shared_ptr<SaveDirectory> saveDirectory,
+                        std::shared_ptr<ProgramState> programState)
 {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
@@ -139,7 +126,7 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
     int performanceLoggingInterval = recorderConfig.getParameter<int>(
         "behavior_camera", "saving_performance_logging_interval");
 
-    while (!toQuit.load())
+    while (!programState->toQuit.load())
     {
         GroupOfThreeFrames frameGroup;
         int queueLength;
@@ -147,11 +134,11 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
             std::unique_lock<std::mutex> lock(
                 behaviorRecordingState.behaviorImageQueueMutex);
             behaviorRecordingState.behaviorImageQueueCondVar.wait(
-                lock, [&behaviorRecordingState]
+                lock, [&behaviorRecordingState, programState]
                 { return !behaviorRecordingState.behaviorImageQueue.empty() ||
-                         toQuit.load(); });
+                         programState->toQuit.load(); });
 
-            if (toQuit.load())
+            if (programState->toQuit.load())
             {
                 spdlog::info(
                     "Behavior image saver thread is breaking out of loop.");
@@ -171,15 +158,6 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
         std::filesystem::path behaviorSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "behavior_images";
-
-        // if (initializedSaveDirectories.find(saveDirectory.getDirectory()) ==
-        //     initializedSaveDirectories.end())
-        // {
-        //     spdlog::info("Creating behavior image save directory: {}",
-        //                  behaviorSaveDir.string());
-        //     prepareBehaviorImageDir(saveDirectory.getDirectory());
-        //     initializedSaveDirectories.insert(saveDirectory.getDirectory());
-        // }
 
         // Save three frames as a single pseudo-RGB image
         std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
@@ -207,9 +185,10 @@ void behaviorImageSaver(const RecorderConfig &recorderConfig,
     spdlog::info("Behavior image saver thread stopped");
 }
 
-void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState)
+void stopBehaviorImageSaver(BehaviorRecordingState &behaviorRecordingState,
+                            std::shared_ptr<ProgramState> programState)
 {
-    if (!toQuit.load())
+    if (!programState->toQuit.load())
     {
         spdlog::critical(
             "stopBehaviorImageSaver() called but toQuit is "

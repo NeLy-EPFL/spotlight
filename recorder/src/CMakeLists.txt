@@ -5,6 +5,13 @@ project(SpotlightController)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Enable debugging with frame pointers
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3 -O0 -fno-omit-frame-pointer")
+
+# Add pthread support for multithreaded applications
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort)
 find_package(OpenCV REQUIRED)
 find_package(spdlog REQUIRED)
