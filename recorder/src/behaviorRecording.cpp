@@ -3,7 +3,7 @@
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState)
 {
     spdlog::info("Behavior image acquirer thread started");
@@ -50,7 +50,7 @@ void behaviorImageAcquirer(
 
         // Update latest frame for live display
         {
-            latestBehaviorFrameHolder.setLatestFrameData(frameData);
+            latestBehaviorFrameHolder->setLatestFrameData(frameData);
         }
 
         if (programState->isRecording.load())

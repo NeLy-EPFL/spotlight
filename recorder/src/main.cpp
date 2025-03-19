@@ -111,7 +111,8 @@ int main(int argc, char **argv)
 
     // Initialize holder for latest frame data (used for live streaming) and
     // fly tracking
-    LatestFrame latestBehaviorFrameHolder;
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
 
     // Start tracking & motion control threads
     std::shared_ptr<TrackingControlState> trackingControlState =
@@ -133,7 +134,7 @@ int main(int argc, char **argv)
         behaviorRecordingState,
         trackingControlState,
         std::ref(behaviorCamCalibrationParams),
-        std::ref(latestBehaviorFrameHolder),
+        latestBehaviorFrameHolder,
         programState);
 
     // Start behavior image acquirer
@@ -141,7 +142,7 @@ int main(int argc, char **argv)
         behaviorImageAcquirer,
         std::ref(recorderConfig),
         behaviorRecordingState,
-        std::ref(latestBehaviorFrameHolder),
+        latestBehaviorFrameHolder,
         programState);
 
     // Start behavior image saver

@@ -148,7 +148,7 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
-    LatestFrame &latestBehaviorFrameHolder,
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
     QWidget *parent)
     : QWidget(parent),
@@ -225,7 +225,7 @@ MainGUIWindow::MainGUIWindow(
     recordStopButtonsLayout->addWidget(recordButton_);
     recordStopButtonsLayout->addWidget(stopButton_);
 
-    // Add timer to update image display
+    // Add timer to update image displaylatestBehaviorFrameHolder_
     imageDisplayTimer_ = new QTimer(this);
     connect(imageDisplayTimer_,
             &QTimer::timeout,
@@ -377,7 +377,8 @@ cv::Mat addCornerMarker(cv::Mat image,
 
 void MainGUIWindow::updateImageDisplay()
 {
-    cv::Mat latestFrame = latestBehaviorFrameHolder_.getLatestFrameData().image;
+    cv::Mat latestFrame =
+        latestBehaviorFrameHolder_->getLatestFrameData().image;
     if (latestFrame.empty())
     {
         return;
