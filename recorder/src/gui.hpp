@@ -23,7 +23,6 @@
 #include <QPainter>
 
 #include "utils.hpp"
-#include "constants.hpp"
 #include "recorderConfig.hpp"
 #include "behaviorRecording.hpp"
 #include "trackingControl.hpp"

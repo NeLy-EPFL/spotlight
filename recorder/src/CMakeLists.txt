@@ -43,7 +43,6 @@ set_target_properties(SpotlightController PROPERTIES AUTOMOC ON)
 # file(GLOB RUN_CALIBRATION_SOURCES
 #     "calibrationProcedure/runCalibration_main.cpp"
 #     "calibrationProcedure/runCalibration.hpp"
-#     "constants.hpp"
 #     "peripherals/behaviorCamera.cpp"
 #     "peripherals/behaviorCamera.hpp")
 # add_executable(RunCalibration ${RUN_CALIBRATION_SOURCES})

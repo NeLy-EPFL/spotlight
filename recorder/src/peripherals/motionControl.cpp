@@ -97,8 +97,7 @@ MotionControl::MotionControl(const RecorderConfig &recorderConfig)
         {
             spdlog::critical(
                 "Motion stage serial number {} not mapped to any physically "
-                "meaningful axis (ie. X or Y). Check `constants.hpp` and "
-                "modify it as needed.",
+                "meaningful axis (ie. X or Y). Check config file.",
                 serialNumber);
             throw std::runtime_error("Unknown serial number");
         }

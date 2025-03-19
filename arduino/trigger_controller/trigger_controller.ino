@@ -5,15 +5,14 @@
 #include <string>
 
 #include "arduinoMessageProtocol.hpp"
-#include "constants.hpp"
 
 const int behaviorCameraTriggerPin = 2;
 const int irIlluminationTriggerPin = 3;
 const int optoTriggerPin = 6;
 
-const int indicatorLEDPinRed = 8;
-const int indicatorLEDPinGreen = 9;
-const int indicatorLEDPinBlue = 10;
+const int indicatorLEDPinRed = 10;
+const int indicatorLEDPinGreen = 11;
+const int indicatorLEDPinBlue = 12;
 
 int behaviorCycleTimeMicrosecs =
     1000000 / BEHAVIOR_CAMERA_STREAMING_FPS;

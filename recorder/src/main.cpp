@@ -10,10 +10,6 @@
 #include <spdlog/spdlog.h>
 
 #include "main.hpp"
-#include "behaviorRecording.hpp"
-#include "muscleRecording.hpp"
-#include "trackingControl.hpp"
-#include "gui.hpp"
 
 namespace
 {
@@ -59,9 +55,11 @@ int main(int argc, char **argv)
     std::signal(SIGINT, [](int)
                 { quitProgram(); });
 
-    // Set spdlog level to DEBUG
-    spdlog::set_level(spdlog::level::debug);
-    spdlog::debug("Debug level logging enabled");
+    // Parse command line arguments
+    CLIOptions options = parseCLI(argc, argv);
+
+    // Set log level based on CLI options
+    spdlog::set_level(options.logLevel);
 
     QApplication localApplication(argc, argv);
     application = &localApplication;
@@ -71,8 +69,8 @@ int main(int argc, char **argv)
     behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
 
     // Load recorder configuration
-    std::filesystem::path configPath = expandPath(RECORDER_CONFIG_PATH);
-    spdlog::info("Loading recorder configuration from {}", configPath.c_str());
+    std::filesystem::path configPath = expandPath(options.configPath);
+    spdlog::info("Loading recorder configuration from {}", configPath.string());
     RecorderConfig recorderConfig(configPath);
     if (!recorderConfig.isDefined)
     {
@@ -147,7 +145,10 @@ int main(int argc, char **argv)
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
-    for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
+    int numBehaviorImageSaverThreads =
+        recorderConfig.getParameter<int>("behavior_camera",
+                                         "num_image_saving_threds");
+    for (int i = 0; i < numBehaviorImageSaverThreads; i++)
     {
         behaviorImageSaverThreads.push_back(
             std::thread(behaviorImageSaver,
