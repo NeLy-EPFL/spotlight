@@ -1,0 +1,53 @@
+arena:
+  size_x_mm: 48
+  size_y_mm: 72
+
+behavior_camera:
+  full_frame_width: 2560
+  full_frame_height: 2048
+  roi_width: 1984
+  roi_height: 1024
+  frame_grabber_trigger_line: "TTLIO12"
+  streaming_frame_rate: 25
+  num_image_saving_threds: 4
+  default_recording_fps: 100
+  default_exposure_time_us: 1000
+  saving_performance_logging_interval: 100
+
+motion_control:
+  motion_stage_device_manufacturer: "X-MCC2"
+  motion_stage_device_description: "Zaber Technologies Inc."
+  stage_serial_no_x_axis: 133838
+  stage_serial_no_y_axis: 122390
+  length_unit: "mm"
+  velocity_unit: "mm/s"
+  x_min_mm: 64
+  x_max_mm: 110
+  y_min_mm: 47
+  y_max_mm: 108
+  default_velocity_mm_per_sec: 20
+  calibration_scan_stride_mm: 2
+  calibration_scan_frame_rate: 50
+  calibration_scan_exposure_time_us: 1000
+  position_logging_frequency_hz: 75
+
+tracking:
+  update_frequency_hz: 25
+  distance_threshold_for_moving_mm: 0.1
+  min_fly_size_sq_pixels: 200
+  boundary_margin_mm: 1
+
+triggering:
+  image_buffer_flushing_wait_time_ms: 100
+  arduino_baud_rate: 9600
+  arduino_comm_timeout_ms: 1000
+  arduino_comm_retries: 3
+  arduino_device_manufacturer: "Arduino"
+  arduino_device_description: "Nano ESP32"
+
+gui:
+  behavior_camera_preview_width: 640
+  behavior_camera_preview_height: 480
+  motion_stage_preview_height: 200
+  motion_stage_preview_update_frequency_hz: 25
+  default_save_dir: "./images/"

@@ -3,8 +3,6 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "constants.hpp"
-
 struct FrameData
 {
     unsigned int frameId = -1;
@@ -67,6 +65,18 @@ struct MotionStageResponse
         std::numeric_limits<double>::signaling_NaN()};
     bool isIdle = false;
     bool setSuccess = false;
+};
+
+enum CalibrationScanDirection
+{
+    ROW_BY_ROW,
+    COLUMN_BY_COLUMN
+};
+
+struct ProgramState
+{
+    std::atomic<bool> toQuit = false;
+    std::atomic<bool> isRecording = false;
 };
 
 #endif // DATA_TYPES_HPP

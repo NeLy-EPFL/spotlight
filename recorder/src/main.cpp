@@ -4,55 +4,19 @@
 #include <atomic>
 #include <signal.h>
 #include <csignal>
+#include <filesystem>
 
 #include <QApplication>
 #include <spdlog/spdlog.h>
 
 #include "main.hpp"
-#include "behaviorRecording.hpp"
-#include "muscleRecording.hpp"
-#include "trackingControl.hpp"
-#include "gui.hpp"
 
-// Define all global variables
-BehaviorCamera *behaviorCamera = nullptr;
-std::queue<GroupOfThreeFrames> behaviorImageQueue;
-std::mutex behaviorImageQueueMutex;
-std::condition_variable behaviorImageQueueCondVar;
-std::atomic<bool> behaviorCameraReady = false;
-std::queue<GroupOfThreeFrames> muscleImageQueue;
-std::mutex muscleImageQueueMutex;
-std::condition_variable muscleImageQueueCondVar;
-
-std::atomic<bool> motionControlHandlerReady = false;
-MotionStagePosition latestMotionStagePosition;
-std::mutex latestMotionStagePositionMutex;
-
-FrameData latestFrameData = {0, 0, 0, cv::Mat()};
-std::mutex latestFrameMutex;
-
-ArduinoTriggerControllerInterface *triggerController;
-
-std::atomic<bool> toQuit = false;
-std::atomic<bool> isRecording = false;
-std::string saveDirectory = DEFAULT_SAVE_DIRECTORY;
-
-QApplication *application = nullptr;
-MainGUIWindow *mainGUIWindow = nullptr;
-
-std::mutex isIOInitializing;
-
-// Program control functions implementation
-void initializeProgram()
+namespace
 {
-    // Initialize application-wide resources and settings
-    spdlog::info("Initializing application");
-
-    // Reset global state flags
-    toQuit.store(false);
-    isRecording.store(false);
-
-    // Other initialization code can be added here
+    QApplication *application = nullptr;
+    MainGUIWindow *mainGUIWindow = nullptr;
+    std::shared_ptr<ProgramState> programState;
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState;
 }
 
 bool quitProgram()
@@ -60,41 +24,28 @@ bool quitProgram()
  * Quit gracefully by explicitly stopping acquisition on the behavior
  * camera* and telling saver threads that the work is done.
  *
- * * Without stopping acquiisition explicitly, the frame grabber will
+ * * Without stopping acquisition explicitly, the frame grabber will
  * think the device is still busy the next time we run the program.
  */
 {
     spdlog::info("SIGINT received. Initiating graceful shutdown");
 
-    if (!mainGUIWindow->canQuitGracefully())
-    {
-        std::string errorMessage =
-            "Cannot quit gracefully because something is still running in "
-            "the background. Retry later or force quit (but then you "
-            "should manually reset camera acquisition state).";
-        spdlog::error(errorMessage);
-        QMessageBox::critical(
-            mainGUIWindow, "Error", QString(errorMessage.c_str()));
-        return false;
-    }
-
-    toQuit.store(true);
+    programState->toQuit.store(true);
 
     // Stop behavior camera acquisition
-    if (behaviorCamera)
+    if (behaviorRecordingState->behaviorCamera)
     {
         spdlog::info("Stopping acquisition on behavior camera");
-        behaviorCamera->stop();
+        behaviorRecordingState->behaviorCamera->stop();
     }
 
     // Tell motion control request handler thread to stop
     spdlog::info("Telling motion control request handler thread to stop.");
-    stopMotionControlRequestHandler();
+    stopMotionControlRequestHandler(programState);
 
     // Tell behavior camera saver threads to stop
-    spdlog::info("Telling behavior image saver threads to stop.",
-                 NUM_BEHAVIOR_IMAGE_SAVING_THREADS);
-    stopBehaviorImageSaver();
+    spdlog::info("Telling behavior image saver threads to stop.");
+    stopBehaviorImageSaver(behaviorRecordingState, programState);
 
     std::exit(0);
 }
@@ -104,62 +55,166 @@ int main(int argc, char **argv)
     std::signal(SIGINT, [](int)
                 { quitProgram(); });
 
-    // Initialize program
-    initializeProgram();
+    // Parse command line arguments
+    CLIOptions options = parseCLI(argc, argv);
+
+    // Set log level based on CLI options
+    spdlog::set_level(options.logLevel);
 
     QApplication localApplication(argc, argv);
     application = &localApplication;
 
-    // Start motion control IO thread
-    std::thread motionControlIOThread(motionControlRequestHandler);
+    // Make program state holder
+    programState = std::make_shared<ProgramState>();
+    behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
 
-    // Start motion stage position logger thread
-    std::thread motionStagePositionLoggerThread(motionStagePositionLogger);
+    // Load recorder configuration
+    std::filesystem::path profileDir =
+        std::filesystem::path(expandPath(options.profileDir));
+    std::filesystem::path configPath = profileDir / "recorder_config.yaml";
+    spdlog::info("Loading recorder configuration from {}", configPath.string());
+    RecorderConfig recorderConfig(configPath);
+    if (!recorderConfig.isDefined)
+    {
+        std::string errorMessage = fmt::format(
+            "Failed to load recorder configuration. Cannot start recording. "
+            "Expected valid recorder configuration file at {}",
+            configPath.c_str());
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+
+    // Make atomic variable that holds the save directory
+    std::string defaultSaveDirectory =
+        recorderConfig.getParameter<std::string>("gui", "default_save_dir");
+    // SaveDirectory saveDirectory(defaultSaveDirectory);
+    std::shared_ptr<SaveDirectory> saveDirectory =
+        std::make_shared<SaveDirectory>(defaultSaveDirectory);
+
+    // Load position mapping/calibration parameters
+    std::string calibrationParamsFilePath =
+        profileDir / "calibration/calibration_result.yaml";
+    spdlog::info("Loading spatial calibration parameters from {}",
+                 calibrationParamsFilePath);
+    CalibrationParams behaviorCamCalibrationParams(calibrationParamsFilePath);
+    if (!behaviorCamCalibrationParams.isDefined)
+    {
+        std::string errorMessage = fmt::format(
+            "Spatial calibration data not found or malformed. This is required "
+            "for tracking and recording. Expected valid calibration file at {} "
+            "based on the recorder configuration file.",
+            calibrationParamsFilePath);
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+
+    // Initialize holder for latest frame data (used for live streaming) and
+    // fly tracking
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
+
+    // Start tracking & motion control threads
+    std::shared_ptr<TrackingControlState> trackingControlState =
+        std::make_shared<TrackingControlState>();
+    std::thread motionControlIOThread(
+        motionControlRequestHandler,
+        recorderConfig,
+        trackingControlState,
+        programState);
+    std::thread motionStagePositionLoggerThread(
+        motionStagePositionLogger,
+        recorderConfig,
+        trackingControlState,
+        saveDirectory,
+        programState);
+    std::thread trackingControllerThread(
+        trackingController,
+        recorderConfig,
+        behaviorRecordingState,
+        trackingControlState,
+        std::ref(behaviorCamCalibrationParams),
+        latestBehaviorFrameHolder,
+        programState);
 
     // Start behavior image acquirer
-    std::thread behaviorImageAcquiererThread(behaviorImageAcquierer);
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
+        recorderConfig,
+        behaviorRecordingState,
+        latestBehaviorFrameHolder,
+        programState);
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
-    for (int i = 0; i < NUM_BEHAVIOR_IMAGE_SAVING_THREADS; i++)
+    int numBehaviorImageSaverThreads =
+        recorderConfig.getParameter<int>("behavior_camera",
+                                         "num_image_saving_threds");
+    for (int i = 0; i < numBehaviorImageSaverThreads; i++)
     {
-        behaviorImageSaverThreads.push_back(std::thread(behaviorImageSaver));
+        behaviorImageSaverThreads.push_back(
+            std::thread(behaviorImageSaver,
+                        recorderConfig,
+                        behaviorRecordingState,
+                        saveDirectory,
+                        programState));
     }
 
     // Start Arduino triggering interface
-    ArduinoTriggerControllerInterface localTriggerController;
-    triggerController = &localTriggerController;
+    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface =
+        std::make_shared<ArduinoTriggerInterface>(recorderConfig, programState);
 
     // Create and show GUI
-    MainGUIWindow localMainGUIWindow(nullptr);
+    MainGUIWindow localMainGUIWindow(recorderConfig,
+                                     behaviorRecordingState,
+                                     trackingControlState,
+                                     std::ref(behaviorCamCalibrationParams),
+                                     saveDirectory,
+                                     latestBehaviorFrameHolder,
+                                     arduinoTriggerInterface,
+                                     nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
 
     int result = application->exec();
 
     // Wait for threads to finish
-    if (behaviorImageAcquiererThread.joinable())
+    spdlog::debug("Waiting for threads to finish");
+    if (behaviorImageAcquirerThread.joinable())
     {
-        behaviorImageAcquiererThread.join();
+        behaviorImageAcquirerThread.join();
     }
+    spdlog::debug("Behavior image acquirer thread finished");
 
     for (auto &thread : behaviorImageSaverThreads)
     {
+        spdlog::debug("Waiting for behavior image saver thread to finish");
         if (thread.joinable())
         {
             thread.join();
         }
+        spdlog::debug("Behavior image saver thread finished");
     }
 
+    spdlog::debug("Waiting for motion control IO thread to finish");
     if (motionControlIOThread.joinable())
     {
         motionControlIOThread.join();
     }
+    spdlog::debug("Motion control IO thread finished");
 
+    spdlog::debug("Waiting for motion stage position logger thread to finish");
     if (motionStagePositionLoggerThread.joinable())
     {
         motionStagePositionLoggerThread.join();
     }
+    spdlog::debug("Motion stage position logger thread finished");
+
+    spdlog::debug("Waiting for tracking controller thread to finish");
+    if (trackingControllerThread.joinable())
+    {
+        trackingControllerThread.join();
+    }
+    spdlog::debug("Tracking controller thread finished");
 
     return result;
 }

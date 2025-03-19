@@ -10,8 +10,7 @@
 #include <chrono>
 #include <thread>
 
-#include "../constants.hpp"
-#include "../global.hpp"
+#include "../recorderConfig.hpp"
 #include "../utils.hpp"
 #include "../arduinoMessageProtocol.hpp"
 
@@ -22,13 +21,14 @@
  * via an Arduino. It encapsulates the communication with the Arduino and
  * provides high-level functions for recording procedures.
  */
-class ArduinoTriggerControllerInterface
+class ArduinoTriggerInterface
 {
 public:
     /**
      * @brief Construct a new Arduino Trigger Controller Interface
      */
-    ArduinoTriggerControllerInterface();
+    ArduinoTriggerInterface(const RecorderConfig &recorderConfig,
+                            std::shared_ptr<ProgramState> programState);
 
     /**
      * @brief Start the recording procedure
@@ -55,6 +55,8 @@ public:
 private:
     std::string serialPortName_;
     QSerialPort serialPort_;
+    RecorderConfig recorderConfig_;
+    std::shared_ptr<ProgramState> programState_;
 
     /**
      * @brief Send a command to the Arduino
@@ -66,12 +68,10 @@ private:
     /**
      * @brief Wait for a message from the Arduino
      *
-     * @param timeOutMillisecs Timeout in milliseconds
      * @return ArduinoMessage The received message
      * @throws std::runtime_error if no message is received
      */
-    ArduinoMessage waitForMessage(
-        int timeOutMillisecs = ARDUINO_COMM_TIMEOUT_MILLISECS);
+    ArduinoMessage waitForMessage();
 };
 
 #endif // ARDUINO_TRIGGER_CONTROLLER_INTERFACE_HPP

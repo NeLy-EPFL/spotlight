@@ -4,29 +4,86 @@
 #include <vector>
 #include <string>
 
+#include "constants.h"
 #include "arduinoMessageProtocol.hpp"
-#include "constants.hpp"
 
 const int behaviorCameraTriggerPin = 2;
 const int irIlluminationTriggerPin = 3;
-const int behaviorIndicatorPin = 6;
+const int optoTriggerPin = 6;
+
+const int indicatorLEDPinRed = 10;
+const int indicatorLEDPinGreen = 11;
+const int indicatorLEDPinBlue = 12;
+
 int behaviorCycleTimeMicrosecs =
-    1000000 / BEHAVIOR_CAMERA_STREAMING_FPS;
+    1000000 / BEHAVIOR_CAMERA_STREAMING_FRAME_RATE;
 int behaviorExposureTimeMicrosecs =
-    BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_MICROSECS;
+    BEHAVIOR_CAMERA_DEFAULT_EXPOSURE_TIME_US;
 unsigned long lastBehaviorExposureStartTimeMicrosecs = 0;
 bool behaviorTriggerState = LOW;
 bool waitingForCommand = false;
 
+// unsigned long optoSequenceStartTime = 0;
+// bool isRunningOptoSequence = false;
+// const int optoToggleOnTime = 5 * 1000000;
+// const int optoToggleOffTime = 10 * 1000000;
+// const int allDoneToggleTime = 35 * 1000000;
+
+unsigned long optoSequenceStartTime = 0;
+bool isRunningOptoSequence = false;
+const int optoInitialOffDuration = 5 * 1000000;
+const int optoOnDuration = 5 * 1000000;
+const int optoOffDuration = 25 * 1000000;
+const int optoRepeatTimes = 10;
+
+enum Color {
+    RED,
+    GREEN,
+    BLUE,
+    OFF
+};
+
 void setup() {
-    Serial.begin(ARDUINO_BAUD_RATE_INT);
+    Serial.begin(TRIGGERING_ARDUINO_BAUD_RATE);
 
     pinMode(behaviorCameraTriggerPin, OUTPUT);
     pinMode(irIlluminationTriggerPin, OUTPUT);
-    pinMode(behaviorIndicatorPin, OUTPUT);
+    pinMode(optoTriggerPin, OUTPUT);
+
+    pinMode(indicatorLEDPinRed, OUTPUT);
+    pinMode(indicatorLEDPinGreen, OUTPUT);
+    pinMode(indicatorLEDPinBlue, OUTPUT);
+
     digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
     digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
-    digitalWrite(behaviorIndicatorPin, behaviorTriggerState);
+    digitalWrite(optoTriggerPin, LOW);
+
+    setLEDColor(GREEN);
+}
+
+void setLEDColor(Color color) {
+    switch (color) {
+    case RED:
+        digitalWrite(indicatorLEDPinRed, HIGH);
+        digitalWrite(indicatorLEDPinGreen, LOW);
+        digitalWrite(indicatorLEDPinBlue, LOW);
+        break;
+    case GREEN:
+        digitalWrite(indicatorLEDPinRed, LOW);
+        digitalWrite(indicatorLEDPinGreen, HIGH);
+        digitalWrite(indicatorLEDPinBlue, LOW);
+        break;
+    case BLUE:
+        digitalWrite(indicatorLEDPinRed, LOW);
+        digitalWrite(indicatorLEDPinGreen, LOW);
+        digitalWrite(indicatorLEDPinBlue, HIGH);
+        break;
+    case OFF:
+        digitalWrite(indicatorLEDPinRed, LOW);
+        digitalWrite(indicatorLEDPinGreen, LOW);
+        digitalWrite(indicatorLEDPinBlue, LOW);
+        break;
+    };
 }
 
 void loop() {
@@ -49,18 +106,29 @@ void loop() {
                 behaviorCycleTimeMicrosecs = 1000000 / message.pulseFrequency;
                 behaviorExposureTimeMicrosecs = message.pulseWidth;
                 waitingForCommand = false; // carry on
+                setLEDColor(GREEN);
+
+                if (!isRunningOptoSequence && message.pulseFrequency == 100)
+                {
+                    isRunningOptoSequence = true;
+                    optoSequenceStartTime = micros();
+                    digitalWrite(optoTriggerPin, LOW);
+                    setLEDColor(BLUE);
+                }
+
                 ArduinoMessage response(START_PULSING_ACK);
                 Serial.println(response.toCommString().c_str());
+                Serial.flush();
                 return;
             }
             else if (message.messageType == STOP_PULSING) {
                 behaviorTriggerState = LOW;
                 digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
                 digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
-                digitalWrite(behaviorIndicatorPin, behaviorTriggerState);
                 waitingForCommand = true; // keep checking until told to restart
                 ArduinoMessage response(STOP_PULSING_ACK);
                 Serial.println(response.toCommString().c_str());
+                Serial.flush();
                 return;
             }
         }
@@ -76,7 +144,6 @@ void loop() {
             behaviorTriggerState = LOW;
             digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
             digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
-            digitalWrite(behaviorIndicatorPin, behaviorTriggerState);
         }
     }
 
@@ -88,9 +155,39 @@ void loop() {
             behaviorTriggerState = HIGH;
             digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
             digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
-            digitalWrite(behaviorIndicatorPin, behaviorTriggerState);
             lastBehaviorExposureStartTimeMicrosecs = currentTimeMicrosecs;
         }
     }
-}
 
+    if (isRunningOptoSequence) {
+        if (currentTimeMicrosecs - optoSequenceStartTime < optoInitialOffDuration) {
+            digitalWrite(optoTriggerPin, LOW);
+        }
+        else {
+            for (int i = optoRepeatTimes; i >= 0; --i) {
+                unsigned long startTimeThisCycle =
+                    optoSequenceStartTime +
+                    optoInitialOffDuration +
+                    i * (optoOnDuration + optoOffDuration);
+
+                if (currentTimeMicrosecs < startTimeThisCycle) {
+                    continue;
+                }
+
+                if (i == optoRepeatTimes) {
+                    isRunningOptoSequence = false;
+                    behaviorCycleTimeMicrosecs = INT_MAX;
+                    setLEDColor(OFF);
+                    break;
+                }
+
+                if (currentTimeMicrosecs - startTimeThisCycle >= optoOnDuration) {
+                    digitalWrite(optoTriggerPin, LOW);
+                }
+                else {
+                    digitalWrite(optoTriggerPin, HIGH);
+                }
+            }
+        }
+    }
+}

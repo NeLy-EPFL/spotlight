@@ -6,13 +6,13 @@
 #include <filesystem>
 #include <iostream>
 #include <thread>
+#include <mutex>
 
 #include <QSerialPort>
 #include <QSerialPortInfo>
 #include <spdlog/spdlog.h>
 
 #include "dataTypes.hpp"
-#include "constants.hpp"
 
 namespace fs = std::filesystem;
 
@@ -27,7 +27,6 @@ std::string makeMetadataStringFromThreeFrames(
 std::string getSerialPortName(std::string deviceDescription,
                               std::string deviceManufacturer);
 
-std::tuple<int, int> calculateMaxMotionStageRequestHandlingTime();
 int calculateBehaviorCameraPreviewWidth(
     int behaviorCameraPreviewHeight,
     int motionStageXRange,
@@ -36,5 +35,33 @@ int calculateBehaviorCameraPreviewWidth(
 fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 
 size_t getMyThreadIdHash();
+
+std::string expandPath(const std::string& path);
+
+class SaveDirectory
+{
+public:
+    SaveDirectory(std::string directory);
+    void setDirectory(std::string directory);
+    std::filesystem::path getDirectory();
+
+private:
+    std::mutex mutex_;
+    fs::path directory_;
+
+    void initialize();
+};
+
+class LatestFrame
+{
+public:
+    LatestFrame();
+    FrameData getLatestFrameData();
+    void setLatestFrameData(FrameData frameData);
+
+private:
+    FrameData latestFrameData_;
+    std::mutex latestFrameMutex_;
+};
 
 #endif // UTILS_HPP
