@@ -7,23 +7,15 @@
 #include <atomic>
 #include <tuple>
 
-#include <opencv2/opencv.hpp>
-#include <EGrabber.h>
-#include <FormatConverter.h>
 #include <spdlog/spdlog.h>
-#include <QLabel>
-#include <QSerialPort>
-#include <QSerialPortInfo>
-#include <zaber/motion/ascii.h>
 
+#include "../cli.hpp"
+#include "../recorderConfig.hpp"
+#include "../utils.hpp"
 #include "../peripherals/behaviorCamera.hpp"
-// #include "../peripherals/motionControl.hpp"
-#include "../constants.hpp"
-// #include "../utils.hpp"
-// #include "../dataTypes.hpp"
+#include "../peripherals/motionControl.hpp"
 
-namespace zmASCII = zaber::motion::ascii;
-
-void runCalibrationScan();
+void runCalibrationScan(RecorderConfig &recorderConfig,
+                        std::filesystem::path arucoSaveDir);
 
 #endif // RUN_CALIBRATION_HPP

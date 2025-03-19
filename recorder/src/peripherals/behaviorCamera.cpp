@@ -91,7 +91,10 @@ BehaviorCamera::BehaviorCamera(
     cameraReadyFlag_.store(true);
 }
 
-BehaviorCamera::~BehaviorCamera() {}
+BehaviorCamera::~BehaviorCamera() {
+    spdlog::debug("Behavior camera destructor called");
+    cameraReadyFlag_.store(false);
+}
 
 void BehaviorCamera::start(size_t bufferCount)
 {
