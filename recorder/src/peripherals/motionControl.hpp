@@ -27,14 +27,14 @@ public:
     void moveAbsolute(
         MotionAxis axis,
         double position,
-        bool wait = true,
-        double velocity = 0.0);
+        bool wait,
+        double velocity);
     void moveRelative(
         MotionAxis axis,
         double relativePosition,
-        bool wait = true,
-        double velocity = 0.0);
-    void home(MotionAxis axis, bool wait = true);
+        bool wait,
+        double velocity);
+    void home(MotionAxis axis, bool wait);
     double getPosition(MotionAxis axis);
     void waitUntilIdle(MotionAxis axis);
     bool checkIfIdle(MotionAxis axis);
