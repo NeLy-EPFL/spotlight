@@ -7,21 +7,16 @@ void behaviorImageAcquirer(
     std::shared_ptr<ProgramState> programState)
 {
     spdlog::info("Behavior image acquirer thread started");
-    unsigned int imageWidth = roundToMultiplesOf64(
-        recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
-    unsigned int imageHeight = roundToMultiplesOf64(
-        recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
-    unsigned int xOffset = 0;
-    unsigned int yOffset = 0;
+    CameraROI cameraROI = getCameraROIFromRecorderConfig(recorderConfig);
 
     std::string frameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>("behavior_camera",
                                                  "frame_grabber_trigger_line");
     behaviorRecordingState->behaviorCamera =
-        std::make_shared<BehaviorCamera>(imageWidth,
-                                         imageHeight,
-                                         xOffset,
-                                         yOffset,
+        std::make_shared<BehaviorCamera>(cameraROI.imageWidth,
+                                         cameraROI.imageHeight,
+                                         cameraROI.xOffset,
+                                         cameraROI.yOffset,
                                          frameGrabberTriggerLine);
 
     spdlog::info("Behavior camera configured");
@@ -204,4 +199,44 @@ void stopBehaviorImageSaver(
     {
         behaviorRecordingState->behaviorImageQueueCondVar.notify_all();
     }
+}
+
+CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig)
+{
+    int imageWidth = roundToMultiplesOf64(
+        recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
+    int imageHeight = roundToMultiplesOf64(
+        recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
+    int fullFrameWidth = recorderConfig.getParameter<int>(
+        "behavior_camera", "full_frame_width");
+    int fullFrameHeight = recorderConfig.getParameter<int>(
+        "behavior_camera", "full_frame_height");
+
+    if (imageWidth < 0 ||
+        imageHeight < 0 ||
+        fullFrameWidth < 0 ||
+        fullFrameHeight < 0 ||
+        imageWidth > fullFrameWidth ||
+        imageHeight > fullFrameHeight)
+    {
+        std::string errorMessage =
+            fmt::format(
+                "Invalid camera ROI or full frame size: "
+                "imageWidth = {}, imageHeight = {}, "
+                "fullFrameWidth = {}, fullFrameHeight = {}",
+                imageWidth, imageHeight, fullFrameWidth, fullFrameHeight);
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+
+    auto [xOffset, yOffset] = getCenteredOffsets(imageWidth,
+                                                 imageHeight,
+                                                 fullFrameWidth,
+                                                 fullFrameHeight);
+
+    CameraROI cameraROI = {(unsigned int)imageWidth,
+                           (unsigned int)imageHeight,
+                           (unsigned int)xOffset,
+                           (unsigned int)yOffset};
+    return cameraROI;
 }

@@ -51,6 +51,8 @@ file(GLOB RUN_CALIBRATION_SOURCES
     "cli.hpp"
     "recorderConfig.cpp"
     "recorderConfig.hpp"
+    "behaviorRecording.cpp"
+    "behaviorRecording.hpp"
     "utils.cpp"
     "utils.hpp")
 add_executable(RunCalibration ${RUN_CALIBRATION_SOURCES})
