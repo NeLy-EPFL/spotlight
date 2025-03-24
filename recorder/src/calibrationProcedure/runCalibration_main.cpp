@@ -54,12 +54,7 @@ void runCalibrationScan(RecorderConfig &recorderConfig,
 {
     arucoSaveDir = prepareOutputFolder(arucoSaveDir, true);
 
-    unsigned int imageWidth = roundToMultiplesOf64(
-        recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
-    unsigned int imageHeight = roundToMultiplesOf64(
-        recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
-    unsigned int xOffset = 0;
-    unsigned int yOffset = 0;
+    CameraROI cameraROI = getCameraROIFromRecorderConfig(recorderConfig);
 
     std::string behaviorCameraFrameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>(
@@ -67,10 +62,10 @@ void runCalibrationScan(RecorderConfig &recorderConfig,
 
     std::atomic<bool> cameraReadyFlag(false);
     behaviorCamera = std::make_unique<BehaviorCamera>(
-        imageWidth,
-        imageHeight,
-        xOffset,
-        yOffset,
+        cameraROI.imageWidth,
+        cameraROI.imageHeight,
+        cameraROI.xOffset,
+        cameraROI.yOffset,
         behaviorCameraFrameGrabberTriggerLine);
 
     spdlog::info("Behavior camera configured");

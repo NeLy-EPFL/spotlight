@@ -12,6 +12,7 @@
 #include "../cli.hpp"
 #include "../recorderConfig.hpp"
 #include "../utils.hpp"
+#include "../behaviorRecording.hpp"
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/motionControl.hpp"
 
