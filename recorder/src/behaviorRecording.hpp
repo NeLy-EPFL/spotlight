@@ -9,7 +9,6 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
-// #include <memory>
 
 #include <spdlog/spdlog.h>
 
@@ -27,6 +26,16 @@ struct BehaviorRecordingState
     std::mutex muscleImageQueueMutex;
     std::condition_variable muscleImageQueueCondVar;
 };
+
+struct CameraROI
+{
+    unsigned int imageWidth;
+    unsigned int imageHeight;
+    unsigned int xOffset;
+    unsigned int yOffset;
+};
+
+CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig);
 
 // Function declarations
 void behaviorImageAcquirer(
