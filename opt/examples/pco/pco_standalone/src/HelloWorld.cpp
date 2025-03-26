@@ -1,6 +1,15 @@
+/**
+ * Same as 
+ * https://github.com/Excelitas-PCO/pco.cpp-samples/blob/main/src/SimpleExample/SimpleExample.cpp
+ */
+
 // SimpleExample.cpp
 //
 //#pragma once
+
+#ifndef PCO_LINUX
+#define PCO_LINUX
+#endif
 
 #include <stdio.h>
 #include <string.h>
