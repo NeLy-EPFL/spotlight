@@ -9,6 +9,8 @@
 
 const int behaviorCameraTriggerPin = 2;
 const int irIlluminationTriggerPin = 3;
+const int muscleCameraTriggerPin = 4;
+const int blueExcitationTriggerPin = 5;
 const int optoTriggerPin = 6;
 
 const int indicatorLEDPinRed = 10;
@@ -22,6 +24,8 @@ int behaviorExposureTimeMicrosecs =
 unsigned long lastBehaviorExposureStartTimeMicrosecs = 0;
 bool behaviorTriggerState = LOW;
 bool waitingForCommand = false;
+int behaviorMuscleFreqRatio = 4;
+int muscleExposureTimeMicrosecs = 5000;
 
 // unsigned long optoSequenceStartTime = 0;
 // bool isRunningOptoSequence = false;
@@ -36,6 +40,9 @@ const int optoOnDuration = 5 * 1000000;
 const int optoOffDuration = 25 * 1000000;
 const int optoRepeatTimes = 10;
 
+int behaviorTriggerCounter = 0;
+unsigned long lastMuscleTriggerStartTime;
+
 enum Color {
     RED,
     GREEN,
@@ -49,6 +56,8 @@ void setup() {
     pinMode(behaviorCameraTriggerPin, OUTPUT);
     pinMode(irIlluminationTriggerPin, OUTPUT);
     pinMode(optoTriggerPin, OUTPUT);
+    pinMode(muscleCameraTriggerPin, OUTPUT);
+    pinMode(blueExcitationTriggerPin, OUTPUT);
 
     pinMode(indicatorLEDPinRed, OUTPUT);
     pinMode(indicatorLEDPinGreen, OUTPUT);
@@ -105,6 +114,7 @@ void loop() {
                 // Start pulsing at the specified frequency and width now!
                 behaviorCycleTimeMicrosecs = 1000000 / message.pulseFrequency;
                 behaviorExposureTimeMicrosecs = message.pulseWidth;
+                behaviorTriggerCounter = 0;
                 waitingForCommand = false; // carry on
                 setLEDColor(GREEN);
 
@@ -156,7 +166,18 @@ void loop() {
             digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
             digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
             lastBehaviorExposureStartTimeMicrosecs = currentTimeMicrosecs;
+            if (behaviorTriggerCounter % behaviorMuscleFreqRatio == 0) {
+                lastMuscleTriggerStartTime = currentTimeMicrosecs;
+                digitalWrite(muscleCameraTriggerPin, HIGH);
+                digitalWrite(blueExcitationTriggerPin, HIGH);
+            }
+            behaviorTriggerCounter++;
         }
+    }
+
+    if ((currentTimeMicrosecs - lastMuscleTriggerStartTime >= muscleExposureTimeMicrosecs)) {
+        digitalWrite(muscleCameraTriggerPin, LOW);
+        digitalWrite(blueExcitationTriggerPin, LOW);
     }
 
     if (isRunningOptoSequence) {
