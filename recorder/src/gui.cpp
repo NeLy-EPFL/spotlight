@@ -204,6 +204,33 @@ MainGUIWindow::MainGUIWindow(
             this,
             &MainGUIWindow::browseDirectory);
 
+    // Buttons to enable/disable automatic tracking
+    turnOnTrackingButton_ = new QPushButton("Enable tracking", this);
+    turnOffTrackingButton_ = new QPushButton("Disable tracking", this);
+    turnOnTrackingButton_->setEnabled(false); // tracking is initially on
+    turnOffTrackingButton_->setEnabled(true);
+    connect(turnOnTrackingButton_,
+            &QPushButton::clicked,
+            this,
+            [this, trackingControlState]()
+            {
+                trackingControlState->trackingOn.store(true);
+                turnOnTrackingButton_->setEnabled(false);
+                turnOffTrackingButton_->setEnabled(true);
+            });
+    connect(turnOffTrackingButton_,
+            &QPushButton::clicked,
+            this,
+            [this, trackingControlState]()
+            {
+                trackingControlState->trackingOn.store(false);
+                turnOnTrackingButton_->setEnabled(true);
+                turnOffTrackingButton_->setEnabled(false);
+            });
+    QHBoxLayout *trackingControlLayout = new QHBoxLayout();
+    trackingControlLayout->addWidget(turnOnTrackingButton_);
+    trackingControlLayout->addWidget(turnOffTrackingButton_);
+
     // Live display widget
     behaviorImageDisplayLabel_ = new QLabel(this);
     int behaviorCameraPreviewWidth = recorderConfig.getParameter<int>(
@@ -248,6 +275,7 @@ MainGUIWindow::MainGUIWindow(
     layout->addLayout(behaviorFPSLayout);
     layout->addLayout(behaviorExposureTimeLayout);
     layout->addLayout(directoryLayout);
+    layout->addLayout(trackingControlLayout);
     layout->addWidget(behaviorImageDisplayLabel_);
     layout->addWidget(motionControlWidget_);
     layout->addLayout(recordStopButtonsLayout);
