@@ -27,6 +27,7 @@ struct TrackingControlState
     std::atomic<bool> motionControlHandlerReady = false;
     MotionStagePosition latestMotionStagePosition;
     std::mutex latestMotionStagePositionMutex;
+    std::atomic<bool> trackingOn = true;
     std::atomic<bool> shouldOverrideTracking = false;
     std::atomic<double> overridingPosX; // in mm
     std::atomic<double> overridingPosY; // in mm

@@ -172,7 +172,11 @@ void trackingController(
     {
         uint64_t startTime = getCurrentTimeMicroseconds();
 
-        if (!trackingControlState->shouldOverrideTracking.load())
+        if (!trackingControlState->trackingOn.load())
+        {
+            // Nothing to do here
+        }
+        else if (!trackingControlState->shouldOverrideTracking.load())
         {
             cv::Mat myBehaviorImage;
             {
