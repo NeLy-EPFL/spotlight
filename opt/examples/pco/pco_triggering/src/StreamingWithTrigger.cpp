@@ -20,13 +20,22 @@
 #include "sc2_defs.h"
 #include "opencv2/opencv.hpp"
 
+const int fullFrameWidth = 2048;
+const int fullFrameHeight = 2048;
+
+int calculateOffset(int fullFrameSize, int roiSize)
+{
+    return (fullFrameSize - roiSize) / 2;
+}
+
 void setupPCOCamera(pco::Camera &camera,
                     double exposureTime,
-                    int xOffset,
-                    int yOffset,
                     int imageWidth,
                     int imageHeight)
 {
+    int xOffset = calculateOffset(fullFrameWidth, imageWidth);
+    int yOffset = calculateOffset(fullFrameHeight, imageHeight);
+
     // Set configuration
     std::cout << "Setting up camera" << std::endl;
     std::cout << "Getting default configuration" << std::endl;
@@ -59,7 +68,7 @@ int main()
         throw pco::CameraException(err);
     }
     pco::Camera camera;
-    setupPCOCamera(camera, 0.01, 0, 0, 640, 400);
+    setupPCOCamera(camera, 0.01, 640, 400);
 
     // Create, configure, and start a new recorder instance
     int bufferSize = 10;
@@ -69,11 +78,12 @@ int main()
 
     pco::Image pcoImage;
     cv::Mat cvImage;
+    cv::Mat displayImage;
     bool isFirstFrame = true;
     std::cout << "Entering frame grabbing loop" << std::endl;
     while (true)
     {
-        std::cout << "Waiting for image" << std::endl;
+        // std::cout << "Waiting for image" << std::endl;
         if (isFirstFrame)
         {
             camera.waitForFirstImage();
@@ -83,16 +93,19 @@ int main()
         {
             camera.waitForNewImage();
         }
-        std::cout << "Image ready" << std::endl;
+        // std::cout << "Image ready" << std::endl;
         camera.image(pcoImage,
                      PCO_RECORDER_LATEST_IMAGE,
                      pco::DataFormat::Mono16);
-        std::cout << "Image received" << std::endl;
+        // std::cout << "Image received" << std::endl;
         cvImage = cv::Mat(pcoImage.height(),
                           pcoImage.width(),
                           CV_16UC1,
                           pcoImage.raw_data().first);
-        cv::imshow("PCO Image", cvImage);
+        cv::imwrite("pco_image.tif", cvImage);
+        // cv::normalize(cvImage, displayImage, 0, 65535, cv::NORM_MINMAX);
+        displayImage = cvImage * 200;
+        cv::imshow("PCO Image", displayImage);
         if (cv::waitKey(1) == 27)
         {
             break;

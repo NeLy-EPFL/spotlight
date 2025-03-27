@@ -12,6 +12,7 @@ const int irIlluminationTriggerPin = 3;
 const int muscleCameraTriggerPin = 4;
 const int blueExcitationTriggerPin = 5;
 const int optoTriggerPin = 6;
+const int greenIlluminationControlPin = 8;
 
 const int indicatorLEDPinRed = 10;
 const int indicatorLEDPinGreen = 11;
@@ -58,6 +59,7 @@ void setup() {
     pinMode(optoTriggerPin, OUTPUT);
     pinMode(muscleCameraTriggerPin, OUTPUT);
     pinMode(blueExcitationTriggerPin, OUTPUT);
+    pinMode(greenIlluminationControlPin, OUTPUT);
 
     pinMode(indicatorLEDPinRed, OUTPUT);
     pinMode(indicatorLEDPinGreen, OUTPUT);
@@ -66,6 +68,8 @@ void setup() {
     digitalWrite(behaviorCameraTriggerPin, behaviorTriggerState);
     digitalWrite(irIlluminationTriggerPin, behaviorTriggerState);
     digitalWrite(optoTriggerPin, LOW);
+
+    digitalWrite(greenIlluminationControlPin, HIGH);
 
     setLEDColor(GREEN);
 }
