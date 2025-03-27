@@ -85,6 +85,8 @@ private:
     QSpinBox *behaviorFPSSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
     QLineEdit *directoryLineEdit_;
+    QPushButton *turnOnTrackingButton_;
+    QPushButton *turnOffTrackingButton_;
     MotionControlWidget *motionControlWidget_;
     QPushButton *recordButton_;
     QPushButton *stopButton_;
