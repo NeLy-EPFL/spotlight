@@ -14,6 +14,11 @@ behavior_camera:
   default_exposure_time_us: 1000
   saving_performance_logging_interval: 100
 
+muscle_camera:
+  streaming_sync_ratio: 1
+  default_recording_sync_ratio: 4
+  default_exposure_time_us: 3000
+
 motion_control:
   motion_stage_device_manufacturer: "X-MCC2"
   motion_stage_device_description: "Zaber Technologies Inc."
@@ -39,7 +44,6 @@ tracking:
 
 triggering:
   image_buffer_flushing_wait_time_ms: 100
-  arduino_baud_rate: 9600
   arduino_comm_timeout_ms: 1000
   arduino_comm_retries: 3
   arduino_device_manufacturer: "Arduino"

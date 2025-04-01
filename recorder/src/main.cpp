@@ -160,8 +160,9 @@ int main(int argc, char **argv)
     }
 
     // Start Arduino triggering interface
-    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface =
-        std::make_shared<ArduinoTriggerInterface>(recorderConfig, programState);
+    std::string arduinoPortName = findArduinoPortName(recorderConfig);
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication =
+        std::make_shared<ArduinoCommunication>(arduinoPortName);
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
@@ -170,7 +171,8 @@ int main(int argc, char **argv)
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
                                      latestBehaviorFrameHolder,
-                                     arduinoTriggerInterface,
+                                     arduinoCommunication,
+                                     programState,
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
