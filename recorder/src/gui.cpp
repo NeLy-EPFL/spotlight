@@ -149,7 +149,8 @@ MainGUIWindow::MainGUIWindow(
     CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
-    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication,
+    std::shared_ptr<ProgramState> programState,
     QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
@@ -158,8 +159,14 @@ MainGUIWindow::MainGUIWindow(
       behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
       saveDirectory_(saveDirectory),
       latestBehaviorFrameHolder_(latestBehaviorFrameHolder),
-      arduinoTriggerInterface_(arduinoTriggerInterface)
+      arduinoCommunication_(arduinoCommunication),
+      programState_(programState)
 {
+    streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    streamingSyncRatio_ = recorderConfig.getParameter<int>(
+        "muscle_camera", "streaming_sync_ratio");
+
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
@@ -167,9 +174,25 @@ MainGUIWindow::MainGUIWindow(
         recorderConfig.getParameter<int>("behavior_camera",
                                          "default_recording_fps");
     behaviorFPSSpinBox_->setValue(behaviorCameraDefaultRecordingFrameRate);
+    // Don't connect to ArduinoCommunication! This value is only used during
+    // recording. When streaming, the sync ratio is always 1 and this field is
+    // ignored.
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
     behaviorFPSLayout->addWidget(behaviorFPSSpinBox_);
+
+    // Behavior-muscle synchronization ratio
+    syncRatioSpinBox_ = new QSpinBox(this);
+    syncRatioSpinBox_->setRange(1, 10);
+    int syncRatio = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_recording_sync_ratio");
+    syncRatioSpinBox_->setValue(syncRatio);
+    // Don't connect to ArduinoCommunication! This value is only used during
+    // recording. When streaming, the sync ratio is always 1 and this field is
+    // ignored.
+    QHBoxLayout *syncRatioLayout = new QHBoxLayout();
+    syncRatioLayout->addWidget(new QLabel("Behavior FPS : muscle FPS"));
+    syncRatioLayout->addWidget(syncRatioSpinBox_);
 
     // Behavior exposure time widget
     behaviorExposureTimeSpinBox_ = new QDoubleSpinBox(this);
@@ -178,10 +201,42 @@ MainGUIWindow::MainGUIWindow(
         "behavior_camera", "default_exposure_time_us");
     behaviorExposureTimeSpinBox_->setValue(
         behaviorCameraDefaultExposureTimeUs / 1000.0);
+    connect(behaviorExposureTimeSpinBox_,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this,
+            [this, arduinoCommunication](double value)
+            { arduinoCommunication->setBehaviorExposureTime(value * 1000); });
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));
     behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox_);
+
+    // Muscle exposure time widget
+    muscleExposureTimeSpinBox_ = new QDoubleSpinBox(this);
+    muscleExposureTimeSpinBox_->setRange(0.001, 1000.0);
+    int muscleCameraDefaultExposureTimeUs = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_exposure_time_us");
+    muscleExposureTimeSpinBox_->setValue(
+        muscleCameraDefaultExposureTimeUs / 1000.0);
+    connect(muscleExposureTimeSpinBox_,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this,
+            [this, arduinoCommunication](double value)
+            { arduinoCommunication->setMuscleExposureTime(value * 1000); });
+    QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
+    muscleExposureTimeLayout->addWidget(
+        new QLabel("Muscle exposure time (ms)"));
+    muscleExposureTimeLayout->addWidget(muscleExposureTimeSpinBox_);
+
+    // Experiment protocol
+    // Experiment protocol widget
+    QLabel *protocolLabel = new QLabel("Experiment protocol", this);
+    experimentProtocol_ = new QTextEdit(this);
+    // experimentProtocol_->setPlaceholderText("Enter experiment protocol details here...");
+    experimentProtocol_->setMinimumHeight(40);
+    QVBoxLayout *protocolLayout = new QVBoxLayout();
+    protocolLayout->addWidget(protocolLabel);
+    protocolLayout->addWidget(experimentProtocol_);
 
     // Save directory widget
     directoryLineEdit_ = new QLineEdit(this);
@@ -258,9 +313,7 @@ MainGUIWindow::MainGUIWindow(
             &QTimer::timeout,
             this,
             &MainGUIWindow::updateImageDisplay);
-    int behaviorCameraStreamingFrameRate = recorderConfig.getParameter<int>(
-        "behavior_camera", "streaming_frame_rate");
-    imageDisplayTimer_->start(1000 / behaviorCameraStreamingFrameRate);
+    imageDisplayTimer_->start(1000 / streamingBehaviorFPS_);
     connect(recordButton_,
             &QPushButton::clicked,
             this,
@@ -273,7 +326,10 @@ MainGUIWindow::MainGUIWindow(
     // Arrange layout
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addLayout(behaviorFPSLayout);
+    layout->addLayout(syncRatioLayout);
     layout->addLayout(behaviorExposureTimeLayout);
+    layout->addLayout(muscleExposureTimeLayout);
+    layout->addLayout(protocolLayout);
     layout->addLayout(directoryLayout);
     layout->addLayout(trackingControlLayout);
     layout->addWidget(behaviorImageDisplayLabel_);
@@ -303,12 +359,24 @@ void MainGUIWindow::startRecording()
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
 
-    int recordingFPS = behaviorFPSSpinBox_->value();
-    int recordingExposureTimeMicrosecs =
-        behaviorExposureTimeSpinBox_->value() * 1000;
+    std::vector<ProtocolStep> protocolSteps;
+    int numStepsParsed = parseProtocolString(
+        experimentProtocol_->toPlainText().toStdString(), protocolSteps);
+    if (numStepsParsed < 0)
+    {
+        std::string errorMessage = "Invalid experiment protocol string";
+        spdlog::error(errorMessage);
+        QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
+        return;
+    }
+    spdlog::info("Parsed {} protocol steps", protocolSteps.size());
+    arduinoCommunication_->setBehaviorRecordingFPS(behaviorFPSSpinBox_->value());
+    arduinoCommunication_->setSyncRatio(syncRatioSpinBox_->value());
+    arduinoCommunication_->startRecording(protocolSteps);
 
-    arduinoTriggerInterface_->startRecording(
-        recordingFPS, recordingExposureTimeMicrosecs);
+    // Give it some time for frames in the buffer to flush
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    programState_->isRecording.store(true);
 }
 
 void MainGUIWindow::stopRecording()
@@ -316,10 +384,10 @@ void MainGUIWindow::stopRecording()
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
 
-    int recordingExposureTimeMicrosecs =
-        behaviorExposureTimeSpinBox_->value() * 1000;
-
-    arduinoTriggerInterface_->stopRecording(recordingExposureTimeMicrosecs);
+    arduinoCommunication_->stopRecording();
+    programState_->isRecording.store(false);
+    arduinoCommunication_->setBehaviorRecordingFPS(streamingBehaviorFPS_);
+    arduinoCommunication_->setSyncRatio(streamingSyncRatio_);
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)
@@ -436,4 +504,26 @@ void MainGUIWindow::updateImageDisplay()
                                  Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
     behaviorImageDisplayLabel_->setPixmap(pixmap);
+}
+
+int parseProtocolString(
+    const std::string &protocolTextFieldString,
+    std::vector<ProtocolStep> &protocolSteps)
+/**
+ * This for now is very repetative, but it's intended we can rewrite this
+ * function based on nicer GUI widgets.
+ * (Though for now it's just doing parseProtocolSequence, only to be later
+ * formatted into the exact same strings)
+ */
+{
+    int numStepsParsed = parseProtocolSequence(protocolTextFieldString,
+                                                 protocolSteps);
+    if (numStepsParsed < 0)
+    {
+        std::string errorMessage = "Invalid experiment protocol";
+        spdlog::error(errorMessage);
+        QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
+        return -1;
+    }
+    return numStepsParsed;
 }

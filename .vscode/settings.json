@@ -98,6 +98,7 @@
         "qvboxlayout": "cpp",
         "queue": "cpp",
         "qmessagebox": "cpp",
-        "filesystem": "cpp"
+        "filesystem": "cpp",
+        "qserialportinfo": "cpp"
     }
 }
