@@ -192,14 +192,12 @@ SaveDirectory::SaveDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);
-    initialize();
 }
 
 void SaveDirectory::setDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);
-    initialize();
 }
 
 std::filesystem::path SaveDirectory::getDirectory()
