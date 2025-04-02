@@ -1,1 +1,1 @@
-../../../arduino/Controller/experimentProtocol.hpp
+../../../arduino/TriggerController/experimentProtocol.hpp

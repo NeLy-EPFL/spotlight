@@ -151,6 +151,7 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop,
     QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
@@ -160,7 +161,8 @@ MainGUIWindow::MainGUIWindow(
       saveDirectory_(saveDirectory),
       latestBehaviorFrameHolder_(latestBehaviorFrameHolder),
       arduinoCommunication_(arduinoCommunication),
-      programState_(programState)
+      programState_(programState),
+      programmedRecordingStop_(programmedRecordingStop)
 {
     streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
@@ -323,6 +325,27 @@ MainGUIWindow::MainGUIWindow(
             this,
             &MainGUIWindow::stopRecording);
 
+    // Add timer to keep checking for programmedRecordingStop
+    QTimer *programmedStopCheckTimer = new QTimer(this);
+    connect(programmedStopCheckTimer,
+            &QTimer::timeout,
+            this,
+            [this, programmedRecordingStop]()
+            {
+                if (programmedRecordingStop->numFramesReached.load())
+                {
+                    spdlog::info("Protocol stop reached. Stopping recording.");
+                    stopRecording();
+                    programmedRecordingStop->numFramesExpected = -1;
+                    programmedRecordingStop->numFramesReached.store(false);
+                    QMessageBox::information(
+                        this,
+                        "Recording stopped",
+                        "End of protocol reached. Recording stopped.");
+                }
+            });
+    programmedStopCheckTimer->start(500); // Check every 0.5 second
+
     // Arrange layout
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addLayout(behaviorFPSLayout);
@@ -362,6 +385,7 @@ void MainGUIWindow::startRecording()
     std::vector<ProtocolStep> protocolSteps;
     int numStepsParsed = parseProtocolString(
         experimentProtocol_->toPlainText().toStdString(), protocolSteps);
+    spdlog::info("Parsed {} protocol steps", protocolSteps.size());
     if (numStepsParsed < 0)
     {
         std::string errorMessage = "Invalid experiment protocol string";
@@ -369,7 +393,21 @@ void MainGUIWindow::startRecording()
         QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
         return;
     }
-    spdlog::info("Parsed {} protocol steps", protocolSteps.size());
+    else if (numStepsParsed == 0)
+    {
+        spdlog::info("GUI starting recording without any protocol steps");
+        programmedRecordingStop_->numFramesExpected = -1;
+    }
+    else
+    {
+        spdlog::info("GUI starting recording with {} protocol steps",
+                     protocolSteps.size());
+        programmedRecordingStop_->numFramesExpected =
+            protocolSteps.back().frameCount;
+        spdlog::info("Setting expected number of steps to {}",
+                     programmedRecordingStop_->numFramesExpected);
+    }
+
     arduinoCommunication_->setBehaviorRecordingFPS(behaviorFPSSpinBox_->value());
     arduinoCommunication_->setSyncRatio(syncRatioSpinBox_->value());
     arduinoCommunication_->startRecording(protocolSteps);
@@ -429,7 +467,7 @@ cv::Mat addCornerMarker(cv::Mat image,
     cv::Mat imageForDisplay = image.clone();
     assert(imageForDisplay.size() == image.size());
 
-    std::vector<std::tuple<double, double>> cornerPositions = {
+    std::vector<std::tuple<double, double>> cornerPositions = {  // TODO: Fix
         {0, 0}, {48, 0}, {48, 72}, {0, 72}};
     std::vector<cv::Point> pixelPoints;
     for (auto [x, y] : cornerPositions)
@@ -517,7 +555,7 @@ int parseProtocolString(
  */
 {
     int numStepsParsed = parseProtocolSequence(protocolTextFieldString,
-                                                 protocolSteps);
+                                               protocolSteps);
     if (numStepsParsed < 0)
     {
         std::string errorMessage = "Invalid experiment protocol";

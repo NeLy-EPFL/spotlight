@@ -42,7 +42,8 @@ void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
-    std::shared_ptr<ProgramState> programState);
+    std::shared_ptr<ProgramState> programState,
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop);
 void behaviorImageSaver(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,

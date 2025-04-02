@@ -77,6 +77,7 @@ public:
         std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
+        std::shared_ptr<ProgrammedStop> programmedRecordingStop,
         QWidget *parent = nullptr);
 
 private slots:
@@ -107,6 +108,7 @@ private:
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
 
     int streamingBehaviorFPS_;
     int streamingSyncRatio_;

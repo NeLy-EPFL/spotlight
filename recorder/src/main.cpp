@@ -137,12 +137,16 @@ int main(int argc, char **argv)
         programState);
 
     // Start behavior image acquirer
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop =
+        std::make_shared<ProgrammedStop>();
+
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
         recorderConfig,
         behaviorRecordingState,
         latestBehaviorFrameHolder,
-        programState);
+        programState,
+        programmedRecordingStop);
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
@@ -173,6 +177,7 @@ int main(int argc, char **argv)
                                      latestBehaviorFrameHolder,
                                      arduinoCommunication,
                                      programState,
+                                     programmedRecordingStop,
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
