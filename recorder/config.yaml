@@ -40,7 +40,8 @@ tracking:
   update_frequency_hz: 25
   distance_threshold_for_moving_mm: 0.1
   min_fly_size_sq_pixels: 200
-  boundary_margin_mm: 1
+  boundary_margin_mm: 0.5
+  image_binarize_threshold: 75
 
 triggering:
   image_buffer_flushing_wait_time_ms: 100
