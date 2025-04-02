@@ -155,17 +155,28 @@ void loop() {
   while (!protocolSteps.empty()) {
     ProtocolStep &currentStep = protocolSteps.front();
     if (currentStep.frameCount == behaviorTriggerCounter) {
-      if (currentStep.operation == PROTOCOL_ENDS) {
+      if (currentStep.operation == PROTOCOL_ENDS &&
+          !behaviorTriggerState) {
         protocolSteps.clear();
         Serial.println("Protocol ended.");
         Serial.flush();
         litStatusLED(GREEN);
-        behaviorTriggerOn();
-        delayMicroseconds(behaviorCamExposureTime * 10);
-        behaviorTriggerOff();
+        // These are for checking if the last frame arrived as expected
+        // (by making the following frames extra bright)
+        // delayMicroseconds(10000);
+        // behaviorTriggerOn();
+        // delayMicroseconds(behaviorCamExposureTime * 10);
+        // behaviorTriggerOff();
+        // delayMicroseconds(10000);
+        // behaviorTriggerOn();
+        // delayMicroseconds(behaviorCamExposureTime * 10);
+        // behaviorTriggerOff();
+        // delayMicroseconds(10000);
+        // behaviorTriggerOn();
+        // delayMicroseconds(behaviorCamExposureTime * 10);
+        // behaviorTriggerOff();
+        // Stop triggering until reset by the computer-side program
         behaviorCamPeriod = 3600000000; // 1 hour
-        // behaviorCamPeriod = defaultBehaviorCamPeriod;
-        // syncRatioK = defaultSyncRatioK; // TODO
       } else {
         int pin;
         if (currentStep.optoChannel == 2) {
