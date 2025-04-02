@@ -382,6 +382,8 @@ void MainGUIWindow::startRecording()
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
 
+    saveDirectory_->initialize();
+
     std::vector<ProtocolStep> protocolSteps;
     int numStepsParsed = parseProtocolString(
         experimentProtocol_->toPlainText().toStdString(), protocolSteps);
