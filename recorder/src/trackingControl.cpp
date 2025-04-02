@@ -33,6 +33,8 @@ namespace
     {
         return std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2));
     }
+
+    int imageBinarizeThreshold;
 }
 
 void motionControlRequestHandler(
@@ -167,6 +169,9 @@ void trackingController(
 
     float defaultVelocity = recorderConfig.getParameter<float>(
         "motion_control", "default_velocity_mm_per_sec");
+
+    imageBinarizeThreshold = recorderConfig.getParameter<int>(
+        "tracking", "image_binarize_threshold");
 
     while (!programState->toQuit.load())
     {
@@ -476,7 +481,11 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     // Threshold the image at a cutout of 100
     // spdlog::debug("Thresholding");
     cv::Mat binaryImage;
-    cv::threshold(blackedOutImage, binaryImage, 100, 255, cv::THRESH_BINARY);
+    cv::threshold(blackedOutImage,
+                  binaryImage,
+                  imageBinarizeThreshold,
+                  255,
+                  cv::THRESH_BINARY);
     if (binaryImage.empty())
     {
         spdlog::error("Binary image after thresholding is empty");
