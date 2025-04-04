@@ -67,6 +67,8 @@ int main(int argc, char **argv)
     // Make program state holder
     programState = std::make_shared<ProgramState>();
     behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
+    behaviorRecordingState->latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
 
     // Load recorder configuration
     std::filesystem::path profileDir =
@@ -108,11 +110,6 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
-    // Initialize holder for latest frame data (used for live streaming) and
-    // fly tracking
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder =
-        std::make_shared<LatestFrame>();
-
     // Start tracking & motion control threads
     std::shared_ptr<TrackingControlState> trackingControlState =
         std::make_shared<TrackingControlState>();
@@ -133,7 +130,6 @@ int main(int argc, char **argv)
         behaviorRecordingState,
         trackingControlState,
         std::ref(behaviorCamCalibrationParams),
-        latestBehaviorFrameHolder,
         programState);
 
     // Start behavior image acquirer
@@ -144,7 +140,6 @@ int main(int argc, char **argv)
         behaviorImageAcquirer,
         recorderConfig,
         behaviorRecordingState,
-        latestBehaviorFrameHolder,
         programState,
         programmedRecordingStop);
 
@@ -174,7 +169,6 @@ int main(int argc, char **argv)
                                      trackingControlState,
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
-                                     latestBehaviorFrameHolder,
                                      arduinoCommunication,
                                      programState,
                                      programmedRecordingStop,

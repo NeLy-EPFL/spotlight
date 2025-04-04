@@ -148,7 +148,6 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop,
@@ -159,7 +158,6 @@ MainGUIWindow::MainGUIWindow(
       trackingControlState_(trackingControlState),
       behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
       saveDirectory_(saveDirectory),
-      latestBehaviorFrameHolder_(latestBehaviorFrameHolder),
       arduinoCommunication_(arduinoCommunication),
       programState_(programState),
       programmedRecordingStop_(programmedRecordingStop)
@@ -309,7 +307,7 @@ MainGUIWindow::MainGUIWindow(
     recordStopButtonsLayout->addWidget(recordButton_);
     recordStopButtonsLayout->addWidget(stopButton_);
 
-    // Add timer to update image displaylatestBehaviorFrameHolder_
+    // Add timer to update image display
     imageDisplayTimer_ = new QTimer(this);
     connect(imageDisplayTimer_,
             &QTimer::timeout,
@@ -546,8 +544,15 @@ cv::Mat addCornerMarker(cv::Mat image,
 
 void MainGUIWindow::updateImageDisplay()
 {
-    cv::Mat latestFrame =
-        latestBehaviorFrameHolder_->getLatestFrameData().image;
+    // if (!behaviorRecordingState_->latestBehaviorFrameHolder)
+    // {
+    //     spdlog::warn("Latest frame is empty. Cannot update image display.");
+    //     return;
+    // }
+    cv::Mat latestFrame = behaviorRecordingState_
+                              ->latestBehaviorFrameHolder
+                              ->getLatestFrameData()
+                              .image;
     if (latestFrame.empty())
     {
         return;

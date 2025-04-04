@@ -152,7 +152,6 @@ void trackingController(
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState)
 {
     while (!trackingControlState->motionControlHandlerReady.load())
@@ -183,11 +182,11 @@ void trackingController(
         }
         else if (!trackingControlState->shouldOverrideTracking.load())
         {
-            cv::Mat myBehaviorImage;
-            {
-                myBehaviorImage =
-                    latestBehaviorFrameHolder->getLatestFrameData().image;
-            }
+            cv::Mat myBehaviorImage = behaviorRecordingState
+                                          ->latestBehaviorFrameHolder
+                                          ->getLatestFrameData()
+                                          .image;
+
             MotionStagePosition myMotionStagePosition;
             {
                 std::lock_guard<std::mutex> lock(
