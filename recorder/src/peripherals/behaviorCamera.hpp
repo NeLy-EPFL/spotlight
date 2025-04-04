@@ -26,7 +26,7 @@ public:
         unsigned int yOffset,
         std::string ioLine);
     ~BehaviorCamera();
-    void start(size_t bufferCount = 20);
+    void start(size_t bufferSize = 20);
     void stop();
     FrameData waitForOneFrame();
     bool isReady() const;
@@ -51,7 +51,7 @@ private:
     bool setStringAndCheck(const std::string key, const std::string value);
 };
 
-int roundToMultiplesOf64(int value);
+int roundToNearestValidBehaviorCamDimension(int value);
 
 std::tuple<int, int> getCenteredOffsets(
     int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);

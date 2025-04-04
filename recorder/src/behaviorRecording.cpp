@@ -216,9 +216,9 @@ void stopBehaviorImageSaver(
 
 CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig)
 {
-    int imageWidth = roundToMultiplesOf64(
+    int imageWidth = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
-    int imageHeight = roundToMultiplesOf64(
+    int imageHeight = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
     int fullFrameWidth = recorderConfig.getParameter<int>(
         "behavior_camera", "full_frame_width");
