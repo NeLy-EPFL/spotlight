@@ -6,6 +6,7 @@
 #include <queue>
 #include <mutex>
 #include <tuple>
+#include <vector>
 
 #include <QWidget>
 #include <QPushButton>
@@ -14,6 +15,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSpinBox>
+#include <QTextEdit>
 #include <QLineEdit>
 #include <QLabel>
 #include <QTimer>
@@ -27,7 +29,8 @@
 #include "behaviorRecording.hpp"
 #include "trackingControl.hpp"
 #include "calibration.hpp"
-#include "peripherals/triggering.hpp"
+#include "peripherals/arduinoCommunication.hpp"
+#include "peripherals/experimentProtocol.hpp"
 
 // Forward declaration from main.hpp
 bool quitProgram();
@@ -72,7 +75,9 @@ public:
         CalibrationParams &behaviorCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
         std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
-        std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface,
+        std::shared_ptr<ArduinoCommunication> arduinoCommunication,
+        std::shared_ptr<ProgramState> programState,
+        std::shared_ptr<ProgrammedStop> programmedRecordingStop,
         QWidget *parent = nullptr);
 
 private slots:
@@ -82,8 +87,12 @@ private slots:
     void browseDirectory();
 
 private:
+    std::shared_ptr<ProgramState> programState_;
     QSpinBox *behaviorFPSSpinBox_;
+    QSpinBox *syncRatioSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
+    QDoubleSpinBox *muscleExposureTimeSpinBox_;
+    QTextEdit *experimentProtocol_;
     QLineEdit *directoryLineEdit_;
     QPushButton *turnOnTrackingButton_;
     QPushButton *turnOffTrackingButton_;
@@ -98,7 +107,11 @@ private:
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder_;
-    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface_;
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
+
+    int streamingBehaviorFPS_;
+    int streamingSyncRatio_;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -106,7 +119,12 @@ protected:
 
 // Helpers
 cv::Mat addCornerMarker(cv::Mat image,
+                        int arenaSizeXmm,
+                        int arenaSizeYmm,
                         MotionStagePosition stagePosition,
                         CalibrationParams &behaviorCamCalibrationParams);
+
+int parseProtocolString(const std::string &protocolTextFieldString,
+                        std::vector<ProtocolStep> &steps);
 
 #endif // GUI_HPP

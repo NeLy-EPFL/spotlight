@@ -79,4 +79,10 @@ struct ProgramState
     std::atomic<bool> isRecording = false;
 };
 
+struct ProgrammedStop
+{
+    int numFramesExpected = -1;
+    std::atomic<bool> numFramesReached = false;
+};
+
 #endif // DATA_TYPES_HPP

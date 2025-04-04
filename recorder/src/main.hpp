@@ -12,7 +12,7 @@
 
 #include "calibration.hpp"
 #include "peripherals/behaviorCamera.hpp"
-#include "peripherals/triggering.hpp"
+#include "peripherals/arduinoCommunication.hpp"
 #include "recorderConfig.hpp"
 #include "cli.hpp"
 #include "behaviorRecording.hpp"

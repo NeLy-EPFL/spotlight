@@ -192,14 +192,12 @@ SaveDirectory::SaveDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);
-    initialize();
 }
 
 void SaveDirectory::setDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);
-    initialize();
 }
 
 std::filesystem::path SaveDirectory::getDirectory()
@@ -214,6 +212,7 @@ void SaveDirectory::initialize()
     {
         fs::create_directories(directory_ / "behavior_images");
         fs::create_directories(directory_ / "stage_position");
+        fs::create_directories(directory_ / "metadata");
     }
     catch (const fs::filesystem_error &e)
     {
