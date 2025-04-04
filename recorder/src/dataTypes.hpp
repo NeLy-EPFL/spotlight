@@ -2,6 +2,7 @@
 #define DATA_TYPES_HPP
 
 #include <opencv2/opencv.hpp>
+#include <atomic>
 
 struct FrameData
 {
