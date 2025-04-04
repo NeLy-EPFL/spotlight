@@ -490,14 +490,20 @@ void MainGUIWindow::browseDirectory()
 }
 
 cv::Mat addCornerMarker(cv::Mat image,
+                        int arenaSizeXmm,
+                        int arenaSizeYmm,
                         MotionStagePosition stagePosition,
                         CalibrationParams &behaviorCamCalibrationParams)
 {
     cv::Mat imageForDisplay = image.clone();
     assert(imageForDisplay.size() == image.size());
 
-    std::vector<std::tuple<double, double>> cornerPositions = {  // TODO: Fix
-        {0, 0}, {48, 0}, {48, 72}, {0, 72}};
+    std::vector<std::tuple<double, double>> cornerPositions = {
+        {0, 0},
+        {arenaSizeXmm, 0},
+        {arenaSizeXmm, arenaSizeYmm},
+        {0, arenaSizeYmm}};
+
     std::vector<cv::Point> pixelPoints;
     for (auto [x, y] : cornerPositions)
     {
@@ -561,7 +567,11 @@ void MainGUIWindow::updateImageDisplay()
         behaviorCamCalibrationParams_,
         recorderConfig_);
 
+    int arenaSizeXmm = recorderConfig_.getParameter<int>("arena", "size_x_mm");
+    int arenaSizeYmm = recorderConfig_.getParameter<int>("arena", "size_y_mm");
     cv::Mat imageForDisplay = addCornerMarker(maskedImage,
+                                              arenaSizeXmm,
+                                              arenaSizeYmm,
                                               myStagePosition,
                                               behaviorCamCalibrationParams_);
 

@@ -26,10 +26,10 @@ motion_control:
   stage_serial_no_y_axis: 122390
   length_unit: "mm"
   velocity_unit: "mm/s"
-  x_min_mm: 64
-  x_max_mm: 110
+  x_min_mm: 68
+  x_max_mm: 115
   y_min_mm: 47
-  y_max_mm: 108
+  y_max_mm: 113
   default_velocity_mm_per_sec: 50
   calibration_scan_stride_mm: 2
   calibration_scan_frame_rate: 50
