@@ -4,7 +4,8 @@ void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
-    std::shared_ptr<ProgramState> programState)
+    std::shared_ptr<ProgramState> programState,
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop)
 {
     spdlog::info("Behavior image acquirer thread started");
     CameraROI cameraROI = getCameraROIFromRecorderConfig(recorderConfig);
@@ -59,7 +60,7 @@ void behaviorImageAcquirer(
                 isFristFrameRecorded = false; // toggle off
             }
 
-            frameData.frameId = currentFrameId++;
+            frameData.frameId = currentFrameId;
 
             frameDataBuffer[frameDataBufferIndex++] = frameData;
 
@@ -80,6 +81,18 @@ void behaviorImageAcquirer(
 
                 frameDataBufferIndex = 0;
             }
+
+            // Whether we've reached a programmed stop
+            int numFramesExpected = programmedRecordingStop->numFramesExpected;
+            if (currentFrameId == numFramesExpected -1 &&
+                numFramesExpected >= 0)
+            {
+                programmedRecordingStop->numFramesReached.store(true);
+                spdlog::info("Programmed stop reached. Behavior acquisition "
+                             "thread is telling GUI to stopping recording.");
+            }
+
+            currentFrameId++;
         }
         else
         {

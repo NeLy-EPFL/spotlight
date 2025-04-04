@@ -137,12 +137,16 @@ int main(int argc, char **argv)
         programState);
 
     // Start behavior image acquirer
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop =
+        std::make_shared<ProgrammedStop>();
+
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
         recorderConfig,
         behaviorRecordingState,
         latestBehaviorFrameHolder,
-        programState);
+        programState,
+        programmedRecordingStop);
 
     // Start behavior image saver
     std::vector<std::thread> behaviorImageSaverThreads;
@@ -160,8 +164,9 @@ int main(int argc, char **argv)
     }
 
     // Start Arduino triggering interface
-    std::shared_ptr<ArduinoTriggerInterface> arduinoTriggerInterface =
-        std::make_shared<ArduinoTriggerInterface>(recorderConfig, programState);
+    std::string arduinoPortName = findArduinoPortName(recorderConfig);
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication =
+        std::make_shared<ArduinoCommunication>(arduinoPortName);
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
@@ -170,7 +175,9 @@ int main(int argc, char **argv)
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
                                      latestBehaviorFrameHolder,
-                                     arduinoTriggerInterface,
+                                     arduinoCommunication,
+                                     programState,
+                                     programmedRecordingStop,
                                      nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();

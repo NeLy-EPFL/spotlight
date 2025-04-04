@@ -68,7 +68,7 @@ int main()
         throw pco::CameraException(err);
     }
     pco::Camera camera;
-    setupPCOCamera(camera, 0.01, 640, 400);
+    setupPCOCamera(camera, 0.01, 1024, 1024);
 
     // Create, configure, and start a new recorder instance
     int bufferSize = 10;
@@ -81,6 +81,7 @@ int main()
     cv::Mat displayImage;
     bool isFirstFrame = true;
     std::cout << "Entering frame grabbing loop" << std::endl;
+    int frameId = 0;
     while (true)
     {
         // std::cout << "Waiting for image" << std::endl;
@@ -102,9 +103,11 @@ int main()
                           pcoImage.width(),
                           CV_16UC1,
                           pcoImage.raw_data().first);
-        cv::imwrite("pco_image.tif", cvImage);
+        std::string filename = "output/pco_image_" +
+                               cv::format("%05d", frameId++) + ".tif";
+        cv::imwrite(filename, cvImage);
         // cv::normalize(cvImage, displayImage, 0, 65535, cv::NORM_MINMAX);
-        displayImage = cvImage * 200;
+        displayImage = cvImage * 80;
         cv::imshow("PCO Image", displayImage);
         if (cv::waitKey(1) == 27)
         {

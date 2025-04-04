@@ -44,12 +44,11 @@ public:
     SaveDirectory(std::string directory);
     void setDirectory(std::string directory);
     std::filesystem::path getDirectory();
+    void initialize();
 
 private:
     std::mutex mutex_;
     fs::path directory_;
-
-    void initialize();
 };
 
 class LatestFrame

@@ -14,6 +14,11 @@ behavior_camera:
   default_exposure_time_us: 1000
   saving_performance_logging_interval: 100
 
+muscle_camera:
+  streaming_sync_ratio: 1
+  default_recording_sync_ratio: 4
+  default_exposure_time_us: 3000
+
 motion_control:
   motion_stage_device_manufacturer: "X-MCC2"
   motion_stage_device_description: "Zaber Technologies Inc."
@@ -21,11 +26,11 @@ motion_control:
   stage_serial_no_y_axis: 122390
   length_unit: "mm"
   velocity_unit: "mm/s"
-  x_min_mm: 64
-  x_max_mm: 110
+  x_min_mm: 68
+  x_max_mm: 115
   y_min_mm: 47
-  y_max_mm: 108
-  default_velocity_mm_per_sec: 20
+  y_max_mm: 113
+  default_velocity_mm_per_sec: 50
   calibration_scan_stride_mm: 2
   calibration_scan_frame_rate: 50
   calibration_scan_exposure_time_us: 1000
@@ -35,11 +40,11 @@ tracking:
   update_frequency_hz: 25
   distance_threshold_for_moving_mm: 0.1
   min_fly_size_sq_pixels: 200
-  boundary_margin_mm: 1
+  boundary_margin_mm: 0.5
+  image_binarize_threshold: 75
 
 triggering:
   image_buffer_flushing_wait_time_ms: 100
-  arduino_baud_rate: 9600
   arduino_comm_timeout_ms: 1000
   arduino_comm_retries: 3
   arduino_device_manufacturer: "Arduino"
