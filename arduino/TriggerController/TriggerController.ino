@@ -318,8 +318,6 @@ void parseIncomingCommand(const char* message) {
     // Handle command: STOP_RECORDING
     protocolSteps.clear();
     behaviorTriggerCounter = 0;
-    // behaviorCamPeriod = defaultBehaviorCamPeriod;
-    // syncRatioK = defaultSyncRatioK; // TODO
     Serial.println("Recording stopped.");
     Serial.flush();
   } else {
