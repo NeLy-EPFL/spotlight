@@ -212,6 +212,7 @@ void SaveDirectory::initialize()
     {
         fs::create_directories(directory_ / "behavior_images");
         fs::create_directories(directory_ / "stage_position");
+        fs::create_directories(directory_ / "metadata");
     }
     catch (const fs::filesystem_error &e)
     {

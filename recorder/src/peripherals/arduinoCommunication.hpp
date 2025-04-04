@@ -43,6 +43,7 @@ private:
     std::queue<std::string> arduinoMessagesQueue_;
 };
 
+std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps);
 std::string findArduinoPortName(RecorderConfig &recorderConfig);
 
 #endif // ARDUINO_COMMUNICATION_HPP
