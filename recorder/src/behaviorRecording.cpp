@@ -3,7 +3,6 @@
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop)
 {
@@ -39,15 +38,17 @@ void behaviorImageAcquirer(
         // // have plenty of margin and can theoretically record at
         // // 1,000,000 / 200-ish = 5,000 fps.
         // // uint64_t startTime = getCurrentTimeMicroseconds();
+        spdlog::info("Waiting for behavior camera frame...");
         FrameData frameData =
             behaviorRecordingState->behaviorCamera->waitForOneFrame();
+        spdlog::info("Behavior camera frame acquired");        
         // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
         // spdlog::info("Behavior camera waited {} us", waitTime);
 
         // Update latest frame for live display
-        {
-            latestBehaviorFrameHolder->setLatestFrameData(frameData);
-        }
+        behaviorRecordingState
+            ->latestBehaviorFrameHolder
+            ->setLatestFrameData(frameData);
 
         if (programState->isRecording.load())
         {
@@ -84,7 +85,7 @@ void behaviorImageAcquirer(
 
             // Whether we've reached a programmed stop
             int numFramesExpected = programmedRecordingStop->numFramesExpected;
-            if (currentFrameId == numFramesExpected -1 &&
+            if (currentFrameId == numFramesExpected - 1 &&
                 numFramesExpected >= 0)
             {
                 programmedRecordingStop->numFramesReached.store(true);
@@ -101,6 +102,9 @@ void behaviorImageAcquirer(
             currentFrameId = 0;
         }
     }
+    spdlog::critical(
+        "Behavior image acquirer thread is breaking out of loop. "
+        "This should not happen.");
 }
 void behaviorImageSaver(
     const RecorderConfig &recorderConfig,

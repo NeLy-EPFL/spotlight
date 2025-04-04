@@ -12,6 +12,14 @@ struct FrameData
     cv::Mat image;
 };
 
+struct CameraROI
+{
+    unsigned int imageWidth;
+    unsigned int imageHeight;
+    unsigned int xOffset;
+    unsigned int yOffset;
+};
+
 struct GroupOfThreeFrames
 {
     FrameData frame0;

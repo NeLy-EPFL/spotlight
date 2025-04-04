@@ -1,19 +1,28 @@
-#ifndef MUSCLE_RECORDING_HPP
-#define MUSCLE_RECORDING_HPP
+// #ifndef MUSCLE_RECORDING_HPP
+// #define MUSCLE_RECORDING_HPP
 
-#include <iostream>
-#include <mutex>
-#include <queue>
-#include <condition_variable>
-#include <atomic>
-#include <fstream>
+// #include <iostream>
+// #include <mutex>
+// #include <queue>
+// #include <condition_variable>
+// #include <atomic>
+// #include <fstream>
 
-#include <spdlog/spdlog.h>
+// #include <spdlog/spdlog.h>
 
-#include "recorderConfig.hpp"
+// #include "peripherals/muscleCamera.hpp"
+// #include "recorderConfig.hpp"
 
-// Function declarations
-void muscleImageAcquierer();
-void muscleImageSaver();
+// struct MuscleRecordingState
+// {
+//     std::shared_ptr<MuscleCamera> muscleCamera = nullptr;
+//     std::queue<GroupOfThreeFrames> muscleImageQueue;
+//     std::mutex muscleImageQueueMutex;
+//     std::condition_variable muscleImageQueueCondVar;
+// };
 
-#endif // MUSCLE_RECORDING_HPP
+// // Function declarations
+// void muscleImageAcquierer();
+// void muscleImageSaver();
+
+// #endif // MUSCLE_RECORDING_HPP

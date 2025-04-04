@@ -15,6 +15,7 @@
 #include "peripherals/behaviorCamera.hpp"
 #include "recorderConfig.hpp"
 #include "utils.hpp"
+#include "dataTypes.hpp"
 
 struct BehaviorRecordingState
 {
@@ -25,14 +26,7 @@ struct BehaviorRecordingState
     std::queue<GroupOfThreeFrames> muscleImageQueue;
     std::mutex muscleImageQueueMutex;
     std::condition_variable muscleImageQueueCondVar;
-};
-
-struct CameraROI
-{
-    unsigned int imageWidth;
-    unsigned int imageHeight;
-    unsigned int xOffset;
-    unsigned int yOffset;
+    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder;
 };
 
 CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig);
@@ -41,7 +35,6 @@ CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig);
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop);
 void behaviorImageSaver(

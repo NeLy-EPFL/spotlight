@@ -74,7 +74,6 @@ public:
         std::shared_ptr<TrackingControlState> trackingControlState,
         CalibrationParams &behaviorCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
-        std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
         std::shared_ptr<ProgrammedStop> programmedRecordingStop,
@@ -106,7 +105,6 @@ private:
     std::shared_ptr<TrackingControlState> trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
 
