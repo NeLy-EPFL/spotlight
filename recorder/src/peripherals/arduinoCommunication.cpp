@@ -144,20 +144,7 @@ void ArduinoCommunication::setMuscleExposureTime(int exposureTimeUs)
 void ArduinoCommunication::startRecording(
     std::vector<ProtocolStep> protocolSteps)
 {
-    std::string protocolString;
-    if (protocolSteps.empty())
-    {
-        protocolString = ";";
-    }
-    else
-    {
-        for (const auto &step : protocolSteps)
-        {
-            protocolString += step.toString() + ";";
-        }
-        // Remove last tangling semicolon
-        protocolString.pop_back();
-    }
+    std::string protocolString = generateProtocolString(protocolSteps);
     std::string message = ">START_RECORDING " + protocolString + "\n";
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -180,6 +167,25 @@ void ArduinoCommunication::stopCommunication()
 {
     stopCommunication_ = true;
     cv_.notify_one();
+}
+
+std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps)
+{
+    std::string protocolString;
+    if (protocolSteps.empty())
+    {
+        protocolString = ";";
+    }
+    else
+    {
+        for (const auto &step : protocolSteps)
+        {
+            protocolString += step.toString() + ";";
+        }
+        // Remove last tangling semicolon
+        protocolString.pop_back();
+    }
+    return protocolString;
 }
 
 std::string findArduinoPortName(RecorderConfig &recorderConfig)

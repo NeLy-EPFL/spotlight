@@ -366,6 +366,7 @@ MainGUIWindow::MainGUIWindow(
 
 void MainGUIWindow::startRecording()
 {
+    // Check if behavior camera has been initialized
     if (!behaviorRecordingState_->behaviorCamera ||
         !behaviorRecordingState_->behaviorCamera->isReady())
     {
@@ -379,11 +380,11 @@ void MainGUIWindow::startRecording()
         return;
     }
 
+    // Toggle GUI buttons
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
 
-    saveDirectory_->initialize();
-
+    // Parse and set experiment protocol
     std::vector<ProtocolStep> protocolSteps;
     int numStepsParsed = parseProtocolString(
         experimentProtocol_->toPlainText().toStdString(), protocolSteps);
@@ -410,11 +411,37 @@ void MainGUIWindow::startRecording()
                      programmedRecordingStop_->numFramesExpected);
     }
 
+    // Initialize save directory
+    saveDirectory_->initialize();
+
+    // Save metadata: experiment protocol
+    std::string protocolString = generateProtocolString(protocolSteps);
+    std::filesystem::path metadataFilePath =
+        saveDirectory_->getDirectory() / "metadata" / "experiment_protocol.txt";
+    std::ofstream metadataFile(metadataFilePath);
+    metadataFile << protocolString;
+    metadataFile.close();
+    spdlog::info("Saved experiment protocol to {}", metadataFilePath.string());
+
+    // Save metadata: recording config
+    std::filesystem::path recordingConfigFilePath =
+        saveDirectory_->getDirectory() / "metadata" / "recording_config.yaml";
+    recorderConfig_.saveToFile(recordingConfigFilePath);
+
+    // Send triggering parameters to Arduino and start recording
     arduinoCommunication_->setBehaviorRecordingFPS(behaviorFPSSpinBox_->value());
     arduinoCommunication_->setSyncRatio(syncRatioSpinBox_->value());
     arduinoCommunication_->startRecording(protocolSteps);
 
-    // Give it some time for frames in the buffer to flush
+    // Arduino will pause 100ms before starting triggering. This is to leave
+    // some time to currently dangling, unprocessed time to pass through the
+    // image saver thread. This way, when the image acquirer thread receives
+    // any new frame, we know that they are part of the recording (ie. the
+    // first frame that arrives should carry frame index 0). On the comptuer's
+    // side, we will wait 80ms before setting isRecording to true. During these
+    // 80ms, any frame that is received is still treated as streamed input for
+    // visualization GUI. By contrast, any frame that arrives after 80ms is
+    // considered part of the recording.
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
     programState_->isRecording.store(true);
 }
