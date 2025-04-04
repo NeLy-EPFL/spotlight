@@ -119,6 +119,8 @@ protected:
 
 // Helpers
 cv::Mat addCornerMarker(cv::Mat image,
+                        int arenaSizeXmm,
+                        int arenaSizeYmm,
                         MotionStagePosition stagePosition,
                         CalibrationParams &behaviorCamCalibrationParams);
 
