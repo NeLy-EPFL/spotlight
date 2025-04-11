@@ -23,6 +23,11 @@ namespace
             spdlog::error("Failed to open serial port");
         }
 
+        // Reset Arduino
+        serialPort.setDataTerminalReady(false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        serialPort.setDataTerminalReady(true);
+
         std::string incomingMessageBuffer;
 
         while (true)
