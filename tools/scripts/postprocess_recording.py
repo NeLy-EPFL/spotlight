@@ -36,6 +36,16 @@ def postprocess_recording_data(
 
     For more information on the video compression parameters, see
     https://trac.ffmpeg.org/wiki/Encode/H.264
+    
+    Example:
+        poetry run python scripts/postprocess_recording.py \
+            --recording_dir /mnt/spotlight-data/DM/250407-t66-mdn-chrimson/fly0_pw150/ \
+            --behavior-video-crf 16 \
+            --behavior-video-preset slow
+        
+        This will create a folder under the recording directory called
+        "processed" and save the postprocessed files there. The video will
+        have a CRF of 16 and using the "slow" preset parameters.
 
     Args:
         recording_dir (Path):
