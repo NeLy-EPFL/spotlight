@@ -419,6 +419,7 @@ void motionStagePositionLogger(
         {
             if (logFile.is_open())
             {
+                spdlog::info("Stage position logging stopped. Closing log file.");
                 logFile.close();
             }
         }
