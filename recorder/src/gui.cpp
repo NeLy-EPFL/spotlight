@@ -330,12 +330,14 @@ MainGUIWindow::MainGUIWindow(
             this,
             [this, programmedRecordingStop]()
             {
-                if (programmedRecordingStop->numFramesReached.load())
+                if (programmedRecordingStop->hasEndedFlagForGUI.load())
                 {
                     spdlog::info("Protocol stop reached. Stopping recording.");
                     stopRecording();
-                    programmedRecordingStop->numFramesExpected = -1;
-                    programmedRecordingStop->numFramesReached.store(false);
+                    programmedRecordingStop->numBehaviorFramesExpected = -1;
+                    programmedRecordingStop->numMuscleFramesExpected = -1;
+                    programmedRecordingStop
+                        ->hasEndedFlagForGUI.store(false); // toggle off
                     QMessageBox::information(
                         this,
                         "Recording stopped",
@@ -397,16 +399,21 @@ void MainGUIWindow::startRecording()
     else if (numStepsParsed == 0)
     {
         spdlog::info("GUI starting recording without any protocol steps");
-        programmedRecordingStop_->numFramesExpected = -1;
+        programmedRecordingStop_->numBehaviorFramesExpected = -1;
+        programmedRecordingStop_->numMuscleFramesExpected = -1;
     }
     else
     {
         spdlog::info("GUI starting recording with {} protocol steps",
                      protocolSteps.size());
-        programmedRecordingStop_->numFramesExpected =
+        programmedRecordingStop_->numBehaviorFramesExpected =
             protocolSteps.back().frameCount;
-        spdlog::info("Setting expected number of steps to {}",
-                     programmedRecordingStop_->numFramesExpected);
+        programmedRecordingStop_->numMuscleFramesExpected =
+            protocolSteps.back().frameCount / syncRatioSpinBox_->value();
+        spdlog::info(
+            "Setting expected number of steps to {} (behavior) and {} (muscle)",
+            programmedRecordingStop_->numBehaviorFramesExpected,
+            programmedRecordingStop_->numMuscleFramesExpected);
     }
 
     // Initialize save directory

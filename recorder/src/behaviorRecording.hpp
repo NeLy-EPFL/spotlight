@@ -23,9 +23,6 @@ struct BehaviorRecordingState
     std::queue<GroupOfThreeFrames> behaviorImageQueue;
     std::mutex behaviorImageQueueMutex;
     std::condition_variable behaviorImageQueueCondVar;
-    std::queue<GroupOfThreeFrames> muscleImageQueue;
-    std::mutex muscleImageQueueMutex;
-    std::condition_variable muscleImageQueueCondVar;
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder;
 };
 
