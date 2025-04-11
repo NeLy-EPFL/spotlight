@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 uint64_t getCurrentTimeMicroseconds();
 
 cv::Mat correctImageRotationAndFlip(cv::Mat image);
-cv::Mat makePseudoRGBImageFromThreeFrames(
+cv::Mat makePseudoBGRImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames);
 std::string makeMetadataStringFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames);

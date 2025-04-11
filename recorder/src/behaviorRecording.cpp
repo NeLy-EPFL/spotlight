@@ -170,9 +170,9 @@ void behaviorImageSaver(
             std::filesystem::path(saveDirectory->getDirectory()) /
             "behavior_images";
 
-        // Save three frames as a single pseudo-RGB image
+        // Save three frames as a single pseudo-BGR image
         std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
-        cv::Mat image = makePseudoRGBImageFromThreeFrames(frameGroup);
+        cv::Mat image = makePseudoBGRImageFromThreeFrames(frameGroup);
         cv::imwrite(filename, image, compressionParams);
 
         // Save metadata

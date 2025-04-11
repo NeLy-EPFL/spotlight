@@ -7,16 +7,16 @@ uint64_t getCurrentTimeMicroseconds()
         .count();
 }
 
-cv::Mat makePseudoRGBImageFromThreeFrames(
+cv::Mat makePseudoBGRImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
     std::vector<cv::Mat> channels = {
         groupOfThreeFrames.frame0.image,
         groupOfThreeFrames.frame1.image,
         groupOfThreeFrames.frame2.image};
-    cv::Mat pseudoRGBImage;
-    cv::merge(channels, pseudoRGBImage);
-    cv::Mat correctedImage = correctImageRotationAndFlip(pseudoRGBImage);
+    cv::Mat pseudoBGRImage;
+    cv::merge(channels, pseudoBGRImage);
+    cv::Mat correctedImage = correctImageRotationAndFlip(pseudoBGRImage);
     return correctedImage;
 }
 

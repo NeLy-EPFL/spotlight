@@ -127,7 +127,6 @@ void muscleImageSaver(
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
 
-        // Save three frames as a single pseudo-RGB image
         std::string filename = muscleSaveDir / (filenameStem + ".tif");
 
         try {
