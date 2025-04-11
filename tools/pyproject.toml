@@ -23,7 +23,9 @@ dependencies = [
     "seaborn (==0.13.2)",
     "ipywidgets (>=8.1,<9.0)",
     "pyyaml (>=6.0,<7.0)",
-    "tyro (==0.9.17)"
+    "tyro (==0.9.17)",
+    "vidgear (==0.3.3)",
+    "setuptools (>=78,<79)"  # needed for vidgear
 ]
 
 [tool.poetry]
