@@ -90,8 +90,9 @@ struct ProgramState
 
 struct ProgrammedStop
 {
-    int numFramesExpected = -1;
-    std::atomic<bool> numFramesReached = false;
+    int numBehaviorFramesExpected = -1;
+    int numMuscleFramesExpected = -1;
+    std::atomic<bool> hasEndedFlagForGUI = false;
 };
 
 #endif // DATA_TYPES_HPP

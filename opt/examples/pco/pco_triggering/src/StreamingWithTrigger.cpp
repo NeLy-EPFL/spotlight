@@ -94,6 +94,18 @@ int main()
         {
             camera.waitForNewImage();
         }
+
+        // Test: changing exposure time *during* acquisition
+        if (frameId == 30)
+        {
+            camera.setExposureTime(0.1);
+        }
+        if (frameId == 60)
+        {
+            camera.setExposureTime(0.01);
+        }
+
+
         // std::cout << "Image ready" << std::endl;
         camera.image(pcoImage,
                      PCO_RECORDER_LATEST_IMAGE,

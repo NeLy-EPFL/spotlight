@@ -15,9 +15,14 @@ behavior_camera:
   saving_performance_logging_interval: 100
 
 muscle_camera:
+  full_frame_width: 2048
+  full_frame_height: 2048
+  roi_width: 1024
+  roi_height: 1024
   streaming_sync_ratio: 1
   default_recording_sync_ratio: 4
   default_exposure_time_us: 3000
+  saving_performance_logging_interval: 25
 
 motion_control:
   motion_stage_device_manufacturer: "X-MCC2"

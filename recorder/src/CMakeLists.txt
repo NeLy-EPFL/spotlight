@@ -1,12 +1,20 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-project(SpotlightController)
+project("SpotlightController"
+    VERSION 1.0.0
+    DESCRIPTION "Control software for the Spotlight setup"
+    LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+# Use C++17 standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+add_compile_definitions(PCO_LINUX)
 
 # Enable debugging with frame pointers
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3 -O0 -fno-omit-frame-pointer")
+set(CMAKE_CXX_FLAGS_DEBUG
+    "${CMAKE_CXX_FLAGS_DEBUG} -g3 -O0 -fno-omit-frame-pointer")
 
 # Add pthread support for multithreaded applications
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
@@ -24,22 +32,55 @@ find_library(ZABER_MOTION_LIB NAMES zaber-motion REQUIRED)
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
 include_directories(${EGRABBER_INCLUDE_DIR})
 
-file(GLOB SOURCES
+# Set paths for PCO library
+set(PCO_ROOT_DIR "/opt/pco/pco.cpp")
+set(PCO_INCLUDE_DIR "${PCO_ROOT_DIR}/include")
+set(PCO_LIB_DIR "${PCO_ROOT_DIR}/lib")
+set(PCO_CAMERA_DIR "${PCO_ROOT_DIR}/pco.camera")
+
+# Define PCO libraries for Linux
+set(SDKLIB pco_sc2cam)
+set(RECORDERLIB pco_recorder)
+set(CONVERTLIB pco_convert)
+set(XCITELIB etc_xcite)
+
+# Define PCO source files
+set(PCOCAMERA_SOURCES
+    ${PCO_CAMERA_DIR}/cameraexception.cpp
+    ${PCO_CAMERA_DIR}/image.cpp
+    ${PCO_CAMERA_DIR}/camera.cpp
+    ${PCO_CAMERA_DIR}/xcite.cpp
+    ${PCO_CAMERA_DIR}/stdafx.cpp
+)
+
+# Include PCO include directories
+include_directories(${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
+
+# Link with PCO libraries
+link_directories(${PCO_LIB_DIR})
+link_libraries(${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
+
+# Compile the main application
+file(GLOB MAIN_APPLICATION_SOURCES
     "peripherals/*.cpp"
     "peripherals/*.hpp"
     "*.cpp"
     "*.hpp")
-# message(STATUS "SOURCES: ${SOURCES}")
-
-add_executable(SpotlightController ${SOURCES})
+add_executable(SpotlightController
+               ${MAIN_APPLICATION_SOURCES} ${PCOCAMERA_SOURCES})
 target_link_libraries(SpotlightController pthread rt dl)
 target_link_libraries(SpotlightController Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(SpotlightController ${OpenCV_LIBS})
 target_link_libraries(SpotlightController ${ZABER_MOTION_LIB})
-target_link_libraries(SpotlightController spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(SpotlightController
+                      spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(SpotlightController yaml-cpp)
+set_target_properties(SpotlightController PROPERTIES
+    INSTALL_RPATH "${PCO_LIB_DIR}"
+    BUILD_WITH_INSTALL_RPATH TRUE)
 set_target_properties(SpotlightController PROPERTIES AUTOMOC ON)
 
+# Compile calibration tool
 file(GLOB RUN_CALIBRATION_SOURCES
     "calibrationProcedure/runCalibration_main.cpp"
     "calibrationProcedure/runCalibration.hpp"
@@ -55,11 +96,43 @@ file(GLOB RUN_CALIBRATION_SOURCES
     "behaviorRecording.hpp"
     "utils.cpp"
     "utils.hpp")
-add_executable(RunCalibration ${RUN_CALIBRATION_SOURCES})
+add_executable(RunCalibration
+               ${RUN_CALIBRATION_SOURCES} ${PCOCAMERA_SOURCES})
 # target_link_libraries(RunCalibration pthread rt dl)
 target_link_libraries(RunCalibration Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(RunCalibration ${OpenCV_LIBS})
 target_link_libraries(RunCalibration ${ZABER_MOTION_LIB})
-target_link_libraries(RunCalibration spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(RunCalibration
+                      spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(RunCalibration yaml-cpp)
+set_target_properties(RunCalibration PROPERTIES
+    INSTALL_RPATH "${PCO_LIB_DIR}"
+    BUILD_WITH_INSTALL_RPATH TRUE)
 set_target_properties(RunCalibration PROPERTIES AUTOMOC ON)
+
+# # Compile camera alignment tool
+file(GLOB ALIGN_CAMERAS_SOURCES
+    "cameraAlignment/*.cpp"
+    "cameraAlignment/*.hpp"
+    "peripherals/behaviorCamera.*"
+    "peripherals/muscleCamera.*"
+    "behaviorRecording.*"
+    "muscleRecording.*"
+    "recorderConfig.*"
+    "utils.*"
+    "cli.*"
+    "dataTypes.hpp"
+)
+add_executable(AlignCameras ${ALIGN_CAMERAS_SOURCES} ${PCOCAMERA_SOURCES})
+target_link_directories(AlignCameras PRIVATE ${PCO_LIB_DIR})
+target_link_libraries(AlignCameras PRIVATE Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(AlignCameras PRIVATE ${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
+target_link_libraries(AlignCameras PRIVATE ${OpenCV_LIBS})
+target_link_libraries(AlignCameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(AlignCameras PRIVATE pthread rt dl)
+target_link_libraries(AlignCameras PRIVATE yaml-cpp)
+
+# Set RPATH to find shared libraries at runtime
+set_target_properties(AlignCameras PROPERTIES
+    INSTALL_RPATH "${PCO_LIB_DIR}"
+    BUILD_WITH_INSTALL_RPATH TRUE)
