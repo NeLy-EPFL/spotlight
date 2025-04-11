@@ -17,15 +17,6 @@ def generate_trajectory_plot(
         output_dir (Path | None):
             Path to save the generated plot. If None, the plot is saved to
             the "processed" directory under the recording directory.
-    
-    Example:
-        poetry run python scripts/visualize_fly_trajectory.py \
-            --recording_dir /mnt/spotlight-data/DM/250407-t66-mdn-chrimson/fly0_pw150/ \
-        
-        This will create a plot showing the motion stages' trajectory
-        during the recording. The plot, named
-        "stage_position_trajectory.png", will be saved in the "processed"
-        directory under the recording directory.
     """
     recording_dir = Path(recording_dir)
     consolidated_metadata_df = pd.read_csv(
