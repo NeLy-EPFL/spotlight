@@ -37,7 +37,6 @@ motion_control:
   y_max_mm: 113
   default_velocity_mm_per_sec: 50
   calibration_scan_stride_mm: 2
-  calibration_scan_frame_rate: 50
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
 
