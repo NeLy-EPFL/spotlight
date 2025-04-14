@@ -8,24 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from tqdm import tqdm
 
-from calibration.aruco import ArUcoBoard, detect_aruco, plot_aruco_detections
-from calibration.model import ransac_filter_outliers, visualize_ransac_results
-
-
-@dataclass
-class Args:
-    # Path to the profile directory
-    profile_dir: str = "~/Spotlight/default/"
-    # Width of the arena in mm
-    arena_width: float = 48
-    # Height of the arena in mm
-    arena_height: float = 72
-    # Size of each "pixel block" of the ArUco markers in mm
-    aruco_scale_mm: float = 0.3
-    # Spacing between each ArUco marker in "pixel blocks"
-    aruco_spacing_unitblk: int = 2
-    # Whether to visualize the ArUco detections
-    visualize_aruco_detections: bool = False
+from spotlight_tools.calibration.aruco import (
+    ArUcoBoard, detect_aruco, plot_aruco_detections
+)
+from spotlight_tools.calibration.model import (
+    ransac_filter_outliers, visualize_ransac_results
+)
 
 
 def gather_calibration_points(
@@ -81,9 +69,33 @@ def A_to_B(A):
     return B
 
 
-def main(args: Args) -> None:
+def fit_calibration_model(
+    profile_dir: str = "~/Spotlight/default/",
+    arena_width: float = 48,
+    arena_height: float = 72,
+    aruco_scale_mm: float = 0.3,
+    aruco_spacing_unitblk: int = 2,
+    visualize_aruco_detections: bool = False,
+) -> None:
+    """
+    Fit the calibration model for the ArUco board.
+    
+    Args:
+        profile_dir (str):
+            Path to the profile directory.
+        arena_width (float):
+            Width of the arena in mm.
+        arena_height (float):
+            Height of the arena in mm.
+        aruco_scale_mm (float):
+            Size of each "pixel" (i.e. "block") of the ArUco markers in mm.
+        aruco_spacing_unitblk (int):
+            Spacing between each ArUco marker in "pixel" (i.e. "block").
+        visualize_aruco_detections (bool):
+            Whether to visualize the ArUco detections.
+    """
     # Expand the profile directory
-    profile_dir = Path(args.profile_dir).expanduser()
+    profile_dir = Path(profile_dir).expanduser()
 
     # Check if the calibration images directory exists and is not empty
     calibration_image_dir = Path(profile_dir) / "calibration/aruco_scan"
@@ -100,21 +112,21 @@ def main(args: Args) -> None:
 
     # Create the directory for visualizing ArUco detections if necessary
     aruco_detection_viz_dir = Path(profile_dir) / "calibration/aruco_scan_detection"
-    if args.visualize_aruco_detections:
+    if visualize_aruco_detections:
         aruco_detection_viz_dir.mkdir(exist_ok=True)
 
     # Initialize the ArUco board
     aruco_board = ArUcoBoard(
-        arena_dim_mm=(args.arena_width, args.arena_height),
-        scale_mm=args.aruco_scale_mm,
-        spacing_unitblk=args.aruco_spacing_unitblk,
+        arena_dim_mm=(arena_width, arena_height),
+        scale_mm=aruco_scale_mm,
+        spacing_unitblk=aruco_spacing_unitblk,
     )
 
     # Gather calibration points
     coordinates_df = gather_calibration_points(
         aruco_board,
         calibration_image_dir,
-        aruco_detection_viz_dir if args.visualize_aruco_detections else None,
+        aruco_detection_viz_dir if visualize_aruco_detections else None,
     )
     coordinates_df_path = Path(profile_dir) / "calibration/calibration_points.csv"
     coordinates_df.to_csv(coordinates_df_path, index=False)
@@ -175,6 +187,9 @@ def main(args: Args) -> None:
         yaml.dump(calibration_results, f)
 
 
+def main():
+    tyro.cli(fit_calibration_model)
+
+
 if __name__ == "__main__":
-    args = tyro.cli(Args)
-    main(args)
+    main()
