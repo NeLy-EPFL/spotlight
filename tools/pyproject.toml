@@ -1,6 +1,6 @@
 [project]
 name = "spotlight-tools"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = [
     {name = "Sibo Wang-Chen", email = "sibo.wang@epfl.ch"}
@@ -35,3 +35,9 @@ packages = [{include = "spotlight_tools", from = "src"}]
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+generate-calibration-board = "spotlight_tools.scripts.generate_board:main"
+fit-calibration-model = "spotlight_tools.scripts.fit_calibration:main"
+postprocess-recording = "spotlight_tools.scripts.postprocess_recording:main"
+visualize-stage-trajectory = "spotlight_tools.scripts.visualize_stage_trajectory:main"

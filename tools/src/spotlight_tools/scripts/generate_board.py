@@ -35,5 +35,9 @@ def generated_aruco_board(
     aruco_board.draw_svg(output_path)
 
 
-if __name__ == "__main__":
+def main():
     tyro.cli(generated_aruco_board)
+
+
+if __name__ == "__main__":
+    main()
