@@ -95,5 +95,9 @@ def postprocess_recording_data(
     )
 
 
-if __name__ == "__main__":
+def main():
     tyro.cli(postprocess_recording_data)
+
+
+if __name__ == "__main__":
+    main()
