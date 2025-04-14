@@ -36,5 +36,9 @@ def generate_trajectory_plot(
     fig.savefig(output_dir)
 
 
-if __name__ == "__main__":
+def main():
     tyro.cli(generate_trajectory_plot)
+
+
+if __name__ == "__main__":
+    main()
