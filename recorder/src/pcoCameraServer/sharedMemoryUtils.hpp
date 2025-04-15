@@ -11,15 +11,23 @@
 
 namespace PCOSharedMemory
 {
+    struct FrameMetadata
+    {
+        unsigned int frameCount = 0;
+        uint64_t acquisitionTime = 0;
+    };
+
     void setupFrameData(const std::string &shmFrameDataName,
                         const size_t frameBufferSize,
                         uint8_t *&frameDataPtr);
-    void setupFrameCount(const std::string &shmFrameCountName,
-                         unsigned int *&frameCountPtr);
     void setupExposureTime(const std::string &shmExposureTimeName,
                            unsigned int *&exposureTimePtr);
+    void setupFrameMetadata(const std::string &shmExposureTimeName,
+                            FrameMetadata *&exposureTimePtr);
     void setupMutex(const std::string &shmMutexName,
-                    pthread_mutex_t *&mutex);
+                    pthread_mutex_t *&mutexPtr);
+    void setupConditionVariable(const std::string &shmCondVarName,
+                                pthread_cond_t *&condVarPtr);
 }
 
 #endif // SHARED_MEMORY_UTILS_HPP
