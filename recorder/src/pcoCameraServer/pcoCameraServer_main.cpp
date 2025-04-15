@@ -241,34 +241,41 @@ namespace PCOCameraServer
                      const unsigned int fullFrameHeight)
     {
         // Setup shared memory buffers
-        spdlog::info("Setting up shared memory buffers for PCO camera...");
+        bool createNew = true;
 
-        spdlog::info("Setting up shared memory for frame data");
+        spdlog::info(
+            "PCO camera server: Setting up shared memory buffers...");
+
+        spdlog::info(
+            "PCO camera server: Setting up shared memory for frame data");
         uint8_t *frameDataPtr;
-        PCOSharedMemory::setupFrameData(shmFrameDataName,
-                                        frameBufferSize,
-                                        frameDataPtr);
+        PCOSharedMemory::setupFrameData(
+            shmFrameDataName, frameBufferSize, frameDataPtr, createNew);
 
-        spdlog::info("Setting up shared memory for exposure time");
+        spdlog::info(
+            "PCO camera server: Setting up shared memory for exposure time");
         unsigned int *exposureTimePtr;
-        PCOSharedMemory::setupExposureTime(shmExposureTimeName,
-                                           exposureTimePtr);
+        PCOSharedMemory::setupExposureTime(
+            shmExposureTimeName, exposureTimePtr, createNew);
 
-        spdlog::info("Setting up shared memory for frame metadata");
+        spdlog::info(
+            "PCO camera server: Setting up shared memory for frame metadata");
         PCOSharedMemory::FrameMetadata *frameMetadataPtr;
-        PCOSharedMemory::setupFrameMetadata(shmFrameMetadataName,
-                                            frameMetadataPtr);
+        PCOSharedMemory::setupFrameMetadata(
+            shmFrameMetadataName, frameMetadataPtr, createNew);
 
-        spdlog::info("Setting up shared memory for mutex");
+        spdlog::info(
+            "PCO camera server: Setting up shared memory for mutex");
         pthread_mutex_t *mutexPtr;
-        PCOSharedMemory::setupMutex(shmMutexName, mutexPtr);
+        PCOSharedMemory::setupMutex(shmMutexName, mutexPtr, createNew);
 
-        spdlog::info("Setting up shared memory for condition variable");
+        spdlog::info(
+            "PCO camera server: Setting up shared memory for cond var");
         pthread_cond_t *condVarPtr;
-        PCOSharedMemory::setupConditionVariable(shmCondVarName,
-                                                condVarPtr);
+        PCOSharedMemory::setupConditionVariable(
+            shmCondVarName, condVarPtr, createNew);
 
-        spdlog::info("Shared memory setup complete for PCO camera");
+        spdlog::info("PCO camera server: Shared memory setup complete");
 
         // Set default exposure time and initial frame count
         spdlog::info(
@@ -332,6 +339,7 @@ namespace PCOCameraServer
             }
 
             // Fetch image and convert to OpenCV format
+            // spdlog::debug("PCO camera server got new frame. Serving.");
             camera.image(pcoImage,
                          PCO_RECORDER_LATEST_IMAGE,
                          pco::DataFormat::Mono16);
@@ -352,6 +360,7 @@ namespace PCOCameraServer
             memcpy(frameMetadataPtr, &frameMetadata,
                    sizeof(PCOSharedMemory::FrameMetadata));
             pthread_cond_signal(condVarPtr);
+            // spdlog::debug("PCO camera server signaled new frame");
             pthread_mutex_unlock(mutexPtr);
         }
 
@@ -400,22 +409,20 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (options.xOffset == 0 ||
-        options.yOffset == 0 ||
-        options.xOffset > (int)fullFrameWidth ||
-        options.yOffset > (int)fullFrameHeight ||
+    if (options.xOffset >= (int)fullFrameWidth ||
+        options.yOffset >= (int)fullFrameHeight ||
         options.xOffset < -1 ||
         options.yOffset < -1)
     {
         spdlog::critical(
             "Invalid offsets. "
-            "X offset must be within the range of 1 to {}; "
-            "Y offset must be within the range of 1 to {}. "
+            "X offset must be within the range of 0 to {}; "
+            "Y offset must be within the range of 0 to {}. "
             "Alternatively, they can be set to -1, in which case the x and y "
             "offsets will be automatically calculated to put the ROI at the "
             "center of the sensor as much as possible.",
-            fullFrameWidth,
-            fullFrameHeight);
+            fullFrameWidth - 1,
+            fullFrameHeight - 1);
         return 1;
     }
 

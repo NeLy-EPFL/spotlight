@@ -16,6 +16,6 @@
 #include "../dataTypes.hpp"
 #include "../cli.hpp"
 
-void alignCamera(RecorderConfig &RecorderConfig);
+void alignCamera(std::filesystem::path profileDir);
 
 #endif // ALIGN_CAMERA_HPP
