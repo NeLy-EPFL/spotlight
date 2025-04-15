@@ -28,6 +28,8 @@ namespace PCOCameraServer
         std::string profileDir = "~/Spotlight/default/";
         unsigned int imageWidth = -1;
         unsigned int imageHeight = -1;
+        int xOffset = -1;
+        int yOffset = -1;
         spdlog::level::level_enum logLevel = spdlog::level::info;
     };
 
@@ -44,6 +46,8 @@ namespace PCOCameraServer
                         unsigned int defaultExposureTimeUs,
                         unsigned int imageWidth,
                         unsigned int imageHeight,
+                        int xOffset,
+                        int yOffset,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight);
 
