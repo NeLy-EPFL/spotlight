@@ -9,6 +9,7 @@
 #include <string.h>
 #include <csignal>
 #include <atomic>
+#include <chrono>
 
 #include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
@@ -54,11 +55,14 @@ namespace PCOCameraServer
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
                      const std::string &shmExposureTimeName,
+                     const std::string &shmFrameMetadataName,
                      const std::string &shmMutexName,
-                     const std::string &shmFrameCountName,
+                     const std::string &shmCondVarName,
                      const unsigned int defaultExposureTimeUs,
                      const unsigned int imageWidth,
                      const unsigned int imageHeight,
+                     const int xOffset,
+                     const int yOffset,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight);
 }

@@ -5,22 +5,16 @@ namespace PCOCameraServer
     void printHelp(const char *programName)
     {
         std::cout
-            //  0.........10........20........30........40........50........60........70........80
             << "Usage: " << programName << " [OPTIONS]\n"
             << "Options:\n"
             << "  -h, --help                 Display this help message\n"
-            << "  -p, --profile-dir PATH     Path to profile directory\n"
-            << "                             (default: ~/Spotlight/default/)\n"
+            << "  -p, --profile-dir PATH     Path to profile directory (default: ~/Spotlight/default/)\n"
             << "  -W, --image-width WIDTH    Width of the image (default: 2048)\n"
             << "  -H, --image-height HEIGHT  Height of the image (default: 2048)\n"
-            << "  -x, --x-offset OFFSET      X offset for the region of interest. If -1, one\n"
-            << "                             will be calculated automatically so that the image\n"
-            << "                             is centered (default: -1)\n"
-            << "  -y, --y-offset OFFSET      Y offset for the region of interest. Same as\n"
-            << "                             x-offset (default: -1)\n"
+            << "  -x, --x-offset OFFSET      X offset for the region of interest. If -1, one will be calculated automatically so that the image is centered (default: -1)\n"
+            << "  -y, --y-offset OFFSET      Y offset for the region of interest. Same as x-offset (default: -1)\n"
             << "  -v, --verbose              Enable verbose output (debug level)\n"
-            << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn,\n"
-            << "                             error, critical, off)\n"
+            << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
             << std::endl;
     }
 
@@ -155,6 +149,13 @@ namespace PCOCameraServer
         shutdownRequested.store(true);
     }
 
+    uint64_t getCurrentTimeMicroseconds()
+    {
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+                   std::chrono::high_resolution_clock::now().time_since_epoch())
+            .count();
+    }
+
     /**
      * @brief Sets up a PCO camera with specified configuration parameters
      *
@@ -228,8 +229,9 @@ namespace PCOCameraServer
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
                      const std::string &shmExposureTimeName,
+                     const std::string &shmFrameMetadataName,
                      const std::string &shmMutexName,
-                     const std::string &shmFrameCountName,
+                     const std::string &shmCondVarName,
                      const unsigned int defaultExposureTimeUs,
                      const unsigned int imageWidth,
                      const unsigned int imageHeight,
@@ -247,28 +249,31 @@ namespace PCOCameraServer
                                         frameBufferSize,
                                         frameDataPtr);
 
-        spdlog::info("Setting up shared memory for frame count");
-        unsigned int *frameCountPtr;
-        PCOSharedMemory::setupFrameCount(shmFrameCountName,
-                                         frameCountPtr);
-
         spdlog::info("Setting up shared memory for exposure time");
         unsigned int *exposureTimePtr;
         PCOSharedMemory::setupExposureTime(shmExposureTimeName,
                                            exposureTimePtr);
 
+        spdlog::info("Setting up shared memory for frame metadata");
+        PCOSharedMemory::FrameMetadata *frameMetadataPtr;
+        PCOSharedMemory::setupFrameMetadata(shmFrameMetadataName,
+                                            frameMetadataPtr);
+
         spdlog::info("Setting up shared memory for mutex");
-        pthread_mutex_t *mutex;
-        PCOSharedMemory::setupMutex(shmMutexName, mutex);
+        pthread_mutex_t *mutexPtr;
+        PCOSharedMemory::setupMutex(shmMutexName, mutexPtr);
+
+        spdlog::info("Setting up shared memory for condition variable");
+        pthread_cond_t *condVarPtr;
+        PCOSharedMemory::setupConditionVariable(shmCondVarName,
+                                                condVarPtr);
 
         spdlog::info("Shared memory setup complete for PCO camera");
 
         // Set default exposure time and initial frame count
         spdlog::info(
-            "Setting default exposure time and initial frame count in shared "
-            "memory");
+            "Setting default exposure time in shared memory");
         *exposureTimePtr = defaultExposureTimeUs;
-        *frameCountPtr = 0;
 
         // Initialize PCO camera
         spdlog::info("Setting up PCO camera");
@@ -287,7 +292,7 @@ namespace PCOCameraServer
         pco::Image pcoImage;
         cv::Mat cvImage;
         bool isFirstFrame = true;
-        unsigned int frameId = 0;
+        unsigned int frameCount = 0;
 
         // Start camera acquisition
         spdlog::info("Starting PCO camera acquisition");
@@ -335,11 +340,19 @@ namespace PCOCameraServer
                               CV_16UC1,
                               pcoImage.raw_data().first);
 
+            // Gather metadata
+            PCOSharedMemory::FrameMetadata frameMetadata;
+            frameMetadata.frameCount = frameCount++;
+            frameMetadata.acquisitionTime =
+                PCOCameraServer::getCurrentTimeMicroseconds();
+
             // Mutex-protected zone! Updata image buffer and frame count
-            pthread_mutex_lock(mutex);
+            pthread_mutex_lock(mutexPtr);
             memcpy(frameDataPtr, cvImage.data, frameBufferSize);
-            *frameCountPtr = frameId++;
-            pthread_mutex_unlock(mutex);
+            memcpy(frameMetadataPtr, &frameMetadata,
+                   sizeof(PCOSharedMemory::FrameMetadata));
+            pthread_cond_signal(condVarPtr);
+            pthread_mutex_unlock(mutexPtr);
         }
 
         camera.stop();
@@ -415,21 +428,25 @@ int main(int argc, char *argv[])
     const std::string shmFrameDataName =
         recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_frame_data_name");
-    const std::string shmMutexName =
-        recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_mutex_name");
     const std::string shmExposureTimeName =
         recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_exposure_time_name");
-    const std::string shmFrameCountName =
+    const std::string shmFrameMetadataName =
         recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_frame_count_name");
+            "muscle_camera", "shared_frame_meatadata_name");
+    const std::string shmMutexName =
+        recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_mutex_name");
+    const std::string shmCondVarName =
+        recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_condition_variable_name");
 
     PCOCameraServer::serveFrames(shmFrameDataName,
                                  frameBufferSize,
                                  shmExposureTimeName,
+                                 shmFrameMetadataName,
                                  shmMutexName,
-                                 shmFrameCountName,
+                                 shmCondVarName,
                                  defaultExposureTimeUs,
                                  options.imageWidth,
                                  options.imageHeight,
