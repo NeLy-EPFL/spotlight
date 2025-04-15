@@ -53,21 +53,25 @@ set(PCOCAMERA_SOURCES
     ${PCO_CAMERA_DIR}/xcite.cpp
     ${PCO_CAMERA_DIR}/stdafx.cpp)
 
-# Create a static library for PCO Camera
-# add_library(PCOCamera STATIC ${PCOCAMERA_SOURCES})
-# target_include_directories(PCOCamera PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
-# target_link_directories(PCOCamera PUBLIC ${PCO_LIB_DIR})
-# target_link_libraries(PCOCamera PUBLIC ${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
-# set_target_properties(PCOCamera PROPERTIES
-#     INSTALL_RPATH "${PCO_LIB_DIR}"
-#     BUILD_WITH_INSTALL_RPATH TRUE)
 
-# include_directories(PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
-# link_directories(PUBLIC ${PCO_LIB_DIR})
-# link_libraries(PUBLIC ${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
+# PCO camera server
+file(GLOB PCO_CAMERA_SERVER_SOURCES
+    "pcoCameraServer/*.cpp"
+    "pcoCameraServer/*.hpp"
+    "recorderConfig.cpp"
+    "recorderConfig.hpp")
+add_executable(pco-camera-server ${PCO_CAMERA_SERVER_SOURCES} ${PCOCAMERA_SOURCES})
+target_include_directories(pco-camera-server PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
+target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
+target_link_libraries(pco-camera-server PUBLIC ${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
+target_link_libraries(pco-camera-server PUBLIC pthread rt dl)
+target_link_libraries(pco-camera-server PUBLIC ${OpenCV_LIBS})
+target_link_libraries(pco-camera-server PUBLIC spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(pco-camera-server PUBLIC yaml-cpp)
+set_target_properties(pco-camera-server PROPERTIES
+    INSTALL_RPATH "${PCO_LIB_DIR}"
+    BUILD_WITH_INSTALL_RPATH TRUE)
 
-
-# Compile the main application
 file(GLOB MAIN_APPLICATION_SOURCES
     "peripherals/*.cpp"
     "peripherals/*.hpp"
@@ -124,5 +128,5 @@ target_link_libraries(RunCalibration yaml-cpp)
 # target_link_libraries(AlignCameras PRIVATE ${OpenCV_LIBS})
 # target_link_libraries(AlignCameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 # target_link_libraries(AlignCameras PRIVATE yaml-cpp)
-# target_link_libraries(RunCalibration PCOCamera)
-# set_target_properties(RunCalibration PROPERTIES AUTOMOC ON)
+# target_link_libraries(AlignCameras PCOCamera)
+# set_target_properties(AlignCameras PROPERTIES AUTOMOC ON)
