@@ -19,16 +19,12 @@ spdlog::level::level_enum parseLogLevel(const std::string& level) {
     if (level == "critical") return spdlog::level::critical;
     if (level == "off") return spdlog::level::off;
     
-    std::cerr << "Unknown log level: " << level << ". Using 'info'." << std::endl;
+    spdlog::error("Unknown log level: {}. Using 'info'.", level);
     return spdlog::level::info;
 }
 
 CLIOptions parseCLI(int argc, char** argv) {
     CLIOptions options;
-    
-    // Use default config path
-    options.profileDir = "~/Spotlight/default/";
-    options.logLevel = spdlog::level::info;
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
