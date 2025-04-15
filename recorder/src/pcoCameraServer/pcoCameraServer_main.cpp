@@ -433,7 +433,7 @@ int main(int argc, char *argv[])
             "muscle_camera", "shared_exposure_time_name");
     const std::string shmFrameMetadataName =
         recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_frame_meatadata_name");
+            "muscle_camera", "shared_frame_metadata_name");
     const std::string shmMutexName =
         recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_mutex_name");
