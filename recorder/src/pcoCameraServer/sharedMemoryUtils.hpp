@@ -19,15 +19,20 @@ namespace PCOSharedMemory
 
     void setupFrameData(const std::string &shmFrameDataName,
                         const size_t frameBufferSize,
-                        uint8_t *&frameDataPtr);
+                        uint8_t *&frameDataPtr,
+                        bool createNew);
     void setupExposureTime(const std::string &shmExposureTimeName,
-                           unsigned int *&exposureTimePtr);
+                           unsigned int *&exposureTimePtr,
+                           bool createNew);
     void setupFrameMetadata(const std::string &shmExposureTimeName,
-                            FrameMetadata *&exposureTimePtr);
+                            FrameMetadata *&exposureTimePtr,
+                            bool createNew);
     void setupMutex(const std::string &shmMutexName,
-                    pthread_mutex_t *&mutexPtr);
+                    pthread_mutex_t *&mutexPtr,
+                    bool createNew);
     void setupConditionVariable(const std::string &shmCondVarName,
-                                pthread_cond_t *&condVarPtr);
+                                pthread_cond_t *&condVarPtr,
+                                bool createNew);
 }
 
 #endif // SHARED_MEMORY_UTILS_HPP

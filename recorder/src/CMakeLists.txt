@@ -75,6 +75,7 @@ set_target_properties(pco-camera-server PROPERTIES
 file(GLOB MAIN_APPLICATION_SOURCES
     "peripherals/*.cpp"
     "peripherals/*.hpp"
+    "pcoCameraServer/sharedMemoryUtils.*"
     "*.cpp"
     "*.hpp")
 add_executable(SpotlightController ${MAIN_APPLICATION_SOURCES})
@@ -110,23 +111,23 @@ target_link_libraries(RunCalibration ${ZABER_MOTION_LIB})
 target_link_libraries(RunCalibration spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(RunCalibration yaml-cpp)
 
-# # # Compile camera alignment tool
-# file(GLOB ALIGN_CAMERAS_SOURCES
-#     "cameraAlignment/*.cpp"
-#     "cameraAlignment/*.hpp"
-#     "peripherals/behaviorCamera.*"
-#     "peripherals/muscleCamera.*"
-#     "behaviorRecording.*"
-#     "muscleRecording.*"
-#     "recorderConfig.*"
-#     "utils.*"
-#     "cli.*"
-#     "dataTypes.hpp")
-# add_executable(AlignCameras ${ALIGN_CAMERAS_SOURCES})
-# target_link_libraries(AlignCameras PRIVATE pthread rt dl)
-# target_link_libraries(AlignCameras PRIVATE Qt6::Widgets Qt6::SerialPort)
-# target_link_libraries(AlignCameras PRIVATE ${OpenCV_LIBS})
-# target_link_libraries(AlignCameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-# target_link_libraries(AlignCameras PRIVATE yaml-cpp)
-# target_link_libraries(AlignCameras PCOCamera)
-# set_target_properties(AlignCameras PROPERTIES AUTOMOC ON)
+# Compile camera alignment tool
+file(GLOB ALIGN_CAMERAS_SOURCES
+    "cameraAlignment/*.cpp"
+    "cameraAlignment/*.hpp"
+    "peripherals/behaviorCamera.*"
+    "peripherals/muscleCamera.*"
+    "pcoCameraServer/sharedMemoryUtils.*"
+    "behaviorRecording.*"
+    "muscleRecording.*"
+    "recorderConfig.*"
+    "utils.*"
+    "cli.*"
+    "dataTypes.hpp")
+add_executable(align-cameras ${ALIGN_CAMERAS_SOURCES})
+target_link_libraries(align-cameras PRIVATE pthread rt dl)
+target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(align-cameras PRIVATE ${OpenCV_LIBS})
+target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(align-cameras PRIVATE yaml-cpp)
+set_target_properties(align-cameras PROPERTIES AUTOMOC ON)
