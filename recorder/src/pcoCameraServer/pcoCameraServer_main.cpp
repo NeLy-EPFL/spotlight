@@ -144,8 +144,8 @@ namespace pcoCameraServer
         int yOffset = calculateOffset(fullFrameHeight, imageHeight);
 
         // Set configuration
-        std::cout << "Setting up camera" << std::endl;
-        std::cout << "Getting default configuration" << std::endl;
+        spdlog::info("Setting up PCO camera");
+        spdlog::info("Getting default PCO camera configuration");
         camera.defaultConfiguration();
         pco::Configuration config = camera.getConfiguration();
         config.roi.x0 = xOffset + 1;
@@ -156,15 +156,16 @@ namespace pcoCameraServer
         config.acquire_mode = ACQUIRE_MODE_AUTO;
         config.delay_time_s = 0;
         config.noise_filter_mode = NOISE_FILTER_MODE_ON;
-        std::cout << "Setting configuration" << std::endl;
+        spdlog::info("Setting PCO camera configuration");
         camera.setConfiguration(config);
-        std::cout << "Configuration set" << std::endl;
+        spdlog::info("PCO camera configuration set");
 
         // Set exposure time
-        std::cout << "Setting exposure time" << std::endl;
+        spdlog::info("Setting PCO camera exposure time to {} us",
+                     defaultExposureTimeUs);
         camera.setExposureTime(defaultExposureTimeUs / 1000000.0);
         camera.autoExposureOff();
-        std::cout << "Exposure time set" << std::endl;
+        spdlog::info("PCO camera exposure time set");
     }
 
     int calculateOffset(int fullFrameSize, int roiSize)
@@ -176,39 +177,106 @@ namespace pcoCameraServer
                            const size_t frameBufferSize,
                            const std::string &shmExposureTimeName,
                            const std::string &shmMutexName,
+                           const std::string &shmFrameCountName,
                            uint8_t *&frameDataPtr,
                            unsigned int *&frameCountPtr,
                            unsigned int *&exposureTimePtr,
                            pthread_mutex_t *&mutex)
     {
         // Frame buffer
+        spdlog::info("Setting up shared memory for PCO frame data");
         int shmFileDescFrameData = shm_open(
-            shmFrameDataName.c_str(), O_CREAT | O_WRONLY, 0666);
-        ftruncate(shmFileDescFrameData, frameBufferSize);
-        frameDataPtr = (uint8_t *)mmap(0,
+            shmFrameDataName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shmFileDescFrameData == -1)
+        {
+            std::string errorMessage =
+                "Failed to open shared memory for frame data: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        if (ftruncate(shmFileDescFrameData, frameBufferSize) == -1)
+        {
+            std::string errorMessage =
+                "Failed to set size of shared memory for frame data: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        frameDataPtr = (uint8_t *)mmap(nullptr,
                                        frameBufferSize,
-                                       PROT_WRITE,
+                                       PROT_READ | PROT_WRITE,
                                        MAP_SHARED,
                                        shmFileDescFrameData,
                                        0);
+        if (frameDataPtr == MAP_FAILED)
+        {
+            std::string errorMessage =
+                "Failed to map shared memory for frame data: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        close(shmFileDescFrameData);
 
         // Frame count
+        spdlog::info("Setting up shared memory for PCO frame count");
         int shmFileDescFrameCount = shm_open(
-            shmFrameDataName.c_str(), O_CREAT | O_WRONLY, 0666);
-        ftruncate(shmFileDescFrameCount, sizeof(unsigned int));
+            shmFrameCountName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shmFileDescFrameCount == -1)
+        {
+            std::string errorMessage =
+                "Failed to open shared memory for frame count: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        if (ftruncate(shmFileDescFrameCount, sizeof(unsigned int)) == -1)
+        {
+            std::string errorMessage =
+                "Failed to set size of shared memory for frame count: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
         frameCountPtr = (unsigned int *)mmap(
             0,
             sizeof(unsigned int),
-            PROT_WRITE,
+            PROT_READ | PROT_WRITE,
             MAP_SHARED,
             shmFileDescFrameCount,
             0);
+        if (frameCountPtr == MAP_FAILED)
+        {
+            std::string errorMessage =
+                "Failed to map shared memory for frame count: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        close(shmFileDescFrameCount);
 
         // Exposure time
+        spdlog::info("Setting up shared memory for PCO exposure time");
         int shmFileDescExposureTime = shm_open(
-            shmExposureTimeName.c_str(), O_CREAT | O_RDWR, 0666);
+            shmExposureTimeName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shmFileDescExposureTime == -1)
+        {
+            std::string errorMessage =
+                "Failed to open shared memory for exposure time: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
         size_t exposureTimeSize = sizeof(unsigned int);
-        ftruncate(shmFileDescExposureTime, exposureTimeSize);
+        if (ftruncate(shmFileDescExposureTime, exposureTimeSize) == -1)
+        {
+            std::string errorMessage =
+                "Failed to set size of shared memory for exposure time: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
         exposureTimePtr = (unsigned int *)mmap(
             0,
             exposureTimeSize,
@@ -216,11 +284,36 @@ namespace pcoCameraServer
             MAP_SHARED,
             shmFileDescExposureTime,
             0);
+        if (exposureTimePtr == MAP_FAILED)
+        {
+            std::string errorMessage =
+                "Failed to map shared memory for exposure time: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        close(shmFileDescExposureTime);
 
         // Mutex
+        spdlog::info("Setting up shared memory for PCO frame data mutex");
         int shmFileDescMutex = shm_open(
-            shmMutexName.c_str(), O_CREAT | O_RDWR, 0666);
-        ftruncate(shmFileDescMutex, sizeof(pthread_mutex_t));
+            shmMutexName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shmFileDescMutex == -1)
+        {
+            std::string errorMessage =
+                "Failed to open shared memory for mutex: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        if (ftruncate(shmFileDescMutex, sizeof(pthread_mutex_t)) == -1)
+        {
+            std::string errorMessage =
+                "Failed to set size of shared memory for mutex: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
         mutex = (pthread_mutex_t *)mmap(
             0,
             sizeof(pthread_mutex_t),
@@ -228,6 +321,15 @@ namespace pcoCameraServer
             MAP_SHARED,
             shmFileDescMutex,
             0);
+        if (mutex == MAP_FAILED)
+        {
+            std::string errorMessage =
+                "Failed to map shared memory for mutex: " +
+                std::string(strerror(errno));
+            spdlog::critical(errorMessage);
+            throw std::runtime_error(errorMessage);
+        }
+        close(shmFileDescMutex);
         // First-time init for mutex
         pthread_mutexattr_t attr;
         pthread_mutexattr_init(&attr);
@@ -239,6 +341,7 @@ namespace pcoCameraServer
                      const size_t frameBufferSize,
                      const std::string &shmExposureTimeName,
                      const std::string &shmMutexName,
+                     const std::string &shmFrameCountName,
                      const unsigned int defaultExposureTimeUs,
                      const unsigned int imageWidth,
                      const unsigned int imageHeight,
@@ -246,6 +349,7 @@ namespace pcoCameraServer
                      const unsigned int fullFrameHeight)
     {
         // Setup shared memory buffers
+        spdlog::info("Setting up shared memory buffers for PCO camera");
         uint8_t *frameDataPtr;
         unsigned int *frameCountPtr;
         unsigned int *exposureTimePtr;
@@ -254,14 +358,22 @@ namespace pcoCameraServer
                           frameBufferSize,
                           shmExposureTimeName,
                           shmMutexName,
+                          shmFrameCountName,
                           frameDataPtr,
                           frameCountPtr,
                           exposureTimePtr,
                           mutex);
-        // Set default exposure time
+        spdlog::info("Shared memory setup complete for PCO camera");
+
+        // Set default exposure time and initial frame count
+        spdlog::info(
+            "Setting default exposure time and initial frame count in shared "
+            "memory");
         *exposureTimePtr = defaultExposureTimeUs;
+        *frameCountPtr = 0;
 
         // Initialize PCO camera
+        spdlog::info("Setting up PCO camera");
         pco::Camera camera;
         pcoCameraServer::setupPCOCamera(camera,
                                         defaultExposureTimeUs,
@@ -269,22 +381,16 @@ namespace pcoCameraServer
                                         imageHeight,
                                         fullFrameWidth,
                                         fullFrameHeight);
+        spdlog::info("PCO camera setup complete");
 
         // Create local data holders
         pco::Image pcoImage;
         cv::Mat cvImage;
-        cv::Mat displayImage;
         bool isFirstFrame = true;
         unsigned int frameId = 0;
-        int isListenerReady;
-
-        // Setup fd set for checking if we should write to FIFO
-        fd_set write_fds;
-        struct timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 10; // 10 microseconds
 
         // Start camera acquisition
+        spdlog::info("Starting PCO camera acquisition");
         int bufferSize = 10;
         camera.record(bufferSize, pco::RecordMode::ring_buffer);
         spdlog::info("Recording mode set to ring buffer with size {}",
@@ -292,12 +398,17 @@ namespace pcoCameraServer
 
         unsigned int currentExposureTimeUs = defaultExposureTimeUs;
 
+        // Data acquisition loop
+        spdlog::info("PCO camera server starting its data acquisition loop");
         while (!pcoCameraServer::shutdownRequested.load())
         {
             // Check if we should change exposure time
             unsigned int setExposureTime = *exposureTimePtr;
             if (setExposureTime != currentExposureTimeUs)
             {
+                spdlog::info(
+                    "PCO camera server is changing exposure time to {} us",
+                    setExposureTime);
                 camera.setExposureTime(setExposureTime / 1000000.0);
                 currentExposureTimeUs = setExposureTime;
                 spdlog::info("Changed exposure time to {} us",
@@ -399,6 +510,7 @@ int main(int argc, char *argv[])
                                  frameBufferSize,
                                  shmExposureTimeName,
                                  shmMutexName,
+                                 shmFrameCountName,
                                  defaultExposureTimeUs,
                                  options.imageWidth,
                                  options.imageHeight,
