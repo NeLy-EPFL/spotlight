@@ -24,9 +24,10 @@ muscle_camera:
   default_exposure_time_us: 3000
   saving_performance_logging_interval: 25
   shared_frame_data_name: "/pco_camera_data"
-  shared_mutex_name: "/pco_camera_mutex"
-  shared_frame_count_name: "/pco_camera_frame_count"
   shared_exposure_time_name: "/pco_camera_exposure_time"
+  shared_frame_metadata_name: "/pco_camera_frame_metadata"
+  shared_mutex_name: "/pco_camera_mutex"
+  shared_condition_variable_name: "/pco_camera_condition_variable"
 
 motion_control:
   motion_stage_device_manufacturer: "X-MCC2"
