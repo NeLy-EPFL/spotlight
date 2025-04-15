@@ -7,10 +7,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <pthread.h>
 #include <csignal>
 #include <atomic>
 
@@ -22,9 +18,10 @@
 #include "cameraexception.h"
 #include "sc2_defs.h"
 
+#include "sharedMemoryUtils.hpp"
 #include "../recorderConfig.hpp"
 
-namespace pcoCameraServer
+namespace PCOCameraServer
 {
     struct CLIOptions
     {
@@ -49,16 +46,6 @@ namespace pcoCameraServer
                         unsigned int imageHeight,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight);
-
-    void setupSharedMemory(const std::string &shmFrameDataName,
-                           const size_t frameBufferSize,
-                           const std::string &shmExposureTimeName,
-                           const std::string &shmMutexName,
-                           const std::string &shmFrameCountName,
-                           uint8_t *&frameDataPtr,
-                           unsigned int *&frameCountPtr,
-                           unsigned int *&exposureTimePtr,
-                           pthread_mutex_t *&mutex);
 
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
