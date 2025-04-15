@@ -5,14 +5,22 @@ namespace PCOCameraServer
     void printHelp(const char *programName)
     {
         std::cout
+            //  0.........10........20........30........40........50........60........70........80
             << "Usage: " << programName << " [OPTIONS]\n"
             << "Options:\n"
             << "  -h, --help                 Display this help message\n"
-            << "  -p, --profile-dir PATH     Path to profile directory (default: ~/Spotlight/default/)\n"
+            << "  -p, --profile-dir PATH     Path to profile directory\n"
+            << "                             (default: ~/Spotlight/default/)\n"
             << "  -W, --image-width WIDTH    Width of the image (default: 2048)\n"
             << "  -H, --image-height HEIGHT  Height of the image (default: 2048)\n"
+            << "  -x, --x-offset OFFSET      X offset for the region of interest. If -1, one\n"
+            << "                             will be calculated automatically so that the image\n"
+            << "                             is centered (default: -1)\n"
+            << "  -y, --y-offset OFFSET      Y offset for the region of interest. Same as\n"
+            << "                             x-offset (default: -1)\n"
             << "  -v, --verbose              Enable verbose output (debug level)\n"
-            << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
+            << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn,\n"
+            << "                             error, critical, off)\n"
             << std::endl;
     }
 
@@ -69,6 +77,20 @@ namespace PCOCameraServer
             else if ((arg == "-H" || arg == "--image-height") && i + 1 < argc)
             {
                 options.imageHeight = std::stoi(argv[++i]);
+            }
+            else if ((arg == "-x" || arg == "--x-offset") && i + 1 < argc)
+            {
+                options.xOffset = std::stoi(argv[++i]);
+            }
+            else if ((arg == "-y" || arg == "--y-offset") && i + 1 < argc)
+            {
+                options.yOffset = std::stoi(argv[++i]);
+            }
+            else if (arg[0] == '-')
+            {
+                spdlog::critical("Unknown option: {}", arg);
+                printHelp(argv[0]);
+                std::exit(1);
             }
             else if (i == 1 && arg[0] != '-')
             {
@@ -133,15 +155,45 @@ namespace PCOCameraServer
         shutdownRequested.store(true);
     }
 
+    /**
+     * @brief Sets up a PCO camera with specified configuration parameters
+     *
+     * Configures a PCO camera with specific settings including region of
+     * interest (ROI), trigger mode, acquisition mode, and exposure time.
+     * If the X or Y offsets are set to -1, they will be automatically
+     * calculated to center the ROI on the sensor.
+     *
+     * @param camera Reference to the pco::Camera object to configure
+     * @param defaultExposureTimeUs Default exposure time in microseconds
+     * @param imageWidth Width of the image to capture in pixels
+     * @param imageHeight Height of the image to capture in pixels
+     * @param xOffset X offset for the ROI (use -1 for auto-centering)
+     * @param yOffset Y offset for the ROI (use -1 for auto-centering)
+     * @param fullFrameWidth Full width of the camera sensor in pixels
+     * @param fullFrameHeight Full height of the camera sensor in pixels
+     *
+     * @note The function sets external trigger mode, auto acquisition mode,
+     *       and enables noise filtering
+     * @note ROI coordinates are 1-based in the PCO API (offsets have 1 added
+     *       to them)
+     */
     void setupPCOCamera(pco::Camera &camera,
                         unsigned int defaultExposureTimeUs,
                         unsigned int imageWidth,
                         unsigned int imageHeight,
+                        int xOffset,
+                        int yOffset,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight)
     {
-        int xOffset = calculateOffset(fullFrameWidth, imageWidth);
-        int yOffset = calculateOffset(fullFrameHeight, imageHeight);
+        if (xOffset == -1)
+        {
+            xOffset = calculateOffset(fullFrameWidth, imageWidth);
+        }
+        if (yOffset == -1)
+        {
+            yOffset = calculateOffset(fullFrameHeight, imageHeight);
+        }
 
         // Set configuration
         spdlog::info("Setting up PCO camera");
@@ -181,6 +233,8 @@ namespace PCOCameraServer
                      const unsigned int defaultExposureTimeUs,
                      const unsigned int imageWidth,
                      const unsigned int imageHeight,
+                     const int xOffset,
+                     const int yOffset,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight)
     {
@@ -223,6 +277,8 @@ namespace PCOCameraServer
                                         defaultExposureTimeUs,
                                         imageWidth,
                                         imageHeight,
+                                        xOffset,
+                                        yOffset,
                                         fullFrameWidth,
                                         fullFrameHeight);
         spdlog::info("PCO camera setup complete");
@@ -323,11 +379,30 @@ int main(int argc, char *argv[])
         options.imageWidth > fullFrameWidth ||
         options.imageHeight > fullFrameHeight)
     {
-        std::cerr
-            << "Invalid image division. "
-            << "Height must be within the range of 1 to " << fullFrameHeight
-            << " and width must be within the range of 1 to " << fullFrameWidth
-            << std::endl;
+        spdlog::critical(
+            "Invalid image dimensions. "
+            "Height must be within the range of 1 to {}; "
+            "width must be within the range of 1 to {}",
+            fullFrameHeight, fullFrameWidth);
+        return 1;
+    }
+
+    if (options.xOffset == 0 ||
+        options.yOffset == 0 ||
+        options.xOffset > (int)fullFrameWidth ||
+        options.yOffset > (int)fullFrameHeight ||
+        options.xOffset < -1 ||
+        options.yOffset < -1)
+    {
+        spdlog::critical(
+            "Invalid offsets. "
+            "X offset must be within the range of 1 to {}; "
+            "Y offset must be within the range of 1 to {}. "
+            "Alternatively, they can be set to -1, in which case the x and y "
+            "offsets will be automatically calculated to put the ROI at the "
+            "center of the sensor as much as possible.",
+            fullFrameWidth,
+            fullFrameHeight);
         return 1;
     }
 
@@ -358,6 +433,8 @@ int main(int argc, char *argv[])
                                  defaultExposureTimeUs,
                                  options.imageWidth,
                                  options.imageHeight,
+                                 options.xOffset,
+                                 options.yOffset,
                                  fullFrameWidth,
                                  fullFrameHeight);
 
