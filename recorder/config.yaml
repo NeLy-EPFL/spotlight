@@ -17,8 +17,8 @@ behavior_camera:
 muscle_camera:
   full_frame_width: 2048
   full_frame_height: 2048
-  roi_width: 1024
-  roi_height: 1024
+  roi_width: 1184
+  roi_height: 1184
   streaming_sync_ratio: 1
   default_recording_sync_ratio: 4
   default_exposure_time_us: 3000

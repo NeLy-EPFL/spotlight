@@ -16,17 +16,24 @@ cv::Mat makePseudoBGRImageFromThreeFrames(
         groupOfThreeFrames.frame2.image};
     cv::Mat pseudoBGRImage;
     cv::merge(channels, pseudoBGRImage);
-    cv::Mat correctedImage = correctImageRotationAndFlip(pseudoBGRImage);
+    cv::Mat correctedImage = reorientBehaviorImage(pseudoBGRImage);
     return correctedImage;
 }
 
-cv::Mat correctImageRotationAndFlip(cv::Mat image)
+cv::Mat reorientBehaviorImage(cv::Mat image)
 {
     cv::Mat rotatedImage;
     cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
     cv::Mat horizontalFlippedImage;
     cv::flip(rotatedImage, horizontalFlippedImage, 1); // dim 1 is horizontal)
     return horizontalFlippedImage;
+}
+
+cv::Mat reorientMuscleImage(cv::Mat image)
+{
+    cv::Mat rotatedImage;
+    cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
+    return rotatedImage;
 }
 
 std::string makeMetadataStringFromThreeFrames(

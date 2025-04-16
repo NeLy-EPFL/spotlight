@@ -34,10 +34,12 @@ MuscleCamera::MuscleCamera(int imageWidth,
                            const RecorderConfig &recorderConfig,
                            std::string profileDir,
                            spdlog::level::level_enum logLevel)
-    : imageWidth_(imageWidth),
+    : x0_(xOffset + 1),
+      x1_(xOffset + imageWidth),
+      y0_(yOffset + 1),
+      y1_(yOffset + imageHeight),
+      imageWidth_(imageWidth),
       imageHeight_(imageHeight),
-      xOffset_(xOffset),
-      yOffset_(yOffset),
       recorderConfig_(recorderConfig),
       pcoCameraServerPID_(-1),
       frameDataPtr_(nullptr),
@@ -46,6 +48,11 @@ MuscleCamera::MuscleCamera(int imageWidth,
       condVarPtr_(nullptr),
       lastFrameCount_(UINT_MAX)
 {
+    if (!isROIValid())
+    {
+        throw std::runtime_error("Invalid ROI for muscle camera");
+    }
+
     pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
 
     if (pid < 0)
@@ -63,14 +70,14 @@ MuscleCamera::MuscleCamera(int imageWidth,
               "./pco-camera-server",
               "--profile-dir",
               profileDir.c_str(),
-              "--image-width",
-              std::to_string(imageWidth).c_str(),
-              "--image-height",
-              std::to_string(imageHeight).c_str(),
-              "--x-offset",
-              std::to_string(xOffset).c_str(),
-              "--y-offset",
-              std::to_string(yOffset).c_str(),
+              "--x-min",
+              std::to_string(x0_).c_str(),
+              "--x-max",
+              std::to_string(x1_).c_str(),
+              "--y-min",
+              std::to_string(y0_).c_str(),
+              "--y-max",
+              std::to_string(y1_).c_str(),
               "--verbosity",
               logLevelToStr(logLevel).c_str(),
               (char *)nullptr);
@@ -204,6 +211,31 @@ FrameData MuscleCamera::waitForOneFrame()
     }
 }
 
+bool MuscleCamera::isROIValid()
+{
+    if (x0_ < 1 ||
+        x1_ > imageWidth_ ||
+        y0_ < 1 ||
+        y1_ > imageHeight_ ||
+        x0_ >= x1_ ||
+        y0_ >= y1_ ||
+        imageWidth_ % 32 != 0 ||
+        imageHeight_ % 8 != 0 ||
+        imageWidth_ < 64 ||
+        imageHeight_ < 16)
+    {
+        spdlog::critical(
+            "Invalid ROI for muscle camera. The following conditions must be "
+            "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
+            "minimum size of the ROI is 64x16 pixels. The width must be a "
+            "multiple of 32 and the height must be a multiple of 8.",
+            imageWidth_, imageHeight_);
+        return false;
+    }
+
+    return true;
+}
+
 void MuscleCamera::setExposureTime(unsigned int exposureTimeMicrosecs)
 {
     if (exposureTimePtr_ != nullptr)
@@ -215,4 +247,16 @@ void MuscleCamera::setExposureTime(unsigned int exposureTimeMicrosecs)
         spdlog::error(
             "Cannot set exposure time. Shared memory pointer is null.");
     }
+}
+
+int roundToNearestValidMuscleCameWidth(int value)
+{
+    int remainder = value % 32;
+    return value - remainder + (remainder < 16 ? 0 : 32);
+}
+
+int roundToNearestValidMuscleCameHeight(int value)
+{
+    int remainder = value % 8;
+    return value - remainder + (remainder < 4 ? 0 : 8);
 }

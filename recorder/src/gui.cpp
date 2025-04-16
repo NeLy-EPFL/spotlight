@@ -564,7 +564,7 @@ void MainGUIWindow::updateImageDisplay()
     {
         return;
     }
-    cv::Mat correctedFrame = correctImageRotationAndFlip(latestFrame);
+    cv::Mat correctedFrame = reorientBehaviorImage(latestFrame);
 
     MotionStagePosition myStagePosition;
     {
