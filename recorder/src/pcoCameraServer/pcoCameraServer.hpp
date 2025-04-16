@@ -42,13 +42,12 @@ namespace PCOCameraServer
 
     void signalHandler(int signal);
 
-    int calculateOffset(int fullFrameSize, int roiSize);
     void setupPCOCamera(pco::Camera &camera,
                         unsigned int defaultExposureTimeUs,
-                        unsigned int imageWidth,
-                        unsigned int imageHeight,
-                        int xOffset,
-                        int yOffset,
+                        unsigned int x0,
+                        unsigned int x1,
+                        unsigned int y0,
+                        unsigned int y1,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight);
 
@@ -59,10 +58,10 @@ namespace PCOCameraServer
                      const std::string &shmMutexName,
                      const std::string &shmCondVarName,
                      const unsigned int defaultExposureTimeUs,
-                     const unsigned int imageWidth,
-                     const unsigned int imageHeight,
-                     const int xOffset,
-                     const int yOffset,
+                     const unsigned int x0,
+                     const unsigned int x1,
+                     const unsigned int y0,
+                     const unsigned int y1,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight);
 }
