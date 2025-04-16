@@ -213,10 +213,14 @@ FrameData MuscleCamera::waitForOneFrame()
 
 bool MuscleCamera::isROIValid()
 {
+    int fullFrameWidth = recorderConfig_.getParameter<int>(
+        "muscle_camera", "full_frame_width");
+    int fullFrameHeight = recorderConfig_.getParameter<int>(
+        "muscle_camera", "full_frame_height");
     if (x0_ < 1 ||
-        x1_ > imageWidth_ ||
+        x1_ > fullFrameWidth ||
         y0_ < 1 ||
-        y1_ > imageHeight_ ||
+        y1_ > fullFrameHeight ||
         x0_ >= x1_ ||
         y0_ >= y1_ ||
         imageWidth_ % 32 != 0 ||

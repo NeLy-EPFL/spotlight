@@ -32,8 +32,8 @@ namespace
         return std::make_tuple(displayX, displayY);
     }
 
-    PCOCameraROI getROIFromDisplayCenter(int xCenterDisplay,
-                                         int yCenterDisplay)
+    MuscleCameraROI getROIFromDisplayCenter(int xCenterDisplay,
+                                                 int yCenterDisplay)
     {
         auto [muscleCameraCenterXSensor, muscleCameraCenterYSensor] =
             displayToCameraSensorCoords(muscleCameraCenterXDisplay,
@@ -45,12 +45,7 @@ namespace
         int y0 = yOffset + 1;
         int y1 = yOffset + muscleImageROIHeight;
 
-        PCOCameraROI roi(x0,
-                         x1,
-                         y0,
-                         y1,
-                         muscleCameraCenterXSensor,
-                         muscleCameraCenterYSensor);
+        MuscleCameraROI roi(x0, x1, y0, y1);
         return roi;
     }
 
@@ -70,8 +65,8 @@ namespace
         cv::circle(image, point, 5, redColor, -1);
 
         // Figure out center point coords on the camera sensor
-        PCOCameraROI roi = getROIFromDisplayCenter(muscleCameraCenterXDisplay,
-                                                   muscleCameraCenterYDisplay);
+        MuscleCameraROI roi = getROIFromDisplayCenter(
+            muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
 
         // Draw ROI rectangle
         auto [displayX0, displayY0] =
@@ -175,38 +170,6 @@ namespace
 
         return muscleImageAcquirerThread;
     }
-}
-
-PCOCameraROI::PCOCameraROI(
-    int x0, int x1, int y0, int y1, int xCenter, int yCenter)
-    : x0(x0), x1(x1), y0(y0), y1(y1), xCenter(xCenter), yCenter(yCenter) {}
-
-bool PCOCameraROI::isWithinBound(int fullWidth, int fullHeight)
-{
-    return (x0 > 0 && x1 <= fullWidth && y0 > 0 && y1 <= fullHeight &&
-            x0 < x1 && y0 < y1);
-}
-
-int PCOCameraROI::toFile(std::filesystem::path path)
-{
-    YAML::Node node;
-    node["x0"] = x0;
-    node["x1"] = x1;
-    node["y0"] = y0;
-    node["y1"] = y1;
-    node["imageWidth"] = x1 - x0 + 1;
-    node["imageHeight"] = y1 - y0 + 1;
-
-    std::ofstream fout(path);
-    if (!fout)
-    {
-        spdlog::error("Failed to open file: {}", path.string());
-        return 1;
-    }
-
-    fout << node;
-    fout.close();
-    return 0;
 }
 
 void alignCamera(std::filesystem::path profileDir)
@@ -337,9 +300,8 @@ void alignCamera(std::filesystem::path profileDir)
             spdlog::info(
                 "User selected muscle camera center point at (x={}, y={})",
                 muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
-            PCOCameraROI roi =
-                getROIFromDisplayCenter(muscleCameraCenterXDisplay,
-                                        muscleCameraCenterYDisplay);
+            MuscleCameraROI roi = getROIFromDisplayCenter(
+                muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
             if (roi.x0 <= 0 ||
                 roi.y0 <= 0 ||
                 roi.x1 > fullMuscleImageWidth ||

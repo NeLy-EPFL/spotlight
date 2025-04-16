@@ -26,7 +26,8 @@ struct BehaviorRecordingState
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder;
 };
 
-CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig);
+BehaviorCameraROI getBehaviorBehaviorCameraROI(
+    const RecorderConfig &recorderConfig);
 
 // Function declarations
 void behaviorImageAcquirer(

@@ -12,6 +12,7 @@
 
 #include "peripherals/muscleCamera.hpp"
 #include "recorderConfig.hpp"
+#include "utils.hpp"
 
 struct MuscleRecordingState
 {
@@ -20,6 +21,19 @@ struct MuscleRecordingState
     std::mutex muscleImageQueueMutex;
     std::condition_variable muscleImageQueueCondVar;
     std::shared_ptr<LatestFrame> latestBehaviorFrameHolder;
+};
+
+class MuscleCameraROI
+{
+public:
+    int x0;
+    int x1;
+    int y0;
+    int y1;
+
+    MuscleCameraROI(int x0, int x1, int y0, int y1);
+    bool isWithinBound(int fullWidth, int fullHeight);
+    int toFile(std::filesystem::path path);
 };
 
 // Function declarations
@@ -51,5 +65,7 @@ void muscleImageSaver(
 void stopMuscleImageSaver(
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<ProgramState> programState);
+
+MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath);
 
 #endif // MUSCLE_RECORDING_HPP

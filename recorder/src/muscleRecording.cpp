@@ -1,5 +1,61 @@
 #include "muscleRecording.hpp"
 
+MuscleCameraROI::MuscleCameraROI(
+    int x0, int x1, int y0, int y1)
+    : x0(x0), x1(x1), y0(y0), y1(y1) {}
+
+bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight)
+{
+    return (x0 > 0 && x1 <= fullWidth && y0 > 0 && y1 <= fullHeight &&
+            x0 < x1 && y0 < y1);
+}
+
+int MuscleCameraROI::toFile(std::filesystem::path path)
+{
+    YAML::Node node;
+    node["x0"] = x0;
+    node["x1"] = x1;
+    node["y0"] = y0;
+    node["y1"] = y1;
+    node["imageWidth"] = x1 - x0 + 1;
+    node["imageHeight"] = y1 - y0 + 1;
+
+    std::ofstream fout(path);
+    if (!fout)
+    {
+        spdlog::error("Failed to open file: {}", path.string());
+        return 1;
+    }
+
+    fout << node;
+    fout.close();
+    return 0;
+}
+
+MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath)
+{
+    // read yaml file
+    YAML::Node node = YAML::LoadFile(roiFilePath.string());
+    if (!node)
+    {
+        spdlog::critical("Failed to load muscle camera ROI from YAML file: {}",
+                         roiFilePath.string());
+    }
+    int x0 = node["x0"].as<int>();
+    int x1 = node["x1"].as<int>();
+    int y0 = node["y0"].as<int>();
+    int y1 = node["y1"].as<int>();
+    int imageWidth = node["imageWidth"].as<int>();
+    int imageHeight = node["imageHeight"].as<int>();
+    MuscleCameraROI roi(x0, x1, y0, y1);
+
+    spdlog::info(
+        "Muscle camera ROI loaded from file: x0={}, x1={}, y0={}, y1={}; "
+        "imageWidth={}, imageHeight={}",
+        x0, x1, y0, y1, imageWidth, imageHeight);
+    return roi;
+}
+
 void muscleImageAcquierer(
     unsigned int imageWidth,
     unsigned int imageHeight,
