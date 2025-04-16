@@ -11,18 +11,18 @@ void alignCamera(std::filesystem::path profileDir)
     std::shared_ptr<ProgrammedStop> programmedRecordingStop =
         std::make_shared<ProgrammedStop>();
 
-    // // Set up behavior camera (JAI camera + Euresys frame grabber)
-    // spdlog::info("Starting behavior camera acquisition thread");
-    // std::shared_ptr<BehaviorRecordingState> behaviorRecordingState =
-    //     std::make_shared<BehaviorRecordingState>();
-    // behaviorRecordingState->latestBehaviorFrameHolder =
-    //     std::make_shared<LatestFrame>();
-    // std::thread behaviorImageAcquirerThread(
-    //     behaviorImageAcquirer,
-    //     recorderConfig,
-    //     behaviorRecordingState,
-    //     programState,
-    //     programmedRecordingStop);
+    // Set up behavior camera (JAI camera + Euresys frame grabber)
+    spdlog::info("Starting behavior camera acquisition thread");
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState =
+        std::make_shared<BehaviorRecordingState>();
+    behaviorRecordingState->latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
+        recorderConfig,
+        behaviorRecordingState,
+        programState,
+        programmedRecordingStop);
 
     // Load muscle camera full frame size
     unsigned int fullWidth = recorderConfig.getParameter<int>(
@@ -53,30 +53,49 @@ void alignCamera(std::filesystem::path profileDir)
     spdlog::info("Starting streaming loop");
     cv::Mat behaviorImage;
     cv::Mat muscleImage;
+    cv::Mat behaviorImageDisplay;
+    cv::Mat muscleImageDisplay;
     while (true)
     {
-        // behaviorImage = behaviorRecordingState
-        //                     ->latestBehaviorFrameHolder
-        //                     ->getLatestFrameData()
-        //                     .image;
+        // Fetch latest images from both cameras
+        behaviorImage = behaviorRecordingState
+                            ->latestBehaviorFrameHolder
+                            ->getLatestFrameData()
+                            .image;
         muscleImage = muscleRecordingState
                           ->latestBehaviorFrameHolder
                           ->getLatestFrameData()
                           .image;
-        // if (behaviorImage.empty() || muscleImage.empty())
-        // {
-        //     spdlog::warn("One of the images is empty. Skipping display.");
-        //     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        //     continue;
-        // }
-        // cv::imshow("Behavior Camera", behaviorImage);
-        if (muscleImage.empty()) {
-            spdlog::warn("Muscle image is empty. Skipping display.");
-            std::cout << muscleRecordingState->latestBehaviorFrameHolder->getLatestFrameData().acquisitionTime << std::endl;
+
+        // Skip display if images are empty
+        if (behaviorImage.empty()) {
+            spdlog::warn(
+                "Behavior image is empty. Skipping display. This is normal "
+                "if it only happens a few times at the beginning of the "
+                "program while the camera initializes.");
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
-        cv::imshow("Muscle Camera", muscleImage);
+        if (muscleImage.empty()) {
+            spdlog::warn(
+                "Muscle image is empty. Skipping display. This is normal "
+                "if it only happens a few times at the beginning of the "
+                "program while the camera initializes.");
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            continue;
+        }
+
+        // Resize images for display
+        cv::resize(behaviorImage, behaviorImageDisplay,
+            cv::Size(behaviorImage.cols / 2, behaviorImage.rows / 2));
+        muscleImage.convertTo(
+            muscleImage, CV_8U, 500 * (255.0 / 65535.0), -100);
+        cv::resize(muscleImage, muscleImageDisplay,
+            cv::Size(muscleImage.cols / 3, muscleImage.rows / 3));
+        
+        // Display images
+        cv::imshow("Behavior Camera", behaviorImageDisplay);
+        cv::imshow("Muscle Camera", muscleImageDisplay);
         if (cv::waitKey(30) == 27)
         {
             break;
@@ -86,7 +105,7 @@ void alignCamera(std::filesystem::path profileDir)
     // Stop the cameras
     spdlog::info("Stopping behavior camera acquisition thread");
     programState->toQuit.store(true);
-    // behaviorImageAcquirerThread.join();
+    behaviorImageAcquirerThread.join();
     muscleImageAcquirerThread.join();
     spdlog::info("Behavior camera acquisition thread stopped");
 }
