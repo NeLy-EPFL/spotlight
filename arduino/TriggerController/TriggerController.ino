@@ -65,12 +65,12 @@ void behaviorTriggerOff() {
 
 void muscleTriggerOn() {
   digitalWrite(MUSCLE_CAM_PIN, HIGH);
-  digitalWrite(BLUE_LIGHT_PIN, HIGH);
+  digitalWrite(BLUE_LIGHT_PIN, LOW);
 }
 
 void muscleTriggerOff() {
   digitalWrite(MUSCLE_CAM_PIN, LOW);
-  digitalWrite(BLUE_LIGHT_PIN, LOW);
+  digitalWrite(BLUE_LIGHT_PIN, HIGH);
 }
 
 void setup() {
