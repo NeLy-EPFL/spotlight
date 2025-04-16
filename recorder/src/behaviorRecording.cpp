@@ -7,7 +7,7 @@ void behaviorImageAcquirer(
     std::shared_ptr<ProgrammedStop> programmedRecordingStop)
 {
     spdlog::info("Behavior image acquirer thread started");
-    CameraROI cameraROI = getCameraROIFromRecorderConfig(recorderConfig);
+    BehaviorCameraROI cameraROI = getBehaviorBehaviorCameraROI(recorderConfig);
 
     std::string frameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>("behavior_camera",
@@ -223,7 +223,7 @@ void stopBehaviorImageSaver(
     }
 }
 
-CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig)
+BehaviorCameraROI getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig)
 {
     int imageWidth = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
@@ -256,7 +256,7 @@ CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig)
                                                  fullFrameWidth,
                                                  fullFrameHeight);
 
-    CameraROI cameraROI = {(unsigned int)imageWidth,
+    BehaviorCameraROI cameraROI = {(unsigned int)imageWidth,
                            (unsigned int)imageHeight,
                            (unsigned int)xOffset,
                            (unsigned int)yOffset};

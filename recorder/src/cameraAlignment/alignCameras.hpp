@@ -18,21 +18,6 @@
 #include "../dataTypes.hpp"
 #include "../cli.hpp"
 
-class PCOCameraROI
-{
-public:
-    int x0;
-    int x1;
-    int y0;
-    int y1;
-    int xCenter;
-    int yCenter;
-
-    PCOCameraROI(int x0, int x1, int y0, int y1, int xCenter, int yCenter);
-    bool isWithinBound(int fullWidth, int fullHeight);
-    int toFile(std::filesystem::path path);
-};
-
 void alignCamera(std::filesystem::path profileDir);
 
 #endif // ALIGN_CAMERA_HPP

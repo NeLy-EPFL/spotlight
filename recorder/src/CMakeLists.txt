@@ -91,18 +91,15 @@ set_target_properties(SpotlightController PROPERTIES AUTOMOC ON)
 file(GLOB RUN_CALIBRATION_SOURCES
     "calibrationProcedure/runCalibration_main.cpp"
     "calibrationProcedure/runCalibration.hpp"
-    "peripherals/behaviorCamera.cpp"
-    "peripherals/behaviorCamera.hpp"
-    "peripherals/motionControl.cpp"
-    "peripherals/motionControl.hpp"
-    "cli.cpp"
-    "cli.hpp"
-    "recorderConfig.cpp"
-    "recorderConfig.hpp"
-    "behaviorRecording.cpp"
-    "behaviorRecording.hpp"
-    "utils.cpp"
-    "utils.hpp")
+    "peripherals/behaviorCamera.*"
+    "peripherals/muscleCamera.*"
+    "peripherals/motionControl.*"
+    "pcoCameraServer/sharedMemoryUtils.*"
+    "cli.*"
+    "recorderConfig.*"
+    "behaviorRecording.*"
+    "muscleRecording.*"
+    "utils.*")
 add_executable(RunCalibration ${RUN_CALIBRATION_SOURCES})
 # target_link_libraries(RunCalibration pthread rt dl)
 target_link_libraries(RunCalibration Qt6::Widgets Qt6::SerialPort)

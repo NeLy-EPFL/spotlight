@@ -12,7 +12,7 @@ struct FrameData
     cv::Mat image;
 };
 
-struct CameraROI
+struct BehaviorCameraROI
 {
     unsigned int imageWidth;
     unsigned int imageHeight;
