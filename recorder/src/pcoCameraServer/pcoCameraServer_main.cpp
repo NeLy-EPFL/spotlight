@@ -171,6 +171,7 @@ namespace PCOCameraServer
         config.acquire_mode = ACQUIRE_MODE_AUTO;
         config.delay_time_s = 0;
         config.noise_filter_mode = NOISE_FILTER_MODE_ON;
+        // config.timestamp_mode = TIMESTAMP_MODE_ASCII;
         spdlog::info("Setting PCO camera configuration");
         camera.setConfiguration(config);
         spdlog::info("PCO camera configuration set");
@@ -181,6 +182,20 @@ namespace PCOCameraServer
         camera.setExposureTime(defaultExposureTimeUs / 1000000.0);
         camera.autoExposureOff();
         spdlog::info("PCO camera exposure time set");
+
+        // Set trigger polarity
+        spdlog::info("Setting PCO camera trigger polarity to rising edge");
+        camera.configureHWIO_1_exposureTrigger(
+            true, pco::HWIO_EdgePolarity::rising_edge);
+
+        // Let SMA #4 line output whether the shutter is on for ANY line
+        // (since the camera has a rolling shutter, this can be much longer than
+        // the exposure time)
+        camera.configureHWIO_4_statusExpos(
+            true,
+            pco::HWIO_Polarity::high_level,
+            pco::HWIO_4_SignalType::status_expos,
+            pco::HWIO_StatusExpos_Timing::all_lines);
     }
 
     void serveFrames(const std::string &shmFrameDataName,
@@ -272,14 +287,14 @@ namespace PCOCameraServer
         while (!PCOCameraServer::shutdownRequested.load())
         {
             // Check if we should change exposure time
-            unsigned int setExposureTime = *exposureTimePtr;
-            if (setExposureTime != currentExposureTimeUs)
+            unsigned int targetExposureTime = *exposureTimePtr;
+            if (targetExposureTime != currentExposureTimeUs)
             {
                 spdlog::info(
                     "PCO camera server is changing exposure time to {} us",
-                    setExposureTime);
-                camera.setExposureTime(setExposureTime / 1000000.0);
-                currentExposureTimeUs = setExposureTime;
+                    targetExposureTime);
+                camera.setExposureTime(targetExposureTime / 1000000.0);
+                currentExposureTimeUs = targetExposureTime;
                 spdlog::info("Changed exposure time to {} us",
                              currentExposureTimeUs);
             }
