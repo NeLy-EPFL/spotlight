@@ -27,17 +27,16 @@ public:
                  std::string profileDir,
                  spdlog::level::level_enum logLevel);
     ~MuscleCamera();
-    // void start();
-    // void stop();
     FrameData waitForOneFrame();
-    // bool isReady() const;
     void setExposureTime(unsigned int exposureTimeMicrosecs);
 
 private:
+    unsigned int x0_;
+    unsigned int x1_;
+    unsigned int y0_;
+    unsigned int y1_;
     unsigned int imageWidth_;
     unsigned int imageHeight_;
-    unsigned int xOffset_;
-    unsigned int yOffset_;
     pid_t pcoCameraServerPID_;
     uint8_t *frameDataPtr_;
     unsigned int *exposureTimePtr_;
@@ -46,7 +45,11 @@ private:
     pthread_cond_t *condVarPtr_;
     const RecorderConfig &recorderConfig_;
     unsigned int lastFrameCount_;
-    // std::atomic<bool> cameraReadyFlag_{false};
+
+    bool isROIValid();
 };
+
+int roundToNearestValidMuscleCameWidth(int value);
+int roundToNearestValidMuscleCameHeight(int value);
 
 #endif // MUSCLE_CAMERA_HPP

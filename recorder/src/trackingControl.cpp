@@ -468,7 +468,7 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         // calibration model has not been defined yet
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
-    cv::Mat correctedImage = correctImageRotationAndFlip(behaviorImage);
+    cv::Mat correctedImage = reorientBehaviorImage(behaviorImage);
 
     // Remove pixels outside the stage boundaries
     cv::Mat blackedOutImage = blackoutOutside(correctedImage.clone(),

@@ -27,10 +27,10 @@ namespace PCOCameraServer
     struct CLIOptions
     {
         std::string profileDir = "~/Spotlight/default/";
-        unsigned int imageWidth = -1;
-        unsigned int imageHeight = -1;
-        int xOffset = -1;
-        int yOffset = -1;
+        unsigned int x0 = 1;
+        unsigned int x1 = 2048;
+        unsigned int y0 = 1;
+        unsigned int y1 = 2048;
         spdlog::level::level_enum logLevel = spdlog::level::info;
     };
 

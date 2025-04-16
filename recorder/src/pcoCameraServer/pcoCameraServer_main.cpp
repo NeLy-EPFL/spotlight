@@ -7,14 +7,14 @@ namespace PCOCameraServer
         std::cout
             << "Usage: " << programName << " [OPTIONS]\n"
             << "Options:\n"
-            << "  -h, --help                 Display this help message\n"
-            << "  -p, --profile-dir PATH     Path to profile directory (default: ~/Spotlight/default/)\n"
-            << "  -W, --image-width WIDTH    Width of the image (default: 2048)\n"
-            << "  -H, --image-height HEIGHT  Height of the image (default: 2048)\n"
-            << "  -x, --x-offset OFFSET      X offset for the region of interest. If -1, one will be calculated automatically so that the image is centered (default: -1)\n"
-            << "  -y, --y-offset OFFSET      Y offset for the region of interest. Same as x-offset (default: -1)\n"
-            << "  -v, --verbose              Enable verbose output (debug level)\n"
-            << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
+            << "  -h,  --help              Display this help message\n"
+            << "  -p,  --profile-dir PATH  Path to profile directory (default: ~/Spotlight/default/)\n"
+            << "  -x0, --x-min X_MIN       x_min coordinate of the region of interest (default: 1)\n"
+            << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
+            << "  -y0, --y-min Y_MIN       y_min coordinate of the region of interest (default: 2048)\n"
+            << "  -y1, --y-max Y_MAX       y_max coordinate of the region of interest (default: 2048)\n"
+            << "  -v,  --verbose           Enable verbose output (debug level)\n"
+            << "  --verbosity LEVEL        Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
             << std::endl;
     }
 
@@ -64,21 +64,21 @@ namespace PCOCameraServer
             {
                 options.profileDir = argv[++i];
             }
-            else if ((arg == "-W" || arg == "--image-width") && i + 1 < argc)
+            else if ((arg == "-x0" || arg == "--x-min") && i + 1 < argc)
             {
-                options.imageWidth = std::stoi(argv[++i]);
+                options.x0 = std::stoi(argv[++i]);
             }
-            else if ((arg == "-H" || arg == "--image-height") && i + 1 < argc)
+            else if ((arg == "-x1" || arg == "--x-max") && i + 1 < argc)
             {
-                options.imageHeight = std::stoi(argv[++i]);
+                options.x1 = std::stoi(argv[++i]);
             }
-            else if ((arg == "-x" || arg == "--x-offset") && i + 1 < argc)
+            else if ((arg == "-y0" || arg == "--y-min") && i + 1 < argc)
             {
-                options.xOffset = std::stoi(argv[++i]);
+                options.y0 = std::stoi(argv[++i]);
             }
-            else if ((arg == "-y" || arg == "--y-offset") && i + 1 < argc)
+            else if ((arg == "-y1" || arg == "--y-max") && i + 1 < argc)
             {
-                options.yOffset = std::stoi(argv[++i]);
+                options.y1 = std::stoi(argv[++i]);
             }
             else if (arg[0] == '-')
             {
@@ -97,12 +97,6 @@ namespace PCOCameraServer
                 printHelp(argv[0]);
                 std::exit(1);
             }
-        }
-
-        if (options.imageHeight == -1 || options.imageWidth == -1)
-        {
-            spdlog::critical(
-                "Image dimensions not specified. Use -W and -H options.");
         }
 
         return options;
@@ -156,55 +150,23 @@ namespace PCOCameraServer
             .count();
     }
 
-    /**
-     * @brief Sets up a PCO camera with specified configuration parameters
-     *
-     * Configures a PCO camera with specific settings including region of
-     * interest (ROI), trigger mode, acquisition mode, and exposure time.
-     * If the X or Y offsets are set to -1, they will be automatically
-     * calculated to center the ROI on the sensor.
-     *
-     * @param camera Reference to the pco::Camera object to configure
-     * @param defaultExposureTimeUs Default exposure time in microseconds
-     * @param imageWidth Width of the image to capture in pixels
-     * @param imageHeight Height of the image to capture in pixels
-     * @param xOffset X offset for the ROI (use -1 for auto-centering)
-     * @param yOffset Y offset for the ROI (use -1 for auto-centering)
-     * @param fullFrameWidth Full width of the camera sensor in pixels
-     * @param fullFrameHeight Full height of the camera sensor in pixels
-     *
-     * @note The function sets external trigger mode, auto acquisition mode,
-     *       and enables noise filtering
-     * @note ROI coordinates are 1-based in the PCO API (offsets have 1 added
-     *       to them)
-     */
     void setupPCOCamera(pco::Camera &camera,
                         unsigned int defaultExposureTimeUs,
-                        unsigned int imageWidth,
-                        unsigned int imageHeight,
-                        int xOffset,
-                        int yOffset,
+                        unsigned int x0,
+                        unsigned int x1,
+                        unsigned int y0,
+                        unsigned int y1,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight)
     {
-        if (xOffset == -1)
-        {
-            xOffset = calculateOffset(fullFrameWidth, imageWidth);
-        }
-        if (yOffset == -1)
-        {
-            yOffset = calculateOffset(fullFrameHeight, imageHeight);
-        }
-
         // Set configuration
-        spdlog::info("Setting up PCO camera");
         spdlog::info("Getting default PCO camera configuration");
         camera.defaultConfiguration();
         pco::Configuration config = camera.getConfiguration();
-        config.roi.x0 = xOffset + 1;
-        config.roi.y0 = yOffset + 1;
-        config.roi.x1 = xOffset + imageWidth;
-        config.roi.y1 = yOffset + imageHeight;
+        config.roi.x0 = x0;
+        config.roi.x1 = x1;
+        config.roi.y0 = y0;
+        config.roi.y1 = y1;
         config.trigger_mode = TRIGGER_MODE_EXTERNALTRIGGER;
         config.acquire_mode = ACQUIRE_MODE_AUTO;
         config.delay_time_s = 0;
@@ -221,11 +183,6 @@ namespace PCOCameraServer
         spdlog::info("PCO camera exposure time set");
     }
 
-    int calculateOffset(int fullFrameSize, int roiSize)
-    {
-        return (fullFrameSize - roiSize) / 2;
-    }
-
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
                      const std::string &shmExposureTimeName,
@@ -233,10 +190,10 @@ namespace PCOCameraServer
                      const std::string &shmMutexName,
                      const std::string &shmCondVarName,
                      const unsigned int defaultExposureTimeUs,
-                     const unsigned int imageWidth,
-                     const unsigned int imageHeight,
-                     const int xOffset,
-                     const int yOffset,
+                     const unsigned int x0,
+                     const unsigned int x1,
+                     const unsigned int y0,
+                     const unsigned int y1,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight)
     {
@@ -287,10 +244,10 @@ namespace PCOCameraServer
         pco::Camera camera;
         PCOCameraServer::setupPCOCamera(camera,
                                         defaultExposureTimeUs,
-                                        imageWidth,
-                                        imageHeight,
-                                        xOffset,
-                                        yOffset,
+                                        x0,
+                                        x1,
+                                        y0,
+                                        y1,
                                         fullFrameWidth,
                                         fullFrameHeight);
         spdlog::info("PCO camera setup complete");
@@ -395,41 +352,39 @@ int main(int argc, char *argv[])
         recorderConfig.getParameter<unsigned int>(
             "muscle_camera", "default_exposure_time_us");
 
+    unsigned int roiWidth = options.x1 - options.x0 + 1;
+    unsigned int roiHeight = options.y1 - options.y0 + 1;
+
     // Validate image dimensions
-    if (options.imageWidth <= 0 ||
-        options.imageHeight <= 0 ||
-        options.imageWidth > fullFrameWidth ||
-        options.imageHeight > fullFrameHeight)
+    if (options.x0 == 0 ||
+        options.y0 == 0 ||
+        options.x1 > fullFrameWidth ||
+        options.y1 > fullFrameHeight ||
+        options.x0 >= options.x1 ||
+        options.y0 >= options.y1)
     {
         spdlog::critical(
-            "Invalid image dimensions. "
-            "Height must be within the range of 1 to {}; "
-            "width must be within the range of 1 to {}",
+            "Invalid image dimensions. The following is required: "
+            "0 < x0 < x1 <= {}; 0 < y0 < y1 <= {}.",
             fullFrameHeight, fullFrameWidth);
         return 1;
     }
 
-    if (options.xOffset >= (int)fullFrameWidth ||
-        options.yOffset >= (int)fullFrameHeight ||
-        options.xOffset < -1 ||
-        options.yOffset < -1)
+    if (roiWidth % 32 != 0 ||
+        roiHeight % 8 != 0 ||
+        roiWidth < 64 ||
+        roiHeight < 16)
     {
         spdlog::critical(
-            "Invalid offsets. "
-            "X offset must be within the range of 0 to {}; "
-            "Y offset must be within the range of 0 to {}. "
-            "Alternatively, they can be set to -1, in which case the x and y "
-            "offsets will be automatically calculated to put the ROI at the "
-            "center of the sensor as much as possible.",
-            fullFrameWidth - 1,
-            fullFrameHeight - 1);
+            "Invalid ROI for muscle camera. ROI width must be a multiple of "
+            "32 and ROI height must be a multiple of 8. Furthermore, the "
+            "minimum size of the ROI is 64x16 pixels.");
         return 1;
     }
 
     // Compute buffer size for each frame
     const size_t sizePerPixel = 2; // CV_16UC1
-    const size_t frameBufferSize =
-        options.imageWidth * options.imageHeight * sizePerPixel;
+    const size_t frameBufferSize = roiWidth * roiHeight * sizePerPixel;
 
     // Set up shared memory buffers for frame data, mutex, and semaphore
     const std::string shmFrameDataName =
@@ -455,10 +410,10 @@ int main(int argc, char *argv[])
                                  shmMutexName,
                                  shmCondVarName,
                                  defaultExposureTimeUs,
-                                 options.imageWidth,
-                                 options.imageHeight,
-                                 options.xOffset,
-                                 options.yOffset,
+                                 options.x0,
+                                 options.x1,
+                                 options.y0,
+                                 options.y1,
                                  fullFrameWidth,
                                  fullFrameHeight);
 

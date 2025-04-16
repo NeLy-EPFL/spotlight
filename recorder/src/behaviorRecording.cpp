@@ -38,8 +38,12 @@ void behaviorImageAcquirer(
         // // have plenty of margin and can theoretically record at
         // // 1,000,000 / 200-ish = 5,000 fps.
         // // uint64_t startTime = getCurrentTimeMicroseconds();
+        // spdlog::debug(
+        //     "Behavior image acquirer thread waiting for one frame");
         FrameData frameData =
             behaviorRecordingState->behaviorCamera->waitForOneFrame();
+        // spdlog::debug(
+        //     "Behavior image acquirer thread received one frame");
         // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
         // spdlog::info("Behavior camera waited {} us", waitTime);
 
@@ -101,10 +105,14 @@ void behaviorImageAcquirer(
             currentFrameId = 0;
         }
     }
-    spdlog::critical(
-        "Behavior image acquirer thread is breaking out of loop. "
-        "This should not happen.");
+
+    // Stop behavior camera acquisition
+    spdlog::info("Stopping acquisition on behavior camera");
+    behaviorRecordingState->behaviorCamera->stop();
+    spdlog::info("Behavior camera acquisition stopped. "
+                 "Behavior image acquirer thread reached its end");
 }
+
 void behaviorImageSaver(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
@@ -134,7 +142,7 @@ void behaviorImageSaver(
 
     int frameCount = 0;
     int queueLength = -1;
-    
+
     int performanceLoggingInterval = recorderConfig.getParameter<int>(
         "behavior_camera", "saving_performance_logging_interval");
 
