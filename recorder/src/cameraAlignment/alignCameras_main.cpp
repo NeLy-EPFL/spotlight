@@ -134,50 +134,6 @@ namespace
         // Add callback for muscle camera window
         cv::setMouseCallback("Muscle Camera", onMouse, nullptr);
     }
-
-    std::thread setupBehaviorCamera(
-        RecorderConfig &recorderConfig,
-        std::shared_ptr<ProgramState> programState,
-        std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState)
-    {
-        // Set up behavior camera (JAI camera + Euresys frame grabber)
-        behaviorRecordingState->latestBehaviorFrameHolder =
-            std::make_shared<LatestFrame>();
-        std::thread behaviorImageAcquirerThread(
-            behaviorImageAcquirer,
-            recorderConfig,
-            behaviorRecordingState,
-            programState,
-            programmedRecordingStop);
-
-        return behaviorImageAcquirerThread;
-    }
-
-    std::thread setupMuscleCamera(
-        RecorderConfig &recorderConfig,
-        std::shared_ptr<ProgramState> programState,
-        std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-        std::string profileDir,
-        std::shared_ptr<MuscleRecordingState> muscleRecordingState)
-    {
-        muscleRecordingState->latestBehaviorFrameHolder =
-            std::make_shared<LatestFrame>();
-        std::thread muscleImageAcquirerThread(
-            muscleImageAcquierer,
-            fullMuscleImageWidth,
-            fullMuscleImageHeight,
-            0, // xOffset
-            0, // yOffset
-            recorderConfig,
-            profileDir,
-            spdlog::get_level(),
-            muscleRecordingState,
-            programState,
-            programmedRecordingStop);
-
-        return muscleImageAcquirerThread;
-    }
 }
 
 void alignCamera(std::filesystem::path profileDir)
@@ -206,20 +162,34 @@ void alignCamera(std::filesystem::path profileDir)
     std::shared_ptr<MuscleRecordingState> muscleRecordingState =
         std::make_shared<MuscleRecordingState>();
 
-    // Set up cameras
+    // Set up cameras acquisition threads
     spdlog::info("Starting behavior camera acquisition thread");
-    std::thread behaviorImageAcquirerThread = setupBehaviorCamera(
+    behaviorRecordingState->latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
         recorderConfig,
+        behaviorRecordingState,
         programState,
-        programmedRecordingStop,
-        behaviorRecordingState);
-    spdlog::info("Setting up muscle camera");
-    std::thread muscleImageAcquirerThread = setupMuscleCamera(
+        programmedRecordingStop);
+    spdlog::info("Behavior camera acquisition thread started");
+
+    spdlog::info("Setting up muscle camera acquisition thread");
+    muscleRecordingState->latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
+    std::thread muscleImageAcquirerThread(
+        muscleImageAcquierer,
+        fullMuscleImageWidth,
+        fullMuscleImageHeight,
+        0, // xOffset
+        0, // yOffset
         recorderConfig,
-        programState,
-        programmedRecordingStop,
         profileDir,
-        muscleRecordingState);
+        spdlog::get_level(),
+        muscleRecordingState,
+        programState,
+        programmedRecordingStop);
+    spdlog::info("Muscle camera acquisition thread started");
 
     // Set up display windows
     setupDisplayWindows(recorderConfig);
@@ -333,7 +303,7 @@ void alignCamera(std::filesystem::path profileDir)
     // Stop the cameras
     spdlog::info("Stopping behavior camera acquisition thread");
     programState->toQuit.store(true);
-    // Give some time for acquisition thread to break out of loop
+    // Give some time for acquisition threads to break out of loop
     std::this_thread::sleep_for(std::chrono::seconds(1));
     if (behaviorRecordingState->behaviorCamera)
     {
