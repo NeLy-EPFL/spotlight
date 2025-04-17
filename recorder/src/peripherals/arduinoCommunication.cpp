@@ -12,10 +12,10 @@ namespace
         QSerialPort serialPort = QSerialPort();
         serialPort.setPortName(portName.c_str());
         serialPort.setBaudRate(baudRate);
-        // serialPort.setDataBits(QSerialPort::Data8);
-        // serialPort.setParity(QSerialPort::NoParity);
-        // serialPort.setStopBits(QSerialPort::OneStop);
-        // serialPort.setFlowControl(QSerialPort::NoFlowControl);
+        serialPort.setDataBits(QSerialPort::Data8);
+        serialPort.setParity(QSerialPort::NoParity);
+        serialPort.setStopBits(QSerialPort::OneStop);
+        serialPort.setFlowControl(QSerialPort::NoFlowControl);
 
         spdlog::info("Opening Arduino comm on serial port {}", portName);
         if (!serialPort.open(QIODevice::ReadWrite))
@@ -25,7 +25,7 @@ namespace
 
         // Reset Arduino
         serialPort.setDataTerminalReady(false);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         serialPort.setDataTerminalReady(true);
 
         std::string incomingMessageBuffer;
