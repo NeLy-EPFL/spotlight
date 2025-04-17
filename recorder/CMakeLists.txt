@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 project("SpotlightController"
-    VERSION 1.0.0
+    VERSION 0.2.0
     DESCRIPTION "Control software for the Spotlight setup"
     LANGUAGES CXX)
 
@@ -53,13 +53,12 @@ set(PCOCAMERA_SOURCES
     ${PCO_CAMERA_DIR}/xcite.cpp
     ${PCO_CAMERA_DIR}/stdafx.cpp)
 
-
 # PCO camera server
 file(GLOB PCO_CAMERA_SERVER_SOURCES
-    "pcoCameraServer/*.cpp"
-    "pcoCameraServer/*.hpp"
-    "recorderConfig.cpp"
-    "recorderConfig.hpp")
+    "src/pcoCameraServer/*.cpp"
+    "src/pcoCameraServer/*.hpp"
+    "src/recorderConfig.cpp"
+    "src/recorderConfig.hpp")
 add_executable(pco-camera-server ${PCO_CAMERA_SERVER_SOURCES} ${PCOCAMERA_SOURCES})
 target_include_directories(pco-camera-server PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
 target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
@@ -72,34 +71,35 @@ set_target_properties(pco-camera-server PROPERTIES
     INSTALL_RPATH "${PCO_LIB_DIR}"
     BUILD_WITH_INSTALL_RPATH TRUE)
 
+# Compile main application
 file(GLOB MAIN_APPLICATION_SOURCES
-    "peripherals/*.cpp"
-    "peripherals/*.hpp"
-    "pcoCameraServer/sharedMemoryUtils.*"
-    "*.cpp"
-    "*.hpp")
-add_executable(SpotlightController ${MAIN_APPLICATION_SOURCES})
-target_link_libraries(SpotlightController pthread rt dl)
-target_link_libraries(SpotlightController Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(SpotlightController ${OpenCV_LIBS})
-target_link_libraries(SpotlightController ${ZABER_MOTION_LIB})
-target_link_libraries(SpotlightController spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-target_link_libraries(SpotlightController yaml-cpp)
-set_target_properties(SpotlightController PROPERTIES AUTOMOC ON)
+    "src/peripherals/*.cpp"
+    "src/peripherals/*.hpp"
+    "src/pcoCameraServer/sharedMemoryUtils.*"
+    "src/*.cpp"
+    "src/*.hpp")
+add_executable(run-spotlight ${MAIN_APPLICATION_SOURCES})
+target_link_libraries(run-spotlight pthread rt dl)
+target_link_libraries(run-spotlight Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(run-spotlight ${OpenCV_LIBS})
+target_link_libraries(run-spotlight ${ZABER_MOTION_LIB})
+target_link_libraries(run-spotlight spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-spotlight yaml-cpp)
+set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
 
 # Compile calibration tool
 file(GLOB RUN_CALIBRATION_SOURCES
-    "calibrationProcedure/runCalibration_main.cpp"
-    "calibrationProcedure/runCalibration.hpp"
-    "peripherals/behaviorCamera.*"
-    "peripherals/muscleCamera.*"
-    "peripherals/motionControl.*"
-    "pcoCameraServer/sharedMemoryUtils.*"
-    "cli.*"
-    "recorderConfig.*"
-    "behaviorRecording.*"
-    "muscleRecording.*"
-    "utils.*")
+    "src/calibrationProcedure/runCalibration_main.cpp"
+    "src/calibrationProcedure/runCalibration.hpp"
+    "src/peripherals/behaviorCamera.*"
+    "src/peripherals/muscleCamera.*"
+    "src/peripherals/motionControl.*"
+    "src/pcoCameraServer/sharedMemoryUtils.*"
+    "src/cli.*"
+    "src/recorderConfig.*"
+    "src/behaviorRecording.*"
+    "src/muscleRecording.*"
+    "src/utils.*")
 add_executable(run-calibration-scan ${RUN_CALIBRATION_SOURCES})
 # target_link_libraries(run-calibration-scan pthread rt dl)
 target_link_libraries(run-calibration-scan Qt6::Widgets Qt6::SerialPort)
@@ -110,17 +110,17 @@ target_link_libraries(run-calibration-scan yaml-cpp)
 
 # Compile camera alignment tool
 file(GLOB ALIGN_CAMERAS_SOURCES
-    "cameraAlignment/*.cpp"
-    "cameraAlignment/*.hpp"
-    "peripherals/behaviorCamera.*"
-    "peripherals/muscleCamera.*"
-    "pcoCameraServer/sharedMemoryUtils.*"
-    "behaviorRecording.*"
-    "muscleRecording.*"
-    "recorderConfig.*"
-    "utils.*"
-    "cli.*"
-    "dataTypes.hpp")
+    "src/cameraAlignment/*.cpp"
+    "src/cameraAlignment/*.hpp"
+    "src/peripherals/behaviorCamera.*"
+    "src/peripherals/muscleCamera.*"
+    "src/pcoCameraServer/sharedMemoryUtils.*"
+    "src/behaviorRecording.*"
+    "src/muscleRecording.*"
+    "src/recorderConfig.*"
+    "src/utils.*"
+    "src/cli.*"
+    "src/dataTypes.hpp")
 add_executable(align-cameras ${ALIGN_CAMERAS_SOURCES})
 target_link_libraries(align-cameras PRIVATE pthread rt dl)
 target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)
@@ -128,3 +128,8 @@ target_link_libraries(align-cameras PRIVATE ${OpenCV_LIBS})
 target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(align-cameras PRIVATE yaml-cpp)
 set_target_properties(align-cameras PROPERTIES AUTOMOC ON)
+
+# Install compiled binaries to the bin folder
+set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
+install(TARGETS pco-camera-server run-spotlight run-calibration-scan align-cameras
+        RUNTIME DESTINATION bin)
