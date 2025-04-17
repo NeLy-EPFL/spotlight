@@ -333,6 +333,15 @@ void alignCamera(std::filesystem::path profileDir)
     // Stop the cameras
     spdlog::info("Stopping behavior camera acquisition thread");
     programState->toQuit.store(true);
+    // Give some time for acquisition thread to break out of loop
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    if (behaviorRecordingState->behaviorCamera)
+    {
+        spdlog::info("Stopping acquisition on behavior camera");
+        behaviorRecordingState->behaviorCamera->stop();
+        behaviorRecordingState->behaviorCamera = nullptr;
+    }
+    muscleRecordingState->muscleCamera = nullptr;
     behaviorImageAcquirerThread.join();
     muscleImageAcquirerThread.join();
     spdlog::info("Behavior camera acquisition thread stopped");
