@@ -100,13 +100,13 @@ file(GLOB RUN_CALIBRATION_SOURCES
     "behaviorRecording.*"
     "muscleRecording.*"
     "utils.*")
-add_executable(RunCalibration ${RUN_CALIBRATION_SOURCES})
-# target_link_libraries(RunCalibration pthread rt dl)
-target_link_libraries(RunCalibration Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(RunCalibration ${OpenCV_LIBS})
-target_link_libraries(RunCalibration ${ZABER_MOTION_LIB})
-target_link_libraries(RunCalibration spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-target_link_libraries(RunCalibration yaml-cpp)
+add_executable(run-calibration-scan ${RUN_CALIBRATION_SOURCES})
+# target_link_libraries(run-calibration-scan pthread rt dl)
+target_link_libraries(run-calibration-scan Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(run-calibration-scan ${OpenCV_LIBS})
+target_link_libraries(run-calibration-scan ${ZABER_MOTION_LIB})
+target_link_libraries(run-calibration-scan spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-calibration-scan yaml-cpp)
 
 # Compile camera alignment tool
 file(GLOB ALIGN_CAMERAS_SOURCES
