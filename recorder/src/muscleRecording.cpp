@@ -32,6 +32,11 @@ int MuscleCameraROI::toFile(std::filesystem::path path)
     return 0;
 }
 
+std::tuple<int, int> MuscleCameraROI::getCenterXY()
+{
+    return std::make_tuple((x0 + x1) / 2, (y0 + y1) / 2);
+}
+
 MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath)
 {
     // read yaml file

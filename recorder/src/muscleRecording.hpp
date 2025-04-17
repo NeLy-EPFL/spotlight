@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <fstream>
+#include <tuple>
 
 #include <spdlog/spdlog.h>
 
@@ -34,6 +35,7 @@ public:
     MuscleCameraROI(int x0, int x1, int y0, int y1);
     bool isWithinBound(int fullWidth, int fullHeight);
     int toFile(std::filesystem::path path);
+    std::tuple<int, int> getCenterXY();
 };
 
 // Function declarations
