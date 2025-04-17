@@ -2,7 +2,14 @@
 
 MuscleCameraROI::MuscleCameraROI(
     int x0, int x1, int y0, int y1)
-    : x0(x0), x1(x1), y0(y0), y1(y1) {}
+    : x0(x0),
+      x1(x1),
+      y0(y0),
+      y1(y1),
+      xOffset(x0 - 1),
+      yOffset(y0 - 1),
+      imageWidth(x1 - x0 + 1),
+      imageHeight(y1 - y0 + 1) {}
 
 bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight)
 {
@@ -17,8 +24,10 @@ int MuscleCameraROI::toFile(std::filesystem::path path)
     node["x1"] = x1;
     node["y0"] = y0;
     node["y1"] = y1;
-    node["imageWidth"] = x1 - x0 + 1;
-    node["imageHeight"] = y1 - y0 + 1;
+    node["xOffset"] = xOffset;
+    node["yOffset"] = yOffset;
+    node["imageWidth"] = imageWidth;
+    node["imageHeight"] = imageHeight;
 
     std::ofstream fout(path);
     if (!fout)
@@ -100,10 +109,6 @@ void muscleImageAcquierer(
         muscleRecordingState
             ->latestBehaviorFrameHolder
             ->setLatestFrameData(frameData);
-        if (muscleRecordingState->latestBehaviorFrameHolder->getLatestFrameData().image.empty())
-        {
-            spdlog::error("last empty image");
-        }
 
         if (programState->isRecording.load())
         {

@@ -31,6 +31,10 @@ public:
     int x1;
     int y0;
     int y1;
+    int xOffset;
+    int yOffset;
+    int imageWidth;
+    int imageHeight;
 
     MuscleCameraROI(int x0, int x1, int y0, int y1);
     bool isWithinBound(int fullWidth, int fullHeight);
