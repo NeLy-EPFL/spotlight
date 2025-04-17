@@ -2,8 +2,10 @@
 
 namespace
 {
-    std::unique_ptr<BehaviorCamera> behaviorCamera = nullptr;
-    std::unique_ptr<MuscleCamera> muscleCamera = nullptr;
+    std::shared_ptr<ProgramState> programState = nullptr;
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop = nullptr;
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState = nullptr;
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState = nullptr;
 
     std::queue<std::tuple<double, double>> getCalibrationPositions(
         double xMinMm,
@@ -41,36 +43,11 @@ namespace
     void quitProgram()
     {
         spdlog::info("SIGINT received. Initiating graceful shutdown");
-        if (behaviorCamera)
+        if (behaviorRecordingState)
         {
-            behaviorCamera->stop();
-            behaviorCamera.reset();
+            behaviorRecordingState->behaviorCamera->stop();
         }
         std::exit(0);
-    }
-
-    bool waitUntilCamerasReady(int maxWaitTimeSec = 10)
-    {
-        for (int sec = 0; sec < maxWaitTimeSec; sec++)
-        {
-            FrameData behaviorFrameData = behaviorCamera->waitForOneFrame();
-            FrameData muscleFrameData = muscleCamera->waitForOneFrame();
-            bool behaviorCameraReady = !behaviorFrameData.image.empty();
-            bool muscleCameraReady = !muscleFrameData.image.empty();
-            if (behaviorCameraReady && muscleCameraReady)
-            {
-                spdlog::info("Cameras are ready");
-                return true;
-            }
-            else
-            {
-                spdlog::warn("Waiting for cameras to be ready...");
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-        }
-        spdlog::critical("Cameras are not ready after {} seconds",
-                         maxWaitTimeSec);
-        return false;
     }
 }
 
@@ -82,50 +59,59 @@ void runCalibrationScan(std::filesystem::path profileDir,
     RecorderConfig recorderConfig(configPath);
 
     arucoSaveDir = prepareOutputFolder(arucoSaveDir, true);
+    prepareOutputFolder(arucoSaveDir / "behavior_camera", true);
+    prepareOutputFolder(arucoSaveDir / "muscle_camera", true);
 
-    // Set up behavior camera
-    spdlog::info("Configuring behavior camera");
-    BehaviorCameraROI behaviorCameraROI =
-        getBehaviorBehaviorCameraROI(recorderConfig);
-    std::string behaviorCameraFrameGrabberTriggerLine =
-        recorderConfig.getParameter<std::string>(
-            "behavior_camera", "frame_grabber_trigger_line");
-
-    std::atomic<bool> behaviorCameraReadyFlag(false);
-    behaviorCamera = std::make_unique<BehaviorCamera>(
-        behaviorCameraROI.imageWidth,
-        behaviorCameraROI.imageHeight,
-        behaviorCameraROI.xOffset,
-        behaviorCameraROI.yOffset,
-        behaviorCameraFrameGrabberTriggerLine);
-    spdlog::info("Behavior camera configured");
-
-    // Set up muscle camera
-    spdlog::info("Configuring muscle camera");
-    MuscleCameraROI muscleCameraROI = getMuscleCameraROI(
-        profileDir / "muscle_camera_roi.yaml");
+    // Load muscle camera ROI
+    std::filesystem::path roiFilePath =
+        profileDir / "muscle_camera_roi.yaml";
+    MuscleCameraROI muscleROI = getMuscleCameraROI(roiFilePath);
     spdlog::info(
-        "width: {}, height: {}, xOffset: {}, yOffset: {}",
-        muscleCameraROI.x1 - muscleCameraROI.x0 + 1,
-        muscleCameraROI.y1 - muscleCameraROI.y0 + 1,
-        muscleCameraROI.x0 - 1,
-        muscleCameraROI.y0 - 1);
-    muscleCamera = std::make_unique<MuscleCamera>(
-        muscleCameraROI.x1 - muscleCameraROI.x0 + 1,
-        muscleCameraROI.y1 - muscleCameraROI.y0 + 1,
-        muscleCameraROI.x0 - 1,
-        muscleCameraROI.y0 - 1,
+        "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
+        "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
+        muscleROI.x0, muscleROI.x1, muscleROI.y0, muscleROI.y1,
+        muscleROI.xOffset, muscleROI.yOffset,
+        muscleROI.imageWidth, muscleROI.imageHeight);
+
+    // Set up shared recording states
+    programState = std::make_shared<ProgramState>();
+    programmedRecordingStop = std::make_shared<ProgrammedStop>();
+    behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
+    muscleRecordingState = std::make_shared<MuscleRecordingState>();
+
+    // Set up cameras acquisition threads
+    spdlog::info("Starting behavior camera acquisition thread");
+    behaviorRecordingState->latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
         recorderConfig,
-        profileDir.string(),
-        spdlog::get_level());
-    spdlog::info("Muscle camera configured");
+        behaviorRecordingState,
+        programState,
+        programmedRecordingStop);
+    spdlog::info("Behavior camera acquisition thread started");
 
-    spdlog::info(
-        "Waiting for cameras to be ready. This may take a few seconds...");
-    waitUntilCamerasReady();
+    spdlog::info("Setting up muscle camera acquisition thread");
+    muscleRecordingState->latestBehaviorFrameHolder =
+        std::make_shared<LatestFrame>();
+    std::thread muscleImageAcquirerThread(
+        muscleImageAcquierer,
+        muscleROI.imageWidth,
+        muscleROI.imageHeight,
+        muscleROI.xOffset,
+        muscleROI.yOffset,
+        recorderConfig,
+        profileDir,
+        spdlog::get_level(),
+        muscleRecordingState,
+        programState,
+        programmedRecordingStop);
+    spdlog::info("Muscle camera acquisition thread started");
 
+    // Set up motion control
     MotionControl motionControl(recorderConfig);
 
+    // Figure out which points to park at
     double stageXMinMm =
         recorderConfig.getParameter<double>("motion_control", "x_min_mm");
     double stageXMaxMm =
@@ -146,9 +132,6 @@ void runCalibrationScan(std::filesystem::path profileDir,
     spdlog::info("Calibration scan: {} positions to scan",
                  calibrationPositions.size());
 
-    behaviorCamera->start();
-    spdlog::info("Behavior camera started");
-
     // Move to first position
     auto [nextX, nextY] = calibrationPositions.front();
     double targetX = nextX;
@@ -164,6 +147,8 @@ void runCalibrationScan(std::filesystem::path profileDir,
     FrameData muscleFrameData;
     cv::Mat behaviorImage;
     cv::Mat muscleImage;
+    int64_t firstBehaviorReceivedTime;
+    int64_t firstMuscleReceivedTime;
     while (true)
     {
         if (!motionControl.checkIfIdle(X_AXIS) ||
@@ -172,24 +157,46 @@ void runCalibrationScan(std::filesystem::path profileDir,
             continue;
         }
 
-        // Wait another 2 cycles to avoid aliasing
-        behaviorFrameData = behaviorCamera->waitForOneFrame();
-        behaviorFrameData = behaviorCamera->waitForOneFrame();
-        muscleFrameData = behaviorCamera->waitForOneFrame();
-        muscleFrameData = behaviorCamera->waitForOneFrame();
+        // Take the SECOND image that arrives since the motion stages are idle
+        // This is because the stages might still be moving when the first image
+        // was exposed.
+        behaviorFrameData = behaviorRecordingState
+                                ->latestBehaviorFrameHolder
+                                ->getLatestFrameData();
+        muscleFrameData = muscleRecordingState
+                              ->latestBehaviorFrameHolder
+                              ->getLatestFrameData();
+        firstBehaviorReceivedTime = behaviorFrameData.receivedTime;
+        firstMuscleReceivedTime = muscleFrameData.receivedTime;
+
+        while (firstBehaviorReceivedTime == behaviorFrameData.receivedTime ||
+               firstMuscleReceivedTime == muscleFrameData.receivedTime)
+        {
+            behaviorFrameData = behaviorRecordingState
+                                    ->latestBehaviorFrameHolder
+                                    ->getLatestFrameData();
+            muscleFrameData = muscleRecordingState
+                                  ->latestBehaviorFrameHolder
+                                  ->getLatestFrameData();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
 
         behaviorImage = reorientBehaviorImage(behaviorFrameData.image);
         muscleImage = reorientMuscleImage(muscleFrameData.image);
 
         // Save Image
-        std::string filename = fmt::format(
-            "aruco_scan_x{:.2f}_y{:.2f}.jpg", targetX, targetY);
-        cv::imwrite((arucoSaveDir / "behaviorCamera" / filename).string(),
-                    behaviorImage);
-        cv::imwrite((arucoSaveDir / "muscleCamera" / filename).string(),
-                    muscleImage);
-
-        spdlog::debug("Image saved at stage pos ({}, {})", targetX, targetY);
+        std::filesystem::path behaviorPath =
+            arucoSaveDir /
+            "behavior_camera" /
+            fmt::format("aruco_scan_x{:.2f}_y{:.2f}.jpg", targetX, targetY);
+        cv::imwrite(behaviorPath.string(), behaviorImage);
+        std::filesystem::path musclePath =
+            arucoSaveDir /
+            "muscle_camera" /
+            fmt::format("aruco_scan_x{:.2f}_y{:.2f}.tif", targetX, targetY);
+        cv::imwrite(musclePath.string(), muscleImage);
+        spdlog::debug("Image saved at stage position ({}, {})",
+                      targetX, targetY);
 
         // Move to next position
         if (calibrationPositions.empty())
@@ -207,9 +214,20 @@ void runCalibrationScan(std::filesystem::path profileDir,
         }
     }
 
-    behaviorCamera->stop();
-    behaviorCamera.reset();
-    spdlog::debug("Exiting calibration procedure");
+    // Stop the cameras
+    spdlog::info("Stopping behavior camera acquisition thread");
+    programState->toQuit.store(true);
+    // Give some time for acquisition threads to break out of loop
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    if (behaviorRecordingState->behaviorCamera)
+    {
+        spdlog::info("Stopping acquisition on behavior camera");
+        behaviorRecordingState->behaviorCamera->stop();
+        behaviorRecordingState->behaviorCamera = nullptr;
+    }
+    muscleRecordingState->muscleCamera = nullptr;
+    behaviorImageAcquirerThread.join();
+    muscleImageAcquirerThread.join();
 }
 
 int main(int argc, char **argv)
