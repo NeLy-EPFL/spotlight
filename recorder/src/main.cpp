@@ -31,7 +31,14 @@ bool quitProgram()
     spdlog::info("SIGINT received. Initiating graceful shutdown");
 
     programState->toQuit.store(true);
-    
+
+    // Stop behavior camera acquisition
+    if (behaviorRecordingState->behaviorCamera)
+    {
+        spdlog::info("Stopping acquisition on behavior camera");
+        behaviorRecordingState->behaviorCamera->stop();
+    }
+
     // Tell motion control request handler thread to stop
     spdlog::info("Telling motion control request handler thread to stop.");
     stopMotionControlRequestHandler(programState);
