@@ -49,7 +49,7 @@ private:
     bool isROIValid();
 };
 
-int roundToNearestValidMuscleCameWidth(int value);
-int roundToNearestValidMuscleCameHeight(int value);
+int roundToNearestValidMuscleCamHorizontal(int value);
+int roundToNearestValidMuscleCamVertical(int value);
 
 #endif // MUSCLE_CAMERA_HPP

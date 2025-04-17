@@ -8,8 +8,8 @@ namespace
     int fullMuscleImageHeight;
     int muscleImageROIWidth;
     int muscleImageROIHeight;
-    int muscleCameraCenterXDisplay = -1;
-    int muscleCameraCenterYDisplay = -1;
+    int userSelectedCenterXDisplay = -1;
+    int userSelectedCenterYDisplay = -1;
     std::filesystem::path profileDir;
 
     std::tuple<int, int> displayToCameraSensorCoords(
@@ -33,17 +33,17 @@ namespace
     }
 
     MuscleCameraROI getROIFromDisplayCenter(int xCenterDisplay,
-                                                 int yCenterDisplay)
+                                            int yCenterDisplay)
     {
         auto [muscleCameraCenterXSensor, muscleCameraCenterYSensor] =
-            displayToCameraSensorCoords(muscleCameraCenterXDisplay,
-                                        muscleCameraCenterYDisplay);
+            displayToCameraSensorCoords(userSelectedCenterXDisplay,
+                                        userSelectedCenterYDisplay);
         int xOffset = muscleCameraCenterXSensor - (muscleImageROIWidth / 2);
         int yOffset = muscleCameraCenterYSensor - (muscleImageROIHeight / 2);
-        int x0 = xOffset + 1;
-        int x1 = xOffset + muscleImageROIWidth;
-        int y0 = yOffset + 1;
-        int y1 = yOffset + muscleImageROIHeight;
+        int x0 = roundToNearestValidMuscleCamHorizontal(xOffset) + 1;
+        int x1 = (x0 - 1) + muscleImageROIWidth;
+        int y0 = roundToNearestValidMuscleCamHorizontal(yOffset) + 1;
+        int y1 = (y0 - 1) + muscleImageROIHeight;
 
         MuscleCameraROI roi(x0, x1, y0, y1);
         return roi;
@@ -52,8 +52,8 @@ namespace
     void drawMuscleImageROI(cv::Mat &image)
     {
         // Add red dot to muscle camera image
-        if (muscleCameraCenterXDisplay == -1 ||
-            muscleCameraCenterYDisplay == -1)
+        if (userSelectedCenterXDisplay == -1 ||
+            userSelectedCenterYDisplay == -1)
         {
             // User didn't select a center point yet
             return;
@@ -61,22 +61,30 @@ namespace
 
         // Draw user-selected center point
         cv::Scalar redColor(0, 0, 255);
-        cv::Point point(muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
-        cv::circle(image, point, 5, redColor, -1);
+        cv::Point pointIdeal(userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+        cv::circle(image, pointIdeal, 5, redColor, -1);
 
         // Figure out center point coords on the camera sensor
         MuscleCameraROI roi = getROIFromDisplayCenter(
-            muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
+            userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+
+        // Draw closest feasible center point
+        auto [xCenterSensorActual, yCenterSensorActual] =
+            roi.getCenterXY();
+        auto [xCenterDisplayActual, yCenterDisplayActual] =
+            cameraSensorToDisplayCoords(xCenterSensorActual,
+                                        yCenterSensorActual);
+        cv::Scalar blueColor(255, 0, 0);
+        cv::Point pointActual(xCenterDisplayActual, yCenterDisplayActual);
+        cv::circle(image, pointActual, 3, blueColor, -1);
 
         // Draw ROI rectangle
-        auto [displayX0, displayY0] =
-            cameraSensorToDisplayCoords(roi.x0, roi.y0);
-        auto [displayX1, displayY1] =
-            cameraSensorToDisplayCoords(roi.x1, roi.y1);
+        auto [displayX0, displayY0] = cameraSensorToDisplayCoords(roi.x0, roi.y0);
+        auto [displayX1, displayY1] = cameraSensorToDisplayCoords(roi.x1, roi.y1);
         cv::rectangle(image,
                       cv::Point(displayX0, displayY0),
                       cv::Point(displayX1, displayY1),
-                      redColor,
+                      blueColor,
                       2); // thickness
     }
 
@@ -84,8 +92,8 @@ namespace
     {
         if (event == cv::EVENT_LBUTTONDOWN)
         {
-            muscleCameraCenterXDisplay = x;
-            muscleCameraCenterYDisplay = y;
+            userSelectedCenterXDisplay = x;
+            userSelectedCenterYDisplay = y;
 
             // Convert display coordinates to camera sensor coordinates
             auto [sensorX, sensorY] = displayToCameraSensorCoords(x, y);
@@ -288,8 +296,8 @@ void alignCamera(std::filesystem::path profileDir)
         if (pressedKey == 13)
         {
             // Enter key pressed
-            if (muscleCameraCenterXDisplay == -1 ||
-                muscleCameraCenterYDisplay == -1)
+            if (userSelectedCenterXDisplay == -1 ||
+                userSelectedCenterYDisplay == -1)
             {
                 spdlog::error(
                     "ROI center not set yet. Please select a center point on "
@@ -299,9 +307,9 @@ void alignCamera(std::filesystem::path profileDir)
 
             spdlog::info(
                 "User selected muscle camera center point at (x={}, y={})",
-                muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
+                userSelectedCenterXDisplay, userSelectedCenterYDisplay);
             MuscleCameraROI roi = getROIFromDisplayCenter(
-                muscleCameraCenterXDisplay, muscleCameraCenterYDisplay);
+                userSelectedCenterXDisplay, userSelectedCenterYDisplay);
             if (roi.x0 <= 0 ||
                 roi.y0 <= 0 ||
                 roi.x1 > fullMuscleImageWidth ||

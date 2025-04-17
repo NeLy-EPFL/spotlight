@@ -100,10 +100,10 @@ MuscleCamera::MuscleCamera(int imageWidth,
         sleep(1); // sleep for 1 second
 
         // Setup shared memory buffers
-        spdlog::info("Musce camera API: Setting up shared memory buffer...");
+        spdlog::info("Muscle camera API: Setting up shared memory buffer...");
 
         spdlog::info(
-            "Musce camera API: Setting up shared memory for frame data");
+            "Muscle camera API: Setting up shared memory for frame data");
         bool createNew = false;
 
         size_t frameBufferSize =
@@ -117,7 +117,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                                         createNew);
 
         spdlog::info(
-            "Musce camera API: Setting up shared memory for exposure time");
+            "Muscle camera API: Setting up shared memory for exposure time");
         std::string shmExposureTimeName =
             recorderConfig.getParameter<std::string>(
                 "muscle_camera", "shared_exposure_time_name");
@@ -126,7 +126,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                                            createNew);
 
         spdlog::info(
-            "Musce camera API: Setting up shared memory for frame metadata");
+            "Muscle camera API: Setting up shared memory for frame metadata");
         std::string shmFrameMetadataName =
             recorderConfig.getParameter<std::string>(
                 "muscle_camera", "shared_frame_metadata_name");
@@ -134,7 +134,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                                             frameMetadataPtr_,
                                             createNew);
 
-        spdlog::info("Musce camera API: Setting up shared memory for mutex");
+        spdlog::info("Muscle camera API: Setting up shared memory for mutex");
         std::string shmMutexName =
             recorderConfig.getParameter<std::string>(
                 "muscle_camera", "shared_mutex_name");
@@ -142,7 +142,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                                     createNew);
 
         spdlog::info(
-            "Musce camera API: Setting up shared memory for cond var");
+            "Muscle camera API: Setting up shared memory for cond var");
         std::string shmCondVarName =
             recorderConfig.getParameter<std::string>(
                 "muscle_camera", "shared_condition_variable_name");
@@ -253,13 +253,13 @@ void MuscleCamera::setExposureTime(unsigned int exposureTimeMicrosecs)
     }
 }
 
-int roundToNearestValidMuscleCameWidth(int value)
+int roundToNearestValidMuscleCamHorizontal(int value)
 {
     int remainder = value % 32;
     return value - remainder + (remainder < 16 ? 0 : 32);
 }
 
-int roundToNearestValidMuscleCameHeight(int value)
+int roundToNearestValidMuscleCamVertical(int value)
 {
     int remainder = value % 8;
     return value - remainder + (remainder < 4 ? 0 : 8);
