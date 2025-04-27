@@ -24,13 +24,13 @@
 #include <QMessageBox>
 #include <QPainter>
 
-#include "utils.hpp"
-#include "recorderConfig.hpp"
-#include "behaviorRecording.hpp"
-#include "trackingControl.hpp"
-#include "calibration.hpp"
-#include "peripherals/arduinoCommunication.hpp"
-#include "peripherals/experimentProtocol.hpp"
+#include "../common/utils.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/behaviorRecording.hpp"
+#include "../common/trackingControl.hpp"
+#include "../common/calibration.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
+#include "../peripherals/experimentProtocol.hpp"
 
 // Forward declaration from main.hpp
 bool quitProgram();
