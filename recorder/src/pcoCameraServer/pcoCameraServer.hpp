@@ -20,7 +20,7 @@
 #include "sc2_defs.h"
 
 #include "sharedMemoryUtils.hpp"
-#include "../recorderConfig.hpp"
+#include "../common/recorderConfig.hpp"
 
 namespace PCOCameraServer
 {

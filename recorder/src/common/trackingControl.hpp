@@ -15,7 +15,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "peripherals/motionControl.hpp"
+#include "../peripherals/motionControl.hpp"
 #include "utils.hpp"
 #include "behaviorRecording.hpp"
 #include "calibration.hpp"
