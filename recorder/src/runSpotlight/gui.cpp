@@ -259,32 +259,27 @@ MainGUIWindow::MainGUIWindow(
             this,
             &MainGUIWindow::browseDirectory);
 
-    // Buttons to enable/disable automatic tracking
-    turnOnTrackingButton_ = new QPushButton("Enable tracking", this);
-    turnOffTrackingButton_ = new QPushButton("Disable tracking", this);
-    turnOnTrackingButton_->setEnabled(false); // tracking is initially on
-    turnOffTrackingButton_->setEnabled(true);
-    connect(turnOnTrackingButton_,
-            &QPushButton::clicked,
+    // Optional features checkboxes: tracking and muscle imaging
+    QHBoxLayout *optionalFeaturesLayout = new QHBoxLayout();
+    optionalFeaturesLayout->addWidget(new QLabel("Optional features"));
+    // Check box to enable/disable tracking
+    trackingEnabledCheckBox_ = new QCheckBox("Enable tracking", this);
+    trackingEnabledCheckBox_->setChecked(true);
+    connect(trackingEnabledCheckBox_,
+            &QCheckBox::checkStateChanged,
             this,
-            [this, trackingControlState]()
+            [this, trackingControlState](int state)
             {
-                trackingControlState->trackingOn.store(true);
-                turnOnTrackingButton_->setEnabled(false);
-                turnOffTrackingButton_->setEnabled(true);
+                if (state == Qt::Checked)
+                {
+                    trackingControlState->trackingOn.store(true);
+                }
+                else
+                {
+                    trackingControlState->trackingOn.store(false);
+                }
             });
-    connect(turnOffTrackingButton_,
-            &QPushButton::clicked,
-            this,
-            [this, trackingControlState]()
-            {
-                trackingControlState->trackingOn.store(false);
-                turnOnTrackingButton_->setEnabled(true);
-                turnOffTrackingButton_->setEnabled(false);
-            });
-    QHBoxLayout *trackingControlLayout = new QHBoxLayout();
-    trackingControlLayout->addWidget(turnOnTrackingButton_);
-    trackingControlLayout->addWidget(turnOffTrackingButton_);
+    optionalFeaturesLayout->addWidget(trackingEnabledCheckBox_);
 
     // Live display widget
     behaviorImageDisplayLabel_ = new QLabel(this);
@@ -354,7 +349,7 @@ MainGUIWindow::MainGUIWindow(
     layout->addLayout(muscleExposureTimeLayout);
     layout->addLayout(protocolLayout);
     layout->addLayout(directoryLayout);
-    layout->addLayout(trackingControlLayout);
+    layout->addLayout(optionalFeaturesLayout);
     layout->addWidget(behaviorImageDisplayLabel_);
     layout->addWidget(motionControlWidget_);
     layout->addLayout(recordStopButtonsLayout);
