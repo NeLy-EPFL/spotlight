@@ -289,6 +289,8 @@ MainGUIWindow::MainGUIWindow(
                 }
             });
     optionalFeaturesLayout->addWidget(trackingEnabledCheckBox_);
+    // Muscle imaging disabled by default
+    arduinoCommunication_->setSyncRatio(INT_MAX);
 
     // Check box to enable/disable muscle imaging
     muscleImagingCheckBox_ = new QCheckBox("Enable muscle imaging", this);
@@ -300,13 +302,13 @@ MainGUIWindow::MainGUIWindow(
             {
                 if (state == Qt::Checked)
                 {
-                    spdlog::debug("clicked");
                     muscleImagingEnabled_ = true;
-                    spdlog::debug("flag set");
+                    arduinoCommunication->setSyncRatio(streamingSyncRatio_);
                 }
                 else
                 {
                     muscleImagingEnabled_ = false;
+                    arduinoCommunication->setSyncRatio(INT_MAX);
                 }
             });
     optionalFeaturesLayout->addWidget(muscleImagingCheckBox_);
@@ -432,6 +434,7 @@ void MainGUIWindow::startRecording()
     // Toggle GUI buttons
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
+    muscleImagingCheckBox_->setEnabled(false);
 
     // Parse and set experiment protocol
     std::vector<ProtocolStep> protocolSteps;
@@ -501,11 +504,13 @@ void MainGUIWindow::stopRecording()
 {
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
+    muscleImagingCheckBox_->setEnabled(true);
 
     arduinoCommunication_->stopRecording();
     programState_->isRecording.store(false);
     arduinoCommunication_->setBehaviorRecordingFPS(streamingBehaviorFPS_);
-    arduinoCommunication_->setSyncRatio(streamingSyncRatio_);
+    arduinoCommunication_->setSyncRatio(
+        muscleImagingEnabled_ ? streamingSyncRatio_ : INT_MAX);
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)

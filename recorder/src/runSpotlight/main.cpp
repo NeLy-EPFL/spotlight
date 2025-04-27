@@ -18,6 +18,7 @@ namespace
     std::shared_ptr<ProgramState> programState;
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState;
     std::shared_ptr<MuscleRecordingState> muscleRecordingState;
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication;
 }
 
 bool quitProgram()
@@ -56,6 +57,14 @@ bool quitProgram()
     // Tell behavior camera saver threads to stop
     spdlog::info("Telling behavior image saver threads to stop.");
     stopBehaviorImageSaver(behaviorRecordingState, programState);
+    muscleRecordingState->muscleCamera = nullptr;
+
+    spdlog::info("Telling muscle image saver threads to stop.");
+    stopMuscleImageSaver(muscleRecordingState, programState);
+
+    // Stop muscle excitation
+    spdlog::info("Switching off muscle excitation light.");
+    arduinoCommunication->setSyncRatio(INT_MAX);
 
     std::exit(0);
 }
@@ -215,7 +224,7 @@ int main(int argc, char **argv)
 
     // Start Arduino triggering interface
     std::string arduinoPortName = findArduinoPortName(recorderConfig);
-    std::shared_ptr<ArduinoCommunication> arduinoCommunication =
+    arduinoCommunication =
         std::make_shared<ArduinoCommunication>(arduinoPortName);
 
     // Create and show GUI
