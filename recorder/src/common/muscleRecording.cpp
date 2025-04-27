@@ -107,7 +107,7 @@ void muscleImageAcquierer(
             spdlog::error("muscleImageAcquierer thread got an empty image");
         }
         muscleRecordingState
-            ->latestBehaviorFrameHolder
+            ->latestFrameHolder
             ->setLatestFrameData(frameData);
 
         if (programState->isRecording.load())

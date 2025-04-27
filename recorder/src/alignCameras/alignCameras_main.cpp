@@ -152,6 +152,12 @@ void alignCamera(std::filesystem::path profileDir)
     muscleImageROIHeight = recorderConfig.getParameter<int>(
         "muscle_camera", "roi_height");
 
+    // Load parameters for displaying 16-bit image
+    int muscleImage16To8BitScale = recorderConfig.getParameter<int>(
+        "muscle_camera", "conversion_16to8bit_scale_camera_alignment");
+    int muscleImage16To8BitOffset = recorderConfig.getParameter<int>(
+        "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
+
     // Set up shared recording states
     std::shared_ptr<ProgramState> programState =
         std::make_shared<ProgramState>();
@@ -164,7 +170,7 @@ void alignCamera(std::filesystem::path profileDir)
 
     // Set up cameras acquisition threads
     spdlog::info("Starting behavior camera acquisition thread");
-    behaviorRecordingState->latestBehaviorFrameHolder =
+    behaviorRecordingState->latestFrameHolder =
         std::make_shared<LatestFrame>();
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
@@ -175,7 +181,7 @@ void alignCamera(std::filesystem::path profileDir)
     spdlog::info("Behavior camera acquisition thread started");
 
     spdlog::info("Setting up muscle camera acquisition thread");
-    muscleRecordingState->latestBehaviorFrameHolder =
+    muscleRecordingState->latestFrameHolder =
         std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
         muscleImageAcquierer,
@@ -204,11 +210,11 @@ void alignCamera(std::filesystem::path profileDir)
     {
         // Fetch latest images from both cameras
         behaviorImage = behaviorRecordingState
-                            ->latestBehaviorFrameHolder
+                            ->latestFrameHolder
                             ->getLatestFrameData()
                             .image;
         muscleImage = muscleRecordingState
-                          ->latestBehaviorFrameHolder
+                          ->latestFrameHolder
                           ->getLatestFrameData()
                           .image;
 
@@ -239,17 +245,20 @@ void alignCamera(std::filesystem::path profileDir)
             behaviorImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
             behaviorImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
         cv::resize(behaviorImage, behaviorImageDisplay, targetSize);
-        behaviorImageDisplay = reorientBehaviorImage(behaviorImageDisplay);
+        reorientBehaviorImage(behaviorImageDisplay, behaviorImageDisplay);
 
-        muscleImage.convertTo(
-            muscleImage, CV_8U, 800 * (255.0 / 65535.0), -200);
+        convert16BitTo8Bit(muscleImage,
+                           muscleImage,
+                           muscleImage16To8BitScale,
+                           muscleImage16To8BitOffset);
         targetSize = cv::Size(
             muscleImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
             muscleImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
         cv::resize(muscleImage, muscleImageDisplay, targetSize);
-        muscleImageDisplay = reorientMuscleImage(muscleImageDisplay);
-        cv::cvtColor(
-            muscleImageDisplay, muscleImageDisplay, cv::COLOR_GRAY2BGR);
+        reorientMuscleImage(muscleImageDisplay, muscleImageDisplay);
+        cv::cvtColor(muscleImageDisplay,
+                     muscleImageDisplay,
+                     cv::COLOR_GRAY2BGR);
 
         // Draw markers on the displayed image to indicate ROI
         drawMuscleImageROI(muscleImageDisplay);

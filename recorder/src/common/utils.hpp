@@ -8,6 +8,7 @@
 #include <thread>
 #include <mutex>
 
+#include <opencv2/opencv.hpp>
 #include <QSerialPort>
 #include <QSerialPortInfo>
 #include <spdlog/spdlog.h>
@@ -18,8 +19,8 @@ namespace fs = std::filesystem;
 
 uint64_t getCurrentTimeMicroseconds();
 
-cv::Mat reorientBehaviorImage(cv::Mat image);
-cv::Mat reorientMuscleImage(cv::Mat image);
+void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage);
+void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage);
 cv::Mat makePseudoBGRImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames);
 std::string makeMetadataStringFromThreeFrames(
@@ -37,7 +38,12 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 
 size_t getMyThreadIdHash();
 
-std::string expandPath(const std::string& path);
+std::string expandPath(const std::string &path);
+
+void convert16BitTo8Bit(cv::Mat &sourceImage,
+                        cv::Mat &targetImage,
+                        int scale,
+                        int offset);
 
 class SaveDirectory
 {

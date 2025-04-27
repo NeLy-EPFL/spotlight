@@ -183,7 +183,7 @@ void trackingController(
         else if (!trackingControlState->shouldOverrideTracking.load())
         {
             cv::Mat myBehaviorImage = behaviorRecordingState
-                                          ->latestBehaviorFrameHolder
+                                          ->latestFrameHolder
                                           ->getLatestFrameData()
                                           .image;
 
@@ -468,10 +468,11 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         // calibration model has not been defined yet
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
-    cv::Mat correctedImage = reorientBehaviorImage(behaviorImage);
+    cv::Mat correctedImage;
+    reorientBehaviorImage(behaviorImage, correctedImage);
 
     // Remove pixels outside the stage boundaries
-    cv::Mat blackedOutImage = blackoutOutside(correctedImage.clone(),
+    cv::Mat blackedOutImage = blackoutOutside(correctedImage,
                                               stagePosition,
                                               behaviorCamCalibrationParams,
                                               recorderConfig);
