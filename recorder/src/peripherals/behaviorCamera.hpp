@@ -13,8 +13,8 @@
 #include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
 
-#include "../dataTypes.hpp"
-#include "../utils.hpp"
+#include "../common/dataTypes.hpp"
+#include "../common/utils.hpp"
 
 class BehaviorCamera
 {

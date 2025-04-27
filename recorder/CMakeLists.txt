@@ -57,8 +57,8 @@ set(PCOCAMERA_SOURCES
 file(GLOB PCO_CAMERA_SERVER_SOURCES
     "src/pcoCameraServer/*.cpp"
     "src/pcoCameraServer/*.hpp"
-    "src/recorderConfig.cpp"
-    "src/recorderConfig.hpp")
+    "src/common/recorderConfig.cpp"
+    "src/common/recorderConfig.hpp")
 add_executable(pco-camera-server ${PCO_CAMERA_SERVER_SOURCES} ${PCOCAMERA_SOURCES})
 target_include_directories(pco-camera-server PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
 target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
@@ -71,13 +71,15 @@ set_target_properties(pco-camera-server PROPERTIES
     INSTALL_RPATH "${PCO_LIB_DIR}"
     BUILD_WITH_INSTALL_RPATH TRUE)
 
-# Compile main application
+# Compile main recording application
 file(GLOB MAIN_APPLICATION_SOURCES
     "src/peripherals/*.cpp"
     "src/peripherals/*.hpp"
     "src/pcoCameraServer/sharedMemoryUtils.*"
-    "src/*.cpp"
-    "src/*.hpp")
+    "src/common/*.cpp"
+    "src/common/*.hpp"
+    "src/runSpotlight/*.cpp"
+    "src/runSpotlight/*.hpp")
 add_executable(run-spotlight ${MAIN_APPLICATION_SOURCES})
 target_link_libraries(run-spotlight pthread rt dl)
 target_link_libraries(run-spotlight Qt6::Widgets Qt6::SerialPort)
@@ -89,17 +91,17 @@ set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
 
 # Compile calibration tool
 file(GLOB RUN_CALIBRATION_SOURCES
-    "src/calibrationProcedure/runCalibration_main.cpp"
-    "src/calibrationProcedure/runCalibration.hpp"
+    "src/runCalibrationScan/runCalibration_main.cpp"
+    "src/runCalibrationScan/runCalibration.hpp"
     "src/peripherals/behaviorCamera.*"
     "src/peripherals/muscleCamera.*"
     "src/peripherals/motionControl.*"
     "src/pcoCameraServer/sharedMemoryUtils.*"
-    "src/cli.*"
-    "src/recorderConfig.*"
-    "src/behaviorRecording.*"
-    "src/muscleRecording.*"
-    "src/utils.*")
+    "src/common/cli.*"
+    "src/common/recorderConfig.*"
+    "src/common/behaviorRecording.*"
+    "src/common/muscleRecording.*"
+    "src/common/utils.*")
 add_executable(run-calibration-scan ${RUN_CALIBRATION_SOURCES})
 # target_link_libraries(run-calibration-scan pthread rt dl)
 target_link_libraries(run-calibration-scan Qt6::Widgets Qt6::SerialPort)
@@ -110,17 +112,17 @@ target_link_libraries(run-calibration-scan yaml-cpp)
 
 # Compile camera alignment tool
 file(GLOB ALIGN_CAMERAS_SOURCES
-    "src/cameraAlignment/*.cpp"
-    "src/cameraAlignment/*.hpp"
+    "src/alignCameras/*.cpp"
+    "src/alignCameras/*.hpp"
     "src/peripherals/behaviorCamera.*"
     "src/peripherals/muscleCamera.*"
     "src/pcoCameraServer/sharedMemoryUtils.*"
-    "src/behaviorRecording.*"
-    "src/muscleRecording.*"
-    "src/recorderConfig.*"
-    "src/utils.*"
-    "src/cli.*"
-    "src/dataTypes.hpp")
+    "src/common/behaviorRecording.*"
+    "src/common/muscleRecording.*"
+    "src/common/recorderConfig.*"
+    "src/common/utils.*"
+    "src/common/cli.*"
+    "src/common/dataTypes.hpp")
 add_executable(align-cameras ${ALIGN_CAMERAS_SOURCES})
 target_link_libraries(align-cameras PRIVATE pthread rt dl)
 target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)

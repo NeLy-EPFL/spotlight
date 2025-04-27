@@ -12,7 +12,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "peripherals/behaviorCamera.hpp"
+#include "../peripherals/behaviorCamera.hpp"
 #include "recorderConfig.hpp"
 #include "utils.hpp"
 #include "dataTypes.hpp"

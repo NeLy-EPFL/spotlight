@@ -15,9 +15,9 @@
 #include <spdlog/spdlog.h>
 
 #include "experimentProtocol.hpp"
-#include "../recorderConfig.hpp"
-#include "../dataTypes.hpp"
-#include "../utils.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/dataTypes.hpp"
+#include "../common/utils.hpp"
 
 class ArduinoCommunication
 {
