@@ -63,8 +63,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
     prepareOutputFolder(arucoSaveDir / "muscle_camera", true);
 
     // Load muscle camera ROI
-    std::filesystem::path roiFilePath =
-        profileDir / "muscle_camera_roi.yaml";
+    std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
     MuscleCameraROI muscleROI = getMuscleCameraROI(roiFilePath);
     spdlog::info(
         "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
@@ -81,8 +80,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
 
     // Set up cameras acquisition threads
     spdlog::info("Starting behavior camera acquisition thread");
-    behaviorRecordingState->latestBehaviorFrameHolder =
-        std::make_shared<LatestFrame>();
+    behaviorRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
     std::thread behaviorImageAcquirerThread(
         behaviorImageAcquirer,
         recorderConfig,
@@ -92,8 +90,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
     spdlog::info("Behavior camera acquisition thread started");
 
     spdlog::info("Setting up muscle camera acquisition thread");
-    muscleRecordingState->latestBehaviorFrameHolder =
-        std::make_shared<LatestFrame>();
+    muscleRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
         muscleImageAcquierer,
         muscleROI.imageWidth,
@@ -161,10 +158,10 @@ void runCalibrationScan(std::filesystem::path profileDir,
         // This is because the stages might still be moving when the first image
         // was exposed.
         behaviorFrameData = behaviorRecordingState
-                                ->latestBehaviorFrameHolder
+                                ->latestFrameHolder
                                 ->getLatestFrameData();
         muscleFrameData = muscleRecordingState
-                              ->latestBehaviorFrameHolder
+                              ->latestFrameHolder
                               ->getLatestFrameData();
         firstBehaviorReceivedTime = behaviorFrameData.receivedTime;
         firstMuscleReceivedTime = muscleFrameData.receivedTime;
@@ -173,16 +170,16 @@ void runCalibrationScan(std::filesystem::path profileDir,
                firstMuscleReceivedTime == muscleFrameData.receivedTime)
         {
             behaviorFrameData = behaviorRecordingState
-                                    ->latestBehaviorFrameHolder
+                                    ->latestFrameHolder
                                     ->getLatestFrameData();
             muscleFrameData = muscleRecordingState
-                                  ->latestBehaviorFrameHolder
+                                  ->latestFrameHolder
                                   ->getLatestFrameData();
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        behaviorImage = reorientBehaviorImage(behaviorFrameData.image);
-        muscleImage = reorientMuscleImage(muscleFrameData.image);
+        reorientBehaviorImage(behaviorFrameData.image, behaviorImage);
+        reorientMuscleImage(muscleFrameData.image, muscleImage);
 
         // Save Image
         std::filesystem::path behaviorPath =

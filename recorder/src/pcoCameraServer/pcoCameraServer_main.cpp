@@ -311,7 +311,7 @@ namespace PCOCameraServer
             }
 
             // Fetch image and convert to OpenCV format
-            // spdlog::debug("PCO camera server got new frame. Serving.");
+            spdlog::debug("PCO camera server got new frame. Serving.");
             camera.image(pcoImage,
                          PCO_RECORDER_LATEST_IMAGE,
                          pco::DataFormat::Mono16);

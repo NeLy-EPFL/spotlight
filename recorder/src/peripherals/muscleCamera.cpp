@@ -253,6 +253,11 @@ void MuscleCamera::setExposureTime(unsigned int exposureTimeMicrosecs)
     }
 }
 
+pid_t MuscleCamera::getCameraServerPID() const
+{
+    return pcoCameraServerPID_;
+}
+
 int roundToNearestValidMuscleCamHorizontal(int value)
 {
     int remainder = value % 32;

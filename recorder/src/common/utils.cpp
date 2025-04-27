@@ -16,24 +16,19 @@ cv::Mat makePseudoBGRImageFromThreeFrames(
         groupOfThreeFrames.frame2.image};
     cv::Mat pseudoBGRImage;
     cv::merge(channels, pseudoBGRImage);
-    cv::Mat correctedImage = reorientBehaviorImage(pseudoBGRImage);
-    return correctedImage;
+    reorientBehaviorImage(pseudoBGRImage, pseudoBGRImage);
+    return pseudoBGRImage;
 }
 
-cv::Mat reorientBehaviorImage(cv::Mat image)
+void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage)
 {
-    cv::Mat rotatedImage;
-    cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
-    cv::Mat horizontalFlippedImage;
-    cv::flip(rotatedImage, horizontalFlippedImage, 1); // dim 1 is horizontal)
-    return horizontalFlippedImage;
+    cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
+    cv::flip(targetImage, targetImage, 1); // dim 1 is horizontal)
 }
 
-cv::Mat reorientMuscleImage(cv::Mat image)
+void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage)
 {
-    cv::Mat rotatedImage;
-    cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
-    return rotatedImage;
+    cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
 }
 
 std::string makeMetadataStringFromThreeFrames(
@@ -193,6 +188,17 @@ std::string expandPath(const std::string &path)
 
     // Return the original path if it doesn't start with "~/"
     return path;
+}
+
+void convert16BitTo8Bit(cv::Mat &sourceImage,
+                        cv::Mat &targetImage,
+                        int scale,
+                        int offset)
+{
+    // Normalize the range of a 16-bit image (0 - 2^16) to that of a 8-bit
+    // image (0 - 2^8): divide whatever factor the caller wants by 2^(16-8)
+    double alpha = scale / 255.0;
+    sourceImage.convertTo(targetImage, CV_8U, alpha, offset);
 }
 
 SaveDirectory::SaveDirectory(std::string directory)

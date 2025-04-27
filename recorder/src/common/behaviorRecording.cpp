@@ -49,7 +49,7 @@ void behaviorImageAcquirer(
 
         // Update latest frame for live display
         behaviorRecordingState
-            ->latestBehaviorFrameHolder
+            ->latestFrameHolder
             ->setLatestFrameData(frameData);
 
         if (programState->isRecording.load())

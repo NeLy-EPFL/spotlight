@@ -21,7 +21,7 @@ struct MuscleRecordingState
     std::queue<FrameData> muscleImageQueue;
     std::mutex muscleImageQueueMutex;
     std::condition_variable muscleImageQueueCondVar;
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder;
+    std::shared_ptr<LatestFrame> latestFrameHolder;
 };
 
 class MuscleCameraROI

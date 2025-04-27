@@ -23,7 +23,7 @@ struct BehaviorRecordingState
     std::queue<GroupOfThreeFrames> behaviorImageQueue;
     std::mutex behaviorImageQueueMutex;
     std::condition_variable behaviorImageQueueCondVar;
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder;
+    std::shared_ptr<LatestFrame> latestFrameHolder;
 };
 
 BehaviorCameraROI getBehaviorBehaviorCameraROI(

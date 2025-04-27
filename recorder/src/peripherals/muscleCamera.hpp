@@ -29,6 +29,7 @@ public:
     ~MuscleCamera();
     FrameData waitForOneFrame();
     void setExposureTime(unsigned int exposureTimeMicrosecs);
+    pid_t getCameraServerPID() const;
 
 private:
     unsigned int x0_;
