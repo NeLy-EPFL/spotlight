@@ -15,6 +15,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSpinBox>
+#include <QCheckBox>
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QLabel>
@@ -93,8 +94,7 @@ private:
     QDoubleSpinBox *muscleExposureTimeSpinBox_;
     QTextEdit *experimentProtocol_;
     QLineEdit *directoryLineEdit_;
-    QPushButton *turnOnTrackingButton_;
-    QPushButton *turnOffTrackingButton_;
+    QCheckBox *trackingEnabledCheckBox_;
     MotionControlWidget *motionControlWidget_;
     QPushButton *recordButton_;
     QPushButton *stopButton_;
