@@ -11,7 +11,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "peripherals/muscleCamera.hpp"
+#include "../peripherals/muscleCamera.hpp"
 #include "recorderConfig.hpp"
 #include "utils.hpp"
 

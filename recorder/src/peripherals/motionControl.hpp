@@ -8,8 +8,8 @@
 #include <zaber/motion/ascii.h>
 #include <spdlog/spdlog.h>
 
-#include "../recorderConfig.hpp"
-#include "../utils.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/utils.hpp"
 
 namespace zmASCII = zaber::motion::ascii;
 

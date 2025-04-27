@@ -10,14 +10,14 @@
 #include <condition_variable>
 #include <string>
 
-#include "calibration.hpp"
-#include "peripherals/behaviorCamera.hpp"
-#include "peripherals/arduinoCommunication.hpp"
-#include "recorderConfig.hpp"
-#include "cli.hpp"
-#include "behaviorRecording.hpp"
-#include "muscleRecording.hpp"
-#include "trackingControl.hpp"
+#include "../peripherals/behaviorCamera.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
+#include "../common/calibration.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/cli.hpp"
+#include "../common/behaviorRecording.hpp"
+#include "../common/muscleRecording.hpp"
+#include "../common/trackingControl.hpp"
 #include "gui.hpp"
 
 // Forward declarations
