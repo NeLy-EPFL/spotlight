@@ -199,7 +199,6 @@ void muscleImageSaver(
             frameData = muscleRecordingState->muscleImageQueue.front();
             muscleRecordingState->muscleImageQueue.pop();
         }
-
         startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
             "behavior_frame_" + fmt::format("{:09}", frameData.frameId);
@@ -207,17 +206,35 @@ void muscleImageSaver(
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
 
-        std::string filename = muscleSaveDir / (filenameStem + ".tif");
-
+        // Save image
+        std::string imagePath = muscleSaveDir / (filenameStem + ".tif");
         try
         {
-            cv::imwrite(filename, frameData.image, compressionParams);
+            cv::imwrite(imagePath, frameData.image, compressionParams);
         }
         catch (const cv::Exception &ex)
         {
             spdlog::error("Exception saving image: {}", ex.what());
         }
 
+        // Save metadata
+        std::string metadataPath = muscleSaveDir / (filenameStem + ".csv");
+        std::ofstream metadataFile(metadataPath);
+        if (!metadataFile.is_open())
+        {
+            spdlog::error("Failed to open metadata file: {}",
+                          metadataPath.c_str());
+        }
+        else
+        {
+            metadataFile << "frame_id,acquired_time_us,received_time_us\n";
+            metadataFile << frameData.frameId << ","
+                         << frameData.acquisitionTime << ","
+                         << frameData.receivedTime << "\n";
+            metadataFile.close();
+        }
+
+        // Profiling and logging to monitor performance
         walltime = getCurrentTimeMicroseconds() - startTime;
         if (frameCount % performanceLoggingInterval)
         {
