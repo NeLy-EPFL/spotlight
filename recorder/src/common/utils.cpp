@@ -34,7 +34,7 @@ void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage)
 std::string makeMetadataStringFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
-    std::string metadataString = "frameId,acquisitionTimeUs,receivedTimeUs\n";
+    std::string metadataString = "frame_id,acquired_time_us,received_time_us\n";
     for (const FrameData &frameData : {
              groupOfThreeFrames.frame0,
              groupOfThreeFrames.frame1,
@@ -224,6 +224,7 @@ void SaveDirectory::initialize()
     try
     {
         fs::create_directories(directory_ / "behavior_images");
+        fs::create_directories(directory_ / "muscle_images");
         fs::create_directories(directory_ / "stage_position");
         fs::create_directories(directory_ / "metadata");
     }
