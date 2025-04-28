@@ -12,9 +12,10 @@
 
 #include <spdlog/spdlog.h>
 
-#include "peripherals/behaviorCamera.hpp"
+#include "../peripherals/behaviorCamera.hpp"
 #include "recorderConfig.hpp"
 #include "utils.hpp"
+#include "dataTypes.hpp"
 
 struct BehaviorRecordingState
 {
@@ -22,26 +23,16 @@ struct BehaviorRecordingState
     std::queue<GroupOfThreeFrames> behaviorImageQueue;
     std::mutex behaviorImageQueueMutex;
     std::condition_variable behaviorImageQueueCondVar;
-    std::queue<GroupOfThreeFrames> muscleImageQueue;
-    std::mutex muscleImageQueueMutex;
-    std::condition_variable muscleImageQueueCondVar;
+    std::shared_ptr<LatestFrame> latestFrameHolder;
 };
 
-struct CameraROI
-{
-    unsigned int imageWidth;
-    unsigned int imageHeight;
-    unsigned int xOffset;
-    unsigned int yOffset;
-};
-
-CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig);
+BehaviorCameraROI getBehaviorBehaviorCameraROI(
+    const RecorderConfig &recorderConfig);
 
 // Function declarations
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop);
 void behaviorImageSaver(

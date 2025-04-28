@@ -2,6 +2,7 @@
 #define DATA_TYPES_HPP
 
 #include <opencv2/opencv.hpp>
+#include <atomic>
 
 struct FrameData
 {
@@ -9,6 +10,14 @@ struct FrameData
     uint64_t acquisitionTime = 0; // as returned by frame grabber
     uint64_t receivedTime = 0;    // as returned by frame grabber
     cv::Mat image;
+};
+
+struct BehaviorCameraROI
+{
+    unsigned int imageWidth;
+    unsigned int imageHeight;
+    unsigned int xOffset;
+    unsigned int yOffset;
 };
 
 struct GroupOfThreeFrames
@@ -81,8 +90,9 @@ struct ProgramState
 
 struct ProgrammedStop
 {
-    int numFramesExpected = -1;
-    std::atomic<bool> numFramesReached = false;
+    int numBehaviorFramesExpected = -1;
+    int numMuscleFramesExpected = -1;
+    std::atomic<bool> hasEndedFlagForGUI = false;
 };
 
 #endif // DATA_TYPES_HPP

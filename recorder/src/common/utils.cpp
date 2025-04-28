@@ -7,32 +7,34 @@ uint64_t getCurrentTimeMicroseconds()
         .count();
 }
 
-cv::Mat makePseudoRGBImageFromThreeFrames(
+cv::Mat makePseudoBGRImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
     std::vector<cv::Mat> channels = {
         groupOfThreeFrames.frame0.image,
         groupOfThreeFrames.frame1.image,
         groupOfThreeFrames.frame2.image};
-    cv::Mat pseudoRGBImage;
-    cv::merge(channels, pseudoRGBImage);
-    cv::Mat correctedImage = correctImageRotationAndFlip(pseudoRGBImage);
-    return correctedImage;
+    cv::Mat pseudoBGRImage;
+    cv::merge(channels, pseudoBGRImage);
+    reorientBehaviorImage(pseudoBGRImage, pseudoBGRImage);
+    return pseudoBGRImage;
 }
 
-cv::Mat correctImageRotationAndFlip(cv::Mat image)
+void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage)
 {
-    cv::Mat rotatedImage;
-    cv::rotate(image, rotatedImage, cv::ROTATE_90_COUNTERCLOCKWISE);
-    cv::Mat horizontalFlippedImage;
-    cv::flip(rotatedImage, horizontalFlippedImage, 1); // dim 1 is horizontal)
-    return horizontalFlippedImage;
+    cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
+    cv::flip(targetImage, targetImage, 1); // dim 1 is horizontal)
+}
+
+void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage)
+{
+    cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
 }
 
 std::string makeMetadataStringFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames)
 {
-    std::string metadataString = "frameId,acquisitionTimeUs,receivedTimeUs\n";
+    std::string metadataString = "frame_id,acquired_time_us,received_time_us\n";
     for (const FrameData &frameData : {
              groupOfThreeFrames.frame0,
              groupOfThreeFrames.frame1,
@@ -188,6 +190,26 @@ std::string expandPath(const std::string &path)
     return path;
 }
 
+void convert16BitTo8Bit(cv::Mat &sourceImage,
+                        cv::Mat &targetImage,
+                        int scale,
+                        int offset)
+{
+    // Normalize the range of a 16-bit image (0 - 2^16) to that of a 8-bit
+    // image (0 - 2^8): divide whatever factor the caller wants by 2^(16-8)
+    double alpha = scale / 255.0;
+    sourceImage.convertTo(targetImage, CV_8U, alpha, offset);
+}
+
+int calculateMuscleExcitationOnTime(int numLinesScanned,
+                                    float rollingShutterLineTimeUs,
+                                    int exposureTimeUs)
+{
+    int maxRollingShutterDelay =
+        static_cast<int>(numLinesScanned * rollingShutterLineTimeUs);
+    return maxRollingShutterDelay + exposureTimeUs;
+}
+
 SaveDirectory::SaveDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -211,6 +233,7 @@ void SaveDirectory::initialize()
     try
     {
         fs::create_directories(directory_ / "behavior_images");
+        fs::create_directories(directory_ / "muscle_images");
         fs::create_directories(directory_ / "stage_position");
         fs::create_directories(directory_ / "metadata");
     }

@@ -99,6 +99,7 @@
         "queue": "cpp",
         "qmessagebox": "cpp",
         "filesystem": "cpp",
-        "qserialportinfo": "cpp"
+        "qserialportinfo": "cpp",
+        "qserialport": "cpp"
     }
 }

@@ -15,6 +15,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSpinBox>
+#include <QCheckBox>
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QLabel>
@@ -24,13 +25,14 @@
 #include <QMessageBox>
 #include <QPainter>
 
-#include "utils.hpp"
-#include "recorderConfig.hpp"
-#include "behaviorRecording.hpp"
-#include "trackingControl.hpp"
-#include "calibration.hpp"
-#include "peripherals/arduinoCommunication.hpp"
-#include "peripherals/experimentProtocol.hpp"
+#include "../common/utils.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/behaviorRecording.hpp"
+#include "../common/muscleRecording.hpp"
+#include "../common/trackingControl.hpp"
+#include "../common/calibration.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
+#include "../peripherals/experimentProtocol.hpp"
 
 // Forward declaration from main.hpp
 bool quitProgram();
@@ -71,10 +73,10 @@ public:
     explicit MainGUIWindow(
         const RecorderConfig &recorderConfig,
         std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+        std::shared_ptr<MuscleRecordingState> muscleRecordingState,
         std::shared_ptr<TrackingControlState> trackingControlState,
         CalibrationParams &behaviorCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
-        std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
         std::shared_ptr<ProgrammedStop> programmedRecordingStop,
@@ -83,7 +85,8 @@ public:
 private slots:
     void startRecording();
     void stopRecording();
-    void updateImageDisplay();
+    void updateBehaviorImageDisplay();
+    void updateMuscleImageDisplay();
     void browseDirectory();
 
 private:
@@ -94,24 +97,28 @@ private:
     QDoubleSpinBox *muscleExposureTimeSpinBox_;
     QTextEdit *experimentProtocol_;
     QLineEdit *directoryLineEdit_;
-    QPushButton *turnOnTrackingButton_;
-    QPushButton *turnOffTrackingButton_;
+    QCheckBox *trackingEnabledCheckBox_;
+    QCheckBox *muscleImagingCheckBox_;
     MotionControlWidget *motionControlWidget_;
     QPushButton *recordButton_;
     QPushButton *stopButton_;
     QLabel *behaviorImageDisplayLabel_;
+    QLabel *muscleImageDisplayLabel_;
     QTimer *imageDisplayTimer_;
     RecorderConfig recorderConfig_;
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState_;
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState_;
     std::shared_ptr<TrackingControlState> trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
 
-    int streamingBehaviorFPS_;
-    int streamingSyncRatio_;
+    int muscleImage16To8BitScale_ = 1;
+    int muscleImage16To8BitOffset_ = 0;
+    int streamingBehaviorFPS_ = 0;
+    int streamingSyncRatio_ = INT_MAX;
+    bool muscleImagingEnabled_ = false;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

@@ -9,7 +9,7 @@
 #include <QApplication>
 #include <spdlog/spdlog.h>
 
-#include "main.hpp"
+#include "runSpotlight.hpp"
 
 namespace
 {
@@ -17,6 +17,8 @@ namespace
     MainGUIWindow *mainGUIWindow = nullptr;
     std::shared_ptr<ProgramState> programState;
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState;
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState;
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication;
 }
 
 bool quitProgram()
@@ -39,6 +41,15 @@ bool quitProgram()
         behaviorRecordingState->behaviorCamera->stop();
     }
 
+    // Terminate PCO camera server
+    if (muscleRecordingState->muscleCamera)
+    {
+        spdlog::info("Stopping acquisition on muscle camera");
+        pid_t pcoCameraServerPid =
+            muscleRecordingState->muscleCamera->getCameraServerPID();
+        kill(pcoCameraServerPid, SIGTERM);
+    }
+
     // Tell motion control request handler thread to stop
     spdlog::info("Telling motion control request handler thread to stop.");
     stopMotionControlRequestHandler(programState);
@@ -46,6 +57,14 @@ bool quitProgram()
     // Tell behavior camera saver threads to stop
     spdlog::info("Telling behavior image saver threads to stop.");
     stopBehaviorImageSaver(behaviorRecordingState, programState);
+    muscleRecordingState->muscleCamera = nullptr;
+
+    spdlog::info("Telling muscle image saver threads to stop.");
+    stopMuscleImageSaver(muscleRecordingState, programState);
+
+    // Stop muscle excitation
+    spdlog::info("Switching off muscle excitation light.");
+    arduinoCommunication->setSyncRatio(INT_MAX);
 
     std::exit(0);
 }
@@ -66,7 +85,6 @@ int main(int argc, char **argv)
 
     // Make program state holder
     programState = std::make_shared<ProgramState>();
-    behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
 
     // Load recorder configuration
     std::filesystem::path profileDir =
@@ -108,10 +126,11 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
-    // Initialize holder for latest frame data (used for live streaming) and
-    // fly tracking
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder =
-        std::make_shared<LatestFrame>();
+    // Initialize behavior and muscle imaging states
+    behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
+    behaviorRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
+    muscleRecordingState = std::make_shared<MuscleRecordingState>();
+    muscleRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
 
     // Start tracking & motion control threads
     std::shared_ptr<TrackingControlState> trackingControlState =
@@ -133,7 +152,6 @@ int main(int argc, char **argv)
         behaviorRecordingState,
         trackingControlState,
         std::ref(behaviorCamCalibrationParams),
-        latestBehaviorFrameHolder,
         programState);
 
     // Start behavior image acquirer
@@ -144,15 +162,15 @@ int main(int argc, char **argv)
         behaviorImageAcquirer,
         recorderConfig,
         behaviorRecordingState,
-        latestBehaviorFrameHolder,
         programState,
         programmedRecordingStop);
+    spdlog::info("Behavior camera acquisition thread started");
 
-    // Start behavior image saver
+    // Start behavior image savers
     std::vector<std::thread> behaviorImageSaverThreads;
     int numBehaviorImageSaverThreads =
         recorderConfig.getParameter<int>("behavior_camera",
-                                         "num_image_saving_threds");
+                                         "num_image_saving_threads");
     for (int i = 0; i < numBehaviorImageSaverThreads; i++)
     {
         behaviorImageSaverThreads.push_back(
@@ -162,19 +180,60 @@ int main(int argc, char **argv)
                         saveDirectory,
                         programState));
     }
+    spdlog::info("Behavior camera saver threads started");
+
+    // Start muscle image acquirer
+    std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
+    MuscleCameraROI muscleROI = getMuscleCameraROI(roiFilePath);
+    spdlog::info(
+        "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
+        "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
+        muscleROI.x0, muscleROI.x1, muscleROI.y0, muscleROI.y1,
+        muscleROI.xOffset, muscleROI.yOffset,
+        muscleROI.imageWidth, muscleROI.imageHeight);
+    std::thread muscleImageAcquirerThread(
+        muscleImageAcquierer,
+        muscleROI.imageWidth,
+        muscleROI.imageHeight,
+        muscleROI.xOffset,
+        muscleROI.yOffset,
+        recorderConfig,
+        profileDir,
+        spdlog::get_level(),
+        muscleRecordingState,
+        programState,
+        programmedRecordingStop);
+    spdlog::info("Muscle camera acquisition thread started");
+
+    // Start muscle image savers
+    std::vector<std::thread> muscleImageSaverThreads;
+    int numMuscleImageSaverThreads =
+        recorderConfig.getParameter<int>("muscle_camera",
+                                         "num_image_saving_threads");
+    for (int i = 0; i < numMuscleImageSaverThreads; i++)
+    {
+        muscleImageSaverThreads.push_back(
+            std::thread(muscleImageSaver,
+                        recorderConfig,
+                        muscleRecordingState,
+                        saveDirectory,
+                        programState,
+                        5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
+    }
+    spdlog::info("Muscle camera saver threads started");
 
     // Start Arduino triggering interface
     std::string arduinoPortName = findArduinoPortName(recorderConfig);
-    std::shared_ptr<ArduinoCommunication> arduinoCommunication =
+    arduinoCommunication =
         std::make_shared<ArduinoCommunication>(arduinoPortName);
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
                                      behaviorRecordingState,
+                                     muscleRecordingState,
                                      trackingControlState,
                                      std::ref(behaviorCamCalibrationParams),
                                      saveDirectory,
-                                     latestBehaviorFrameHolder,
                                      arduinoCommunication,
                                      programState,
                                      programmedRecordingStop,
@@ -185,7 +244,7 @@ int main(int argc, char **argv)
     int result = application->exec();
 
     // Wait for threads to finish
-    spdlog::debug("Waiting for threads to finish");
+    spdlog::debug("Waiting for behavior image acquirer thread to finish");
     if (behaviorImageAcquirerThread.joinable())
     {
         behaviorImageAcquirerThread.join();
@@ -194,12 +253,31 @@ int main(int argc, char **argv)
 
     for (auto &thread : behaviorImageSaverThreads)
     {
-        spdlog::debug("Waiting for behavior image saver thread to finish");
+        spdlog::debug(
+            "Waiting for one of the behavior image saver threads to finish");
         if (thread.joinable())
         {
             thread.join();
         }
-        spdlog::debug("Behavior image saver thread finished");
+        spdlog::debug("One of the behavior image saver threads finished");
+    }
+
+    spdlog::debug("Waiting for muscle image acquirer thread to finish");
+    if (muscleImageAcquirerThread.joinable())
+    {
+        muscleImageAcquirerThread.join();
+    }
+    spdlog::debug("Muscle image acquirer thread finished");
+
+    for (auto &thread : muscleImageSaverThreads)
+    {
+        spdlog::debug(
+            "Waiting for one of the muscle image saver threads to finish");
+        if (thread.joinable())
+        {
+            thread.join();
+        }
+        spdlog::debug("One of the muscle image saver threads finished");
     }
 
     spdlog::debug("Waiting for motion control IO thread to finish");

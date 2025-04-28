@@ -15,7 +15,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "peripherals/motionControl.hpp"
+#include "../peripherals/motionControl.hpp"
 #include "utils.hpp"
 #include "behaviorRecording.hpp"
 #include "calibration.hpp"
@@ -44,7 +44,6 @@ void trackingController(
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState);
 
 // Position logging thread

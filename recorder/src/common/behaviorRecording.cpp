@@ -3,12 +3,11 @@
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop)
 {
     spdlog::info("Behavior image acquirer thread started");
-    CameraROI cameraROI = getCameraROIFromRecorderConfig(recorderConfig);
+    BehaviorCameraROI cameraROI = getBehaviorBehaviorCameraROI(recorderConfig);
 
     std::string frameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>("behavior_camera",
@@ -39,21 +38,25 @@ void behaviorImageAcquirer(
         // // have plenty of margin and can theoretically record at
         // // 1,000,000 / 200-ish = 5,000 fps.
         // // uint64_t startTime = getCurrentTimeMicroseconds();
+        // spdlog::debug(
+        //     "Behavior image acquirer thread waiting for one frame");
         FrameData frameData =
             behaviorRecordingState->behaviorCamera->waitForOneFrame();
+        // spdlog::debug(
+        //     "Behavior image acquirer thread received one frame");
         // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
         // spdlog::info("Behavior camera waited {} us", waitTime);
 
         // Update latest frame for live display
-        {
-            latestBehaviorFrameHolder->setLatestFrameData(frameData);
-        }
+        behaviorRecordingState
+            ->latestFrameHolder
+            ->setLatestFrameData(frameData);
 
         if (programState->isRecording.load())
         {
             if (isFristFrameRecorded)
             {
-                // Reset these to 0 in preparation for the next recording
+                // Reset these to 0 in preparation for the upcoming recording
                 // session
                 frameDataBufferIndex = 0;
                 currentFrameId = 0;
@@ -83,11 +86,12 @@ void behaviorImageAcquirer(
             }
 
             // Whether we've reached a programmed stop
-            int numFramesExpected = programmedRecordingStop->numFramesExpected;
-            if (currentFrameId == numFramesExpected -1 &&
+            int numFramesExpected = programmedRecordingStop->numBehaviorFramesExpected;
+            if (currentFrameId == numFramesExpected - 1 &&
                 numFramesExpected >= 0)
             {
-                programmedRecordingStop->numFramesReached.store(true);
+                programmedRecordingStop
+                    ->hasEndedFlagForGUI.store(true);
                 spdlog::info("Programmed stop reached. Behavior acquisition "
                              "thread is telling GUI to stopping recording.");
             }
@@ -101,7 +105,14 @@ void behaviorImageAcquirer(
             currentFrameId = 0;
         }
     }
+
+    // Stop behavior camera acquisition
+    spdlog::info("Stopping acquisition on behavior camera");
+    behaviorRecordingState->behaviorCamera->stop();
+    spdlog::info("Behavior camera acquisition stopped. "
+                 "Behavior image acquirer thread reached its end");
 }
+
 void behaviorImageSaver(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
@@ -129,9 +140,8 @@ void behaviorImageSaver(
     // compressionParams.push_back(cv::IMWRITE_JPEG_SAMPLING_FACTOR);
     // compressionParams.push_back(444); // Disable chroma subsampling (4:4:4)
 
-    int iterCount = 0;
-
-    std::set<std::string> initializedSaveDirectories; // root save directories
+    int frameCount = 0;
+    int queueLength = -1;
 
     int performanceLoggingInterval = recorderConfig.getParameter<int>(
         "behavior_camera", "saving_performance_logging_interval");
@@ -139,7 +149,6 @@ void behaviorImageSaver(
     while (!programState->toQuit.load())
     {
         GroupOfThreeFrames frameGroup;
-        int queueLength;
         {
             std::unique_lock<std::mutex> lock(
                 behaviorRecordingState->behaviorImageQueueMutex);
@@ -169,9 +178,9 @@ void behaviorImageSaver(
             std::filesystem::path(saveDirectory->getDirectory()) /
             "behavior_images";
 
-        // Save three frames as a single pseudo-RGB image
+        // Save three frames as a single pseudo-BGR image
         std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
-        cv::Mat image = makePseudoRGBImageFromThreeFrames(frameGroup);
+        cv::Mat image = makePseudoBGRImageFromThreeFrames(frameGroup);
         cv::imwrite(filename, image, compressionParams);
 
         // Save metadata
@@ -182,7 +191,7 @@ void behaviorImageSaver(
         metadataFile.close();
 
         uint64_t walltime = getCurrentTimeMicroseconds() - startTime;
-        if (iterCount % performanceLoggingInterval == 0)
+        if (frameCount % performanceLoggingInterval == 0)
         {
             spdlog::info(
                 "Behavior image saver thread (thread ID {}) reporting: "
@@ -190,7 +199,7 @@ void behaviorImageSaver(
                 "it took {} us to save a group of three frames",
                 threadIdString, queueLength, walltime);
         }
-        iterCount++;
+        frameCount++;
     }
     spdlog::info("Behavior image saver thread stopped");
 }
@@ -214,11 +223,11 @@ void stopBehaviorImageSaver(
     }
 }
 
-CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig)
+BehaviorCameraROI getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig)
 {
-    int imageWidth = roundToMultiplesOf64(
+    int imageWidth = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
-    int imageHeight = roundToMultiplesOf64(
+    int imageHeight = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
     int fullFrameWidth = recorderConfig.getParameter<int>(
         "behavior_camera", "full_frame_width");
@@ -247,7 +256,7 @@ CameraROI getCameraROIFromRecorderConfig(const RecorderConfig &recorderConfig)
                                                  fullFrameWidth,
                                                  fullFrameHeight);
 
-    CameraROI cameraROI = {(unsigned int)imageWidth,
+    BehaviorCameraROI cameraROI = {(unsigned int)imageWidth,
                            (unsigned int)imageHeight,
                            (unsigned int)xOffset,
                            (unsigned int)yOffset};

@@ -9,15 +9,34 @@ behavior_camera:
   roi_height: 1024
   frame_grabber_trigger_line: "TTLIO12"
   streaming_frame_rate: 25
-  num_image_saving_threds: 4
+  num_image_saving_threads: 4
   default_recording_fps: 100
   default_exposure_time_us: 1000
   saving_performance_logging_interval: 100
 
 muscle_camera:
+  full_frame_width: 2048
+  full_frame_height: 2048
+  roi_width: 1120
+  roi_height: 1120
   streaming_sync_ratio: 1
+  num_image_saving_threads: 4
   default_recording_sync_ratio: 4
   default_exposure_time_us: 3000
+  saving_performance_logging_interval: 25
+  shared_frame_data_name: "/pco_camera_data"
+  shared_exposure_time_name: "/pco_camera_exposure_time"
+  shared_frame_metadata_name: "/pco_camera_frame_metadata"
+  shared_mutex_name: "/pco_camera_mutex"
+  shared_condition_variable_name: "/pco_camera_condition_variable"
+  conversion_16to8bit_scale_camera_alignment: 800
+  conversion_16to8bit_offset_camera_alignment: -200
+  conversion_16to8bit_scale_recording_preview: 1000
+  conversion_16to8bit_offset_recording_preview: -200
+  # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
+  # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
+  rolling_shutter_line_time_us: 12.136
+
 
 motion_control:
   motion_stage_device_manufacturer: "X-MCC2"
@@ -32,7 +51,6 @@ motion_control:
   y_max_mm: 113
   default_velocity_mm_per_sec: 50
   calibration_scan_stride_mm: 2
-  calibration_scan_frame_rate: 50
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
 
@@ -51,8 +69,10 @@ triggering:
   arduino_device_description: "Nano ESP32"
 
 gui:
-  behavior_camera_preview_width: 640
+  behavior_camera_preview_width: 240
   behavior_camera_preview_height: 480
+  muscle_camera_preview_width: 240
+  muscle_camera_preview_height: 480
   motion_stage_preview_height: 200
   motion_stage_preview_update_frequency_hz: 25
   default_save_dir: "./images/"

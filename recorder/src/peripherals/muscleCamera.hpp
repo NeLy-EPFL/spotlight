@@ -1,0 +1,58 @@
+#ifndef MUSCLE_CAMERA_HPP
+#define MUSCLE_CAMERA_HPP
+
+#include <iostream>
+#include <unistd.h>    // fork, exec
+#include <signal.h>    // kill, SIGINT
+#include <sys/types.h> // pid_t
+#include <sys/wait.h>  // waitpid
+#include <cstdlib>     // exit
+#include <string>
+
+#include <spdlog/spdlog.h>
+
+#include "../pcoCameraServer/sharedMemoryUtils.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/dataTypes.hpp"
+#include "../common/utils.hpp"
+
+class MuscleCamera
+{
+public:
+    MuscleCamera(int imageWidth,
+                 int imageHeight,
+                 int xOffset,
+                 int yOffset,
+                 const RecorderConfig &recorderConfig,
+                 std::string profileDir,
+                 spdlog::level::level_enum logLevel);
+    ~MuscleCamera();
+    FrameData waitForOneFrame();
+    void setExposureTime(unsigned int exposureTimeMicrosecs);
+    pid_t getCameraServerPID() const;
+    int getNumLinesScanned() const;
+
+private:
+    unsigned int x0_;
+    unsigned int x1_;
+    unsigned int y0_;
+    unsigned int y1_;
+    unsigned int imageWidth_;
+    unsigned int imageHeight_;
+    pid_t pcoCameraServerPID_;
+    uint8_t *frameDataPtr_;
+    unsigned int *exposureTimePtr_;
+    PCOSharedMemory::FrameMetadata *frameMetadataPtr_;
+    pthread_mutex_t *mutexPtr_;
+    pthread_cond_t *condVarPtr_;
+    const RecorderConfig &recorderConfig_;
+    unsigned int lastFrameCount_;
+    bool isReady_ = false;
+
+    bool isROIValid();
+};
+
+int roundToNearestValidMuscleCamHorizontal(int value);
+int roundToNearestValidMuscleCamVertical(int value);
+
+#endif // MUSCLE_CAMERA_HPP
