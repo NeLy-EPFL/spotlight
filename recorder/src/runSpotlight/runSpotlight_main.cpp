@@ -9,7 +9,7 @@
 #include <QApplication>
 #include <spdlog/spdlog.h>
 
-#include "main.hpp"
+#include "runSpotlight.hpp"
 
 namespace
 {
