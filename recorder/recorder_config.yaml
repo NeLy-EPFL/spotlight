@@ -33,6 +33,9 @@ muscle_camera:
   conversion_16to8bit_offset_camera_alignment: -200
   conversion_16to8bit_scale_recording_preview: 1000
   conversion_16to8bit_offset_recording_preview: -200
+  # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
+  # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
+  rolling_shutter_line_time_us: 12.136
 
 
 motion_control:

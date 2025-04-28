@@ -30,6 +30,7 @@ public:
     FrameData waitForOneFrame();
     void setExposureTime(unsigned int exposureTimeMicrosecs);
     pid_t getCameraServerPID() const;
+    int getNumLinesScanned() const;
 
 private:
     unsigned int x0_;
@@ -46,6 +47,7 @@ private:
     pthread_cond_t *condVarPtr_;
     const RecorderConfig &recorderConfig_;
     unsigned int lastFrameCount_;
+    bool isReady_ = false;
 
     bool isROIValid();
 };

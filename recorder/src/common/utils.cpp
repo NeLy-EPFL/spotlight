@@ -201,6 +201,15 @@ void convert16BitTo8Bit(cv::Mat &sourceImage,
     sourceImage.convertTo(targetImage, CV_8U, alpha, offset);
 }
 
+int calculateMuscleExcitationOnTime(int numLinesScanned,
+                                    float rollingShutterLineTimeUs,
+                                    int exposureTimeUs)
+{
+    int maxRollingShutterDelay =
+        static_cast<int>(numLinesScanned * rollingShutterLineTimeUs);
+    return maxRollingShutterDelay + exposureTimeUs;
+}
+
 SaveDirectory::SaveDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);
