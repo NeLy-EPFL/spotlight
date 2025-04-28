@@ -175,6 +175,10 @@ MainGUIWindow::MainGUIWindow(
     muscleImage16To8BitOffset_ = recorderConfig.getParameter<int>(
         "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
 
+    // Load rolling shutter parameter
+    float rollingShutterLineTimeUs = recorderConfig.getParameter<float>(
+        "muscle_camera", "rolling_shutter_line_time_us");
+
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
@@ -229,14 +233,23 @@ MainGUIWindow::MainGUIWindow(
     connect(muscleExposureTimeSpinBox_,
             QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this,
-            [this, arduinoCommunication](double value)
-            { arduinoCommunication->setMuscleExposureTime(value * 1000); });
+            [this,
+             arduinoCommunication,
+             rollingShutterLineTimeUs,
+             muscleRecordingState](double value)
+            {
+                int excitationLightOnTime = calculateMuscleExcitationOnTime(
+                    muscleRecordingState->muscleCamera->getNumLinesScanned(),
+                    rollingShutterLineTimeUs,
+                    value * 1000);
+                arduinoCommunication->setMuscleExposureTime(
+                    excitationLightOnTime);
+            });
     QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
     muscleExposureTimeLayout->addWidget(
         new QLabel("Muscle exposure time (ms)"));
     muscleExposureTimeLayout->addWidget(muscleExposureTimeSpinBox_);
 
-    // Experiment protocol
     // Experiment protocol widget
     QLabel *protocolLabel = new QLabel("Experiment protocol", this);
     experimentProtocol_ = new QTextEdit(this);
@@ -289,8 +302,6 @@ MainGUIWindow::MainGUIWindow(
                 }
             });
     optionalFeaturesLayout->addWidget(trackingEnabledCheckBox_);
-    // Muscle imaging disabled by default
-    arduinoCommunication_->setSyncRatio(INT_MAX);
 
     // Check box to enable/disable muscle imaging
     muscleImagingCheckBox_ = new QCheckBox("Enable muscle imaging", this);
@@ -410,6 +421,21 @@ MainGUIWindow::MainGUIWindow(
     layout->addWidget(motionControlWidget_);
     layout->addLayout(recordStopButtonsLayout);
     setLayout(layout);
+
+    // Initially set excitation light on time to correct value
+    while (!muscleRecordingState->muscleCamera)
+    {
+        spdlog::info("Waiting for muscle camera to be ready...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    int excitationLightOnTime = calculateMuscleExcitationOnTime(
+        muscleRecordingState->muscleCamera->getNumLinesScanned(),
+        rollingShutterLineTimeUs,
+        muscleCameraDefaultExposureTimeUs);
+    arduinoCommunication->setMuscleExposureTime(excitationLightOnTime);
+
+    // Muscle imaging disabled by default
+    arduinoCommunication_->setSyncRatio(INT_MAX);
 
     // Initialy stream images only, don't save
     stopRecording();

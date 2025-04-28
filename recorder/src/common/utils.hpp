@@ -45,6 +45,10 @@ void convert16BitTo8Bit(cv::Mat &sourceImage,
                         int scale,
                         int offset);
 
+int calculateMuscleExcitationOnTime(int numLinesScanned,
+                                    float rollingShutterLineTimeUs,
+                                    int exposureTimeUs);
+
 class SaveDirectory
 {
 public:
