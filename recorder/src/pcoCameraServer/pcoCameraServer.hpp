@@ -5,6 +5,10 @@
 #ifndef PCO_CAMERA_SERVER_HPP
 #define PCO_CAMERA_SERVER_HPP
 
+#define WAIT_WITH_SMALL_DELAY true
+#define WAIT_TIMEOUT_SECS 0.1
+#define TIMEOUT_ERROR_CODE 0x80004001  // see PCO manual
+
 #include <stdio.h>
 #include <string.h>
 #include <csignal>

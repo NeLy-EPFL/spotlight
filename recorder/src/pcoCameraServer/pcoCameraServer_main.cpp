@@ -284,7 +284,7 @@ namespace PCOCameraServer
 
         // Data acquisition loop
         spdlog::info("PCO camera server starting its data acquisition loop");
-        while (!PCOCameraServer::shutdownRequested.load())
+        while (!shutdownRequested.load())
         {
             // Check if we should change exposure time
             unsigned int targetExposureTime = *exposureTimePtr;
@@ -300,14 +300,88 @@ namespace PCOCameraServer
             }
 
             // Wait for new frame to arrive
-            if (isFirstFrame)
+            // Note: If muscle triggers are very slow or disabled (i.e. period
+            // set to INT_MAX in case the "Enable muscle imaging" option is
+            // unchecked), we might be forever blocked in the waitForFirstImage
+            // or waitForNewImage function. Thus, when the user requests the
+            // program to stop (by sending a SIGINT or SIGTERM), the program
+            // will ignore it. To avoid this, we add a small timeout to the
+            // calls and wrap put them in an infinite loop. This way, we still
+            // wait indefinitely for new frames to come, but once in a while we
+            // move on to the next iteration of the inner loop, which gives us
+            // a chance to check if shutdownRequested has been set to true and
+            // break accordingly.
+            // spdlog::debug("Entering waiting inner loop");
+            while (true)
             {
-                camera.waitForFirstImage();
-                isFirstFrame = false;
+                if (isFirstFrame)
+                {
+                    try
+                    {
+                        camera.waitForFirstImage(WAIT_WITH_SMALL_DELAY,
+                                                 WAIT_TIMEOUT_SECS);
+                        isFirstFrame = false;
+                        // spdlog::debug(
+                        //     "First frame received, breaking out of waiting "
+                        //     "inner loop");
+                        break;
+                    }
+                    catch (pco::CameraException &e)
+                    {
+                        uint32_t errorCode = e.error_code();
+                        // spdlog::debug(
+                        //     "Exception while waiting for first image; "
+                        //     "error code 0x{0:08x}",
+                        //     errorCode);
+                        if (errorCode == TIMEOUT_ERROR_CODE)
+                        {
+                            // This is expected, so do nothing
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        camera.waitForNewImage(WAIT_WITH_SMALL_DELAY,
+                                               WAIT_TIMEOUT_SECS);
+                        // spdlog::debug(
+                        //     "New frame received, breaking out of waiting "
+                        //     "inner loop");
+                        break;
+                    }
+                    catch (pco::CameraException &e)
+                    {
+                        uint32_t errorCode = e.error_code();
+                        // spdlog::debug(
+                        //     "Exception while waiting for first image; "
+                        //     "error code 0x{0:08x}",
+                        //     errorCode);
+                        if (errorCode == TIMEOUT_ERROR_CODE)
+                        {
+                            // This is expected, so do nothing
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+                }
+                if (shutdownRequested.load())
+                {
+                    spdlog::info(
+                        "PCO camera server: Shutdown requested, breaking out "
+                        "of inner waiting loop");
+                    break;
+                }
             }
-            else
+            if (shutdownRequested.load())
             {
-                camera.waitForNewImage();
+                break;
             }
 
             // Fetch image and convert to OpenCV format
