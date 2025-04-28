@@ -9,6 +9,11 @@
 #include <mutex>
 #include <condition_variable>
 #include <string>
+#include <signal.h>
+#include <csignal>
+#include <filesystem>
+#include <QApplication>
+#include <spdlog/spdlog.h>
 
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/arduinoCommunication.hpp"
