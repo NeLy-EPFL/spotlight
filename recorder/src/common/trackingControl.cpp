@@ -152,7 +152,6 @@ void trackingController(
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ProgramState> programState)
 {
     while (!trackingControlState->motionControlHandlerReady.load())
@@ -183,11 +182,11 @@ void trackingController(
         }
         else if (!trackingControlState->shouldOverrideTracking.load())
         {
-            cv::Mat myBehaviorImage;
-            {
-                myBehaviorImage =
-                    latestBehaviorFrameHolder->getLatestFrameData().image;
-            }
+            cv::Mat myBehaviorImage = behaviorRecordingState
+                                          ->latestFrameHolder
+                                          ->getLatestFrameData()
+                                          .image;
+
             MotionStagePosition myMotionStagePosition;
             {
                 std::lock_guard<std::mutex> lock(
@@ -420,6 +419,7 @@ void motionStagePositionLogger(
         {
             if (logFile.is_open())
             {
+                spdlog::info("Stage position logging stopped. Closing log file.");
                 logFile.close();
             }
         }
@@ -468,10 +468,11 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         // calibration model has not been defined yet
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
-    cv::Mat correctedImage = correctImageRotationAndFlip(behaviorImage);
+    cv::Mat correctedImage;
+    reorientBehaviorImage(behaviorImage, correctedImage);
 
     // Remove pixels outside the stage boundaries
-    cv::Mat blackedOutImage = blackoutOutside(correctedImage.clone(),
+    cv::Mat blackedOutImage = blackoutOutside(correctedImage,
                                               stagePosition,
                                               behaviorCamCalibrationParams,
                                               recorderConfig);

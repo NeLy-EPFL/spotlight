@@ -311,6 +311,8 @@ void parseIncomingCommand(const char* message) {
     muscleTriggerState = false;
     Serial.println("Pausing to let frame buffer clear...");
     Serial.flush();
+    behaviorTriggerOff();
+    muscleTriggerOff();
     delayMicroseconds(FRAME_BUFFER_FLUSH_TIME_US);
     Serial.println("Recording started.");
     Serial.flush();

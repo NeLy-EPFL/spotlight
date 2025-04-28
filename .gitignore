@@ -1,7 +1,8 @@
 data/
+bin/
 
-# Created by https://www.toptal.com/developers/gitignore/api/linux,windows,macos,c++,c,python,git,vim,visualstudiocode
-# Edit at https://www.toptal.com/developers/gitignore?templates=linux,windows,macos,c++,c,python,git,vim,visualstudiocode
+# Created by https://www.toptal.com/developers/gitignore/api/linux,windows,macos,c++,c,python,git,vim,visualstudiocode,cmake
+# Edit at https://www.toptal.com/developers/gitignore?templates=linux,windows,macos,c++,c,python,git,vim,visualstudiocode,cmake
 
 ### C ###
 # Prerequisites
@@ -75,6 +76,25 @@ dkms.conf
 *.lai
 
 # Executables
+
+### CMake ###
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+### CMake Patch ###
+CMakeUserPresets.json
+
+# External projects
+*-prefix/
 
 ### Git ###
 # Created by git for backups. To disable backups in Git:
@@ -375,4 +395,4 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# End of https://www.toptal.com/developers/gitignore/api/linux,windows,macos,c++,c,python,git,vim,visualstudiocode
+# End of https://www.toptal.com/developers/gitignore/api/linux,windows,macos,c++,c,python,git,vim,visualstudiocode,cmake

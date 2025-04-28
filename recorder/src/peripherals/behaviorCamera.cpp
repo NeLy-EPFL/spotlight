@@ -1,14 +1,5 @@
 #include "behaviorCamera.hpp"
 
-namespace mine {
-    uint64_t getCurrentTimeMicroseconds()
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(
-               std::chrono::high_resolution_clock::now().time_since_epoch())
-        .count();
-}
-}
-
 BehaviorCamera::BehaviorCamera(
     unsigned int imageWidth,
     unsigned int imageHeight,
@@ -91,14 +82,15 @@ BehaviorCamera::BehaviorCamera(
     cameraReadyFlag_.store(true);
 }
 
-BehaviorCamera::~BehaviorCamera() {
+BehaviorCamera::~BehaviorCamera()
+{
     spdlog::debug("Behavior camera destructor called");
     cameraReadyFlag_.store(false);
 }
 
-void BehaviorCamera::start(size_t bufferCount)
+void BehaviorCamera::start(size_t bufferSize)
 {
-    frameGrabberPtr_->reallocBuffers(bufferCount);
+    frameGrabberPtr_->reallocBuffers(bufferSize);
     frameGrabberPtr_->start();
 }
 
@@ -113,7 +105,7 @@ FrameData BehaviorCamera::waitForOneFrame()
     Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
 
     // Get image data and metadata
-    uint64_t receivedTime = mine::getCurrentTimeMicroseconds();
+    uint64_t receivedTime = getCurrentTimeMicroseconds();
     uint8_t *dataPtr = buffer.getInfo<uint8_t *>(
         Euresys::gc::BUFFER_INFO_BASE);
     uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(
@@ -163,7 +155,7 @@ bool BehaviorCamera::setStringAndCheck(
     return true;
 }
 
-int roundToMultiplesOf64(int value)
+int roundToNearestValidBehaviorCamDimension(int value)
 {
     int remainder = value % 64;
     return value - remainder + (remainder < 32 ? 0 : 64);
@@ -172,7 +164,9 @@ int roundToMultiplesOf64(int value)
 std::tuple<int, int> getCenteredOffsets(
     int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight)
 {
-    int xOffset = roundToMultiplesOf64((fullFrameWidth - imageWidth) / 2);
-    int yOffset = roundToMultiplesOf64((fullFrameHeight - imageHeight) / 2);
+    int xOffset = roundToNearestValidBehaviorCamDimension(
+        (fullFrameWidth - imageWidth) / 2);
+    int yOffset = roundToNearestValidBehaviorCamDimension(
+        (fullFrameHeight - imageHeight) / 2);
     return std::make_tuple(xOffset, yOffset);
 }

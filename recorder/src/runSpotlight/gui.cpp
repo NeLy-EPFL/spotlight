@@ -145,10 +145,10 @@ float MotionControlWidget::mapToStageY(int y) const
 MainGUIWindow::MainGUIWindow(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
-    std::shared_ptr<LatestFrame> latestBehaviorFrameHolder,
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop,
@@ -156,10 +156,10 @@ MainGUIWindow::MainGUIWindow(
     : QWidget(parent),
       recorderConfig_(recorderConfig),
       behaviorRecordingState_(behaviorRecordingState),
+      muscleRecordingState_(muscleRecordingState),
       trackingControlState_(trackingControlState),
       behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
       saveDirectory_(saveDirectory),
-      latestBehaviorFrameHolder_(latestBehaviorFrameHolder),
       arduinoCommunication_(arduinoCommunication),
       programState_(programState),
       programmedRecordingStop_(programmedRecordingStop)
@@ -168,6 +168,16 @@ MainGUIWindow::MainGUIWindow(
         "behavior_camera", "streaming_frame_rate");
     streamingSyncRatio_ = recorderConfig.getParameter<int>(
         "muscle_camera", "streaming_sync_ratio");
+
+    // Load parameters for displaying 16-bit muscle image
+    muscleImage16To8BitScale_ = recorderConfig.getParameter<int>(
+        "muscle_camera", "conversion_16to8bit_scale_camera_alignment");
+    muscleImage16To8BitOffset_ = recorderConfig.getParameter<int>(
+        "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
+
+    // Load rolling shutter parameter
+    float rollingShutterLineTimeUs = recorderConfig.getParameter<float>(
+        "muscle_camera", "rolling_shutter_line_time_us");
 
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -223,14 +233,23 @@ MainGUIWindow::MainGUIWindow(
     connect(muscleExposureTimeSpinBox_,
             QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this,
-            [this, arduinoCommunication](double value)
-            { arduinoCommunication->setMuscleExposureTime(value * 1000); });
+            [this,
+             arduinoCommunication,
+             rollingShutterLineTimeUs,
+             muscleRecordingState](double value)
+            {
+                int excitationLightOnTime = calculateMuscleExcitationOnTime(
+                    muscleRecordingState->muscleCamera->getNumLinesScanned(),
+                    rollingShutterLineTimeUs,
+                    value * 1000);
+                arduinoCommunication->setMuscleExposureTime(
+                    excitationLightOnTime);
+            });
     QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
     muscleExposureTimeLayout->addWidget(
         new QLabel("Muscle exposure time (ms)"));
     muscleExposureTimeLayout->addWidget(muscleExposureTimeSpinBox_);
 
-    // Experiment protocol
     // Experiment protocol widget
     QLabel *protocolLabel = new QLabel("Experiment protocol", this);
     experimentProtocol_ = new QTextEdit(this);
@@ -261,34 +280,54 @@ MainGUIWindow::MainGUIWindow(
             this,
             &MainGUIWindow::browseDirectory);
 
-    // Buttons to enable/disable automatic tracking
-    turnOnTrackingButton_ = new QPushButton("Enable tracking", this);
-    turnOffTrackingButton_ = new QPushButton("Disable tracking", this);
-    turnOnTrackingButton_->setEnabled(false); // tracking is initially on
-    turnOffTrackingButton_->setEnabled(true);
-    connect(turnOnTrackingButton_,
-            &QPushButton::clicked,
-            this,
-            [this, trackingControlState]()
-            {
-                trackingControlState->trackingOn.store(true);
-                turnOnTrackingButton_->setEnabled(false);
-                turnOffTrackingButton_->setEnabled(true);
-            });
-    connect(turnOffTrackingButton_,
-            &QPushButton::clicked,
-            this,
-            [this, trackingControlState]()
-            {
-                trackingControlState->trackingOn.store(false);
-                turnOnTrackingButton_->setEnabled(true);
-                turnOffTrackingButton_->setEnabled(false);
-            });
-    QHBoxLayout *trackingControlLayout = new QHBoxLayout();
-    trackingControlLayout->addWidget(turnOnTrackingButton_);
-    trackingControlLayout->addWidget(turnOffTrackingButton_);
+    // Optional features checkboxes: tracking and muscle imaging
+    QHBoxLayout *optionalFeaturesLayout = new QHBoxLayout();
+    optionalFeaturesLayout->addWidget(new QLabel("Optional features"));
 
-    // Live display widget
+    // Check box to enable/disable tracking
+    trackingEnabledCheckBox_ = new QCheckBox("Enable tracking", this);
+    trackingEnabledCheckBox_->setChecked(true);
+    connect(trackingEnabledCheckBox_,
+            &QCheckBox::checkStateChanged,
+            this,
+            [this, trackingControlState](int state)
+            {
+                if (state == Qt::Checked)
+                {
+                    trackingControlState->trackingOn.store(true);
+                }
+                else
+                {
+                    trackingControlState->trackingOn.store(false);
+                }
+            });
+    optionalFeaturesLayout->addWidget(trackingEnabledCheckBox_);
+
+    // Check box to enable/disable muscle imaging
+    muscleImagingCheckBox_ = new QCheckBox("Enable muscle imaging", this);
+    muscleImagingCheckBox_->setChecked(false);
+    connect(muscleImagingCheckBox_,
+            &QCheckBox::checkStateChanged,
+            this,
+            [this, arduinoCommunication](int state)
+            {
+                if (state == Qt::Checked)
+                {
+                    muscleImagingEnabled_ = true;
+                    arduinoCommunication->setSyncRatio(streamingSyncRatio_);
+                }
+                else
+                {
+                    muscleImagingEnabled_ = false;
+                    arduinoCommunication->setSyncRatio(INT_MAX);
+                }
+            });
+    optionalFeaturesLayout->addWidget(muscleImagingCheckBox_);
+
+    // Live image displays
+    QHBoxLayout *liveImageDisplayLayout = new QHBoxLayout();
+
+    // Behavior camera preview
     behaviorImageDisplayLabel_ = new QLabel(this);
     int behaviorCameraPreviewWidth = recorderConfig.getParameter<int>(
         "gui", "behavior_camera_preview_width");
@@ -296,7 +335,36 @@ MainGUIWindow::MainGUIWindow(
         "gui", "behavior_camera_preview_height");
     behaviorImageDisplayLabel_->setFixedSize(behaviorCameraPreviewWidth,
                                              behaviorCameraPreviewHeight);
+    liveImageDisplayLayout->addWidget(behaviorImageDisplayLabel_);
+    // Add timer to for behavior display updates
+    imageDisplayTimer_ = new QTimer(this);
+    connect(imageDisplayTimer_,
+            &QTimer::timeout,
+            this,
+            &MainGUIWindow::updateBehaviorImageDisplay);
+    imageDisplayTimer_->start(1000 / streamingBehaviorFPS_);
 
+    // Muscle camera preview
+    muscleImageDisplayLabel_ = new QLabel(this);
+    int muscleCameraPreviewWidth = recorderConfig.getParameter<int>(
+        "gui", "muscle_camera_preview_width");
+    int muscleCameraPreviewHeight = recorderConfig.getParameter<int>(
+        "gui", "muscle_camera_preview_height");
+    muscleImageDisplayLabel_->setFixedSize(muscleCameraPreviewWidth,
+                                           muscleCameraPreviewHeight);
+    liveImageDisplayLayout->addWidget(muscleImageDisplayLabel_);
+    // Add timer for muscle display updates
+    QTimer *muscleImageDisplayTimer = new QTimer(this);
+    connect(muscleImageDisplayTimer,
+            &QTimer::timeout,
+            this,
+            &MainGUIWindow::updateMuscleImageDisplay);
+    float muscleStreamingFPS =
+        static_cast<float>(streamingBehaviorFPS_) / streamingSyncRatio_;
+    spdlog::info("Muscle streaming FPS: {}", muscleStreamingFPS);
+    muscleImageDisplayTimer->start(1000 / muscleStreamingFPS);
+
+    // Motion stage state display
     motionControlWidget_ = new MotionControlWidget(recorderConfig,
                                                    trackingControlState,
                                                    this);
@@ -308,14 +376,6 @@ MainGUIWindow::MainGUIWindow(
     QHBoxLayout *recordStopButtonsLayout = new QHBoxLayout();
     recordStopButtonsLayout->addWidget(recordButton_);
     recordStopButtonsLayout->addWidget(stopButton_);
-
-    // Add timer to update image displaylatestBehaviorFrameHolder_
-    imageDisplayTimer_ = new QTimer(this);
-    connect(imageDisplayTimer_,
-            &QTimer::timeout,
-            this,
-            &MainGUIWindow::updateImageDisplay);
-    imageDisplayTimer_->start(1000 / streamingBehaviorFPS_);
     connect(recordButton_,
             &QPushButton::clicked,
             this,
@@ -332,12 +392,14 @@ MainGUIWindow::MainGUIWindow(
             this,
             [this, programmedRecordingStop]()
             {
-                if (programmedRecordingStop->numFramesReached.load())
+                if (programmedRecordingStop->hasEndedFlagForGUI.load())
                 {
                     spdlog::info("Protocol stop reached. Stopping recording.");
                     stopRecording();
-                    programmedRecordingStop->numFramesExpected = -1;
-                    programmedRecordingStop->numFramesReached.store(false);
+                    programmedRecordingStop->numBehaviorFramesExpected = -1;
+                    programmedRecordingStop->numMuscleFramesExpected = -1;
+                    programmedRecordingStop
+                        ->hasEndedFlagForGUI.store(false); // toggle off
                     QMessageBox::information(
                         this,
                         "Recording stopped",
@@ -354,11 +416,26 @@ MainGUIWindow::MainGUIWindow(
     layout->addLayout(muscleExposureTimeLayout);
     layout->addLayout(protocolLayout);
     layout->addLayout(directoryLayout);
-    layout->addLayout(trackingControlLayout);
-    layout->addWidget(behaviorImageDisplayLabel_);
+    layout->addLayout(optionalFeaturesLayout);
+    layout->addLayout(liveImageDisplayLayout);
     layout->addWidget(motionControlWidget_);
     layout->addLayout(recordStopButtonsLayout);
     setLayout(layout);
+
+    // Initially set excitation light on time to correct value
+    while (!muscleRecordingState->muscleCamera)
+    {
+        spdlog::info("Waiting for muscle camera to be ready...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    int excitationLightOnTime = calculateMuscleExcitationOnTime(
+        muscleRecordingState->muscleCamera->getNumLinesScanned(),
+        rollingShutterLineTimeUs,
+        muscleCameraDefaultExposureTimeUs);
+    arduinoCommunication->setMuscleExposureTime(excitationLightOnTime);
+
+    // Muscle imaging disabled by default
+    arduinoCommunication_->setSyncRatio(INT_MAX);
 
     // Initialy stream images only, don't save
     stopRecording();
@@ -383,6 +460,7 @@ void MainGUIWindow::startRecording()
     // Toggle GUI buttons
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
+    muscleImagingCheckBox_->setEnabled(false);
 
     // Parse and set experiment protocol
     std::vector<ProtocolStep> protocolSteps;
@@ -399,16 +477,21 @@ void MainGUIWindow::startRecording()
     else if (numStepsParsed == 0)
     {
         spdlog::info("GUI starting recording without any protocol steps");
-        programmedRecordingStop_->numFramesExpected = -1;
+        programmedRecordingStop_->numBehaviorFramesExpected = -1;
+        programmedRecordingStop_->numMuscleFramesExpected = -1;
     }
     else
     {
         spdlog::info("GUI starting recording with {} protocol steps",
                      protocolSteps.size());
-        programmedRecordingStop_->numFramesExpected =
+        programmedRecordingStop_->numBehaviorFramesExpected =
             protocolSteps.back().frameCount;
-        spdlog::info("Setting expected number of steps to {}",
-                     programmedRecordingStop_->numFramesExpected);
+        programmedRecordingStop_->numMuscleFramesExpected =
+            protocolSteps.back().frameCount / syncRatioSpinBox_->value();
+        spdlog::info(
+            "Setting expected number of steps to {} (behavior) and {} (muscle)",
+            programmedRecordingStop_->numBehaviorFramesExpected,
+            programmedRecordingStop_->numMuscleFramesExpected);
     }
 
     // Initialize save directory
@@ -437,10 +520,7 @@ void MainGUIWindow::startRecording()
     // some time to currently dangling, unprocessed time to pass through the
     // image saver thread. This way, when the image acquirer thread receives
     // any new frame, we know that they are part of the recording (ie. the
-    // first frame that arrives should carry frame index 0). On the comptuer's
-    // side, we will wait 80ms before setting isRecording to true. During these
-    // 80ms, any frame that is received is still treated as streamed input for
-    // visualization GUI. By contrast, any frame that arrives after 80ms is
+    // first frame that arrives shnum_image_saving_thredsntrast, any frame that arrives after 80ms is
     // considered part of the recording.
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
     programState_->isRecording.store(true);
@@ -450,11 +530,13 @@ void MainGUIWindow::stopRecording()
 {
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
+    muscleImagingCheckBox_->setEnabled(true);
 
     arduinoCommunication_->stopRecording();
     programState_->isRecording.store(false);
     arduinoCommunication_->setBehaviorRecordingFPS(streamingBehaviorFPS_);
-    arduinoCommunication_->setSyncRatio(streamingSyncRatio_);
+    arduinoCommunication_->setSyncRatio(
+        muscleImagingEnabled_ ? streamingSyncRatio_ : INT_MAX);
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)
@@ -544,15 +626,18 @@ cv::Mat addCornerMarker(cv::Mat image,
     return imageForDisplay;
 }
 
-void MainGUIWindow::updateImageDisplay()
+void MainGUIWindow::updateBehaviorImageDisplay()
 {
-    cv::Mat latestFrame =
-        latestBehaviorFrameHolder_->getLatestFrameData().image;
+    cv::Mat latestFrame = behaviorRecordingState_
+                              ->latestFrameHolder
+                              ->getLatestFrameData()
+                              .image;
     if (latestFrame.empty())
     {
         return;
     }
-    cv::Mat correctedFrame = correctImageRotationAndFlip(latestFrame);
+    cv::Mat correctedFrame;
+    reorientBehaviorImage(latestFrame, correctedFrame);
 
     MotionStagePosition myStagePosition;
     {
@@ -581,6 +666,36 @@ void MainGUIWindow::updateImageDisplay()
                                  Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
     behaviorImageDisplayLabel_->setPixmap(pixmap);
+}
+
+void MainGUIWindow::updateMuscleImageDisplay()
+{
+    if (!muscleImagingEnabled_)
+    {
+        muscleImageDisplayLabel_->clear();
+        return;
+    }
+
+    cv::Mat latestFrame = muscleRecordingState_
+                              ->latestFrameHolder
+                              ->getLatestFrameData()
+                              .image;
+    if (latestFrame.empty())
+    {
+        return;
+    }
+    cv::Mat processedFrame;
+    convert16BitTo8Bit(latestFrame,
+                       processedFrame,
+                       muscleImage16To8BitScale_,
+                       muscleImage16To8BitOffset_);
+    reorientMuscleImage(processedFrame, processedFrame);
+    QImage qImage = cvMatToQImage(processedFrame);
+    QPixmap pixmap = QPixmap::fromImage(qImage)
+                         .scaled(muscleImageDisplayLabel_->size(),
+                                 Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+    muscleImageDisplayLabel_->setPixmap(pixmap);
 }
 
 int parseProtocolString(
