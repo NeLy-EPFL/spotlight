@@ -20,13 +20,13 @@ def consolidate_behavior_acquisition_times_and_stage_positions(
     sorted_files_by_frame = find_files_per_frame_by_suffix(frames_dir, ".csv")
     dataframes = [pd.read_csv(file) for file in sorted_files_by_frame.values()]
     concatenated_df = pd.concat(dataframes, ignore_index=True)
-    concatenated_df.sort_values(by=["receivedTimeUs"], inplace=True)
+    concatenated_df.sort_values(by=["received_time_us"], inplace=True)
     concatenated_df.reset_index(drop=True, inplace=True)
 
     # Interpolate stage positions
     print("Interpolating stage positions for each behavior frame")
     spline_xpos, spline_ypos = fit_stage_position_cubic_spline(stage_positions_path)
-    timestamps = concatenated_df["receivedTimeUs"].values
+    timestamps = concatenated_df["received_time_us"].values
     concatenated_df["x_pos_mm_interp"] = spline_xpos(timestamps)
     concatenated_df["y_pos_mm_interp"] = spline_ypos(timestamps)
 

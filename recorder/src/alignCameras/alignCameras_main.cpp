@@ -11,6 +11,7 @@ namespace
     int userSelectedCenterXDisplay = -1;
     int userSelectedCenterYDisplay = -1;
     std::filesystem::path profileDir;
+    std::unique_ptr<ArduinoCommunication> arduinoCommunication = nullptr;
 
     std::tuple<int, int> displayToCameraSensorCoords(
         int displayX, int displayY)
@@ -197,6 +198,17 @@ void alignCamera(std::filesystem::path profileDir)
         programmedRecordingStop);
     spdlog::info("Muscle camera acquisition thread started");
 
+    // Start Arduino triggering interface set default triggering parameters
+    while (!muscleRecordingState->muscleCamera)
+    {
+        spdlog::debug("Waiting for muscle camera to be ready");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    int muscleNumLinesScanned =
+        muscleRecordingState->muscleCamera->getNumLinesScanned();
+    arduinoCommunication = initializeTriggeringWithDefaultParams(
+        recorderConfig, muscleNumLinesScanned);
+
     // Set up display windows
     setupDisplayWindows(recorderConfig);
 
@@ -318,12 +330,20 @@ void alignCamera(std::filesystem::path profileDir)
     {
         spdlog::info("Stopping acquisition on behavior camera");
         behaviorRecordingState->behaviorCamera->stop();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         behaviorRecordingState->behaviorCamera = nullptr;
     }
     muscleRecordingState->muscleCamera = nullptr;
     behaviorImageAcquirerThread.join();
     muscleImageAcquirerThread.join();
     spdlog::info("Behavior camera acquisition thread stopped");
+
+    // Stop triggering
+    spdlog::info("Stopping triggering via Arduino");
+    arduinoCommunication->setBehaviorRecordingFPS(0);
+    // arduinoCommunication->setSyncRatio(INT_MAX);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    arduinoCommunication->stopCommunication();
 }
 
 int main(int argc, char **argv)

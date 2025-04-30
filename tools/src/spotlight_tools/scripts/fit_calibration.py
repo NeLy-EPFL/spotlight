@@ -9,10 +9,13 @@ from pathlib import Path
 from tqdm import tqdm
 
 from spotlight_tools.calibration.aruco import (
-    ArUcoBoard, detect_aruco, plot_aruco_detections
+    ArUcoBoard,
+    detect_aruco,
+    plot_aruco_detections,
 )
 from spotlight_tools.calibration.model import (
-    ransac_filter_outliers, visualize_ransac_results
+    ransac_filter_outliers,
+    visualize_ransac_results,
 )
 
 
@@ -79,7 +82,7 @@ def fit_calibration_model(
 ) -> None:
     """
     Fit the calibration model for the ArUco board.
-    
+
     Args:
         profile_dir (str):
             Path to the profile directory.
@@ -98,7 +101,7 @@ def fit_calibration_model(
     profile_dir = Path(profile_dir).expanduser()
 
     # Check if the calibration images directory exists and is not empty
-    calibration_image_dir = Path(profile_dir) / "calibration/aruco_scan"
+    calibration_image_dir = Path(profile_dir) / "calibration/aruco_scan/behavior_camera"
     if not calibration_image_dir.exists():
         raise FileNotFoundError(
             f"Directory {calibration_image_dir} does not exist. "
