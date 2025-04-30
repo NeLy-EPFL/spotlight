@@ -114,7 +114,6 @@ void runCalibrationScan(std::filesystem::path profileDir,
     spdlog::info("Muscle camera acquisition thread started");
 
     // Start Arduino triggering interface set default triggering parameters
-    // Start Arduino triggering interface set default triggering parameters
     while (!muscleRecordingState->muscleCamera)
     {
         spdlog::debug("Waiting for muscle camera to be ready");
