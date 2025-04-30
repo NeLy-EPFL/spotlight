@@ -45,5 +45,8 @@ private:
 
 std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps);
 std::string findArduinoPortName(RecorderConfig &recorderConfig);
+std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
+    RecorderConfig &recorderConfig,
+    int muscleNumLinesScanned);
 
 #endif // ARDUINO_COMMUNICATION_HPP

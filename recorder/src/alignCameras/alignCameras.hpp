@@ -11,6 +11,7 @@
 
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/muscleCamera.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
 #include "../common/behaviorRecording.hpp"
 #include "../common/muscleRecording.hpp"
 #include "../common/utils.hpp"

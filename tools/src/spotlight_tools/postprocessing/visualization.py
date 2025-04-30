@@ -27,7 +27,7 @@ def visualize_stage_trajectory(
     cmap = cm.get_cmap(colormap_name)
 
     times = (
-        consolidated_metadata_df["receivedTimeUs"].values / 1e6
+        consolidated_metadata_df["received_time_us"].values / 1e6
     )  # Convert to seconds
     times = times - times[0]  # Normalize to start at 0
     norm = Normalize(vmin=times.min(), vmax=times.max())

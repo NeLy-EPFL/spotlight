@@ -1,14 +1,3 @@
-#include <memory>
-#include <thread>
-#include <vector>
-#include <atomic>
-#include <signal.h>
-#include <csignal>
-#include <filesystem>
-
-#include <QApplication>
-#include <spdlog/spdlog.h>
-
 #include "runSpotlight.hpp"
 
 namespace
