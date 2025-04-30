@@ -246,23 +246,16 @@ void parseIncomingCommand(const char* message) {
     // Handle command: SET_BEHAVIOR_FPS
     const char* fpsStart = message + CMDLEN_SET_BEHAVIOR_FPS + 1;
     unsigned int fps = atoi(fpsStart);
-    if (fps >= 0) {
-      if (fps == 0) {
-        behaviorCamPeriod = UINT_MAX;
-        litStatusLED(WHITE);
-      } else {
-        behaviorCamPeriod = 1000000 / fps;
-      }
-      Serial.print("Behavior camera FPS set to: ");
-      Serial.println(fps);
-      Serial.flush();
-      litStatusLED(GREEN);
+    if (fps == 0) {
+      behaviorCamPeriod = UINT_MAX;
+      litStatusLED(WHITE);
     } else {
-      Serial.print("Invalid FPS for behavior camera: ");
-      Serial.println(fps);
-      Serial.flush();
-      litStatusLED(RED);
+      behaviorCamPeriod = 1000000 / fps;
     }
+    Serial.print("Behavior camera FPS set to: ");
+    Serial.println(fps);
+    Serial.flush();
+    litStatusLED(GREEN);
   } else if (strncmp(message, CMDSTR_SET_SYNC_RATIO, CMDLEN_SET_SYNC_RATIO) == 0) {
     // Handle command: SET_SYNC_RATIO
     const char* ratioStart = message + CMDLEN_SET_SYNC_RATIO + 1;
