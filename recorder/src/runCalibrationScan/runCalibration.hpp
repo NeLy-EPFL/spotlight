@@ -17,6 +17,7 @@
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/motionControl.hpp"
 #include "../peripherals/muscleCamera.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
 
 void runCalibrationScan(std::filesystem::path profileDir,
                         std::filesystem::path arucoSaveDir);
