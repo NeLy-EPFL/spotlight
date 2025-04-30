@@ -114,21 +114,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
     spdlog::info("Muscle camera acquisition thread started");
 
     // Start Arduino triggering interface set default triggering parameters
-    spdlog::info("Starting Arduino communication");
-    std::string arduinoPortName = findArduinoPortName(recorderConfig);
-    arduinoCommunication =
-        std::make_unique<ArduinoCommunication>(arduinoPortName);
-    spdlog::info("Arduino communication started");
-    int behaviorFrameRate = recorderConfig.getParameter<int>(
-        "behavior_camera", "streaming_frame_rate");
-    int syncRatio = recorderConfig.getParameter<int>(
-        "muscle_camera", "streaming_sync_ratio");
-    int behaviorExposureTimeUs = recorderConfig.getParameter<int>(
-        "behavior_camera", "default_exposure_time_us");
-    int muscleExposureTimePerLineUs = recorderConfig.getParameter<int>(
-        "muscle_camera", "default_exposure_time_us");
-    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
-        "muscle_camera", "rolling_shutter_line_time_us");
+    // Start Arduino triggering interface set default triggering parameters
     while (!muscleRecordingState->muscleCamera)
     {
         spdlog::debug("Waiting for muscle camera to be ready");
@@ -136,24 +122,8 @@ void runCalibrationScan(std::filesystem::path profileDir,
     }
     int muscleNumLinesScanned =
         muscleRecordingState->muscleCamera->getNumLinesScanned();
-    int muscleLightOnTimeUs =
-        calculateMuscleExcitationOnTime(
-            muscleNumLinesScanned,
-            rollingShutterLineTimeUs,
-            muscleExposureTimePerLineUs);
-    spdlog::info("Setting behavior recording FPS via Arduino to {}",
-                 behaviorFrameRate);
-    arduinoCommunication->setBehaviorRecordingFPS(behaviorFrameRate);
-    spdlog::info("Setting sync ratio via Arduino to {}", syncRatio);
-    arduinoCommunication->setSyncRatio(syncRatio);
-    spdlog::info("Setting behavior exposure time via Arduino to {} us",
-                 behaviorExposureTimeUs);
-    arduinoCommunication->setBehaviorExposureTime(behaviorExposureTimeUs);
-    spdlog::info("Setting muscle exposure time (light-on time) via Arduino to "
-                 "{} us",
-                 muscleLightOnTimeUs);
-    arduinoCommunication->setMuscleExposureTime(muscleLightOnTimeUs);
-    spdlog::info("Arduino parameters set");
+    arduinoCommunication = initializeTriggeringWithDefaultParams(
+        recorderConfig, muscleNumLinesScanned);
 
     // Set up motion control
     MotionControl motionControl(recorderConfig);
