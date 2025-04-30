@@ -246,12 +246,17 @@ void parseIncomingCommand(const char* message) {
     // Handle command: SET_BEHAVIOR_FPS
     const char* fpsStart = message + CMDLEN_SET_BEHAVIOR_FPS + 1;
     unsigned int fps = atoi(fpsStart);
-    if (fps > 0) {
-      behaviorCamPeriod = 1000000 / fps;
+    if (fps >= 0) {
+      if (fps == 0) {
+        behaviorCamPeriod = UINT_MAX;
+        litStatusLED(WHITE);
+      } else {
+        behaviorCamPeriod = 1000000 / fps;
+      }
       Serial.print("Behavior camera FPS set to: ");
       Serial.println(fps);
       Serial.flush();
-      // litStatusLED(GREEN);
+      litStatusLED(GREEN);
     } else {
       Serial.print("Invalid FPS for behavior camera: ");
       Serial.println(fps);

@@ -6,6 +6,7 @@ namespace
     std::shared_ptr<ProgrammedStop> programmedRecordingStop = nullptr;
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState = nullptr;
     std::shared_ptr<MuscleRecordingState> muscleRecordingState = nullptr;
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication = nullptr;
 
     std::queue<std::tuple<double, double>> getCalibrationPositions(
         double xMinMm,
@@ -47,6 +48,13 @@ namespace
         {
             behaviorRecordingState->behaviorCamera->stop();
         }
+
+        // Stop triggering
+        spdlog::info("Stopping triggering via Arduino");
+        arduinoCommunication->setBehaviorRecordingFPS(0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        arduinoCommunication->stopCommunication();
+        
         std::exit(0);
     }
 }
@@ -104,6 +112,48 @@ void runCalibrationScan(std::filesystem::path profileDir,
         programState,
         programmedRecordingStop);
     spdlog::info("Muscle camera acquisition thread started");
+
+    // Start Arduino triggering interface set default triggering parameters
+    spdlog::info("Starting Arduino communication");
+    std::string arduinoPortName = findArduinoPortName(recorderConfig);
+    arduinoCommunication =
+        std::make_unique<ArduinoCommunication>(arduinoPortName);
+    spdlog::info("Arduino communication started");
+    int behaviorFrameRate = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    int syncRatio = recorderConfig.getParameter<int>(
+        "muscle_camera", "streaming_sync_ratio");
+    int behaviorExposureTimeUs = recorderConfig.getParameter<int>(
+        "behavior_camera", "default_exposure_time_us");
+    int muscleExposureTimePerLineUs = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_exposure_time_us");
+    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "rolling_shutter_line_time_us");
+    while (!muscleRecordingState->muscleCamera)
+    {
+        spdlog::debug("Waiting for muscle camera to be ready");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    int muscleNumLinesScanned =
+        muscleRecordingState->muscleCamera->getNumLinesScanned();
+    int muscleLightOnTimeUs =
+        calculateMuscleExcitationOnTime(
+            muscleNumLinesScanned,
+            rollingShutterLineTimeUs,
+            muscleExposureTimePerLineUs);
+    spdlog::info("Setting behavior recording FPS via Arduino to {}",
+                 behaviorFrameRate);
+    arduinoCommunication->setBehaviorRecordingFPS(behaviorFrameRate);
+    spdlog::info("Setting sync ratio via Arduino to {}", syncRatio);
+    arduinoCommunication->setSyncRatio(syncRatio);
+    spdlog::info("Setting behavior exposure time via Arduino to {} us",
+                 behaviorExposureTimeUs);
+    arduinoCommunication->setBehaviorExposureTime(behaviorExposureTimeUs);
+    spdlog::info("Setting muscle exposure time (light-on time) via Arduino to "
+                 "{} us",
+                 muscleLightOnTimeUs);
+    arduinoCommunication->setMuscleExposureTime(muscleLightOnTimeUs);
+    spdlog::info("Arduino parameters set");
 
     // Set up motion control
     MotionControl motionControl(recorderConfig);
@@ -225,6 +275,12 @@ void runCalibrationScan(std::filesystem::path profileDir,
     muscleRecordingState->muscleCamera = nullptr;
     behaviorImageAcquirerThread.join();
     muscleImageAcquirerThread.join();
+
+    // Stop triggering
+    spdlog::info("Stopping triggering via Arduino");
+    arduinoCommunication->setBehaviorRecordingFPS(0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    arduinoCommunication->stopCommunication();
 }
 
 int main(int argc, char **argv)
