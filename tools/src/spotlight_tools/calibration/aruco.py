@@ -3,8 +3,39 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
+# These parameters very empirically tuned for the two cameras
+# See https://docs.opencv.org/4.x/d1/dcd/structcv_1_1aruco_1_1DetectorParameters.html
+# for all parameters.
+# See https://docs.opencv.org/4.11.0/d5/dae/tutorial_aruco_detection.html
+# (Detector Parameters section) for a walkthrough. However, note that this tutorial
+# doesn't cover all parameters.
+_detection_params_behavior_cam = cv2.aruco.DetectorParameters()
+_detection_params_behavior_cam.perspectiveRemovePixelPerCell = 40
+_detection_params_behavior_cam.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
 
-def detect_aruco(image, horizontal_flip=False, dictionary=cv2.aruco.DICT_4X4_1000):
+_detection_params_muscle_cam = cv2.aruco.DetectorParameters()
+_detection_params_muscle_cam.minMarkerPerimeterRate = 1.5
+_detection_params_muscle_cam.maxMarkerPerimeterRate = 6.0
+_detection_params_muscle_cam.adaptiveThreshWinSizeMax = 46
+_detection_params_muscle_cam.perspectiveRemovePixelPerCell = 40
+_detection_params_muscle_cam.adaptiveThreshWinSizeMin = 50
+_detection_params_muscle_cam.adaptiveThreshWinSizeMax = 120
+_detection_params_muscle_cam.adaptiveThreshConstant = 20
+_detection_params_muscle_cam.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+
+aruco_detection_params = {
+    "behavior_camera": _detection_params_behavior_cam,
+    "muscle_camera": _detection_params_muscle_cam,
+}
+aruco_detection_image_preprocessing = {
+    "behavior_camera": lambda x: x.copy(),  # make a copy to avoid modifying the original
+    "muscle_camera": lambda x: cv2.GaussianBlur(x, (5, 5), 0),
+}
+
+
+def detect_aruco(
+    image, camera, horizontal_flip=False, dictionary=cv2.aruco.DICT_4X4_1000
+):
     """
     Detect ArUco codes in an image and return their IDs and corner coordinates.
 
@@ -12,6 +43,8 @@ def detect_aruco(image, horizontal_flip=False, dictionary=cv2.aruco.DICT_4X4_100
     -----------
     image : numpy.ndarray
         Grayscale image of shape (rows, cols)
+    camera : str
+        "behavior_camera" or "muscle_camera".
     horizontal_flip : bool, optional
         Whether to flip the image horizontally before detection (default: False)
     dictionary : cv2.aruco.Dictionary, optional
@@ -25,8 +58,11 @@ def detect_aruco(image, horizontal_flip=False, dictionary=cv2.aruco.DICT_4X4_100
         - coords is an array of shape (n, 4, 2) containing the corner coordinates
           in pixel units, with each corner having (x, y) coordinates
     """
-    # Make a copy of the image to avoid modifying the original
-    working_image = image.copy()
+    if camera not in ("behavior_camera", "muscle_camera"):
+        raise ValueError("camera must be either 'behavior_camera' or 'muscle_camera'.")
+
+    # Preprocess image
+    working_image = aruco_detection_image_preprocessing[camera](image)
 
     # Get image dimensions
     num_rows, num_cols = working_image.shape
@@ -38,16 +74,8 @@ def detect_aruco(image, horizontal_flip=False, dictionary=cv2.aruco.DICT_4X4_100
     # Define the ArUco dictionary
     aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary)
 
-    # Create the detector parameters
-    parameters = cv2.aruco.DetectorParameters()
-    # parameters.minMarkerPerimeterRate=1.0
-    # parameters.maxMarkerPerimeterRate=4 #40.0
-    parameters.perspectiveRemovePixelPerCell=40 #40 #10 #default:4
-    # parameters.adaptiveThreshWinSizeMin=3#10
-    # parameters.adaptiveThreshWinSizeMax=23#53
-
     # Detect ArUco markers
-    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+    detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_detection_params[camera])
     corners, ids, rejected = detector.detectMarkers(working_image)
 
     # If no markers are detected, return empty arrays
@@ -157,8 +185,14 @@ class ArUcoBoard:
 
         # Calculate how many codes fit in each dimension
         self.grid_dim_ncodes = (
-            int(self.arena_dim_mm[0] / (self.scale_mm * (self.code_size_unitblk + spacing_unitblk))),
-            int(self.arena_dim_mm[1] / (self.scale_mm * (self.code_size_unitblk + spacing_unitblk))),
+            int(
+                self.arena_dim_mm[0]
+                / (self.scale_mm * (self.code_size_unitblk + spacing_unitblk))
+            ),
+            int(
+                self.arena_dim_mm[1]
+                / (self.scale_mm * (self.code_size_unitblk + spacing_unitblk))
+            ),
         )
 
         # Check if we have enough markers
@@ -170,8 +204,10 @@ class ArUcoBoard:
 
         # Calculate grid dimensions without margins
         self.grid_dim_no_margin_unitblk = (
-            self.grid_dim_ncodes[0] * (self.code_size_unitblk + spacing_unitblk) - spacing_unitblk,
-            self.grid_dim_ncodes[1] * (self.code_size_unitblk + spacing_unitblk) - spacing_unitblk,
+            self.grid_dim_ncodes[0] * (self.code_size_unitblk + spacing_unitblk)
+            - spacing_unitblk,
+            self.grid_dim_ncodes[1] * (self.code_size_unitblk + spacing_unitblk)
+            - spacing_unitblk,
         )
 
         # Calculate margins to center the grid
@@ -188,8 +224,14 @@ class ArUcoBoard:
         col = grid_id % self.grid_dim_ncodes[0]
 
         # Calculate x, y coordinates in mm
-        x_mm = self.margins[0] + col * (self.code_size_unitblk + self.spacing_unitblk) * self.scale_mm
-        y_mm = self.margins[1] + row * (self.code_size_unitblk + self.spacing_unitblk) * self.scale_mm
+        x_mm = (
+            self.margins[0]
+            + col * (self.code_size_unitblk + self.spacing_unitblk) * self.scale_mm
+        )
+        y_mm = (
+            self.margins[1]
+            + row * (self.code_size_unitblk + self.spacing_unitblk) * self.scale_mm
+        )
 
         return (x_mm, y_mm)
 
