@@ -103,7 +103,6 @@ def detect_aruco(
             for j in range(4):
                 # Flip the x-coordinate
                 coords[i, j, 0] = num_cols - coords[i, j, 0] - 1
-    print(f"Detected {len(ids)} ArUco markers")
 
     return ids.flatten(), coords
 
