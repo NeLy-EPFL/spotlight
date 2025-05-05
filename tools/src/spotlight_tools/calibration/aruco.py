@@ -29,6 +29,7 @@ def get_aruco_parameters(camera):
         parameters.adaptiveThreshWinSizeMax = 120
         parameters.adaptiveThreshConstant = 20
         parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+        return parameters
     else:
         raise ValueError("camera must be either 'behavior_camera' or 'muscle_camera'.")
 
