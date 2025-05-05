@@ -3,34 +3,43 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
-# These parameters very empirically tuned for the two cameras
-# See https://docs.opencv.org/4.x/d1/dcd/structcv_1_1aruco_1_1DetectorParameters.html
-# for all parameters.
-# See https://docs.opencv.org/4.11.0/d5/dae/tutorial_aruco_detection.html
-# (Detector Parameters section) for a walkthrough. However, note that this tutorial
-# doesn't cover all parameters.
-_detection_params_behavior_cam = cv2.aruco.DetectorParameters()
-_detection_params_behavior_cam.perspectiveRemovePixelPerCell = 40
-_detection_params_behavior_cam.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
 
-_detection_params_muscle_cam = cv2.aruco.DetectorParameters()
-_detection_params_muscle_cam.minMarkerPerimeterRate = 1.5
-_detection_params_muscle_cam.maxMarkerPerimeterRate = 6.0
-_detection_params_muscle_cam.adaptiveThreshWinSizeMax = 46
-_detection_params_muscle_cam.perspectiveRemovePixelPerCell = 40
-_detection_params_muscle_cam.adaptiveThreshWinSizeMin = 50
-_detection_params_muscle_cam.adaptiveThreshWinSizeMax = 120
-_detection_params_muscle_cam.adaptiveThreshConstant = 20
-_detection_params_muscle_cam.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+def get_aruco_parameters(camera):
+    """Get ArUco detection parameters for different cameras.
 
-aruco_detection_params = {
-    "behavior_camera": _detection_params_behavior_cam,
-    "muscle_camera": _detection_params_muscle_cam,
-}
-aruco_detection_image_preprocessing = {
-    "behavior_camera": lambda x: x.copy(),  # make a copy to avoid modifying the original
-    "muscle_camera": lambda x: cv2.GaussianBlur(x, (5, 5), 0),
-}
+    These parameters very empirically tuned for the two cameras
+    See https://docs.opencv.org/4.x/d1/dcd/structcv_1_1aruco_1_1DetectorParameters.html
+    for all parameters.
+    See https://docs.opencv.org/4.11.0/d5/dae/tutorial_aruco_detection.html
+    (Detector Parameters section) for a walkthrough. However, note that this tutorial
+    doesn't cover all parameters.
+    """
+    if camera == "behavior_camera":
+        parameters = cv2.aruco.DetectorParameters()
+        parameters.perspectiveRemovePixelPerCell = 40
+        parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+        return parameters
+    elif camera == "muscle_camera":
+        parameters = cv2.aruco.DetectorParameters()
+        parameters.minMarkerPerimeterRate = 1.5
+        parameters.maxMarkerPerimeterRate = 6.0
+        parameters.adaptiveThreshWinSizeMax = 46
+        parameters.perspectiveRemovePixelPerCell = 40
+        parameters.adaptiveThreshWinSizeMin = 50
+        parameters.adaptiveThreshWinSizeMax = 120
+        parameters.adaptiveThreshConstant = 20
+        parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+    else:
+        raise ValueError("camera must be either 'behavior_camera' or 'muscle_camera'.")
+
+
+def preprocess_image(image, camera):
+    if camera == "behavior_camera":
+        return image.copy()  # make a copy to avoid modifying the original
+    elif camera == "muscle_camera":
+        return cv2.GaussianBlur(image, (5, 5), 0)
+    else:
+        raise ValueError("camera must be either 'behavior_camera' or 'muscle_camera'.")
 
 
 def detect_aruco(
@@ -62,7 +71,7 @@ def detect_aruco(
         raise ValueError("camera must be either 'behavior_camera' or 'muscle_camera'.")
 
     # Preprocess image
-    working_image = aruco_detection_image_preprocessing[camera](image)
+    working_image = preprocess_image(image, camera)
 
     # Get image dimensions
     num_rows, num_cols = working_image.shape
@@ -75,7 +84,8 @@ def detect_aruco(
     aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary)
 
     # Detect ArUco markers
-    detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_detection_params[camera])
+    aruco_detection_params = get_aruco_parameters(camera)
+    detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_detection_params)
     corners, ids, rejected = detector.detectMarkers(working_image)
 
     # If no markers are detected, return empty arrays
@@ -93,6 +103,7 @@ def detect_aruco(
             for j in range(4):
                 # Flip the x-coordinate
                 coords[i, j, 0] = num_cols - coords[i, j, 0] - 1
+    print(f"Detected {len(ids)} ArUco markers")
 
     return ids.flatten(), coords
 
