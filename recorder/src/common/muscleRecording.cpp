@@ -191,7 +191,7 @@ void muscleImageSaver(
             if (programState->toQuit.load())
             {
                 spdlog::info(
-                    "Behavior image saver thread is breaking out of loop.");
+                    "Muscle image saver thread is breaking out of loop.");
                 break;
             }
 
