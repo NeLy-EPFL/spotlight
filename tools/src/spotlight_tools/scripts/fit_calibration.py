@@ -28,9 +28,9 @@ def open_tif_image_and_normalize(path: str) -> np.ndarray:
     """Read 16-bit tif image and normalize to 0-255 range based on the 5th
     and 95th percentiles."""
     image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-    q5 = np.percentile(image, 20)
-    q95 = np.percentile(image, 80)
-    image = (image - q5) / (q95 - q5)
+    q20 = np.percentile(image, 20)
+    q80 = np.percentile(image, 80)
+    image = (image - q20) / (q80 - q20)
     image = np.clip(image, 0, 1)
     image = (image * 255).astype(np.uint8)
     return image
