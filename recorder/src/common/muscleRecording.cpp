@@ -201,7 +201,7 @@ void muscleImageSaver(
         }
         startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
-            "behavior_frame_" + fmt::format("{:09}", frameData.frameId);
+            "muscle_frame_" + fmt::format("{:09}", frameData.frameId);
         std::filesystem::path muscleSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
