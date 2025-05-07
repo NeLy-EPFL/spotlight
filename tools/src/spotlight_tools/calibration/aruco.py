@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+import svgwrite
 
 
 def get_aruco_parameters(camera):
@@ -178,11 +178,6 @@ def plot_aruco_detections(fig, ax, image, ids, coords):
     ax.set_ylabel("Y (pixels)")
 
     plt.tight_layout()
-
-
-import cv2
-import numpy as np
-import svgwrite
 
 
 class ArUcoBoard:
