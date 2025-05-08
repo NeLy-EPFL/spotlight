@@ -225,9 +225,9 @@ void writeExperimentParameters(
     // Add metadata.file_format_version block
     out << YAML::Key << "metadata" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "file_format_version" << YAML::Value << YAML::BeginMap;
-    out << YAML::Key << "major" << YAML::Value << 1;
-    out << YAML::Key << "minor" << YAML::Value << 0;
-    out << YAML::Key << "patch" << YAML::Value << 0;
+    out << YAML::Key << "major" << YAML::Value << EXPERIMENT_PARAMETERS_MAJOR;
+    out << YAML::Key << "minor" << YAML::Value << EXPERIMENT_PARAMETERS_MINOR;
+    out << YAML::Key << "patch" << YAML::Value << EXPERIMENT_PARAMETERS_PATCH;
     out << YAML::EndMap; // end file_format_version
     out << YAML::EndMap; // end metadata
 
