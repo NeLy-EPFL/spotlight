@@ -205,12 +205,16 @@ void muscleImageSaver(
         std::filesystem::path muscleSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
+        
+        // Reorient image (rotate it so it's consistent with behavior image)
+        cv::Mat reorientedImage;
+        reorientMuscleImage(frameData.image, reorientedImage);
 
         // Save image
         std::string imagePath = muscleSaveDir / (filenameStem + ".tif");
         try
         {
-            cv::imwrite(imagePath, frameData.image, compressionParams);
+            cv::imwrite(imagePath, reorientedImage, compressionParams);
         }
         catch (const cv::Exception &ex)
         {
