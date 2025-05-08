@@ -4,13 +4,15 @@
 #include <iostream>
 #include <chrono>
 #include <filesystem>
-#include <iostream>
+#include <fstream>
+#include <string>
 #include <thread>
 #include <mutex>
 
 #include <opencv2/opencv.hpp>
 #include <QSerialPort>
 #include <QSerialPortInfo>
+#include <yaml-cpp/yaml.h>
 #include <spdlog/spdlog.h>
 
 #include "dataTypes.hpp"
@@ -48,6 +50,15 @@ void convert16BitTo8Bit(cv::Mat &sourceImage,
 int calculateMuscleExcitationOnTime(int numLinesScanned,
                                     float rollingShutterLineTimeUs,
                                     int exposureTimeUs);
+
+void writeExperimentParameters(
+    const std::filesystem::path &outputPath,
+    int behavior_fps,
+    bool muscle_imaging_enabled,
+    int muscle_sync_ratio,
+    float behavior_exposure_time_ms,
+    float muscle_exposure_time_ms,
+    const std::string &experiment_protocol);
 
 class SaveDirectory
 {
