@@ -593,7 +593,7 @@ cv::Mat addCornerMarker(cv::Mat image,
         std::tie(pixelRow, pixelCol) =
             behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
                 stagePosition.xPosMm, stagePosition.yPosMm, x, y);
-        pixelPoints.emplace_back(pixelRow, pixelCol);
+        pixelPoints.emplace_back(pixelCol, pixelRow);
         cv::circle(imageForDisplay,
                    cv::Point(pixelCol, pixelRow),
                    5,
