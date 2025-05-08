@@ -18,15 +18,16 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
             calibration_["metadata"]["file_format_version"]["major"].as<int>();
         int minorVersion =
             calibration_["metadata"]["file_format_version"]["minor"].as<int>();
-        if (majorVersion != 1)
+        bool isVersionCompatible =
+            checkVersionCompatibility(majorVersion,
+                                      minorVersion,
+                                      CALIBRATION_RESULT_MAJOR,
+                                      CALIBRATION_RESULT_MINOR);
+        if (!isVersionCompatible)
         {
-            std::string errorMsg =
-                "Calibration file format version is too old: " +
-                std::to_string(majorVersion) + "." +
-                std::to_string(minorVersion) +
-                " found; 1.x required";
-            spdlog::critical(errorMsg);
-            throw std::runtime_error(errorMsg);
+            throw std::runtime_error(
+                "File version incompatible: " + calibrationFilePath
+            );
         }
 
         // Validate that all required sections exist

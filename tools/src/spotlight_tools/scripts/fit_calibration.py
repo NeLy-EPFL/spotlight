@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import yaml
 import cv2
 import tyro
-from dataclasses import dataclass
 from pathlib import Path
 from tqdm import tqdm
 
+import spotlight_tools.file_format_versions as versions
 from spotlight_tools.calibration.aruco import (
     ArUcoBoard,
     detect_aruco,
@@ -155,9 +155,9 @@ def fit_calibration_model(
             # Assign a version number to the format of this calibration file
             # Follow semver for backward compatibility detection
             "file_format_version": {
-                "major": 1,
-                "minor": 0,
-                "patch": 0,
+                "major": versions.calibration_result_major,
+                "minor": versions.calibration_result_minor,
+                "patch": versions.calibration_result_patch,
             }
         },
         "stage_and_pixel_to_physical": {
