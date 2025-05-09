@@ -351,20 +351,13 @@ cv::Mat blackoutOutside(cv::Mat image,
 
     // Create black image
     cv::Mat blackedOutImage = cv::Mat::zeros(image.size(), image.type());
+
+    // Create mask for what's within the stage boundaries, with a boundary width
+    // considered
     cv::fillPoly(blackedOutImage, pts, cv::Scalar(1));
 
     // Copy the ROI from the original image to the blacked out image
-    for (int x = 0; x < numCols; x++)
-    {
-        for (int y = 0; y < numRows; y++)
-        {
-            if (blackedOutImage.at<uchar>(y, x) == 1)
-            {
-                blackedOutImage.at<uchar>(y, x) =
-                    image.at<uchar>(y, x);
-            }
-        }
-    }
+    image.copyTo(blackedOutImage, blackedOutImage);
 
     return blackedOutImage;
 }
