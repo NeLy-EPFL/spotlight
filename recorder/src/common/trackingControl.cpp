@@ -324,43 +324,44 @@ cv::Mat blackoutOutside(cv::Mat image,
     double yMinPhysical = boundaryMarginMm;
     double yMaxPhysical = arenaSizeYMm - boundaryMarginMm;
 
-    int xMinPixel, xMaxPixel, yMinPixel, yMaxPixel;
-    std::tie(yMinPixel, xMinPixel) =
+    int x0, y0, x1, y1, x2, y2, x3, y3;
+    std::tie(y0, x0) =
         behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
             stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMinPhysical);
-    std::tie(yMaxPixel, xMaxPixel) =
+    std::tie(y1, x1) =
+        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+            stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMinPhysical);
+    std::tie(y2, x2) =
         behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
             stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
+    std::tie(y3, x3) =
+        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+            stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMaxPhysical);
 
     // Clamp values to image boundaries
-    xMinPixel = std::max(0, xMinPixel);
-    xMaxPixel = std::min(image.cols - 1, xMaxPixel);
-    yMinPixel = std::max(0, yMinPixel);
-    yMaxPixel = std::min(image.rows - 1, yMaxPixel);
+    int numRows = image.rows;
+    int numCols = image.cols;
+    std::vector<cv::Point> corners = {
+        cv::Point(x0, y0),
+        cv::Point(x1, y1),
+        cv::Point(x2, y2),
+        cv::Point(x3, y3)};
+    // Wrap it in a vector of vector for fillPoly
+    std::vector<std::vector<cv::Point>> pts = {corners};
 
     // Create black image
     cv::Mat blackedOutImage = cv::Mat::zeros(image.size(), image.type());
-
-    // Width and height are +1 because the pixels are inclusive
-    cv::Rect roi(xMinPixel,
-                 yMinPixel,
-                 xMaxPixel - xMinPixel + 1,
-                 yMaxPixel - yMinPixel + 1);
+    cv::fillPoly(blackedOutImage, pts, cv::Scalar(1));
 
     // Copy the ROI from the original image to the blacked out image
-    for (int y = yMinPixel; y <= yMaxPixel; y++)
+    for (int x = 0; x < numCols; x++)
     {
-        for (int x = xMinPixel; x <= xMaxPixel; x++)
+        for (int y = 0; y < numRows; y++)
         {
-            if (image.channels() == 1)
+            if (blackedOutImage.at<uchar>(y, x) == 1)
             {
                 blackedOutImage.at<uchar>(y, x) =
                     image.at<uchar>(y, x);
-            }
-            else if (image.channels() == 3)
-            {
-                blackedOutImage.at<cv::Vec3b>(y, x) =
-                    image.at<cv::Vec3b>(y, x);
             }
         }
     }
