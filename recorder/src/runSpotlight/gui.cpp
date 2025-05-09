@@ -497,18 +497,24 @@ void MainGUIWindow::startRecording()
     // Initialize save directory
     saveDirectory_->initialize();
 
-    // Save metadata: experiment protocol
-    std::string protocolString = generateProtocolString(protocolSteps);
-    std::filesystem::path metadataFilePath =
-        saveDirectory_->getDirectory() / "metadata" / "experiment_protocol.txt";
-    std::ofstream metadataFile(metadataFilePath);
-    metadataFile << protocolString;
-    metadataFile.close();
-    spdlog::info("Saved experiment protocol to {}", metadataFilePath.string());
+    // Save metadata: experiment parameters
+    std::filesystem::path experimentParametersFilePath =
+        saveDirectory_->getDirectory() / "metadata/experiment_parameters.yaml";
+    writeExperimentParameters(
+        experimentParametersFilePath,
+        behaviorFPSSpinBox_->value(),
+        muscleImagingCheckBox_->isChecked(),
+        syncRatioSpinBox_->value(),
+        behaviorExposureTimeSpinBox_->value(),
+        muscleExposureTimeSpinBox_->value(),
+        experimentProtocol_->toPlainText().toStdString());
+    spdlog::info(
+        "Saved experiment parameters to '{}'",
+        experimentParametersFilePath.string());
 
     // Save metadata: recording config
     std::filesystem::path recordingConfigFilePath =
-        saveDirectory_->getDirectory() / "metadata" / "recording_config.yaml";
+        saveDirectory_->getDirectory() / "metadata/recording_config.yaml";
     recorderConfig_.saveToFile(recordingConfigFilePath);
 
     // Send triggering parameters to Arduino and start recording
@@ -593,7 +599,7 @@ cv::Mat addCornerMarker(cv::Mat image,
         std::tie(pixelRow, pixelCol) =
             behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
                 stagePosition.xPosMm, stagePosition.yPosMm, x, y);
-        pixelPoints.emplace_back(pixelRow, pixelCol);
+        pixelPoints.emplace_back(pixelCol, pixelRow);
         cv::circle(imageForDisplay,
                    cv::Point(pixelCol, pixelRow),
                    5,

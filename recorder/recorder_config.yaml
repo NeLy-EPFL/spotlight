@@ -1,3 +1,9 @@
+metadata:
+  file_format_version:
+    major: 1
+    minor: 0
+    patch: 0
+
 arena:
   size_x_mm: 48
   size_y_mm: 72
@@ -49,13 +55,13 @@ motion_control:
   x_max_mm: 115
   y_min_mm: 47
   y_max_mm: 113
-  default_velocity_mm_per_sec: 50
+  default_velocity_mm_per_sec: 63
   calibration_scan_stride_mm: 2
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
 
 tracking:
-  update_frequency_hz: 25
+  update_frequency_hz: 50
   distance_threshold_for_moving_mm: 0.1
   min_fly_size_sq_pixels: 200
   boundary_margin_mm: 0.5

@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import yaml
 import cv2
 import tyro
-from dataclasses import dataclass
 from pathlib import Path
 from tqdm import tqdm
 
+import spotlight_tools.file_format_versions as versions
 from spotlight_tools.calibration.aruco import (
     ArUcoBoard,
     detect_aruco,
@@ -61,7 +61,7 @@ def gather_calibration_points(
 
 
 def A_to_B(A):
-    M = A[:, 2:4]  # row and column weights
+    M = A[:, 2:4]  # pixel x and y weights
     M_inv = np.linalg.inv(M)
     A_stage = A[:, 0:2]  # stage position
     A_bias = A[:, 4:5]  # bias
@@ -151,31 +151,40 @@ def fit_calibration_model(
     mat_physical_to_pixel = A_to_B(mat_pixel_to_physical)
 
     calibration_results = {
+        "metadata": {
+            # Assign a version number to the format of this calibration file
+            # Follow semver for backward compatibility detection
+            "file_format_version": {
+                "major": versions.calibration_result_major,
+                "minor": versions.calibration_result_minor,
+                "patch": versions.calibration_result_patch,
+            }
+        },
         "stage_and_pixel_to_physical": {
             "physical_pos_x": {
                 "stage_pos_x": float(mat_pixel_to_physical[0, 0]),
                 "stage_pos_y": float(mat_pixel_to_physical[0, 1]),
-                "pixel_pos_row": float(mat_pixel_to_physical[0, 2]),
-                "pixel_pos_col": float(mat_pixel_to_physical[0, 3]),
+                "pixel_pos_x": float(mat_pixel_to_physical[0, 2]),
+                "pixel_pos_y": float(mat_pixel_to_physical[0, 3]),
                 "bias": float(mat_pixel_to_physical[0, 4]),
             },
             "physical_pos_y": {
                 "stage_pos_x": float(mat_pixel_to_physical[1, 0]),
                 "stage_pos_y": float(mat_pixel_to_physical[1, 1]),
-                "pixel_pos_row": float(mat_pixel_to_physical[1, 2]),
-                "pixel_pos_col": float(mat_pixel_to_physical[1, 3]),
+                "pixel_pos_x": float(mat_pixel_to_physical[1, 2]),
+                "pixel_pos_y": float(mat_pixel_to_physical[1, 3]),
                 "bias": float(mat_pixel_to_physical[1, 4]),
             },
         },
         "stage_and_physical_to_pixel": {
-            "pixel_pos_row": {
+            "pixel_pos_x": {
                 "stage_pos_x": float(mat_physical_to_pixel[0, 0]),
                 "stage_pos_y": float(mat_physical_to_pixel[0, 1]),
                 "physical_pos_x": float(mat_physical_to_pixel[0, 2]),
                 "physical_pos_y": float(mat_physical_to_pixel[0, 3]),
                 "bias": float(mat_physical_to_pixel[0, 4]),
             },
-            "pixel_pos_col": {
+            "pixel_pos_y": {
                 "stage_pos_x": float(mat_physical_to_pixel[1, 0]),
                 "stage_pos_y": float(mat_physical_to_pixel[1, 1]),
                 "physical_pos_x": float(mat_physical_to_pixel[1, 2]),

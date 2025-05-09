@@ -186,6 +186,7 @@ void trackingController(
                                           ->latestFrameHolder
                                           ->getLatestFrameData()
                                           .image;
+            reorientBehaviorImage(myBehaviorImage, myBehaviorImage);
 
             MotionStagePosition myMotionStagePosition;
             {
@@ -323,46 +324,40 @@ cv::Mat blackoutOutside(cv::Mat image,
     double yMinPhysical = boundaryMarginMm;
     double yMaxPhysical = arenaSizeYMm - boundaryMarginMm;
 
-    int xMinPixel, xMaxPixel, yMinPixel, yMaxPixel;
-    std::tie(xMinPixel, yMinPixel) =
+    int x0, y0, x1, y1, x2, y2, x3, y3;
+    std::tie(y0, x0) =
         behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
             stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMinPhysical);
-    std::tie(xMaxPixel, yMaxPixel) =
+    std::tie(y1, x1) =
+        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+            stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMinPhysical);
+    std::tie(y2, x2) =
         behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
             stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
+    std::tie(y3, x3) =
+        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
+            stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMaxPhysical);
 
     // Clamp values to image boundaries
-    xMinPixel = std::max(0, xMinPixel);
-    xMaxPixel = std::min(image.cols - 1, xMaxPixel);
-    yMinPixel = std::max(0, yMinPixel);
-    yMaxPixel = std::min(image.rows - 1, yMaxPixel);
+    int numRows = image.rows;
+    int numCols = image.cols;
+    std::vector<cv::Point> corners = {
+        cv::Point(x0, y0),
+        cv::Point(x1, y1),
+        cv::Point(x2, y2),
+        cv::Point(x3, y3)};
+    // Wrap it in a vector of vector for fillPoly
+    std::vector<std::vector<cv::Point>> pts = {corners};
 
     // Create black image
     cv::Mat blackedOutImage = cv::Mat::zeros(image.size(), image.type());
 
-    // Width and height are +1 because the pixels are inclusive
-    cv::Rect roi(xMinPixel,
-                 yMinPixel,
-                 xMaxPixel - xMinPixel + 1,
-                 yMaxPixel - yMinPixel + 1);
+    // Create mask for what's within the stage boundaries, with a boundary width
+    // considered
+    cv::fillPoly(blackedOutImage, pts, cv::Scalar(1));
 
     // Copy the ROI from the original image to the blacked out image
-    for (int y = yMinPixel; y <= yMaxPixel; y++)
-    {
-        for (int x = xMinPixel; x <= xMaxPixel; x++)
-        {
-            if (image.channels() == 1)
-            {
-                blackedOutImage.at<uchar>(y, x) =
-                    image.at<uchar>(y, x);
-            }
-            else if (image.channels() == 3)
-            {
-                blackedOutImage.at<cv::Vec3b>(y, x) =
-                    image.at<cv::Vec3b>(y, x);
-            }
-        }
-    }
+    image.copyTo(blackedOutImage, blackedOutImage);
 
     return blackedOutImage;
 }
@@ -468,11 +463,9 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         // calibration model has not been defined yet
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
-    cv::Mat correctedImage;
-    reorientBehaviorImage(behaviorImage, correctedImage);
 
     // Remove pixels outside the stage boundaries
-    cv::Mat blackedOutImage = blackoutOutside(correctedImage,
+    cv::Mat blackedOutImage = blackoutOutside(behaviorImage,
                                               stagePosition,
                                               behaviorCamCalibrationParams,
                                               recorderConfig);
@@ -546,8 +539,8 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
                           .stagePosAndPixelPosToPhysicalPos(
                               stagePosition.xPosMm,
                               stagePosition.yPosMm,
-                              centerOfMassCol,
-                              centerOfMassRow);
+                              centerOfMassRow,
+                              centerOfMassCol);
         isFound = true;
         physicalPosXMm = x;
         physicalPosYMm = y;

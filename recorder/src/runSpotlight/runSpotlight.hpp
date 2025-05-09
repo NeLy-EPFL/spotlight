@@ -29,7 +29,6 @@
 class QApplication;
 
 // Program control functions
-void initializeProgram();
 bool quitProgram();
 
 #endif // MAIN_HPP
