@@ -26,8 +26,7 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
         if (!isVersionCompatible)
         {
             throw std::runtime_error(
-                "File version incompatible: " + calibrationFilePath
-            );
+                "File version incompatible: " + calibrationFilePath);
         }
 
         // Validate that all required sections exist
@@ -115,4 +114,25 @@ CalibrationParams::stagePosAndPhysicalPosToPixelPos(
 
     return std::make_tuple(static_cast<int>(std::round(pixelPosRow)),
                            static_cast<int>(std::round(pixelPosCol)));
+}
+
+void CalibrationParams::saveToFile(const std::string &yamlPath)
+{
+    if (!isDefined)
+    {
+        throw std::runtime_error("Calibration parameters are not defined.");
+    }
+
+    try
+    {
+        std::ofstream fout(yamlPath);
+        fout << calibration_;
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Failed to save calibration parameters to file: {}",
+                      e.what());
+        throw std::runtime_error(
+            "Failed to save calibration parameters to file");
+    }
 }

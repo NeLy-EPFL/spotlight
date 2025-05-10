@@ -2,6 +2,7 @@
 #define CALIBRATION_HPP
 
 #include <tuple>
+#include <fstream>
 
 #include <yaml-cpp/yaml.h>
 #include <spdlog/spdlog.h>
@@ -26,6 +27,8 @@ public:
         double stagePosY,
         double physicalPosX,
         double physicalPosY) const;
+
+    void saveToFile(const std::string &yamlPath);
 
 private:
     YAML::Node calibration_;
