@@ -514,8 +514,13 @@ void MainGUIWindow::startRecording()
 
     // Save metadata: recording config
     std::filesystem::path recordingConfigFilePath =
-        saveDirectory_->getDirectory() / "metadata/recording_config.yaml";
+        saveDirectory_->getDirectory() / "metadata/recorder_config.yaml";
     recorderConfig_.saveToFile(recordingConfigFilePath);
+
+    // Save metadata: calibration parameters
+    std::filesystem::path calibrationFilePath =
+        saveDirectory_->getDirectory() / "metadata/calibration_parameters.yaml";
+    behaviorCamCalibrationParams_.saveToFile(calibrationFilePath);
 
     // Send triggering parameters to Arduino and start recording
     arduinoCommunication_->setBehaviorRecordingFPS(behaviorFPSSpinBox_->value());
