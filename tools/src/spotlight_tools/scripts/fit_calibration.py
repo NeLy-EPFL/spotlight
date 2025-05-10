@@ -85,7 +85,7 @@ def gather_calibration_points(
 
 
 def A_to_B(A):
-    M = A[:, 2:4]  # row and column weights
+    M = A[:, 2:4]  # pixel y and x weights
     M_inv = np.linalg.inv(M)
     A_stage = A[:, 0:2]  # stage position
     A_bias = A[:, 4:5]  # bias
@@ -225,27 +225,27 @@ def fit_calibration_model_one_camera(
             "physical_pos_x": {
                 "stage_pos_x": float(mat_pixel_to_physical[0, 0]),
                 "stage_pos_y": float(mat_pixel_to_physical[0, 1]),
-                "pixel_pos_row": float(mat_pixel_to_physical[0, 2]),
-                "pixel_pos_col": float(mat_pixel_to_physical[0, 3]),
+                "pixel_pos_x": float(mat_pixel_to_physical[0, 2]),
+                "pixel_pos_y": float(mat_pixel_to_physical[0, 3]),
                 "bias": float(mat_pixel_to_physical[0, 4]),
             },
             "physical_pos_y": {
                 "stage_pos_x": float(mat_pixel_to_physical[1, 0]),
                 "stage_pos_y": float(mat_pixel_to_physical[1, 1]),
-                "pixel_pos_row": float(mat_pixel_to_physical[1, 2]),
-                "pixel_pos_col": float(mat_pixel_to_physical[1, 3]),
+                "pixel_pos_x": float(mat_pixel_to_physical[1, 2]),
+                "pixel_pos_y": float(mat_pixel_to_physical[1, 3]),
                 "bias": float(mat_pixel_to_physical[1, 4]),
             },
         },
         "stage_and_physical_to_pixel": {
-            "pixel_pos_row": {
+            "pixel_pos_x": {
                 "stage_pos_x": float(mat_physical_to_pixel[0, 0]),
                 "stage_pos_y": float(mat_physical_to_pixel[0, 1]),
                 "physical_pos_x": float(mat_physical_to_pixel[0, 2]),
                 "physical_pos_y": float(mat_physical_to_pixel[0, 3]),
                 "bias": float(mat_physical_to_pixel[0, 4]),
             },
-            "pixel_pos_col": {
+            "pixel_pos_y": {
                 "stage_pos_x": float(mat_physical_to_pixel[1, 0]),
                 "stage_pos_y": float(mat_physical_to_pixel[1, 1]),
                 "physical_pos_x": float(mat_physical_to_pixel[1, 2]),

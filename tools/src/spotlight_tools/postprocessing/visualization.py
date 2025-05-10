@@ -6,6 +6,7 @@ from matplotlib.axes import Axes
 from matplotlib.colors import Normalize
 from matplotlib.collections import LineCollection
 from matplotlib import cm
+from pathlib import Path
 
 
 def visualize_stage_trajectory(
@@ -48,3 +49,7 @@ def visualize_stage_trajectory(
     ax.set_ylim(y_pos.min() - margin, y_pos.max() + margin)
 
     return fig, ax
+
+
+def generate_summary_video(processed_dir: Path):
+    pass
