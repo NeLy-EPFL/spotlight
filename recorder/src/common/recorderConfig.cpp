@@ -48,7 +48,8 @@ void RecorderConfig::saveToFile(const std::string &yamlPath)
     }
     catch (const std::exception &e)
     {
-        spdlog::error("Failed to save parameters to file: {}", e.what());
-        throw std::runtime_error("Failed to save parameters to file");
+        spdlog::error("Failed to save recorder parameters to file: {}",
+                      e.what());
+        throw std::runtime_error("Failed to save recorder parameters to file");
     }
 }
