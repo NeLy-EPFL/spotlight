@@ -514,7 +514,7 @@ void MainGUIWindow::startRecording()
 
     // Save metadata: recording config
     std::filesystem::path recordingConfigFilePath =
-        saveDirectory_->getDirectory() / "metadata/recording_config.yaml";
+        saveDirectory_->getDirectory() / "metadata/recorder_config.yaml";
     recorderConfig_.saveToFile(recordingConfigFilePath);
 
     // Save metadata: calibration parameters
