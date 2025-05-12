@@ -27,8 +27,7 @@ def generate_trajectory_plot(
     )
 
     fig, ax = visualize_stage_trajectory(
-        consolidated_metadata_df=consolidated_metadata_df,
-        raw_stage_position_log_df=raw_stage_position_log_df,
+        consolidated_metadata_df
     )
 
     if output_dir is None:
