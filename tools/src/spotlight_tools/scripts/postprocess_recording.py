@@ -11,6 +11,9 @@ from spotlight_tools.postprocessing.frame_metadata import (
 )
 from spotlight_tools.postprocessing.io import check_is_directory_valid
 from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
+from spotlight_tools.postprocessing.visualization import (
+    generate_summary_video,
+)
 
 
 def postprocess_recording_data(
@@ -103,14 +106,20 @@ def postprocess_recording_data(
         play_fps,
         behavior_video_crf,
         behavior_video_preset,
-        num_frames,
+        num_frames=num_frames,
     )
 
-    # Warp muscle images
-    process_muscle_data(recording_dir, stage_positions_at_behavior_frames, overwrite)
-    
-    # Make overlay video
-    # TODO
+    if muscle_camera:
+        # Warp muscle images
+        process_muscle_data(
+            recording_dir,
+            stage_positions_at_behavior_frames,
+            overwrite=overwrite,
+            num_frames=num_frames,
+        )
+
+        # Make overlay video
+        generate_summary_video(recording_dir, num_frames=num_frames)
 
 
 def main():
@@ -118,9 +127,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-    postprocess_recording_data(
-        recording_dir="/home/sibwang/Data/spotlight/20250509-fly03-003-grade2",
-        overwrite=True,
-        muscle_camera=True,
-    )
+    main()
