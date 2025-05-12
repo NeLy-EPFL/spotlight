@@ -27,7 +27,6 @@ dependencies = [
     "vidgear (==0.3.3)",
     "setuptools (>=78,<79)",  # needed for vidgear
     "numba (==0.61.2)",
-    "sympy (>=1.14,<2.0)",
     "cmasher (>=1.9,<2.0)",
 ]
 
