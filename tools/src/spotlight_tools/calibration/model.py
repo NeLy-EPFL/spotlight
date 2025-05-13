@@ -344,3 +344,4 @@ def visualize_ransac_results(coordinates_df, ransac_results):
     print(f"  R² for Y: {metrics['after']['r2_y']:.4f}")
     print(f"  RMSE for X: {metrics['after']['rmse_x']:.4f} mm")
     print(f"  RMSE for Y: {metrics['after']['rmse_y']:.4f} mm")
+    print()
