@@ -15,7 +15,7 @@ dependencies = [
     "ipython (>=9.0,<10.0)",
     "ipykernel (>=6.29,<7.0)",
     "matplotlib (>=3.10,<4.0)",
-    "joblib (>=1.4,<2.0)",
+    "joblib (>=1.5,<2.0)",
     "pandas (>=2.2,<3.0)",
     "scipy (>=1.15,<2.0)",
     "pytest (>=8.3,<9.0)",
@@ -25,7 +25,9 @@ dependencies = [
     "pyyaml (>=6.0,<7.0)",
     "tyro (==0.9.17)",
     "vidgear (==0.3.3)",
-    "setuptools (>=78,<79)"  # needed for vidgear
+    "setuptools (>=78,<79)",  # needed for vidgear
+    "numba (==0.61.2)",
+    "cmasher (>=1.9,<2.0)",
 ]
 
 [tool.poetry]
