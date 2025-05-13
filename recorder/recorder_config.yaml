@@ -1,3 +1,9 @@
+metadata:
+  file_format_version:
+    major: 1
+    minor: 0
+    patch: 0
+
 arena:
   size_x_mm: 48
   size_y_mm: 72
@@ -6,7 +12,7 @@ behavior_camera:
   full_frame_width: 2560
   full_frame_height: 2048
   roi_width: 1984
-  roi_height: 1024
+  roi_height: 1500
   frame_grabber_trigger_line: "TTLIO12"
   streaming_frame_rate: 25
   num_image_saving_threads: 4
@@ -47,17 +53,17 @@ motion_control:
   velocity_unit: "mm/s"
   x_min_mm: 68
   x_max_mm: 115
-  y_min_mm: 47
-  y_max_mm: 113
-  default_velocity_mm_per_sec: 50
+  y_min_mm: 45
+  y_max_mm: 111
+  default_velocity_mm_per_sec: 63
   calibration_scan_stride_mm: 2
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
 
 tracking:
-  update_frequency_hz: 25
+  update_frequency_hz: 30
   distance_threshold_for_moving_mm: 0.1
-  min_fly_size_sq_pixels: 200
+  min_fly_size_sq_pixels: 1000
   boundary_margin_mm: 0.5
   image_binarize_threshold: 75
 
@@ -69,10 +75,10 @@ triggering:
   arduino_device_description: "Nano ESP32"
 
 gui:
-  behavior_camera_preview_width: 240
-  behavior_camera_preview_height: 480
-  muscle_camera_preview_width: 240
-  muscle_camera_preview_height: 480
+  behavior_camera_preview_width: 490
+  behavior_camera_preview_height: 490
+  muscle_camera_preview_width: 490
+  muscle_camera_preview_height: 490
   motion_stage_preview_height: 200
   motion_stage_preview_update_frequency_hz: 25
   default_save_dir: "./images/"

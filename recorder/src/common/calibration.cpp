@@ -13,6 +13,22 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
     {
         calibration_ = YAML::LoadFile(calibrationFilePath);
 
+        // Check if version is compatible
+        int majorVersion =
+            calibration_["metadata"]["file_format_version"]["major"].as<int>();
+        int minorVersion =
+            calibration_["metadata"]["file_format_version"]["minor"].as<int>();
+        bool isVersionCompatible =
+            checkVersionCompatibility(majorVersion,
+                                      minorVersion,
+                                      CALIBRATION_RESULT_MAJOR,
+                                      CALIBRATION_RESULT_MINOR);
+        if (!isVersionCompatible)
+        {
+            throw std::runtime_error(
+                "File version incompatible: " + calibrationFilePath);
+        }
+
         // Validate that all required sections exist
         if (!calibration_["stage_and_pixel_to_physical"] ||
             !calibration_["stage_and_physical_to_pixel"])
@@ -46,8 +62,8 @@ CalibrationParams::stagePosAndPixelPosToPhysicalPos(
     double physicalPosX =
         physicalPosXParams["stage_pos_x"].as<double>() * stagePosX +
         physicalPosXParams["stage_pos_y"].as<double>() * stagePosY +
-        physicalPosXParams["pixel_pos_row"].as<double>() * pixelPosRow +
-        physicalPosXParams["pixel_pos_col"].as<double>() * pixelPosCol +
+        physicalPosXParams["pixel_pos_x"].as<double>() * pixelPosCol +
+        physicalPosXParams["pixel_pos_y"].as<double>() * pixelPosRow +
         physicalPosXParams["bias"].as<double>();
 
     // Access the calibration parameters for physical_pos_y
@@ -56,8 +72,8 @@ CalibrationParams::stagePosAndPixelPosToPhysicalPos(
     double physicalPosY =
         physicalPosYParams["stage_pos_x"].as<double>() * stagePosX +
         physicalPosYParams["stage_pos_y"].as<double>() * stagePosY +
-        physicalPosYParams["pixel_pos_row"].as<double>() * pixelPosRow +
-        physicalPosYParams["pixel_pos_col"].as<double>() * pixelPosCol +
+        physicalPosYParams["pixel_pos_x"].as<double>() * pixelPosCol +
+        physicalPosYParams["pixel_pos_y"].as<double>() * pixelPosRow +
         physicalPosYParams["bias"].as<double>();
 
     return std::make_tuple(physicalPosX, physicalPosY);
@@ -78,23 +94,45 @@ CalibrationParams::stagePosAndPhysicalPosToPixelPos(
 
     // Access the calibration parameters for pixel_pos_row
     auto pixelPosRowParams =
-        calibration_["stage_and_physical_to_pixel"]["pixel_pos_row"];
-    int pixelPosRow = static_cast<int>(
+        calibration_["stage_and_physical_to_pixel"]["pixel_pos_y"];
+    double pixelPosRow =
         pixelPosRowParams["stage_pos_x"].as<double>() * stagePosX +
         pixelPosRowParams["stage_pos_y"].as<double>() * stagePosY +
         pixelPosRowParams["physical_pos_x"].as<double>() * physicalPosX +
         pixelPosRowParams["physical_pos_y"].as<double>() * physicalPosY +
-        pixelPosRowParams["bias"].as<double>());
+        pixelPosRowParams["bias"].as<double>();
 
     // Access the calibration parameters for pixel_pos_col
     auto pixelPosColParams =
-        calibration_["stage_and_physical_to_pixel"]["pixel_pos_col"];
-    int pixelPosCol = static_cast<int>(
+        calibration_["stage_and_physical_to_pixel"]["pixel_pos_x"];
+    double pixelPosCol =
         pixelPosColParams["stage_pos_x"].as<double>() * stagePosX +
         pixelPosColParams["stage_pos_y"].as<double>() * stagePosY +
         pixelPosColParams["physical_pos_x"].as<double>() * physicalPosX +
         pixelPosColParams["physical_pos_y"].as<double>() * physicalPosY +
-        pixelPosColParams["bias"].as<double>());
+        pixelPosColParams["bias"].as<double>();
 
-    return std::make_tuple(pixelPosRow, pixelPosCol);
+    return std::make_tuple(static_cast<int>(std::round(pixelPosRow)),
+                           static_cast<int>(std::round(pixelPosCol)));
+}
+
+void CalibrationParams::saveToFile(const std::string &yamlPath)
+{
+    if (!isDefined)
+    {
+        throw std::runtime_error("Calibration parameters are not defined.");
+    }
+
+    try
+    {
+        std::ofstream fout(yamlPath);
+        fout << calibration_;
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Failed to save calibration parameters to file: {}",
+                      e.what());
+        throw std::runtime_error(
+            "Failed to save calibration parameters to file");
+    }
 }

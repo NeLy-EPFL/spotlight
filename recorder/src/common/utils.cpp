@@ -210,6 +210,56 @@ int calculateMuscleExcitationOnTime(int numLinesScanned,
     return maxRollingShutterDelay + exposureTimeUs;
 }
 
+void writeExperimentParameters(
+    const std::filesystem::path &outputPath,
+    int behavior_fps,
+    bool muscle_imaging_enabled,
+    int muscle_sync_ratio,
+    float behavior_exposure_time_ms,
+    float muscle_exposure_time_ms,
+    const std::string &experiment_protocol)
+{
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+
+    // Add metadata.file_format_version block
+    out << YAML::Key << "metadata" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "file_format_version" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "major" << YAML::Value << EXPERIMENT_PARAMETERS_MAJOR;
+    out << YAML::Key << "minor" << YAML::Value << EXPERIMENT_PARAMETERS_MINOR;
+    out << YAML::Key << "patch" << YAML::Value << EXPERIMENT_PARAMETERS_PATCH;
+    out << YAML::EndMap; // end file_format_version
+    out << YAML::EndMap; // end metadata
+
+    out << YAML::Key << "behavior_fps" << YAML::Value
+        << behavior_fps;
+    out << YAML::Key << "muscle_imaging_enabled" << YAML::Value
+        << muscle_imaging_enabled;
+    out << YAML::Key << "muscle_sync_ratio" << YAML::Value
+        << muscle_sync_ratio;
+    out << YAML::Key << "behavior_exposure_time_ms" << YAML::Value
+        << behavior_exposure_time_ms;
+    out << YAML::Key << "muscle_exposure_time_ms" << YAML::Value
+        << muscle_exposure_time_ms;
+    out << YAML::Key << "experiment_protocol" << YAML::Value
+        << experiment_protocol;
+
+    out << YAML::EndMap;
+
+    std::ofstream fout(outputPath);
+    if (!fout.is_open())
+    {
+        std::string errorMessage =
+            "Failed to open file for writing experiment parameters: " +
+            outputPath.string();
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+
+    fout << out.c_str();
+    fout.close();
+}
+
 SaveDirectory::SaveDirectory(std::string directory)
 {
     std::lock_guard<std::mutex> lock(mutex_);

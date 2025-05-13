@@ -66,21 +66,21 @@ MuscleCamera::MuscleCamera(int imageWidth,
     else if (pid == 0)
     {
         // Child process
-        execl("./pco-camera-server",
-              "./pco-camera-server",
-              "--profile-dir",
-              profileDir.c_str(),
-              "--x-min",
-              std::to_string(x0_).c_str(),
-              "--x-max",
-              std::to_string(x1_).c_str(),
-              "--y-min",
-              std::to_string(y0_).c_str(),
-              "--y-max",
-              std::to_string(y1_).c_str(),
-              "--verbosity",
-              logLevelToStr(logLevel).c_str(),
-              (char *)nullptr);
+        execlp("pco-camera-server",
+               "pco-camera-server",
+               "--profile-dir",
+               profileDir.c_str(),
+               "--x-min",
+               std::to_string(x0_).c_str(),
+               "--x-max",
+               std::to_string(x1_).c_str(),
+               "--y-min",
+               std::to_string(y0_).c_str(),
+               "--y-max",
+               std::to_string(y1_).c_str(),
+               "--verbosity",
+               logLevelToStr(logLevel).c_str(),
+               (char *)nullptr);
 
         // If execl returns, it must have failed
         std::string errorMessage =
