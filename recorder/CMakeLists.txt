@@ -57,8 +57,8 @@ set(PCOCAMERA_SOURCES
 file(GLOB PCO_CAMERA_SERVER_SOURCES
     "src/pcoCameraServer/*.cpp"
     "src/pcoCameraServer/*.hpp"
-    "src/common/recorderConfig.cpp"
-    "src/common/recorderConfig.hpp")
+    "src/common/recorderConfig.*"
+    "src/common/fileFormatVersions.*")
 add_executable(pco-camera-server ${PCO_CAMERA_SERVER_SOURCES} ${PCOCAMERA_SOURCES})
 target_include_directories(pco-camera-server PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
 target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
@@ -103,7 +103,8 @@ file(GLOB RUN_CALIBRATION_SOURCES
     "src/common/recorderConfig.*"
     "src/common/behaviorRecording.*"
     "src/common/muscleRecording.*"
-    "src/common/utils.*")
+    "src/common/utils.*"
+    "src/common/fileFormatVersions.*")
 add_executable(run-calibration-scan ${RUN_CALIBRATION_SOURCES})
 # target_link_libraries(run-calibration-scan pthread rt dl)
 target_link_libraries(run-calibration-scan Qt6::Widgets Qt6::SerialPort)
@@ -126,7 +127,8 @@ file(GLOB ALIGN_CAMERAS_SOURCES
     "src/common/recorderConfig.*"
     "src/common/utils.*"
     "src/common/cli.*"
-    "src/common/dataTypes.hpp")
+    "src/common/dataTypes.hpp"
+    "src/common/fileFormatVersions.*")
 add_executable(align-cameras ${ALIGN_CAMERAS_SOURCES})
 target_link_libraries(align-cameras PRIVATE pthread rt dl)
 target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)

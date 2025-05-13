@@ -20,6 +20,12 @@ bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight)
 int MuscleCameraROI::toFile(std::filesystem::path path)
 {
     YAML::Node node;
+    node["metadata"]["file_format_version"]["major"] =
+        MUSCLE_CAMERA_ROI_MAJOR;
+    node["metadata"]["file_format_version"]["minor"] =
+        MUSCLE_CAMERA_ROI_MINOR;
+    node["metadata"]["file_format_version"]["patch"] =
+        MUSCLE_CAMERA_ROI_PATCH;
     node["x0"] = x0;
     node["x1"] = x1;
     node["y0"] = y0;
@@ -55,6 +61,23 @@ MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath)
         spdlog::critical("Failed to load muscle camera ROI from YAML file: {}",
                          roiFilePath.string());
     }
+
+    // Check if version is compatible
+    int majorVersion =
+        node["metadata"]["file_format_version"]["major"].as<int>();
+    int minorVersion =
+        node["metadata"]["file_format_version"]["minor"].as<int>();
+    bool isVersionCompatible =
+        checkVersionCompatibility(majorVersion,
+                                  minorVersion,
+                                  MUSCLE_CAMERA_ROI_MAJOR,
+                                  MUSCLE_CAMERA_ROI_MINOR);
+    if (!isVersionCompatible)
+    {
+        throw std::runtime_error(
+            "File version incompatible: " + roiFilePath.string());
+    }
+
     int x0 = node["x0"].as<int>();
     int x1 = node["x1"].as<int>();
     int y0 = node["y0"].as<int>();
@@ -191,7 +214,7 @@ void muscleImageSaver(
             if (programState->toQuit.load())
             {
                 spdlog::info(
-                    "Behavior image saver thread is breaking out of loop.");
+                    "Muscle image saver thread is breaking out of loop.");
                 break;
             }
 
@@ -201,16 +224,20 @@ void muscleImageSaver(
         }
         startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
-            "behavior_frame_" + fmt::format("{:09}", frameData.frameId);
+            "muscle_frame_" + fmt::format("{:09}", frameData.frameId);
         std::filesystem::path muscleSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
+        
+        // Reorient image (rotate it so it's consistent with behavior image)
+        cv::Mat reorientedImage;
+        reorientMuscleImage(frameData.image, reorientedImage);
 
         // Save image
         std::string imagePath = muscleSaveDir / (filenameStem + ".tif");
         try
         {
-            cv::imwrite(imagePath, frameData.image, compressionParams);
+            cv::imwrite(imagePath, reorientedImage, compressionParams);
         }
         catch (const cv::Exception &ex)
         {
