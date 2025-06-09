@@ -99,20 +99,33 @@ int main(int argc, char **argv)
         std::make_shared<SaveDirectory>(defaultSaveDirectory);
 
     // Load position mapping/calibration parameters
-    std::string calibrationParamsFilePath =
-        profileDir / "calibration/calibration_result.yaml";
+    std::string behaviorCalibParamsPath =
+        profileDir /
+        "calibration/model/behavior_camera/calibration_result.yaml";
     spdlog::info("Loading spatial calibration parameters from {}",
-                 calibrationParamsFilePath);
-    CalibrationParams behaviorCamCalibrationParams(calibrationParamsFilePath);
+                 behaviorCalibParamsPath);
+    CalibrationParams behaviorCamCalibrationParams(behaviorCalibParamsPath);
     if (!behaviorCamCalibrationParams.isDefined)
     {
         std::string errorMessage = fmt::format(
             "Spatial calibration data not found or malformed. This is required "
             "for tracking and recording. Expected valid calibration file at {} "
             "based on the recorder configuration file.",
-            calibrationParamsFilePath);
+            behaviorCalibParamsPath);
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
+    }
+
+    std::string muscleCalibParamsPath =
+        profileDir /
+        "calibration/model/muscle_camera/calibration_result.yaml";
+    CalibrationParams muscleCamCalibrationParams(muscleCalibParamsPath);
+    if (!muscleCamCalibrationParams.isDefined)
+    {
+        spdlog::warn(
+            "Muscle camera calibration file not found. This does not impact "
+            "data acquisition, but you should double check if you are "
+            "acquiring muscle images. This will be a problem for analysis.");
     }
 
     // Initialize behavior and muscle imaging states
@@ -222,6 +235,7 @@ int main(int argc, char **argv)
                                      muscleRecordingState,
                                      trackingControlState,
                                      std::ref(behaviorCamCalibrationParams),
+                                     std::ref(muscleCamCalibrationParams),
                                      saveDirectory,
                                      arduinoCommunication,
                                      programState,

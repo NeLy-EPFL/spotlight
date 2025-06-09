@@ -148,6 +148,7 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
+    CalibrationParams &muscleCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
@@ -159,6 +160,7 @@ MainGUIWindow::MainGUIWindow(
       muscleRecordingState_(muscleRecordingState),
       trackingControlState_(trackingControlState),
       behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
+      muscleCamCalibrationParams_(muscleCamCalibrationParams),
       saveDirectory_(saveDirectory),
       arduinoCommunication_(arduinoCommunication),
       programState_(programState),
@@ -516,11 +518,30 @@ void MainGUIWindow::startRecording()
     std::filesystem::path recordingConfigFilePath =
         saveDirectory_->getDirectory() / "metadata/recorder_config.yaml";
     recorderConfig_.saveToFile(recordingConfigFilePath);
+    spdlog::info(
+        "Saved recorder config to '{}'", recordingConfigFilePath.string());
 
     // Save metadata: calibration parameters
-    std::filesystem::path calibrationFilePath =
-        saveDirectory_->getDirectory() / "metadata/calibration_parameters.yaml";
-    behaviorCamCalibrationParams_.saveToFile(calibrationFilePath);
+    std::filesystem::path behaviorCalibrationFilePath =
+        saveDirectory_->getDirectory() /
+        "metadata/calibration_parameters_behavior.yaml";
+    behaviorCamCalibrationParams_.saveToFile(behaviorCalibrationFilePath);
+    spdlog::info("Saved behavior calibration parameters to '{}'",
+                 behaviorCalibrationFilePath.string());
+    if (muscleCamCalibrationParams_.isDefined)
+    {
+        std::filesystem::path muscleCalibrationFilePath =
+            saveDirectory_->getDirectory() /
+            "metadata/calibration_parameters_muscle.yaml";
+        muscleCamCalibrationParams_.saveToFile(muscleCalibrationFilePath);
+        spdlog::info("Saved muscle calibration parameters to '{}'",
+                     muscleCalibrationFilePath.string());
+    }
+    else
+    {
+        spdlog::warn(
+            "Muscle camera calibration parameters not defined. Not saving.");
+    }
 
     // Send triggering parameters to Arduino and start recording
     arduinoCommunication_->setBehaviorRecordingFPS(behaviorFPSSpinBox_->value());
