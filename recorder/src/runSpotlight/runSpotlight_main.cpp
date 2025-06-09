@@ -117,6 +117,18 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
+    std::string muscleCalibParamsPath =
+        profileDir /
+        "calibration/model/muscle_camera/calibration_result.yaml";
+    CalibrationParams muscleCamCalibrationParams(muscleCalibParamsPath);
+    if (!muscleCamCalibrationParams.isDefined)
+    {
+        spdlog::warn(
+            "Muscle camera calibration file not found. This does not impact "
+            "data acquisition, but you should double check if you are "
+            "acquiring muscle images. This will be a problem for analysis.");
+    }
+
     // Initialize behavior and muscle imaging states
     behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
     behaviorRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
@@ -224,6 +236,7 @@ int main(int argc, char **argv)
                                      muscleRecordingState,
                                      trackingControlState,
                                      std::ref(behaviorCamCalibrationParams),
+                                     std::ref(muscleCamCalibrationParams),
                                      saveDirectory,
                                      arduinoCommunication,
                                      programState,
