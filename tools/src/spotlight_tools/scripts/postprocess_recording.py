@@ -1,22 +1,29 @@
+import logging
 import tyro
+import yaml
+import cv2
 from pathlib import Path
+from tqdm import tqdm
 
-from spotlight_tools.postprocessing.video import jpeg_to_mkv
+from spotlight_tools.postprocessing.behavior_video import jpeg_to_mkv
 from spotlight_tools.postprocessing.frame_metadata import (
-    consolidate_behavior_acquisition_times_and_stage_positions,
+    interpolate_stage_position_for_behavior_images,
 )
-from spotlight_tools.postprocessing.io import (
-    check_is_directory_valid,
+from spotlight_tools.postprocessing.io import check_is_directory_valid
+from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
+from spotlight_tools.postprocessing.visualization import (
+    generate_summary_video,
 )
 
 
 def postprocess_recording_data(
-    recording_dir: Path,
+    recording_dir: Path | str,
     overwrite: bool = False,
     play_fps: int = 30,
     behavior_video_crf: int = 5,
     behavior_video_preset: str = "slow",
     num_frames: int | None = None,
+    muscle_camera: bool = False,
 ) -> None:
     """Postprocess data recorded by the Spotlight setup.
 
@@ -38,7 +45,7 @@ def postprocess_recording_data(
     https://trac.ffmpeg.org/wiki/Encode/H.264
 
     Args:
-        recording_dir (Path):
+        recording_dir (Path or str):
             Root directory of the recording. This is the path that you set
             in the Spotlight recording GUI.
         overwrite (bool):
@@ -72,18 +79,26 @@ def postprocess_recording_data(
             frames. This is useful if you want to generate a very short
             video just to make sure that the data pipeline is working.
             Default is None.
+        muscle_camera (bool):
+            If True, muscle images are warped to be consistent with
+            behavior images. Furthermore, a video of the behavior-muscle
+            overlay will be generated.
     """
+    recording_dir = Path(recording_dir).expanduser()
     check_is_directory_valid(recording_dir)
     processed_dir = recording_dir / "processed"
     processed_dir.mkdir(exist_ok=True)
 
+    # Interpolate stage position for each behavior frame
     behavior_frames_dir = recording_dir / "behavior_images"
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
-    behavior_video_path = processed_dir / "behavior_video.mkv"
     behavior_timestamps_path = processed_dir / "behavior_frames_metadata.csv"
-    consolidate_behavior_acquisition_times_and_stage_positions(
+    stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
         behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
     )
+
+    # Merge behavior video
+    behavior_video_path = processed_dir / "behavior_video.mkv"
     jpeg_to_mkv(
         behavior_frames_dir,
         behavior_video_path,
@@ -91,8 +106,20 @@ def postprocess_recording_data(
         play_fps,
         behavior_video_crf,
         behavior_video_preset,
-        num_frames,
+        num_frames=num_frames,
     )
+
+    if muscle_camera:
+        # Warp muscle images
+        process_muscle_data(
+            recording_dir,
+            stage_positions_at_behavior_frames,
+            overwrite=overwrite,
+            num_frames=num_frames,
+        )
+
+        # Make overlay video
+        generate_summary_video(recording_dir, num_frames=num_frames)
 
 
 def main():
