@@ -99,18 +99,20 @@ int main(int argc, char **argv)
         std::make_shared<SaveDirectory>(defaultSaveDirectory);
 
     // Load position mapping/calibration parameters
-    std::string calibrationParamsFilePath =
-        profileDir / "calibration/calibration_result.yaml";
+    std::filesystem::path calibrationParamsFilePath =
+        profileDir /
+        "calibration/model/behavior_camera/calibration_result.yaml";
     spdlog::info("Loading spatial calibration parameters from {}",
-                 calibrationParamsFilePath);
-    CalibrationParams behaviorCamCalibrationParams(calibrationParamsFilePath);
+                 calibrationParamsFilePath.string());
+    CalibrationParams behaviorCamCalibrationParams(
+        calibrationParamsFilePath.string());
     if (!behaviorCamCalibrationParams.isDefined)
     {
         std::string errorMessage = fmt::format(
             "Spatial calibration data not found or malformed. This is required "
             "for tracking and recording. Expected valid calibration file at {} "
             "based on the recorder configuration file.",
-            calibrationParamsFilePath);
+            calibrationParamsFilePath.string());
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     }
