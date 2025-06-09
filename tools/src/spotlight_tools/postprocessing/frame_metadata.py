@@ -9,9 +9,9 @@ from spotlight_tools.postprocessing.io import (
 )
 
 
-def consolidate_behavior_acquisition_times_and_stage_positions(
+def interpolate_stage_position_for_behavior_images(
     frames_dir: Path, stage_positions_path: Path, output_path: Path, overwrite: bool
-) -> None:
+) -> pd.DataFrame:
     check_is_directory_valid(frames_dir)
     check_is_output_file_valid(output_path, overwrite=overwrite, suffix=".csv")
 
@@ -31,6 +31,7 @@ def consolidate_behavior_acquisition_times_and_stage_positions(
     concatenated_df["y_pos_mm_interp"] = spline_ypos(timestamps)
 
     concatenated_df.to_csv(output_path, index=False)
+    return concatenated_df
 
 
 def fit_stage_position_cubic_spline(
