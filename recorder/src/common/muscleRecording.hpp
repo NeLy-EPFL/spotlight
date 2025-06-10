@@ -48,6 +48,7 @@ void muscleImageAcquierer(
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
+    int muscleCamDelayAfterTriggerMicrosecs,
     const RecorderConfig &recorderConfig,
     std::string profileDir,
     spdlog::level::level_enum logLevel,

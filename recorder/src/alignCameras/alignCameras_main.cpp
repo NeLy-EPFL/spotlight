@@ -190,6 +190,7 @@ void alignCamera(std::filesystem::path profileDir)
         fullMuscleImageHeight,
         0, // xOffset
         0, // yOffset
+        0, // delay after trigger
         recorderConfig,
         profileDir,
         spdlog::get_level(),

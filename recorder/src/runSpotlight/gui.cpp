@@ -144,6 +144,7 @@ float MotionControlWidget::mapToStageY(int y) const
 
 MainGUIWindow::MainGUIWindow(
     const RecorderConfig &recorderConfig,
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
@@ -188,6 +189,16 @@ MainGUIWindow::MainGUIWindow(
         recorderConfig.getParameter<int>("behavior_camera",
                                          "default_recording_fps");
     behaviorFPSSpinBox_->setValue(behaviorCameraDefaultRecordingFrameRate);
+    if (dualRecordingConfig->isRecordingBoth())
+    {
+        // If dual recording is enabled, set the value from the config
+        // and disable the spin box to prevent changes.
+        spdlog::debug("Setting behavior FPS to {}",
+                      dualRecordingConfig->getBehaviorCameraFPS());
+        behaviorFPSSpinBox_->setValue(
+            dualRecordingConfig->getBehaviorCameraFPS());
+        behaviorFPSSpinBox_->setEnabled(false);
+    }
     // Don't connect to ArduinoCommunication! This value is only used during
     // recording. When streaming, the sync ratio is always 1 and this field is
     // ignored.
@@ -201,6 +212,11 @@ MainGUIWindow::MainGUIWindow(
     int syncRatio = recorderConfig.getParameter<int>(
         "muscle_camera", "default_recording_sync_ratio");
     syncRatioSpinBox_->setValue(syncRatio);
+    if (dualRecordingConfig->isRecordingBoth())
+    {
+        syncRatioSpinBox_->setValue(dualRecordingConfig->getSyncRatio());
+        syncRatioSpinBox_->setEnabled(false);
+    }
     // Don't connect to ArduinoCommunication! This value is only used during
     // recording. When streaming, the sync ratio is always 1 and this field is
     // ignored.
@@ -232,6 +248,12 @@ MainGUIWindow::MainGUIWindow(
         "muscle_camera", "default_exposure_time_us");
     muscleExposureTimeSpinBox_->setValue(
         muscleCameraDefaultExposureTimeUs / 1000.0);
+    if (dualRecordingConfig->isRecordingBoth())
+    {
+        muscleExposureTimeSpinBox_->setValue(
+            dualRecordingConfig->getMuscleExposureTimeUs() / 1000.0);
+        muscleExposureTimeSpinBox_->setEnabled(false);
+    }
     connect(muscleExposureTimeSpinBox_,
             QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this,
@@ -728,6 +750,134 @@ void MainGUIWindow::updateMuscleImageDisplay()
                                  Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
     muscleImageDisplayLabel_->setPixmap(pixmap);
+}
+
+DualRecordingConfigWindow::DualRecordingConfigWindow(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+    const MuscleCameraROI &muscleCameraROI,
+    QWidget *parent)
+    : QDialog(parent),
+      dualRecordingConfig_(dualRecordingConfig),
+      recorderConfig_(recorderConfig),
+      muscleCameraROI_(muscleCameraROI)
+{
+    setWindowTitle("Dual recording configuration");
+
+    mainLayout_ = new QVBoxLayout(this);
+    infoLabel_ = new QLabel(
+        "To record both behavior and muscle, some parameters must be set "
+        "and fixed before the program starts. Please configure them here. "
+        "Once the program starts, you will not be able to change these "
+        "parameters. If you want to change them, you will have to restart.");
+    infoLabel_->setWordWrap(true);
+    mainLayout_->addWidget(infoLabel_);
+    mainLayout_->addSpacing(10);
+
+    // Behavior FPS
+    QHBoxLayout *behaviorCameraFPSLayout = new QHBoxLayout();
+    QLabel *behaviorCameraFPSLabel = new QLabel(
+        "Behavior camera FPS (Hz)", this);
+    behaviorCameraFPSLineEdit_ = new QSpinBox(this);
+    behaviorCameraFPSLineEdit_->setRange(1, 1000);
+    behaviorCameraFPSLineEdit_->setValue(
+        recorderConfig.getParameter<int>(
+            "behavior_camera", "default_recording_fps"));
+    behaviorCameraFPSLayout->addWidget(behaviorCameraFPSLabel);
+    behaviorCameraFPSLayout->addWidget(behaviorCameraFPSLineEdit_);
+    mainLayout_->addLayout(behaviorCameraFPSLayout);
+
+    // Behavior-muscle sync ratio
+    QHBoxLayout *syncRatioLayout = new QHBoxLayout();
+    QLabel *syncRatioLabel = new QLabel(
+        "Sync ratio (behavior FPS : muscle FPS)", this);
+    syncRatioLineEdit_ = new QSpinBox(this);
+    syncRatioLineEdit_->setRange(1, 100);
+    syncRatioLineEdit_->setValue(
+        recorderConfig.getParameter<int>("muscle_camera",
+                                         "default_recording_sync_ratio"));
+    syncRatioLayout->addWidget(syncRatioLabel);
+    syncRatioLayout->addWidget(syncRatioLineEdit_);
+    mainLayout_->addLayout(syncRatioLayout);
+
+    // Muscle exposure time
+    QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
+    QLabel *muscleExposureTimeLabel = new QLabel(
+        "Muscle exposure time (ms)", this);
+    muscleExposureTimeLineEdit_ = new QDoubleSpinBox(this);
+    muscleExposureTimeLineEdit_->setRange(0.001, 10000.0);
+    muscleExposureTimeLineEdit_->setValue(
+        recorderConfig.getParameter<int>("muscle_camera",
+                                         "default_exposure_time_us") /
+        1000.0);
+    muscleExposureTimeLayout->addWidget(muscleExposureTimeLabel);
+    muscleExposureTimeLayout->addWidget(muscleExposureTimeLineEdit_);
+    mainLayout_->addLayout(muscleExposureTimeLayout);
+    mainLayout_->addSpacing(10);
+
+    // "OK" buttons
+    QHBoxLayout *buttonsLayout = new QHBoxLayout();
+    withoutMuscleButton_ = new QPushButton("Record behavior only", this);
+    withMuscleButton_ = new QPushButton("Record behavior and muscle", this);
+    connect(withoutMuscleButton_,
+            &QPushButton::clicked,
+            this,
+            &DualRecordingConfigWindow::onButtonClicked);
+    connect(withMuscleButton_,
+            &QPushButton::clicked,
+            this,
+            &DualRecordingConfigWindow::onButtonClicked);
+    buttonsLayout->addWidget(withoutMuscleButton_);
+    buttonsLayout->addWidget(withMuscleButton_);
+    mainLayout_->addLayout(buttonsLayout);
+}
+
+DualRecordingConfigWindow::~DualRecordingConfigWindow()
+{
+    // Nothing to clean up here, as we are using Qt's parent-child
+}
+
+void DualRecordingConfigWindow::onButtonClicked()
+{
+    dualRecordingConfig_->setRecordBoth(sender() == withMuscleButton_);
+    dualRecordingConfig_->setBehaviorCameraFPS(
+        behaviorCameraFPSLineEdit_->value());
+    dualRecordingConfig_->setSyncRatio(syncRatioLineEdit_->value());
+    dualRecordingConfig_->setMuscleExposureTimeUs(
+        static_cast<int>(muscleExposureTimeLineEdit_->value() * 1000));
+
+    int muscleImageHeight = muscleCameraROI_.imageHeight;
+    double muscleCameraLineScanTimeUs = recorderConfig_.getParameter<double>(
+        "muscle_camera", "rolling_shutter_line_time_us");
+    int muscleCameraReadoutTimeUs = recorderConfig_.getParameter<double>(
+        "muscle_camera", "sensor_readout_time_us");
+
+    bool isValid =
+        dualRecordingConfig_->computeParameters(muscleImageHeight,
+                                                muscleCameraLineScanTimeUs,
+                                                muscleCameraReadoutTimeUs);
+
+    if (!isValid)
+    {
+        QMessageBox::critical(
+            this,
+            "Error",
+            "Invalid configuration for recording both behavior and muscle. "
+            "Please check the parameters and try again. "
+            "In particular, check if condition in "
+            "https://github.com/NeLy-EPFL/spotlight-control/issues/79 is met.");
+    }
+    else
+    {
+        spdlog::info("Behavior-muscle corecording config set: "
+                     "recordBoth={}, behaviorCameraFPS={}, syncRatio={}, "
+                     "muscleExposureTimeUs={}",
+                     dualRecordingConfig_->isRecordingBoth(),
+                     dualRecordingConfig_->getBehaviorCameraFPS(),
+                     dualRecordingConfig_->getSyncRatio(),
+                     dualRecordingConfig_->getMuscleExposureTimeUs());
+        accept(); // close the dialog
+    }
 }
 
 int parseProtocolString(

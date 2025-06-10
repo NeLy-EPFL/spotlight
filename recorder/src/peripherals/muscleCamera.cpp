@@ -31,6 +31,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                            int imageHeight,
                            int xOffset,
                            int yOffset,
+                           int muscleCamDelayAfterTriggerMicrosecs,
                            const RecorderConfig &recorderConfig,
                            std::string profileDir,
                            spdlog::level::level_enum logLevel)
@@ -38,6 +39,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
       x1_(xOffset + imageWidth),
       y0_(yOffset + 1),
       y1_(yOffset + imageHeight),
+      muscleCamDelayAfterTriggerMicrosecs_(muscleCamDelayAfterTriggerMicrosecs),
       imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       recorderConfig_(recorderConfig),
@@ -78,6 +80,8 @@ MuscleCamera::MuscleCamera(int imageWidth,
                std::to_string(y0_).c_str(),
                "--y-max",
                std::to_string(y1_).c_str(),
+               "--muscle-cam-delay-after-trigger",
+               std::to_string(muscleCamDelayAfterTriggerMicrosecs).c_str(),
                "--verbosity",
                logLevelToStr(logLevel).c_str(),
                (char *)nullptr);
@@ -273,4 +277,25 @@ int roundToNearestValidMuscleCamVertical(int value)
 {
     int remainder = value % 8;
     return value - remainder + (remainder < 4 ? 0 : 8);
+}
+
+bool DualRecordingConfig::computeParameters(
+    int muscleImageHeight,
+    double muscleCameraLineScanTimeUs,
+    int muscleCameraReadoutTimeUs)
+{
+    int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
+    int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
+    numBehaviorToMuscleLeadingCycles_ =
+        int(rollingTimeUs / behaviorIntervalUs) + 1;
+    int behaviorToMuscleLeadingTimeUs =
+        numBehaviorToMuscleLeadingCycles_ * behaviorIntervalUs;
+    muscleCamDelayAfterTriggerUs_ =
+        behaviorToMuscleLeadingTimeUs - rollingTimeUs;
+    int minMuscleIntervalUs = muscleExposureTimeUs_ +
+                              rollingTimeUs +
+                              muscleCameraReadoutTimeUs;
+    int muscleIntervalUs = 1000000 / (behaviorCameraFPS_ / double(syncRatio_));
+    
+    return muscleIntervalUs >= minMuscleIntervalUs;
 }

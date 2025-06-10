@@ -72,6 +72,7 @@ class MainGUIWindow : public QWidget
 public:
     explicit MainGUIWindow(
         const RecorderConfig &recorderConfig,
+        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
         std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
         std::shared_ptr<MuscleRecordingState> muscleRecordingState,
         std::shared_ptr<TrackingControlState> trackingControlState,
@@ -126,6 +127,34 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 };
 
+class DualRecordingConfigWindow : public QDialog
+{
+    Q_OBJECT
+public:
+    explicit DualRecordingConfigWindow(
+        const RecorderConfig &recorderConfig,
+        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+        const MuscleCameraROI &muscleCameraROI,
+        QWidget *parent = nullptr);
+    ~DualRecordingConfigWindow();
+
+private slots:
+    void onButtonClicked();
+
+private:
+    QVBoxLayout *mainLayout_;
+    QLabel *infoLabel_;
+    QSpinBox *behaviorCameraFPSLineEdit_;
+    QSpinBox *syncRatioLineEdit_;
+    QDoubleSpinBox *muscleExposureTimeLineEdit_;
+    QPushButton *withMuscleButton_;
+    QPushButton *withoutMuscleButton_;
+
+    const RecorderConfig &recorderConfig_;
+    const MuscleCameraROI &muscleCameraROI_;
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfig_;
+};
+
 // Helpers
 cv::Mat addCornerMarker(cv::Mat image,
                         int arenaSizeXmm,
@@ -135,5 +164,4 @@ cv::Mat addCornerMarker(cv::Mat image,
 
 int parseProtocolString(const std::string &protocolTextFieldString,
                         std::vector<ProtocolStep> &steps);
-
 #endif // GUI_HPP
