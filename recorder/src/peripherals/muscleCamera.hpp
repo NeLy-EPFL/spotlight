@@ -16,6 +16,39 @@
 #include "../common/dataTypes.hpp"
 #include "../common/utils.hpp"
 
+class DualRecordingConfig
+{
+public:
+    DualRecordingConfig()
+        : recordBoth_(false),
+          behaviorCameraFPS_(0),
+          syncRatio_(1),
+          muscleExposureTimeUs_(0) {}
+
+    bool isRecordingBoth() const { return recordBoth_; }
+    int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
+    int getSyncRatio() const { return syncRatio_; }
+    int getMuscleExposureTimeUs() const { return muscleExposureTimeUs_; }
+    int getMuscleCamDelayAfterTriggerUs() const { return muscleCamDelayAfterTriggerUs_; }
+    int getNumBehaviorToMuscleLeadingCycles() const { return numBehaviorToMuscleLeadingCycles_; }
+    void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
+    void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
+    void setSyncRatio(int ratio) { syncRatio_ = ratio; }
+    void setMuscleExposureTimeUs(int exposureTimeUs) { muscleExposureTimeUs_ = exposureTimeUs; }
+
+    bool computeParameters(int muscleImageHeight,
+                           double muscleCameraLineScanTimeUs,
+                           int muscleCameraReadoutTimeUs);
+
+private:
+    bool recordBoth_;
+    int behaviorCameraFPS_;
+    int syncRatio_;
+    int muscleExposureTimeUs_;
+    int muscleCamDelayAfterTriggerUs_;
+    int numBehaviorToMuscleLeadingCycles_;
+};
+
 class MuscleCamera
 {
 public:
@@ -23,6 +56,7 @@ public:
                  int imageHeight,
                  int xOffset,
                  int yOffset,
+                 int muscleCamDelayAfterTriggerMicrosecs,
                  const RecorderConfig &recorderConfig,
                  std::string profileDir,
                  spdlog::level::level_enum logLevel);
@@ -37,6 +71,7 @@ private:
     unsigned int x1_;
     unsigned int y0_;
     unsigned int y1_;
+    unsigned int muscleCamDelayAfterTriggerMicrosecs_;
     unsigned int imageWidth_;
     unsigned int imageHeight_;
     pid_t pcoCameraServerPID_;

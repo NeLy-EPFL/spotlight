@@ -105,6 +105,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
         muscleROI.imageHeight,
         muscleROI.xOffset,
         muscleROI.yOffset,
+        0,  // delay after trigger
         recorderConfig,
         profileDir,
         spdlog::get_level(),

@@ -98,6 +98,7 @@ void muscleImageAcquierer(
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
+    int muscleCamDelayAfterTriggerMicrosecs,
     const RecorderConfig &recorderConfig,
     std::string profileDir,
     spdlog::level::level_enum logLevel,
@@ -113,6 +114,7 @@ void muscleImageAcquierer(
                                        imageHeight,
                                        xOffset,
                                        yOffset,
+                                       muscleCamDelayAfterTriggerMicrosecs,
                                        recorderConfig,
                                        profileDir,
                                        logLevel);
@@ -228,7 +230,7 @@ void muscleImageSaver(
         std::filesystem::path muscleSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
-        
+
         // Reorient image (rotate it so it's consistent with behavior image)
         cv::Mat reorientedImage;
         reorientMuscleImage(frameData.image, reorientedImage);
