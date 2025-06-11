@@ -292,6 +292,7 @@ bool DualRecordingConfig::computeParameters(
         numBehaviorToMuscleLeadingCycles_ * behaviorIntervalUs;
     muscleCamDelayAfterTriggerUs_ =
         behaviorToMuscleLeadingTimeUs - rollingTimeUs;
+    assert(muscleCamDelayAfterTriggerUs_ >= 0);
     int minMuscleIntervalUs = muscleExposureTimeUs_ +
                               rollingTimeUs +
                               muscleCameraReadoutTimeUs;
