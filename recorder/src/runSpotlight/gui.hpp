@@ -96,7 +96,7 @@ private:
     QSpinBox *behaviorFPSSpinBox_;
     QSpinBox *syncRatioSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
-    QDoubleSpinBox *muscleExposureTimeSpinBox_;
+    QDoubleSpinBox *muscleLightOnTimeSpinBox_;
     QTextEdit *experimentProtocol_;
     QLineEdit *directoryLineEdit_;
     QCheckBox *trackingEnabledCheckBox_;
@@ -146,7 +146,7 @@ private:
     QVBoxLayout *mainLayout_;
     QSpinBox *behaviorCameraFPSLineEdit_;
     QSpinBox *syncRatioLineEdit_;
-    QDoubleSpinBox *muscleExposureTimeLineEdit_;
+    QDoubleSpinBox *muscleLightOnTimeLineEdit_;
     QPushButton *withMuscleButton_;
     QPushButton *withoutMuscleButton_;
 

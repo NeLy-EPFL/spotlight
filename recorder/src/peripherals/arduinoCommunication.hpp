@@ -29,7 +29,7 @@ public:
     void setBehaviorRecordingFPS(int fps);
     void setSyncRatio(int syncRatio);
     void setBehaviorExposureTime(int exposureTimeUs);
-    void setMuscleExposureTime(int exposureTimeUs);
+    void setMuscleLightOnTime(int lightOnTimeUs);
     void setNumBehaviorToMuscleLeadingCycles(int numCycles);
     void startRecording(std::vector<ProtocolStep> protocolSteps);
     void stopRecording();

@@ -32,6 +32,8 @@ MuscleCamera::MuscleCamera(int imageWidth,
                            int xOffset,
                            int yOffset,
                            int muscleCamDelayAfterTriggerMicrosecs,
+                           double rollingShutterLineTimeUs,
+                           double sensorReadoutTimeUs,
                            const RecorderConfig &recorderConfig,
                            std::string profileDir,
                            spdlog::level::level_enum logLevel)
@@ -40,6 +42,8 @@ MuscleCamera::MuscleCamera(int imageWidth,
       y0_(yOffset + 1),
       y1_(yOffset + imageHeight),
       muscleCamDelayAfterTriggerMicrosecs_(muscleCamDelayAfterTriggerMicrosecs),
+      rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
+      sensorReadoutTimeUs_(sensorReadoutTimeUs),
       imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       recorderConfig_(recorderConfig),
@@ -244,11 +248,15 @@ bool MuscleCamera::isROIValid()
     return true;
 }
 
-void MuscleCamera::setExposureTime(unsigned int exposureTimeMicrosecs)
+void MuscleCamera::setExposureTime(unsigned int lightOnTimeMicrosecs)
 {
     if (exposureTimePtr_ != nullptr)
     {
-        *exposureTimePtr_ = exposureTimeMicrosecs;
+        int shutterOnTimeUs =
+            calculateMuscleShutterOnTime(imageHeight_,
+                                         rollingShutterLineTimeUs_,
+                                         lightOnTimeMicrosecs);
+        *exposureTimePtr_ = shutterOnTimeUs;
     }
     else
     {
@@ -293,10 +301,10 @@ bool DualRecordingConfig::computeParameters(
     muscleCamDelayAfterTriggerUs_ =
         behaviorToMuscleLeadingTimeUs - rollingTimeUs;
     assert(muscleCamDelayAfterTriggerUs_ >= 0);
-    int minMuscleIntervalUs = muscleExposureTimeUs_ +
+    int minMuscleIntervalUs = muscleLightOnTimeUs_ +
                               rollingTimeUs +
                               muscleCameraReadoutTimeUs;
     int muscleIntervalUs = 1000000 / (behaviorCameraFPS_ / double(syncRatio_));
-    
+
     return muscleIntervalUs >= minMuscleIntervalUs;
 }
