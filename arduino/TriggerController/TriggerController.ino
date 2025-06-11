@@ -23,13 +23,18 @@ const int INCOMING_MESSAGE_BUFFER_SIZE = 16384;
 const int FRAME_BUFFER_FLUSH_TIME_US = 100000;
 
 // Default parameters
-const unsigned int defaultBehaviorCamPeriod = 1000000 / 25; // in microseconds
-const unsigned int defaultSyncRatioK = 1; // k behavior triggers per muscle trigger
+// Period (1/FPS) of behavior camera, and period of muscle camera defined
+// through syncRatioK (muscle period = behavior period * syncRatioK)
+volatile unsigned int behaviorCamPeriod = 1000000 / 25; // in microseconds
+volatile unsigned int syncRatioK = 1;
 
-volatile unsigned int behaviorCamPeriod = defaultBehaviorCamPeriod;
-volatile unsigned int syncRatioK = defaultSyncRatioK;
-volatile unsigned int behaviorCamExposureTime = 1000; // in microseconds
-volatile unsigned int muscleCamExposureTime = 3000; // in microseconds
+// Exposure times for cameras
+volatile unsigned int behaviorCamExposureTime = 1000;  // in microseconds
+volatile unsigned int muscleCamExposureTime = 3000;  // in microseconds
+
+// Muscle cam should be triggered this many behavior triggers ahead of time for
+// common time exposure
+volatile unsigned int numBehaviorToMuscleLeadingCycles = 0;
 std::vector<ProtocolStep> protocolSteps;
 
 // Timing variables
@@ -128,7 +133,8 @@ void loop() {
     lastBehaviorTriggerTime = currentTime;
 
     // Should I also open muscle camera shutter?
-    if (behaviorTriggerCounter % syncRatioK == 0) {
+    if (behaviorTriggerCounter % syncRatioK ==
+        numBehaviorToMuscleLeadingCycles) {
       muscleTriggerOn();
       muscleTriggerState = true;
       lastMuscleTriggerTime = currentTime;
@@ -269,6 +275,25 @@ void parseIncomingCommand(const char* message) {
     } else {
       Serial.print("Invalid sync ratio: ");
       Serial.println(ratio);
+      Serial.flush();
+      litStatusLED(RED);
+    }
+  } else if (strncmp(message,
+                     CMDSTR_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES,
+                     CMDLEN_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES) == 0) {
+    // Handle command: SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES
+    const char* cyclesStart =
+      message + CMDLEN_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES + 1;
+    unsigned int numLeadingCyclesRequested = atoi(cyclesStart);
+    if (numLeadingCyclesRequested >= 0) {
+      numBehaviorToMuscleLeadingCycles = numLeadingCyclesRequested;
+      Serial.print("Number of behavior to muscle leading cycles set to: ");
+      Serial.println(numBehaviorToMuscleLeadingCycles);
+      Serial.flush();
+      litStatusLED(GREEN);
+    } else {
+      Serial.print("Invalid number of leading cycles: ");
+      Serial.println(numLeadingCyclesRequested);
       Serial.flush();
       litStatusLED(RED);
     }
