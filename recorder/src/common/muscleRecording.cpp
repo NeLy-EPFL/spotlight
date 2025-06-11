@@ -93,7 +93,7 @@ MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath)
     return roi;
 }
 
-void muscleImageAcquierer(
+void muscleImageAcquirer(
     unsigned int imageWidth,
     unsigned int imageHeight,
     unsigned int xOffset,
@@ -129,7 +129,7 @@ void muscleImageAcquierer(
             muscleRecordingState->muscleCamera->waitForOneFrame();
         if (frameData.image.empty())
         {
-            spdlog::error("muscleImageAcquierer thread got an empty image");
+            spdlog::error("muscleImageAcquirer thread got an empty image");
         }
         muscleRecordingState
             ->latestFrameHolder

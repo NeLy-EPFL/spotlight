@@ -185,7 +185,7 @@ void alignCamera(std::filesystem::path profileDir)
     muscleRecordingState->latestFrameHolder =
         std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquierer,
+        muscleImageAcquirer,
         fullMuscleImageWidth,
         fullMuscleImageHeight,
         0, // xOffset

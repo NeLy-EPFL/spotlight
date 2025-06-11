@@ -100,7 +100,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
     spdlog::info("Setting up muscle camera acquisition thread");
     muscleRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquierer,
+        muscleImageAcquirer,
         muscleROI.imageWidth,
         muscleROI.imageHeight,
         muscleROI.xOffset,

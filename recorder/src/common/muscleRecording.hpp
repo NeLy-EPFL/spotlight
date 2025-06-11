@@ -43,7 +43,7 @@ public:
 };
 
 // Function declarations
-void muscleImageAcquierer(
+void muscleImageAcquirer(
     unsigned int imageWidth,
     unsigned int imageHeight,
     unsigned int xOffset,
