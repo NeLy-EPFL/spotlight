@@ -763,16 +763,33 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
       muscleCameraROI_(muscleCameraROI)
 {
     setWindowTitle("Dual recording configuration");
-
     mainLayout_ = new QVBoxLayout(this);
-    infoLabel_ = new QLabel(
-        "To record both behavior and muscle, some parameters must be set "
-        "and fixed before the program starts. Please configure them here. "
-        "Once the program starts, you will not be able to change these "
-        "parameters. If you want to change them, you will have to restart.");
-    infoLabel_->setWordWrap(true);
-    mainLayout_->addWidget(infoLabel_);
+    resize(desiredWidth_, desiredHeight_);
+    
+    // Block for recording behavior only
+    QLabel *labelTitle = new QLabel(
+        "<b>Recording both behavior and muscle</b>");
+    QLabel *labelNoMuscle = new QLabel(
+        "<i>If you wish to record behavior only</i>, click the button below.");
+    labelNoMuscle->setWordWrap(true);
+    withoutMuscleButton_ = new QPushButton("Record behavior only", this);
+    connect(withoutMuscleButton_,
+            &QPushButton::clicked,
+            this,
+            &DualRecordingConfigWindow::onButtonClicked);
+    mainLayout_->addWidget(labelTitle);
+    mainLayout_->addWidget(labelNoMuscle);
+    mainLayout_->addWidget(withoutMuscleButton_);
     mainLayout_->addSpacing(10);
+
+    // Block for dual recording
+    QLabel *labelWithMuscle = new QLabel(
+        "<i>If you wish to record both behavior and muscle</i>, complete the "
+        "following settings and click the button below. Once the program "
+        "starts, you will not be able to change these settings. If you want "
+        "to change them, you will have to restart the program.");
+    labelWithMuscle->setWordWrap(true);
+    mainLayout_->addWidget(labelWithMuscle);
 
     // Behavior FPS
     QHBoxLayout *behaviorCameraFPSLayout = new QHBoxLayout();
@@ -813,23 +830,13 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
     muscleExposureTimeLayout->addWidget(muscleExposureTimeLabel);
     muscleExposureTimeLayout->addWidget(muscleExposureTimeLineEdit_);
     mainLayout_->addLayout(muscleExposureTimeLayout);
-    mainLayout_->addSpacing(10);
 
-    // "OK" buttons
-    QHBoxLayout *buttonsLayout = new QHBoxLayout();
-    withoutMuscleButton_ = new QPushButton("Record behavior only", this);
     withMuscleButton_ = new QPushButton("Record behavior and muscle", this);
-    connect(withoutMuscleButton_,
-            &QPushButton::clicked,
-            this,
-            &DualRecordingConfigWindow::onButtonClicked);
     connect(withMuscleButton_,
             &QPushButton::clicked,
             this,
             &DualRecordingConfigWindow::onButtonClicked);
-    buttonsLayout->addWidget(withoutMuscleButton_);
-    buttonsLayout->addWidget(withMuscleButton_);
-    mainLayout_->addLayout(buttonsLayout);
+    mainLayout_->addWidget(withMuscleButton_);
 }
 
 DualRecordingConfigWindow::~DualRecordingConfigWindow()
@@ -864,8 +871,9 @@ void DualRecordingConfigWindow::onButtonClicked()
             "Error",
             "Invalid configuration for recording both behavior and muscle. "
             "Please check the parameters and try again. "
-            "In particular, check if condition in "
-            "https://github.com/NeLy-EPFL/spotlight-control/issues/79 is met.");
+            "In particular, check if the muscle recording interval "
+            "(i.e. 1 / muscleFPS) is greater than the minimum. See "
+            "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
     }
     else
     {

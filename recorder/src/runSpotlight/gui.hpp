@@ -143,12 +143,14 @@ private slots:
 
 private:
     QVBoxLayout *mainLayout_;
-    QLabel *infoLabel_;
     QSpinBox *behaviorCameraFPSLineEdit_;
     QSpinBox *syncRatioLineEdit_;
     QDoubleSpinBox *muscleExposureTimeLineEdit_;
     QPushButton *withMuscleButton_;
     QPushButton *withoutMuscleButton_;
+
+    int desiredWidth_ = 400;
+    int desiredHeight_ = 350;
 
     const RecorderConfig &recorderConfig_;
     const MuscleCameraROI &muscleCameraROI_;
