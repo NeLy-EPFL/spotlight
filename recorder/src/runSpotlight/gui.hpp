@@ -116,6 +116,7 @@ private:
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfig_;
 
     int muscleImage16To8BitScale_ = 1;
     int muscleImage16To8BitOffset_ = 0;

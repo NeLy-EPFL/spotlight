@@ -13,6 +13,7 @@ namespace PCOCameraServer
             << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
             << "  -y0, --y-min Y_MIN       y_min coordinate of the region of interest (default: 2048)\n"
             << "  -y1, --y-max Y_MAX       y_max coordinate of the region of interest (default: 2048)\n"
+            << "  -d,  --delay DELAY       Delay of shutter-open after trigger in microseconds (default: 0)\n"
             << "  -v,  --verbose           Enable verbose output (debug level)\n"
             << "  --verbosity LEVEL        Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
             << std::endl;
@@ -79,6 +80,10 @@ namespace PCOCameraServer
             else if ((arg == "-y1" || arg == "--y-max") && i + 1 < argc)
             {
                 options.y1 = std::stoi(argv[++i]);
+            }
+            else if ((arg == "-d" || arg == "--delay") && i + 1 < argc)
+            {
+                options.delayUs = std::stoi(argv[++i]);
             }
             else if (arg[0] == '-')
             {
@@ -156,6 +161,7 @@ namespace PCOCameraServer
                         unsigned int x1,
                         unsigned int y0,
                         unsigned int y1,
+                        unsigned int delayUs,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight)
     {
@@ -169,7 +175,7 @@ namespace PCOCameraServer
         config.roi.y1 = y1;
         config.trigger_mode = TRIGGER_MODE_EXTERNALTRIGGER;
         config.acquire_mode = ACQUIRE_MODE_AUTO;
-        config.delay_time_s = 0;
+        config.delay_time_s = delayUs / 1000000.0; // Convert to seconds
         config.noise_filter_mode = NOISE_FILTER_MODE_ON;
         // config.timestamp_mode = TIMESTAMP_MODE_ASCII;
         spdlog::info("Setting PCO camera configuration");
@@ -209,6 +215,7 @@ namespace PCOCameraServer
                      const unsigned int x1,
                      const unsigned int y0,
                      const unsigned int y1,
+                     const unsigned int delayUs,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight)
     {
@@ -263,6 +270,7 @@ namespace PCOCameraServer
                                         x1,
                                         y0,
                                         y1,
+                                        delayUs,
                                         fullFrameWidth,
                                         fullFrameHeight);
         spdlog::info("PCO camera setup complete");
@@ -503,6 +511,7 @@ int main(int argc, char *argv[])
                                  options.x1,
                                  options.y0,
                                  options.y1,
+                                 options.delayUs,
                                  fullFrameWidth,
                                  fullFrameHeight);
 
