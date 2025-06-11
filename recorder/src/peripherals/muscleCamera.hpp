@@ -23,18 +23,18 @@ public:
         : recordBoth_(false),
           behaviorCameraFPS_(0),
           syncRatio_(1),
-          muscleExposureTimeUs_(0) {}
+          muscleLightOnTimeUs_(0) {}
 
     bool isRecordingBoth() const { return recordBoth_; }
     int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
     int getSyncRatio() const { return syncRatio_; }
-    int getMuscleExposureTimeUs() const { return muscleExposureTimeUs_; }
+    int getMuscleLightOnTimeUs() const { return muscleLightOnTimeUs_; }
     int getMuscleCamDelayAfterTriggerUs() const { return muscleCamDelayAfterTriggerUs_; }
     int getNumBehaviorToMuscleLeadingCycles() const { return numBehaviorToMuscleLeadingCycles_; }
     void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
     void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
     void setSyncRatio(int ratio) { syncRatio_ = ratio; }
-    void setMuscleExposureTimeUs(int exposureTimeUs) { muscleExposureTimeUs_ = exposureTimeUs; }
+    void setMuscleLightOnTimeUs(int lightOnTimeUs) { muscleLightOnTimeUs_ = lightOnTimeUs; }
 
     bool computeParameters(int muscleImageHeight,
                            double muscleCameraLineScanTimeUs,
@@ -44,7 +44,7 @@ private:
     bool recordBoth_;
     int behaviorCameraFPS_;
     int syncRatio_;
-    int muscleExposureTimeUs_;
+    int muscleLightOnTimeUs_;
     int muscleCamDelayAfterTriggerUs_;
     int numBehaviorToMuscleLeadingCycles_;
 };
@@ -57,12 +57,14 @@ public:
                  int xOffset,
                  int yOffset,
                  int muscleCamDelayAfterTriggerMicrosecs,
+                 double rollingShutterLineTimeUs,
+                 double sensorReadoutTimeUs,
                  const RecorderConfig &recorderConfig,
                  std::string profileDir,
                  spdlog::level::level_enum logLevel);
     ~MuscleCamera();
     FrameData waitForOneFrame();
-    void setExposureTime(unsigned int exposureTimeMicrosecs);
+    void setExposureTime(unsigned int lightOnTimeMicrosecs);
     pid_t getCameraServerPID() const;
     int getNumLinesScanned() const;
 
@@ -74,6 +76,8 @@ private:
     unsigned int muscleCamDelayAfterTriggerMicrosecs_;
     unsigned int imageWidth_;
     unsigned int imageHeight_;
+    double rollingShutterLineTimeUs_;
+    double sensorReadoutTimeUs_;
     pid_t pcoCameraServerPID_;
     uint8_t *frameDataPtr_;
     unsigned int *exposureTimePtr_;

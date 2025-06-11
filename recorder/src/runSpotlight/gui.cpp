@@ -243,27 +243,27 @@ MainGUIWindow::MainGUIWindow(
     behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox_);
 
     // Muscle exposure time widget
-    muscleExposureTimeSpinBox_ = new QDoubleSpinBox(this);
-    muscleExposureTimeSpinBox_->setRange(0.001, 1000.0);
+    muscleLightOnTimeSpinBox_ = new QDoubleSpinBox(this);
+    muscleLightOnTimeSpinBox_->setRange(0.001, 1000.0);
     int muscleCameraDefaultExposureTimeUs = recorderConfig.getParameter<int>(
         "muscle_camera", "default_exposure_time_us");
-    muscleExposureTimeSpinBox_->setValue(
+    muscleLightOnTimeSpinBox_->setValue(
         muscleCameraDefaultExposureTimeUs / 1000.0);
     if (dualRecordingConfig->isRecordingBoth())
     {
-        muscleExposureTimeSpinBox_->setValue(
-            dualRecordingConfig->getMuscleExposureTimeUs() / 1000.0);
-        muscleExposureTimeSpinBox_->setEnabled(false);
+        muscleLightOnTimeSpinBox_->setValue(
+            dualRecordingConfig->getMuscleLightOnTimeUs() / 1000.0);
+        muscleLightOnTimeSpinBox_->setEnabled(false);
     }
-    connect(muscleExposureTimeSpinBox_,
+    connect(muscleLightOnTimeSpinBox_,
             QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this,
             [this, arduinoCommunication](double value)
-            { arduinoCommunication->setMuscleExposureTime(value * 1000); });
-    QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
-    muscleExposureTimeLayout->addWidget(
-        new QLabel("Muscle exposure time (ms)"));
-    muscleExposureTimeLayout->addWidget(muscleExposureTimeSpinBox_);
+            { arduinoCommunication->setMuscleLightOnTime(value * 1000); });
+    QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
+    muscleLightOnTimeLayout->addWidget(
+        new QLabel("Muscle exposure (light-on) time (ms)"));
+    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeSpinBox_);
 
     // Experiment protocol widget
     QLabel *protocolLabel = new QLabel("Experiment protocol", this);
@@ -428,7 +428,7 @@ MainGUIWindow::MainGUIWindow(
     layout->addLayout(behaviorFPSLayout);
     layout->addLayout(syncRatioLayout);
     layout->addLayout(behaviorExposureTimeLayout);
-    layout->addLayout(muscleExposureTimeLayout);
+    layout->addLayout(muscleLightOnTimeLayout);
     layout->addLayout(protocolLayout);
     layout->addLayout(directoryLayout);
     layout->addLayout(optionalFeaturesLayout);
@@ -443,11 +443,8 @@ MainGUIWindow::MainGUIWindow(
         spdlog::info("Waiting for muscle camera to be ready...");
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    int excitationLightOnTime = calculateMuscleExcitationOnTime(
-        muscleRecordingState->muscleCamera->getNumLinesScanned(),
-        rollingShutterLineTimeUs,
+    arduinoCommunication->setMuscleLightOnTime(
         muscleCameraDefaultExposureTimeUs);
-    arduinoCommunication->setMuscleExposureTime(excitationLightOnTime);
 
     // Muscle imaging disabled by default
     arduinoCommunication_->setSyncRatio(INT_MAX);
@@ -521,7 +518,7 @@ void MainGUIWindow::startRecording()
         muscleImagingCheckBox_->isChecked(),
         syncRatioSpinBox_->value(),
         behaviorExposureTimeSpinBox_->value(),
-        muscleExposureTimeSpinBox_->value(),
+        muscleLightOnTimeSpinBox_->value(),
         experimentProtocol_->toPlainText().toStdString());
     spdlog::info(
         "Saved experiment parameters to '{}'",
@@ -811,18 +808,18 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
     mainLayout_->addLayout(syncRatioLayout);
 
     // Muscle exposure time
-    QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
-    QLabel *muscleExposureTimeLabel = new QLabel(
-        "Muscle exposure time (ms)", this);
-    muscleExposureTimeLineEdit_ = new QDoubleSpinBox(this);
-    muscleExposureTimeLineEdit_->setRange(0.001, 10000.0);
-    muscleExposureTimeLineEdit_->setValue(
+    QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
+    QLabel *muscleLightOnTimeLabel = new QLabel(
+        "Muscle exposure (light-on) time (ms)", this);
+    muscleLightOnTimeLineEdit_ = new QDoubleSpinBox(this);
+    muscleLightOnTimeLineEdit_->setRange(0.001, 10000.0);
+    muscleLightOnTimeLineEdit_->setValue(
         recorderConfig.getParameter<int>("muscle_camera",
                                          "default_exposure_time_us") /
         1000.0);
-    muscleExposureTimeLayout->addWidget(muscleExposureTimeLabel);
-    muscleExposureTimeLayout->addWidget(muscleExposureTimeLineEdit_);
-    mainLayout_->addLayout(muscleExposureTimeLayout);
+    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeLabel);
+    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeLineEdit_);
+    mainLayout_->addLayout(muscleLightOnTimeLayout);
 
     withMuscleButton_ = new QPushButton("Record behavior and muscle", this);
     connect(withMuscleButton_,
@@ -843,8 +840,8 @@ void DualRecordingConfigWindow::onButtonClicked()
     dualRecordingConfig_->setBehaviorCameraFPS(
         behaviorCameraFPSLineEdit_->value());
     dualRecordingConfig_->setSyncRatio(syncRatioLineEdit_->value());
-    dualRecordingConfig_->setMuscleExposureTimeUs(
-        static_cast<int>(muscleExposureTimeLineEdit_->value() * 1000));
+    dualRecordingConfig_->setMuscleLightOnTimeUs(
+        static_cast<int>(muscleLightOnTimeLineEdit_->value() * 1000));
 
     int muscleImageHeight = muscleCameraROI_.imageHeight;
     double muscleCameraLineScanTimeUs = recorderConfig_.getParameter<double>(
@@ -872,11 +869,11 @@ void DualRecordingConfigWindow::onButtonClicked()
     {
         spdlog::info("Behavior-muscle corecording config set: "
                      "recordBoth={}, behaviorCameraFPS={}, syncRatio={}, "
-                     "muscleExposureTimeUs={}",
+                     "muscleLightOnTimeUs={}",
                      dualRecordingConfig_->isRecordingBoth(),
                      dualRecordingConfig_->getBehaviorCameraFPS(),
                      dualRecordingConfig_->getSyncRatio(),
-                     dualRecordingConfig_->getMuscleExposureTimeUs());
+                     dualRecordingConfig_->getMuscleLightOnTimeUs());
         accept(); // close the dialog
     }
 }

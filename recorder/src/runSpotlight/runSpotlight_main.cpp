@@ -107,11 +107,11 @@ int main(int argc, char **argv)
         spdlog::info(
             "User accepted the configuration dialog. Setting params: "
             "recordBoth: {}, behavior FPS: {}, "
-            "sync ratio: {}, muscle exposure time: {} us",
+            "sync ratio: {}, muscle light-on time: {} us",
             dualRecordingConfig->isRecordingBoth(),
             dualRecordingConfig->getBehaviorCameraFPS(),
             dualRecordingConfig->getSyncRatio(),
-            dualRecordingConfig->getMuscleExposureTimeUs());
+            dualRecordingConfig->getMuscleLightOnTimeUs());
     }
     else
     {

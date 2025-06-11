@@ -109,12 +109,20 @@ void muscleImageAcquirer(
     spdlog::info("Muscle image acquirer thread started");
 
     // Create muscle camera
+    double rollingShutterLineTimeUs =
+        recorderConfig.getParameter<double>("muscle_camera",
+                                            "rolling_shutter_line_time_us");
+    double sensorReadoutTimeUs =
+        recorderConfig.getParameter<double>("muscle_camera",
+                                            "sensor_readout_time_us");
     muscleRecordingState->muscleCamera =
         std::make_shared<MuscleCamera>(imageWidth,
                                        imageHeight,
                                        xOffset,
                                        yOffset,
                                        muscleCamDelayAfterTriggerMicrosecs,
+                                       rollingShutterLineTimeUs,
+                                       sensorReadoutTimeUs,
                                        recorderConfig,
                                        profileDir,
                                        logLevel);
