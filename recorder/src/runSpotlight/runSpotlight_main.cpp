@@ -220,7 +220,7 @@ int main(int argc, char **argv)
         muscleROI.xOffset, muscleROI.yOffset,
         muscleROI.imageWidth, muscleROI.imageHeight);
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquierer,
+        muscleImageAcquirer,
         muscleROI.imageWidth,
         muscleROI.imageHeight,
         muscleROI.xOffset,
