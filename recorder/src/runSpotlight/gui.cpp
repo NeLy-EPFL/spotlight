@@ -165,7 +165,8 @@ MainGUIWindow::MainGUIWindow(
       saveDirectory_(saveDirectory),
       arduinoCommunication_(arduinoCommunication),
       programState_(programState),
-      programmedRecordingStop_(programmedRecordingStop)
+      programmedRecordingStop_(programmedRecordingStop),
+      dualRecordingConfig_(dualRecordingConfig)
 {
     streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
@@ -257,18 +258,8 @@ MainGUIWindow::MainGUIWindow(
     connect(muscleExposureTimeSpinBox_,
             QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this,
-            [this,
-             arduinoCommunication,
-             rollingShutterLineTimeUs,
-             muscleRecordingState](double value)
-            {
-                int excitationLightOnTime = calculateMuscleExcitationOnTime(
-                    muscleRecordingState->muscleCamera->getNumLinesScanned(),
-                    rollingShutterLineTimeUs,
-                    value * 1000);
-                arduinoCommunication->setMuscleExposureTime(
-                    excitationLightOnTime);
-            });
+            [this, arduinoCommunication](double value)
+            { arduinoCommunication->setMuscleExposureTime(value * 1000); });
     QHBoxLayout *muscleExposureTimeLayout = new QHBoxLayout();
     muscleExposureTimeLayout->addWidget(
         new QLabel("Muscle exposure time (ms)"));
@@ -568,6 +559,8 @@ void MainGUIWindow::startRecording()
     // Send triggering parameters to Arduino and start recording
     arduinoCommunication_->setBehaviorRecordingFPS(behaviorFPSSpinBox_->value());
     arduinoCommunication_->setSyncRatio(syncRatioSpinBox_->value());
+    arduinoCommunication_->setNumBehaviorToMuscleLeadingCycles(
+        dualRecordingConfig_->getNumBehaviorToMuscleLeadingCycles());
     arduinoCommunication_->startRecording(protocolSteps);
 
     // Arduino will pause 100ms before starting triggering. This is to leave
@@ -765,7 +758,7 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
     setWindowTitle("Dual recording configuration");
     mainLayout_ = new QVBoxLayout(this);
     resize(desiredWidth_, desiredHeight_);
-    
+
     // Block for recording behavior only
     QLabel *labelTitle = new QLabel(
         "<b>Recording both behavior and muscle</b>");

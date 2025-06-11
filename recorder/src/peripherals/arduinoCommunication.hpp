@@ -30,6 +30,7 @@ public:
     void setSyncRatio(int syncRatio);
     void setBehaviorExposureTime(int exposureTimeUs);
     void setMuscleExposureTime(int exposureTimeUs);
+    void setNumBehaviorToMuscleLeadingCycles(int numCycles);
     void startRecording(std::vector<ProtocolStep> protocolSteps);
     void stopRecording();
     void stopCommunication();

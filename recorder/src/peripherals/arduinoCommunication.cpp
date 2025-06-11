@@ -135,6 +135,18 @@ void ArduinoCommunication::setBehaviorExposureTime(int exposureTimeUs)
     cv_.notify_one();
 }
 
+void ArduinoCommunication::setNumBehaviorToMuscleLeadingCycles(int numCycles)
+{
+    std::string message =
+        ">SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES " +
+        std::to_string(numCycles) + "\n";
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        arduinoMessagesQueue_.push(message);
+    }
+    cv_.notify_one();
+}
+
 void ArduinoCommunication::setMuscleExposureTime(int exposureTimeUs)
 {
     std::string message =

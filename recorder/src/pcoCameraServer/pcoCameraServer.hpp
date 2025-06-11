@@ -7,7 +7,7 @@
 
 #define WAIT_WITH_SMALL_DELAY true
 #define WAIT_TIMEOUT_SECS 0.1
-#define TIMEOUT_ERROR_CODE 0x80004001  // see PCO manual
+#define TIMEOUT_ERROR_CODE 0x80004001 // see PCO manual
 
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +35,7 @@ namespace PCOCameraServer
         unsigned int x1 = 2048;
         unsigned int y0 = 1;
         unsigned int y1 = 2048;
+        unsigned int delayUs = 0; // Delay after trigger in microseconds
         spdlog::level::level_enum logLevel = spdlog::level::info;
     };
 
@@ -52,6 +53,7 @@ namespace PCOCameraServer
                         unsigned int x1,
                         unsigned int y0,
                         unsigned int y1,
+                        unsigned int delayUs,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight);
 
@@ -66,6 +68,7 @@ namespace PCOCameraServer
                      const unsigned int x1,
                      const unsigned int y0,
                      const unsigned int y1,
+                     const unsigned int delayUs,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight);
 }
