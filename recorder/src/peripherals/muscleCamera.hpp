@@ -24,6 +24,14 @@ public:
           behaviorCameraFPS_(0),
           syncRatio_(1),
           muscleLightOnTimeUs_(0) {}
+    DualRecordingConfig(int behaviorCameraFPS,
+                        int syncRatio,
+                        int muscleLightOnTimeUs,
+                        bool recordBoth = true)
+        : recordBoth_(recordBoth),
+          behaviorCameraFPS_(behaviorCameraFPS),
+          syncRatio_(syncRatio),
+          muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
 
     bool isRecordingBoth() const { return recordBoth_; }
     int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
@@ -42,12 +50,15 @@ public:
     void saveToFile(const std::string &yamlPath);
 
 private:
+    // User input parameters
     bool recordBoth_;
     int behaviorCameraFPS_;
     int syncRatio_;
     int muscleLightOnTimeUs_;
-    int muscleShutterOpenTimeUs_ = 0;
+
+    // Derived parameters
     int hasBeenChecked_ = false;
+    int muscleShutterOpenTimeUs_ = 0;
     int muscleCamTriggerDelayUs_;
     int numBehaviorToMuscleLeadingCycles_;
 };

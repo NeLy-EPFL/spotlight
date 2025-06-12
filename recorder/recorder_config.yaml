@@ -25,6 +25,7 @@ muscle_camera:
   full_frame_height: 2048
   roi_width: 1120
   roi_height: 1120
+  streaming_sync_ratio: 2
   num_image_saving_threads: 4
   default_recording_sync_ratio: 4
   default_light_on_time_us: 3000
