@@ -410,8 +410,7 @@ MainGUIWindow::MainGUIWindow(
             this,
             &MainGUIWindow::updateMuscleImageDisplay);
     float muscleStreamingFPS =
-        static_cast<float>(streamingBehaviorFPS_) /
-        dualRecordingConfig->getSyncRatio();
+        static_cast<float>(streamingBehaviorFPS_) / streamingSyncRatio_;
     spdlog::info("Muscle streaming FPS: {}", muscleStreamingFPS);
     muscleImageDisplayTimer->start(1000 / muscleStreamingFPS);
 
