@@ -48,9 +48,9 @@ void convert16BitTo8Bit(cv::Mat &sourceImage,
                         int scale,
                         int offset);
 
-int calculateMuscleShutterOnTime(int numLinesScanned,
-                                 float rollingShutterLineTimeUs,
-                                 int exposureTimeUs);
+int calculateMuscleShutterOpenTime(int numLinesScanned,
+                                   float rollingShutterLineTimeUs,
+                                   int exposureTimeUs);
 
 void writeExperimentParameters(
     const std::filesystem::path &outputPath,

@@ -218,7 +218,8 @@ std::string findArduinoPortName(RecorderConfig &recorderConfig)
 
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     RecorderConfig &recorderConfig,
-    int muscleNumLinesScanned)
+    int muscleNumLinesScanned,
+    int syncRatio)
 {
     spdlog::info("Starting Arduino communication");
     std::string arduinoPortName = findArduinoPortName(recorderConfig);
@@ -227,12 +228,10 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     spdlog::info("Arduino communication started");
     int behaviorFrameRate = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
-    int syncRatio = recorderConfig.getParameter<int>(
-        "muscle_camera", "streaming_sync_ratio");
     int behaviorExposureTimeUs = recorderConfig.getParameter<int>(
         "behavior_camera", "default_exposure_time_us");
     int muscleLightOnTimeUs = recorderConfig.getParameter<int>(
-        "muscle_camera", "default_exposure_time_us");
+        "muscle_camera", "default_light_on_time_us");
     double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
     spdlog::info("Setting behavior recording FPS via Arduino to {}",
