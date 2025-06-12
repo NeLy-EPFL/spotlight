@@ -57,7 +57,7 @@ private:
     int muscleLightOnTimeUs_;
 
     // Derived parameters
-    int hasBeenChecked_ = false;
+    bool hasBeenChecked_ = false;
     int muscleShutterOpenTimeUs_ = 0;
     int muscleCamTriggerDelayUs_;
     int numBehaviorToMuscleLeadingCycles_;

@@ -117,7 +117,7 @@ private:
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
     std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
-    DualRecordingConfig *dualRecordingConfigForStreaming_;
+    std::unique_ptr<DualRecordingConfig> dualRecordingConfigForStreaming_;
 
     int muscleImage16To8BitScale_ = 1;
     int muscleImage16To8BitOffset_ = 0;
