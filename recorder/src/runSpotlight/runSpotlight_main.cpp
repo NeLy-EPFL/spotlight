@@ -215,19 +215,16 @@ int main(int argc, char **argv)
     // Start muscle image acquirer
     spdlog::info(
         "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
-        "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={}), "
-        "delayUs={}",
+        "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
         muscleROI.x0, muscleROI.x1, muscleROI.y0, muscleROI.y1,
         muscleROI.xOffset, muscleROI.yOffset,
-        muscleROI.imageWidth, muscleROI.imageHeight,
-        dualRecordingConfig->getMuscleCamDelayAfterTriggerUs());
+        muscleROI.imageWidth, muscleROI.imageHeight);
     std::thread muscleImageAcquirerThread(
         muscleImageAcquirer,
         muscleROI.imageWidth,
         muscleROI.imageHeight,
         muscleROI.xOffset,
         muscleROI.yOffset,
-        dualRecordingConfig->getMuscleCamDelayAfterTriggerUs(),
         recorderConfig,
         profileDir,
         spdlog::get_level(),

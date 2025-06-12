@@ -59,7 +59,6 @@ public:
                  int imageHeight,
                  int xOffset,
                  int yOffset,
-                 int muscleCamDelayAfterTriggerMicrosecs,
                  double rollingShutterLineTimeUs,
                  double sensorReadoutTimeUs,
                  const RecorderConfig &recorderConfig,
@@ -76,7 +75,6 @@ private:
     unsigned int x1_;
     unsigned int y0_;
     unsigned int y1_;
-    unsigned int muscleCamDelayAfterTriggerMicrosecs_;
     unsigned int imageWidth_;
     unsigned int imageHeight_;
     double rollingShutterLineTimeUs_;

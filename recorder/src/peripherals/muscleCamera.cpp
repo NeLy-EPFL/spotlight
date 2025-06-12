@@ -31,7 +31,6 @@ MuscleCamera::MuscleCamera(int imageWidth,
                            int imageHeight,
                            int xOffset,
                            int yOffset,
-                           int muscleCamDelayAfterTriggerMicrosecs,
                            double rollingShutterLineTimeUs,
                            double sensorReadoutTimeUs,
                            const RecorderConfig &recorderConfig,
@@ -41,7 +40,6 @@ MuscleCamera::MuscleCamera(int imageWidth,
       x1_(xOffset + imageWidth),
       y0_(yOffset + 1),
       y1_(yOffset + imageHeight),
-      muscleCamDelayAfterTriggerMicrosecs_(muscleCamDelayAfterTriggerMicrosecs),
       rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
       sensorReadoutTimeUs_(sensorReadoutTimeUs),
       imageWidth_(imageWidth),
@@ -85,7 +83,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                "--y-max",
                std::to_string(y1_).c_str(),
                "--delay",
-               std::to_string(muscleCamDelayAfterTriggerMicrosecs).c_str(),
+               "0",  // sync delay is implemented in Arduino code, not here!
                "--verbosity",
                logLevelToStr(logLevel).c_str(),
                (char *)nullptr);
@@ -302,15 +300,14 @@ bool DualRecordingConfig::computeParameters(
     int behaviorToMuscleLeadingTimeUs =
         numBehaviorToMuscleLeadingCycles_ * behaviorIntervalUs;
     muscleCamDelayAfterTriggerUs_ = muscleIntervalUs - rollingTimeUs;
-    spdlog::critical(
-        "Computed muscle camera parameters: "
-        "muscleIntervalUs = {}, "
-        "rollingTimeUs = {}, "
-        "muscleCamDelayAfterTriggerUs_ = {}",
-        muscleIntervalUs,
-        rollingTimeUs,
-        muscleCamDelayAfterTriggerUs_);
-    // muscleCamDelayAfterTriggerUs_ = 0;
+    // spdlog::critical(
+    //     "Computed muscle camera parameters: "
+    //     "muscleIntervalUs = {}, "
+    //     "rollingTimeUs = {}, "
+    //     "muscleCamDelayAfterTriggerUs_ = {}",
+    //     muscleIntervalUs,
+    //     rollingTimeUs,
+    //     muscleCamDelayAfterTriggerUs_);
     assert(muscleCamDelayAfterTriggerUs_ >= 0);
     int minMuscleIntervalUs =
         muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
