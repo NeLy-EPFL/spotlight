@@ -269,10 +269,10 @@ MainGUIWindow::MainGUIWindow(
     // Muscle exposure time widget
     muscleLightOnTimeSpinBox_ = new QDoubleSpinBox(this);
     muscleLightOnTimeSpinBox_->setRange(0.001, 1000.0);
-    int muscleCameraDefaultExposureTimeUs = recorderConfig.getParameter<int>(
+    int muscleCameraDefaultLightOnTimeUs = recorderConfig.getParameter<int>(
         "muscle_camera", "default_light_on_time_us");
     muscleLightOnTimeSpinBox_->setValue(
-        muscleCameraDefaultExposureTimeUs / 1000.0);
+        muscleCameraDefaultLightOnTimeUs / 1000.0);
     if (dualRecordingConfig->isRecordingBoth())
     {
         muscleLightOnTimeSpinBox_->setValue(
@@ -480,7 +480,7 @@ MainGUIWindow::MainGUIWindow(
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
     arduinoCommunication->setMuscleLightOnTime(
-        muscleCameraDefaultExposureTimeUs);
+        muscleCameraDefaultLightOnTimeUs);
 
     // Muscle imaging disabled by default
     arduinoCommunication_->setSyncRatio(INT_MAX);
@@ -844,40 +844,40 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
     QHBoxLayout *behaviorCameraFPSLayout = new QHBoxLayout();
     QLabel *behaviorCameraFPSLabel = new QLabel(
         "Behavior camera FPS (Hz)", this);
-    behaviorCameraFPSLineEdit_ = new QSpinBox(this);
-    behaviorCameraFPSLineEdit_->setRange(1, 1000);
-    behaviorCameraFPSLineEdit_->setValue(
+    behaviorCameraFPSSpinBox_ = new QSpinBox(this);
+    behaviorCameraFPSSpinBox_->setRange(1, 1000);
+    behaviorCameraFPSSpinBox_->setValue(
         recorderConfig.getParameter<int>(
             "behavior_camera", "default_recording_fps"));
     behaviorCameraFPSLayout->addWidget(behaviorCameraFPSLabel);
-    behaviorCameraFPSLayout->addWidget(behaviorCameraFPSLineEdit_);
+    behaviorCameraFPSLayout->addWidget(behaviorCameraFPSSpinBox_);
     mainLayout_->addLayout(behaviorCameraFPSLayout);
 
     // Behavior-muscle sync ratio
     QHBoxLayout *syncRatioLayout = new QHBoxLayout();
     QLabel *syncRatioLabel = new QLabel(
         "Sync ratio (behavior FPS : muscle FPS)", this);
-    syncRatioLineEdit_ = new QSpinBox(this);
-    syncRatioLineEdit_->setRange(1, 100);
-    syncRatioLineEdit_->setValue(
+    syncRatioSpinBox_ = new QSpinBox(this);
+    syncRatioSpinBox_->setRange(1, 100);
+    syncRatioSpinBox_->setValue(
         recorderConfig.getParameter<int>("muscle_camera",
                                          "default_recording_sync_ratio"));
     syncRatioLayout->addWidget(syncRatioLabel);
-    syncRatioLayout->addWidget(syncRatioLineEdit_);
+    syncRatioLayout->addWidget(syncRatioSpinBox_);
     mainLayout_->addLayout(syncRatioLayout);
 
     // Muscle exposure time
     QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
     QLabel *muscleLightOnTimeLabel = new QLabel(
         "Muscle exposure (light-on) time (ms)", this);
-    muscleLightOnTimeLineEdit_ = new QDoubleSpinBox(this);
-    muscleLightOnTimeLineEdit_->setRange(0.001, 10000.0);
-    muscleLightOnTimeLineEdit_->setValue(
+    muscleLightOnTimeSpinBox_ = new QDoubleSpinBox(this);
+    muscleLightOnTimeSpinBox_->setRange(0.001, 10000.0);
+    muscleLightOnTimeSpinBox_->setValue(
         recorderConfig.getParameter<int>("muscle_camera",
                                          "default_light_on_time_us") /
         1000.0);
     muscleLightOnTimeLayout->addWidget(muscleLightOnTimeLabel);
-    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeLineEdit_);
+    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeSpinBox_);
     mainLayout_->addLayout(muscleLightOnTimeLayout);
 
     withMuscleButton_ = new QPushButton("Record behavior and muscle", this);
@@ -897,10 +897,10 @@ void DualRecordingConfigWindow::onButtonClicked()
 {
     dualRecordingConfigForSaving_->setRecordBoth(sender() == withMuscleButton_);
     dualRecordingConfigForSaving_->setBehaviorCameraFPS(
-        behaviorCameraFPSLineEdit_->value());
-    dualRecordingConfigForSaving_->setSyncRatio(syncRatioLineEdit_->value());
+        behaviorCameraFPSSpinBox_->value());
+    dualRecordingConfigForSaving_->setSyncRatio(syncRatioSpinBox_->value());
     dualRecordingConfigForSaving_->setMuscleLightOnTimeUs(
-        static_cast<int>(muscleLightOnTimeLineEdit_->value() * 1000));
+        static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000));
 
     int muscleImageHeight = muscleCameraROI_.imageHeight;
     double muscleCameraLineScanTimeUs = recorderConfig_.getParameter<double>(
