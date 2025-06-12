@@ -161,7 +161,7 @@ void ArduinoCommunication::setMuscleCamTriggerDelay(int delayUs)
 void ArduinoCommunication::setMuscleLightOnTime(int lightOnTimeUs)
 {
     std::string message =
-        ">SET_MUSCLE_EXPOSURE_TIME " + std::to_string(lightOnTimeUs) + "\n";
+        ">SET_MUSCLE_LIGHT_ON_TIME " + std::to_string(lightOnTimeUs) + "\n";
     {
         std::lock_guard<std::mutex> lock(mutex_);
         arduinoMessagesQueue_.push(message);
