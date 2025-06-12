@@ -147,6 +147,17 @@ void ArduinoCommunication::setNumBehaviorToMuscleLeadingCycles(int numCycles)
     cv_.notify_one();
 }
 
+void ArduinoCommunication::setMuscleCamTriggerDelay(int delayUs)
+{
+    std::string message =
+        ">SET_MUSCLE_CAM_TRIGGER_DELAY " + std::to_string(delayUs) + "\n";
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        arduinoMessagesQueue_.push(message);
+    }
+    cv_.notify_one();
+}
+
 void ArduinoCommunication::setMuscleLightOnTime(int lightOnTimeUs)
 {
     std::string message =

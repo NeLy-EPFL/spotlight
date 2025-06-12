@@ -33,16 +33,24 @@ volatile unsigned int behaviorCamExposureTime = 1000;  // in microseconds
 volatile unsigned int muscleCamExposureTime = 3000;  // in microseconds
 
 // Muscle cam should be triggered this many behavior triggers ahead of time for
-// common time exposure
+// common time exposure. Muscle camera trigger should also have a delay to
+// make sure that the common time is aligned with the excitation-on period
 volatile unsigned int numBehaviorToMuscleLeadingCycles = 0;
+volatile unsigned int muscleCamTriggerDelayUs = 0;
+
+// Protocol steps
 std::vector<ProtocolStep> protocolSteps;
 
 // Timing variables
 volatile unsigned long lastBehaviorTriggerTime = 0;
-volatile unsigned long lastMuscleTriggerTime = 0;
+volatile unsigned long lastMuscleLightTriggerTime = 0;
+volatile unsigned long lastMuscleCamTriggerTime = 0;
 volatile unsigned long behaviorTriggerCounter = 0;
+volatile unsigned long muscleCamTriggerDelayStartTime = 0;
+volatile bool triggerMuscleCamThisCycle = false;
 volatile bool behaviorTriggerState = false;
-volatile bool muscleTriggerState = false;
+volatile bool muscleLightTriggerState = false;
+volatile bool muscleCamTriggerState = false;
 
 char incomingMessageBuffer[INCOMING_MESSAGE_BUFFER_SIZE];
 int incomingMessageBufferIdx = 0;
@@ -68,14 +76,20 @@ void behaviorTriggerOff() {
   digitalWrite(IR_LIGHT_PIN, LOW);
 }
 
-void muscleTriggerOn() {
-  digitalWrite(MUSCLE_CAM_PIN, HIGH);
+void muscleLightTriggerOn() {
   digitalWrite(BLUE_LIGHT_PIN, HIGH);
 }
 
-void muscleTriggerOff() {
-  digitalWrite(MUSCLE_CAM_PIN, LOW);
+void muscleLightTriggerOff() {
   digitalWrite(BLUE_LIGHT_PIN, LOW);
+}
+
+void muscleCamTriggerOn() {
+  digitalWrite(MUSCLE_CAM_PIN, HIGH);
+}
+
+void muscleCamTriggerOff() {
+  digitalWrite(MUSCLE_CAM_PIN, LOW);
 }
 
 void setup() {
@@ -96,7 +110,8 @@ void setup() {
   
   // Initialize pins to LOW
   behaviorTriggerOff();
-  muscleTriggerOff();
+  muscleLightTriggerOff();
+  muscleCamTriggerOff();
   digitalWrite(OPTO_CH2_PIN, LOW);
   digitalWrite(OPTO_CH3_PIN, LOW);
   digitalWrite(GREEN_LIGHT_PIN, LOW);
@@ -132,15 +147,36 @@ void loop() {
     behaviorTriggerState = true;
     lastBehaviorTriggerTime = currentTime;
 
-    // Should I also open muscle camera shutter?
-    if (behaviorTriggerCounter % syncRatioK ==
-        numBehaviorToMuscleLeadingCycles) {
-      muscleTriggerOn();
-      muscleTriggerState = true;
-      lastMuscleTriggerTime = currentTime;
+    // Should I mark the muscle *CAMERA* as to be triggered during this cycle?
+    if (behaviorTriggerCounter % syncRatioK == 0) {
+      triggerMuscleCamThisCycle = true;
+      // Use (currentTime - delayStartTime >= delayTime) instead of addition to
+      // ensure proper wrapping when counter overflows
+      muscleCamTriggerDelayStartTime = currentTime;
+    }
+
+    // Should I trigger muscle *EXCITATION LIGHT* this cycle?
+    int cycleModulus = behaviorTriggerCounter % syncRatioK;
+    if (
+      cycleModulus == numBehaviorToMuscleLeadingCycles &&
+      !muscleLightTriggerState
+    ) {
+      muscleLightTriggerOn();
+      muscleLightTriggerState = true;
+      lastMuscleLightTriggerTime = currentTime;
     }
 
     behaviorTriggerCounter++;
+  }
+
+  // Should I open muscle camera shutter?
+  if (triggerMuscleCamThisCycle &&
+      currentTime - muscleCamTriggerDelayStartTime >= muscleCamTriggerDelayUs &&
+      !muscleCamTriggerState) {
+    muscleCamTriggerOn();
+    muscleCamTriggerState = true;
+    lastMuscleCamTriggerTime = currentTime;
+    triggerMuscleCamThisCycle = false;  // Reset for the next cycle
   }
 
   // Should I close behavior camera shutter?
@@ -149,12 +185,19 @@ void loop() {
     behaviorTriggerOff();
     behaviorTriggerState = false;
   }
+
+  // Should I turn off muscle excitation light?
+  if (currentTime - lastMuscleLightTriggerTime >= muscleCamExposureTime &&
+      muscleLightTriggerState) {
+    muscleLightTriggerOff();
+    muscleLightTriggerState = false;
+  }
   
   // Should I close muscle camera shutter?
-  if (currentTime - lastMuscleTriggerTime >= muscleCamExposureTime &&
-      muscleTriggerState) {
-    muscleTriggerOff();
-    muscleTriggerState = false;
+  if (currentTime - lastMuscleCamTriggerTime >= muscleCamExposureTime &&
+      muscleCamTriggerState) {
+    muscleCamTriggerOff();
+    muscleCamTriggerState = false;
   }
 
   // Should I execute the next protocol step?
@@ -297,6 +340,25 @@ void parseIncomingCommand(const char* message) {
       Serial.flush();
       litStatusLED(RED);
     }
+  } else if (strncmp(message,
+                     CMDSTR_SET_MUSCLE_CAM_TRIGGER_DELAY,
+                     CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY) == 0) {
+    // Handle command: SET_MUSCLE_CAM_TRIGGER_DELAY
+    const char* delayStart =
+      message + CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY + 1;
+    unsigned int muscleCamTriggerDelayUsRequested = atoi(delayStart);
+    if (muscleCamTriggerDelayUsRequested >= 0) {
+      muscleCamTriggerDelayUs = muscleCamTriggerDelayUsRequested;
+      Serial.print("Muscle cam trigger delay set to: ");
+      Serial.println(muscleCamTriggerDelayUs);
+      Serial.flush();
+      litStatusLED(GREEN);
+    } else {
+      Serial.print("Invalid muscle cam trigger delay: ");
+      Serial.println(muscleCamTriggerDelayUsRequested);
+      Serial.flush();
+      litStatusLED(RED);
+    }
   } else if (strncmp(message, CMDSTR_START_RECORDING, CMDLEN_START_RECORDING) == 0) {
     // Handle command: START_RECORDING
     const char* protocolStart = message + CMDLEN_START_RECORDING + 1;
@@ -329,13 +391,16 @@ void parseIncomingCommand(const char* message) {
 
     behaviorTriggerCounter = 0;
     lastBehaviorTriggerTime = 0;
-    lastMuscleTriggerTime = 0;
+    lastMuscleLightTriggerTime = 0;
+    lastMuscleCamTriggerTime = 0;
     behaviorTriggerState = false;
-    muscleTriggerState = false;
+    muscleLightTriggerState = false;
+    muscleCamTriggerState = false;
     Serial.println("Pausing to let frame buffer clear...");
     Serial.flush();
     behaviorTriggerOff();
-    muscleTriggerOff();
+    muscleLightTriggerOff();
+    muscleCamTriggerOff();
     delayMicroseconds(FRAME_BUFFER_FLUSH_TIME_US);
     Serial.println("Recording started.");
     Serial.flush();
