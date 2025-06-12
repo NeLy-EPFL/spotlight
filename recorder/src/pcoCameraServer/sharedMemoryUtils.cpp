@@ -108,8 +108,8 @@ namespace PCOSharedMemory
         close(shmFileDesc);
     }
 
-    void setupFrameMetadata(const std::string &shmShutterOpenTimeName,
-                            FrameMetadata *&shutterOpenTimePtr,
+    void setupFrameMetadata(const std::string &shmFrameMetadataName,
+                            FrameMetadata *&frameMetadataPtr,
                             bool createNew)
     {
         int shmFileDesc = -1;
@@ -117,7 +117,7 @@ namespace PCOSharedMemory
         if (createNew)
         {
             shmFileDesc = shm_open(
-                shmShutterOpenTimeName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+                shmFrameMetadataName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
             if (shmFileDesc == -1)
             {
                 std::string errorMessage =
@@ -137,17 +137,17 @@ namespace PCOSharedMemory
         }
         else
         {
-            shmFileDesc = shm_open(shmShutterOpenTimeName.c_str(), O_RDWR, 0666);
+            shmFileDesc = shm_open(shmFrameMetadataName.c_str(), O_RDWR, 0666);
         }
 
-        shutterOpenTimePtr = (FrameMetadata *)mmap(
+        frameMetadataPtr = (FrameMetadata *)mmap(
             0,
             sizeof(FrameMetadata),
             PROT_READ | PROT_WRITE,
             MAP_SHARED,
             shmFileDesc,
             0);
-        if (shutterOpenTimePtr == MAP_FAILED)
+        if (frameMetadataPtr == MAP_FAILED)
         {
             std::string errorMessage =
                 "Failed to map shared memory for frame metadata: " +

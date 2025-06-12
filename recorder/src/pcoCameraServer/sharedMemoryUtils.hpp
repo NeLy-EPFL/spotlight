@@ -24,8 +24,8 @@ namespace PCOSharedMemory
     void setupShutterOpenTime(const std::string &shmShutterOpenTimeName,
                               unsigned int *&shutterOpenTimePtr,
                               bool createNew);
-    void setupFrameMetadata(const std::string &shmShutterOpenTimeName,
-                            FrameMetadata *&shutterOpenTimePtr,
+    void setupFrameMetadata(const std::string &shmFrameMetadataName,
+                            FrameMetadata *&frameMetadataPtr,
                             bool createNew);
     void setupMutex(const std::string &shmMutexName,
                     pthread_mutex_t *&mutexPtr,
