@@ -145,9 +145,9 @@ private slots:
 
 private:
     QVBoxLayout *mainLayout_;
-    QSpinBox *behaviorCameraFPSLineEdit_;
-    QSpinBox *syncRatioLineEdit_;
-    QDoubleSpinBox *muscleLightOnTimeLineEdit_;
+    QSpinBox *behaviorCameraFPSSpinBox_;
+    QSpinBox *syncRatioSpinBox_;
+    QDoubleSpinBox *muscleLightOnTimeSpinBox_;
     QPushButton *withMuscleButton_;
     QPushButton *withoutMuscleButton_;
 
