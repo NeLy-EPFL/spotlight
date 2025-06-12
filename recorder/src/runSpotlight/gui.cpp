@@ -166,7 +166,7 @@ MainGUIWindow::MainGUIWindow(
       arduinoCommunication_(arduinoCommunication),
       programState_(programState),
       programmedRecordingStop_(programmedRecordingStop),
-      dualRecordingConfig_(dualRecordingConfig)
+      dualRecordingConfigForSaving_(dualRecordingConfig)
 {
     streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
@@ -178,8 +178,33 @@ MainGUIWindow::MainGUIWindow(
         "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
 
     // Load rolling shutter parameter
-    float rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
+    int muscleCamReadoutTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "sensor_readout_time_us");
+
+    // Load streaming sync ratio
+    streamingSyncRatio_ = recorderConfig.getParameter<int>(
+        "muscle_camera", "streaming_sync_ratio");
+    dualRecordingConfigForStreaming_ = new DualRecordingConfig(
+        streamingBehaviorFPS_,
+        streamingSyncRatio_,
+        dualRecordingConfig->getMuscleLightOnTimeUs());
+    size_t retryCount = 0;
+    while (muscleRecordingState_->muscleCamera == nullptr)
+    {
+        // Wait for the muscle camera to be initialized
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        retryCount++;
+        if (retryCount % 10 == 0)
+        {
+            spdlog::warn("Muscle camera is not initialized.");
+        }
+    }
+    dualRecordingConfigForStreaming_->computeParameters(
+        muscleRecordingState_->muscleCamera->getNumLinesScanned(),
+        rollingShutterLineTimeUs,
+        muscleCamReadoutTimeUs);
 
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
@@ -266,7 +291,6 @@ MainGUIWindow::MainGUIWindow(
     // Experiment protocol widget
     QLabel *protocolLabel = new QLabel("Experiment protocol", this);
     experimentProtocol_ = new QTextEdit(this);
-    // experimentProtocol_->setPlaceholderText("Enter experiment protocol details here...");
     experimentProtocol_->setMinimumHeight(40);
     QVBoxLayout *protocolLayout = new QVBoxLayout();
     protocolLayout->addWidget(protocolLabel);
@@ -328,12 +352,12 @@ MainGUIWindow::MainGUIWindow(
                 {
                     spdlog::info("Enabling muscle imaging, "
                                  "setting sync ratio to {}",
-                                 dualRecordingConfig_->getSyncRatio());
+                                 streamingSyncRatio_);
                     muscleImagingEnabled_ = true;
-                    arduinoCommunication->setSyncRatio(
-                        dualRecordingConfig_->getSyncRatio());
+                    arduinoCommunication->setSyncRatio(streamingSyncRatio_);
                     arduinoCommunication->setMuscleCamTriggerDelay(
-                        dualRecordingConfig_->getMuscleCamTriggerDelayUs());
+                        dualRecordingConfigForStreaming_
+                            ->getMuscleCamTriggerDelayUs());
                 }
                 else
                 {
@@ -565,12 +589,12 @@ void MainGUIWindow::startRecording()
     }
 
     // Save timing metadata
-    if (dualRecordingConfig_->isRecordingBoth())
+    if (dualRecordingConfigForSaving_->isRecordingBoth())
     {
         std::filesystem::path behaviorCalibrationFilePath =
             saveDirectory_->getDirectory() /
             "metadata/dual_recording_timing.yaml";
-        dualRecordingConfig_->saveToFile(behaviorCalibrationFilePath);
+        dualRecordingConfigForSaving_->saveToFile(behaviorCalibrationFilePath);
         spdlog::info("Saved dual recording timing parameters to '{}'",
                      behaviorCalibrationFilePath.string());
     }
@@ -578,9 +602,12 @@ void MainGUIWindow::startRecording()
     // Send triggering parameters to Arduino and start recording
     arduinoCommunication_->setBehaviorRecordingFPS(
         behaviorFPSSpinBox_->value());
-    arduinoCommunication_->setSyncRatio(syncRatioSpinBox_->value());
+    arduinoCommunication_->setSyncRatio(
+        dualRecordingConfigForSaving_->getSyncRatio());
     arduinoCommunication_->setNumBehaviorToMuscleLeadingCycles(
-        dualRecordingConfig_->getNumBehaviorToMuscleLeadingCycles());
+        dualRecordingConfigForSaving_->getNumBehaviorToMuscleLeadingCycles());
+    arduinoCommunication_->setMuscleCamTriggerDelay(
+        dualRecordingConfigForSaving_->getMuscleCamTriggerDelayUs());
     arduinoCommunication_->startRecording(protocolSteps);
 
     // Arduino will pause 100ms before starting triggering. This is to leave
@@ -602,8 +629,16 @@ void MainGUIWindow::stopRecording()
     arduinoCommunication_->stopRecording();
     programState_->isRecording.store(false);
     arduinoCommunication_->setBehaviorRecordingFPS(streamingBehaviorFPS_);
-    arduinoCommunication_->setSyncRatio(
-        muscleImagingEnabled_ ? dualRecordingConfig_->getSyncRatio() : INT_MAX);
+    if (muscleImagingEnabled_)
+    {
+        arduinoCommunication_->setSyncRatio(streamingSyncRatio_);
+        arduinoCommunication_->setMuscleCamTriggerDelay(
+            dualRecordingConfigForStreaming_->getMuscleCamTriggerDelayUs());
+    }
+    else
+    {
+        arduinoCommunication_->setSyncRatio(INT_MAX);
+    }
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event)
@@ -771,7 +806,7 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
     const MuscleCameraROI &muscleCameraROI,
     QWidget *parent)
     : QDialog(parent),
-      dualRecordingConfig_(dualRecordingConfig),
+      dualRecordingConfigForSaving_(dualRecordingConfig),
       recorderConfig_(recorderConfig),
       muscleCameraROI_(muscleCameraROI)
 {
@@ -859,11 +894,11 @@ DualRecordingConfigWindow::~DualRecordingConfigWindow()
 
 void DualRecordingConfigWindow::onButtonClicked()
 {
-    dualRecordingConfig_->setRecordBoth(sender() == withMuscleButton_);
-    dualRecordingConfig_->setBehaviorCameraFPS(
+    dualRecordingConfigForSaving_->setRecordBoth(sender() == withMuscleButton_);
+    dualRecordingConfigForSaving_->setBehaviorCameraFPS(
         behaviorCameraFPSLineEdit_->value());
-    dualRecordingConfig_->setSyncRatio(syncRatioLineEdit_->value());
-    dualRecordingConfig_->setMuscleLightOnTimeUs(
+    dualRecordingConfigForSaving_->setSyncRatio(syncRatioLineEdit_->value());
+    dualRecordingConfigForSaving_->setMuscleLightOnTimeUs(
         static_cast<int>(muscleLightOnTimeLineEdit_->value() * 1000));
 
     int muscleImageHeight = muscleCameraROI_.imageHeight;
@@ -873,7 +908,7 @@ void DualRecordingConfigWindow::onButtonClicked()
         "muscle_camera", "sensor_readout_time_us");
 
     bool isValid =
-        dualRecordingConfig_->computeParameters(muscleImageHeight,
+        dualRecordingConfigForSaving_->computeParameters(muscleImageHeight,
                                                 muscleCameraLineScanTimeUs,
                                                 muscleCameraReadoutTimeUs);
 
@@ -893,10 +928,10 @@ void DualRecordingConfigWindow::onButtonClicked()
         spdlog::info("Behavior-muscle corecording config set: "
                      "recordBoth={}, behaviorCameraFPS={}, syncRatio={}, "
                      "muscleLightOnTimeUs={}",
-                     dualRecordingConfig_->isRecordingBoth(),
-                     dualRecordingConfig_->getBehaviorCameraFPS(),
-                     dualRecordingConfig_->getSyncRatio(),
-                     dualRecordingConfig_->getMuscleLightOnTimeUs());
+                     dualRecordingConfigForSaving_->isRecordingBoth(),
+                     dualRecordingConfigForSaving_->getBehaviorCameraFPS(),
+                     dualRecordingConfigForSaving_->getSyncRatio(),
+                     dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
         accept(); // close the dialog
     }
 }
