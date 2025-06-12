@@ -292,7 +292,8 @@ bool DualRecordingConfig::computeParameters(
     int muscleCameraReadoutTimeUs)
 {
     int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
-    int muscleIntervalUs = 1000000 / (behaviorCameraFPS_ / double(syncRatio_));
+    double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
+    int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
     if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
         muscleIntervalUs)

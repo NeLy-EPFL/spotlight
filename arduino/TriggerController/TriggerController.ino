@@ -278,16 +278,16 @@ void parseIncomingCommand(const char* message) {
   } else if (strncmp(message, CMDSTR_SET_MUSCLE_LIGHT_ON_TIME, CMDLEN_SET_MUSCLE_LIGHT_ON_TIME) == 0) {
     // Handle command: SET_MUSCLE_LIGHT_ON_TIME
     const char* lightOnTimeStart = message + CMDLEN_SET_MUSCLE_LIGHT_ON_TIME + 1;
-    unsigned int expTime = atoi(lightOnTimeStart);
-    if (expTime > 0) {
-      muscleCamExposureTime = expTime;
+    unsigned int lightOnTime = atoi(lightOnTimeStart);
+    if (lightOnTime > 0) {
+      muscleCamExposureTime = lightOnTime;
       Serial.print("Muscle camera exposure time set to: ");
       Serial.println(muscleCamExposureTime);
       Serial.flush();
       // litStatusLED(GREEN);
     } else {
       Serial.print("Invalid exposure time for muscle camera: ");
-      Serial.println(expTime);
+      Serial.println(lightOnTime);
       Serial.flush();
       litStatusLED(RED);
     }
