@@ -328,18 +328,11 @@ void parseIncomingCommand(const char* message) {
     const char* cyclesStart =
       message + CMDLEN_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES + 1;
     unsigned int numLeadingCyclesRequested = atoi(cyclesStart);
-    if (numLeadingCyclesRequested >= 0) {
-      numBehaviorToMuscleLeadingCycles = numLeadingCyclesRequested;
-      Serial.print("Number of behavior to muscle leading cycles set to: ");
-      Serial.println(numBehaviorToMuscleLeadingCycles);
-      Serial.flush();
-      litStatusLED(GREEN);
-    } else {
-      Serial.print("Invalid number of leading cycles: ");
-      Serial.println(numLeadingCyclesRequested);
-      Serial.flush();
-      litStatusLED(RED);
-    }
+    numBehaviorToMuscleLeadingCycles = numLeadingCyclesRequested;
+    Serial.print("Number of behavior to muscle leading cycles set to: ");
+    Serial.println(numBehaviorToMuscleLeadingCycles);
+    Serial.flush();
+    litStatusLED(GREEN);
   } else if (strncmp(message,
                      CMDSTR_SET_MUSCLE_CAM_TRIGGER_DELAY,
                      CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY) == 0) {
@@ -347,18 +340,11 @@ void parseIncomingCommand(const char* message) {
     const char* delayStart =
       message + CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY + 1;
     unsigned int muscleCamTriggerDelayUsRequested = atoi(delayStart);
-    if (muscleCamTriggerDelayUsRequested >= 0) {
-      muscleCamTriggerDelayUs = muscleCamTriggerDelayUsRequested;
-      Serial.print("Muscle cam trigger delay set to: ");
-      Serial.println(muscleCamTriggerDelayUs);
-      Serial.flush();
-      litStatusLED(GREEN);
-    } else {
-      Serial.print("Invalid muscle cam trigger delay: ");
-      Serial.println(muscleCamTriggerDelayUsRequested);
-      Serial.flush();
-      litStatusLED(RED);
-    }
+    muscleCamTriggerDelayUs = muscleCamTriggerDelayUsRequested;
+    Serial.print("Muscle cam trigger delay set to: ");
+    Serial.println(muscleCamTriggerDelayUs);
+    Serial.flush();
+    litStatusLED(GREEN);
   } else if (strncmp(message, CMDSTR_START_RECORDING, CMDLEN_START_RECORDING) == 0) {
     // Handle command: START_RECORDING
     const char* protocolStart = message + CMDLEN_START_RECORDING + 1;
