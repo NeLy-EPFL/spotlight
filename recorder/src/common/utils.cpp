@@ -201,9 +201,9 @@ void convert16BitTo8Bit(cv::Mat &sourceImage,
     sourceImage.convertTo(targetImage, CV_8U, alpha, offset);
 }
 
-int calculateMuscleShutterOnTime(int numLinesScanned,
-                                 float rollingShutterLineTimeUs,
-                                 int exposureTimeUs)
+int calculateMuscleShutterOpenTime(int numLinesScanned,
+                                   float rollingShutterLineTimeUs,
+                                   int exposureTimeUs)
 {
     int maxRollingShutterDelay =
         static_cast<int>(numLinesScanned * rollingShutterLineTimeUs);

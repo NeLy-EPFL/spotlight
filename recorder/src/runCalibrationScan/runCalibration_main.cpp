@@ -123,7 +123,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
     int muscleNumLinesScanned =
         muscleRecordingState->muscleCamera->getNumLinesScanned();
     arduinoCommunication = initializeTriggeringWithDefaultParams(
-        recorderConfig, muscleNumLinesScanned);
+        recorderConfig, muscleNumLinesScanned, 1);
 
     // Set up motion control
     MotionControl motionControl(recorderConfig);

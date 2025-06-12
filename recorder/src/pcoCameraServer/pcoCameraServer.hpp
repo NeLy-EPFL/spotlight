@@ -48,7 +48,7 @@ namespace PCOCameraServer
     void signalHandler(int signal);
 
     void setupPCOCamera(pco::Camera &camera,
-                        unsigned int defaultExposureTimeUs,
+                        unsigned int defaultShutterOpenTimeUs,
                         unsigned int x0,
                         unsigned int x1,
                         unsigned int y0,
@@ -59,11 +59,11 @@ namespace PCOCameraServer
 
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
-                     const std::string &shmExposureTimeName,
+                     const std::string &shmShutterOpenTimeName,
                      const std::string &shmFrameMetadataName,
                      const std::string &shmMutexName,
                      const std::string &shmCondVarName,
-                     const unsigned int defaultExposureTimeUs,
+                     const unsigned int defaultShutterOpenTimeUs,
                      const unsigned int x0,
                      const unsigned int x1,
                      const unsigned int y0,

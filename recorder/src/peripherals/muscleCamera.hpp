@@ -39,12 +39,15 @@ public:
     bool computeParameters(int muscleImageHeight,
                            double muscleCameraLineScanTimeUs,
                            int muscleCameraReadoutTimeUs);
+    void saveToFile(const std::string &yamlPath);
 
 private:
     bool recordBoth_;
     int behaviorCameraFPS_;
     int syncRatio_;
     int muscleLightOnTimeUs_;
+    int muscleShutterOpenTimeUs_ = 0;
+    int hasBeenChecked_ = false;
     int muscleCamDelayAfterTriggerUs_;
     int numBehaviorToMuscleLeadingCycles_;
 };
@@ -80,7 +83,7 @@ private:
     double sensorReadoutTimeUs_;
     pid_t pcoCameraServerPID_;
     uint8_t *frameDataPtr_;
-    unsigned int *exposureTimePtr_;
+    unsigned int *shutterOpenTimePtr_;
     PCOSharedMemory::FrameMetadata *frameMetadataPtr_;
     pthread_mutex_t *mutexPtr_;
     pthread_cond_t *condVarPtr_;
