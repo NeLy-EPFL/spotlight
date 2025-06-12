@@ -332,6 +332,8 @@ MainGUIWindow::MainGUIWindow(
                     muscleImagingEnabled_ = true;
                     arduinoCommunication->setSyncRatio(
                         dualRecordingConfig_->getSyncRatio());
+                    arduinoCommunication->setMuscleCamTriggerDelay(
+                        dualRecordingConfig_->getMuscleCamTriggerDelayUs());
                 }
                 else
                 {

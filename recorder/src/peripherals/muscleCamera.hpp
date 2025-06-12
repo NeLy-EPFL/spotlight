@@ -29,7 +29,7 @@ public:
     int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
     int getSyncRatio() const { return syncRatio_; }
     int getMuscleLightOnTimeUs() const { return muscleLightOnTimeUs_; }
-    int getMuscleCamDelayAfterTriggerUs() const { return muscleCamDelayAfterTriggerUs_; }
+    int getMuscleCamTriggerDelayUs() const { return muscleCamTriggerDelayUs_; }
     int getNumBehaviorToMuscleLeadingCycles() const { return numBehaviorToMuscleLeadingCycles_; }
     void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
     void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
@@ -48,7 +48,7 @@ private:
     int muscleLightOnTimeUs_;
     int muscleShutterOpenTimeUs_ = 0;
     int hasBeenChecked_ = false;
-    int muscleCamDelayAfterTriggerUs_;
+    int muscleCamTriggerDelayUs_;
     int numBehaviorToMuscleLeadingCycles_;
 };
 

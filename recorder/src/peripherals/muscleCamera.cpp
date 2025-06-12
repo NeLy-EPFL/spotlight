@@ -83,7 +83,7 @@ MuscleCamera::MuscleCamera(int imageWidth,
                "--y-max",
                std::to_string(y1_).c_str(),
                "--delay",
-               "0",  // sync delay is implemented in Arduino code, not here!
+               "0", // sync delay is implemented in Arduino code, not here!
                "--verbosity",
                logLevelToStr(logLevel).c_str(),
                (char *)nullptr);
@@ -294,21 +294,26 @@ bool DualRecordingConfig::computeParameters(
     int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
     int muscleIntervalUs = 1000000 / (behaviorCameraFPS_ / double(syncRatio_));
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
+    if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
+        muscleIntervalUs)
+    {
+        spdlog::critical(
+            "Computed muscle camera parameters are invalid: "
+            "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
+            "must be less than or equal to muscleIntervalUs. "
+            "rollingTimeUs = {}, "
+            "muscleCameraReadoutTimeUs = {}, "
+            "muscleLightOnTimeUs = {}, "
+            "muscleIntervalUs = {}",
+            rollingTimeUs, muscleCameraReadoutTimeUs, muscleLightOnTimeUs_,
+            muscleIntervalUs);
+        return false; // Invalid configuration
+    }
     muscleShutterOpenTimeUs_ = rollingTimeUs + muscleLightOnTimeUs_;
-    numBehaviorToMuscleLeadingCycles_ =
-        int(rollingTimeUs / behaviorIntervalUs) + 1;
+    numBehaviorToMuscleLeadingCycles_ = 0; // delay already accounts for this
     int behaviorToMuscleLeadingTimeUs =
         numBehaviorToMuscleLeadingCycles_ * behaviorIntervalUs;
-    muscleCamDelayAfterTriggerUs_ = muscleIntervalUs - rollingTimeUs;
-    // spdlog::critical(
-    //     "Computed muscle camera parameters: "
-    //     "muscleIntervalUs = {}, "
-    //     "rollingTimeUs = {}, "
-    //     "muscleCamDelayAfterTriggerUs_ = {}",
-    //     muscleIntervalUs,
-    //     rollingTimeUs,
-    //     muscleCamDelayAfterTriggerUs_);
-    assert(muscleCamDelayAfterTriggerUs_ >= 0);
+    muscleCamTriggerDelayUs_ = muscleIntervalUs - rollingTimeUs;
     int minMuscleIntervalUs =
         muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
 
@@ -338,7 +343,7 @@ void DualRecordingConfig::saveToFile(const std::string &yamlPath)
     config["muscle_shutter_open_time_us"] = muscleShutterOpenTimeUs_;
     config["num_behavior_to_muscle_leading_cycles"] =
         numBehaviorToMuscleLeadingCycles_;
-    config["muscle_cam_delay_after_trigger_us"] = muscleCamDelayAfterTriggerUs_;
+    config["muscle_cam_trigger_delay_us"] = muscleCamTriggerDelayUs_;
 
     // Create any parent directories if they don't exist
     std::filesystem::path filePath(yamlPath);
