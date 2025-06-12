@@ -186,10 +186,11 @@ MainGUIWindow::MainGUIWindow(
     // Load streaming sync ratio
     streamingSyncRatio_ = recorderConfig.getParameter<int>(
         "muscle_camera", "streaming_sync_ratio");
-    dualRecordingConfigForStreaming_ = new DualRecordingConfig(
-        streamingBehaviorFPS_,
-        streamingSyncRatio_,
-        dualRecordingConfig->getMuscleLightOnTimeUs());
+    dualRecordingConfigForStreaming_ =
+        std::make_unique<DualRecordingConfig>(
+            streamingBehaviorFPS_,
+            streamingSyncRatio_,
+            dualRecordingConfig->getMuscleLightOnTimeUs());
     size_t retryCount = 0;
     while (muscleRecordingState_->muscleCamera == nullptr)
     {
