@@ -13,6 +13,7 @@ namespace PCOCameraServer
             << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
             << "  -y0, --y-min Y_MIN       y_min coordinate of the region of interest (default: 2048)\n"
             << "  -y1, --y-max Y_MAX       y_max coordinate of the region of interest (default: 2048)\n"
+            << "  -d,  --delay DELAY       Delay of shutter-open after trigger in microseconds (default: 0)\n"
             << "  -v,  --verbose           Enable verbose output (debug level)\n"
             << "  --verbosity LEVEL        Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
             << std::endl;
@@ -79,6 +80,10 @@ namespace PCOCameraServer
             else if ((arg == "-y1" || arg == "--y-max") && i + 1 < argc)
             {
                 options.y1 = std::stoi(argv[++i]);
+            }
+            else if ((arg == "-d" || arg == "--delay") && i + 1 < argc)
+            {
+                options.delayUs = std::stoi(argv[++i]);
             }
             else if (arg[0] == '-')
             {
@@ -151,11 +156,12 @@ namespace PCOCameraServer
     }
 
     void setupPCOCamera(pco::Camera &camera,
-                        unsigned int defaultExposureTimeUs,
+                        unsigned int defaultShutterOpenTimeUs,
                         unsigned int x0,
                         unsigned int x1,
                         unsigned int y0,
                         unsigned int y1,
+                        unsigned int delayUs,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight)
     {
@@ -169,46 +175,49 @@ namespace PCOCameraServer
         config.roi.y1 = y1;
         config.trigger_mode = TRIGGER_MODE_EXTERNALTRIGGER;
         config.acquire_mode = ACQUIRE_MODE_AUTO;
-        config.delay_time_s = 0;
+        config.delay_time_s = delayUs / 1000000.0; // Convert to seconds
         config.noise_filter_mode = NOISE_FILTER_MODE_ON;
         // config.timestamp_mode = TIMESTAMP_MODE_ASCII;
         spdlog::info("Setting PCO camera configuration");
         camera.setConfiguration(config);
         spdlog::info("PCO camera configuration set");
+        spdlog::info("PCO camera configuration set: "
+                     "x0={}, x1={}, y0={}, y1={}, delay_us={}",
+                     config.roi.x0, config.roi.x1, config.roi.y0, config.roi.y1,
+                     delayUs);
 
         // Set exposure time
-        spdlog::info("Setting PCO camera exposure time to {} us",
-                     defaultExposureTimeUs);
-        camera.setExposureTime(defaultExposureTimeUs / 1000000.0);
+        spdlog::info("Setting PCO camera shutter-open time to {} us",
+                     defaultShutterOpenTimeUs);
+        camera.setExposureTime(defaultShutterOpenTimeUs / 1000000.0);
         camera.autoExposureOff();
-        spdlog::info("PCO camera exposure time set");
+        spdlog::info("PCO camera shutter-open time set");
 
         // Set trigger polarity
         spdlog::info("Setting PCO camera trigger polarity to rising edge");
         camera.configureHWIO_1_exposureTrigger(
             true, pco::HWIO_EdgePolarity::rising_edge);
 
-        // Let SMA #4 line output whether the shutter is on for ANY line
-        // (since the camera has a rolling shutter, this can be much longer than
-        // the exposure time)
+        // Let SMA #4 line output indicate common time
         camera.configureHWIO_4_statusExpos(
             true,
             pco::HWIO_Polarity::high_level,
             pco::HWIO_4_SignalType::status_expos,
-            pco::HWIO_StatusExpos_Timing::all_lines);
+            pco::HWIO_StatusExpos_Timing::global); // global = common time
     }
 
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
-                     const std::string &shmExposureTimeName,
+                     const std::string &shmShutterOpenTimeName,
                      const std::string &shmFrameMetadataName,
                      const std::string &shmMutexName,
                      const std::string &shmCondVarName,
-                     const unsigned int defaultExposureTimeUs,
+                     const unsigned int defaultShutterOpenTimeUs,
                      const unsigned int x0,
                      const unsigned int x1,
                      const unsigned int y0,
                      const unsigned int y1,
+                     const unsigned int delayUs,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight)
     {
@@ -226,9 +235,9 @@ namespace PCOCameraServer
 
         spdlog::info(
             "PCO camera server: Setting up shared memory for exposure time");
-        unsigned int *exposureTimePtr;
-        PCOSharedMemory::setupExposureTime(
-            shmExposureTimeName, exposureTimePtr, createNew);
+        unsigned int *shutterOpenTimePtr;
+        PCOSharedMemory::setupShutterOpenTime(
+            shmShutterOpenTimeName, shutterOpenTimePtr, createNew);
 
         spdlog::info(
             "PCO camera server: Setting up shared memory for frame metadata");
@@ -252,17 +261,18 @@ namespace PCOCameraServer
         // Set default exposure time and initial frame count
         spdlog::info(
             "Setting default exposure time in shared memory");
-        *exposureTimePtr = defaultExposureTimeUs;
+        *shutterOpenTimePtr = defaultShutterOpenTimeUs;
 
         // Initialize PCO camera
         spdlog::info("Setting up PCO camera");
         pco::Camera camera;
         PCOCameraServer::setupPCOCamera(camera,
-                                        defaultExposureTimeUs,
+                                        defaultShutterOpenTimeUs,
                                         x0,
                                         x1,
                                         y0,
                                         y1,
+                                        delayUs,
                                         fullFrameWidth,
                                         fullFrameHeight);
         spdlog::info("PCO camera setup complete");
@@ -280,14 +290,14 @@ namespace PCOCameraServer
         spdlog::info("Recording mode set to ring buffer with size {}",
                      bufferSize);
 
-        unsigned int currentExposureTimeUs = defaultExposureTimeUs;
+        unsigned int currentExposureTimeUs = defaultShutterOpenTimeUs;
 
         // Data acquisition loop
         spdlog::info("PCO camera server starting its data acquisition loop");
         while (!shutdownRequested.load())
         {
             // Check if we should change exposure time
-            unsigned int targetExposureTime = *exposureTimePtr;
+            unsigned int targetExposureTime = *shutterOpenTimePtr;
             if (targetExposureTime != currentExposureTimeUs)
             {
                 spdlog::info(
@@ -437,12 +447,19 @@ int main(int argc, char *argv[])
     const unsigned int fullFrameHeight =
         recorderConfig.getParameter<int>(
             "muscle_camera", "full_frame_height");
-    const double defaultExposureTimeUs =
-        recorderConfig.getParameter<unsigned int>(
-            "muscle_camera", "default_exposure_time_us");
-
     unsigned int roiWidth = options.x1 - options.x0 + 1;
     unsigned int roiHeight = options.y1 - options.y0 + 1;
+
+    const unsigned int defaultLightOnTimeUs =
+        recorderConfig.getParameter<unsigned int>(
+            "muscle_camera", "default_light_on_time_us");
+    const double rollingShutterLineTimeUs =
+        recorderConfig.getParameter<double>(
+            "muscle_camera", "rolling_shutter_line_time_us");
+    const unsigned int rollingTime =
+        static_cast<unsigned int>(roiHeight * rollingShutterLineTimeUs);
+    const unsigned int defaultShutterOpenTimeUs =
+        defaultLightOnTimeUs + rollingTime;
 
     // Validate image dimensions
     if (options.x0 == 0 ||
@@ -479,9 +496,9 @@ int main(int argc, char *argv[])
     const std::string shmFrameDataName =
         recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_frame_data_name");
-    const std::string shmExposureTimeName =
+    const std::string shmShutterOpenTimeName =
         recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_exposure_time_name");
+            "muscle_camera", "shared_shutter_open_time_name");
     const std::string shmFrameMetadataName =
         recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_frame_metadata_name");
@@ -494,15 +511,16 @@ int main(int argc, char *argv[])
 
     PCOCameraServer::serveFrames(shmFrameDataName,
                                  frameBufferSize,
-                                 shmExposureTimeName,
+                                 shmShutterOpenTimeName,
                                  shmFrameMetadataName,
                                  shmMutexName,
                                  shmCondVarName,
-                                 defaultExposureTimeUs,
+                                 defaultShutterOpenTimeUs,
                                  options.x0,
                                  options.x1,
                                  options.y0,
                                  options.y1,
+                                 options.delayUs,
                                  fullFrameWidth,
                                  fullFrameHeight);
 

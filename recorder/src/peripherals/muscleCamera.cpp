@@ -31,6 +31,8 @@ MuscleCamera::MuscleCamera(int imageWidth,
                            int imageHeight,
                            int xOffset,
                            int yOffset,
+                           double rollingShutterLineTimeUs,
+                           double sensorReadoutTimeUs,
                            const RecorderConfig &recorderConfig,
                            std::string profileDir,
                            spdlog::level::level_enum logLevel)
@@ -38,12 +40,14 @@ MuscleCamera::MuscleCamera(int imageWidth,
       x1_(xOffset + imageWidth),
       y0_(yOffset + 1),
       y1_(yOffset + imageHeight),
+      rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
+      sensorReadoutTimeUs_(sensorReadoutTimeUs),
       imageWidth_(imageWidth),
       imageHeight_(imageHeight),
       recorderConfig_(recorderConfig),
       pcoCameraServerPID_(-1),
       frameDataPtr_(nullptr),
-      exposureTimePtr_(nullptr),
+      shutterOpenTimePtr_(nullptr),
       mutexPtr_(nullptr),
       condVarPtr_(nullptr),
       lastFrameCount_(UINT_MAX)
@@ -78,6 +82,8 @@ MuscleCamera::MuscleCamera(int imageWidth,
                std::to_string(y0_).c_str(),
                "--y-max",
                std::to_string(y1_).c_str(),
+               "--delay",
+               "0", // sync delay is implemented in Arduino code, not here!
                "--verbosity",
                logLevelToStr(logLevel).c_str(),
                (char *)nullptr);
@@ -117,13 +123,14 @@ MuscleCamera::MuscleCamera(int imageWidth,
                                         createNew);
 
         spdlog::info(
-            "Muscle camera API: Setting up shared memory for exposure time");
-        std::string shmExposureTimeName =
+            "Muscle camera API: Setting up shared memory for shutter-open "
+            "time");
+        std::string shmShutterOpenTimeName =
             recorderConfig.getParameter<std::string>(
-                "muscle_camera", "shared_exposure_time_name");
-        PCOSharedMemory::setupExposureTime(shmExposureTimeName,
-                                           exposureTimePtr_,
-                                           createNew);
+                "muscle_camera", "shared_shutter_open_time_name");
+        PCOSharedMemory::setupShutterOpenTime(shmShutterOpenTimeName,
+                                              shutterOpenTimePtr_,
+                                              createNew);
 
         spdlog::info(
             "Muscle camera API: Setting up shared memory for frame metadata");
@@ -240,11 +247,15 @@ bool MuscleCamera::isROIValid()
     return true;
 }
 
-void MuscleCamera::setExposureTime(unsigned int exposureTimeMicrosecs)
+void MuscleCamera::setExposureTime(unsigned int lightOnTimeMicrosecs)
 {
-    if (exposureTimePtr_ != nullptr)
+    if (shutterOpenTimePtr_ != nullptr)
     {
-        *exposureTimePtr_ = exposureTimeMicrosecs;
+        int shutterOnTimeUs =
+            calculateMuscleShutterOpenTime(imageHeight_,
+                                           rollingShutterLineTimeUs_,
+                                           lightOnTimeMicrosecs);
+        *shutterOpenTimePtr_ = shutterOnTimeUs;
     }
     else
     {
@@ -273,4 +284,95 @@ int roundToNearestValidMuscleCamVertical(int value)
 {
     int remainder = value % 8;
     return value - remainder + (remainder < 4 ? 0 : 8);
+}
+
+bool DualRecordingConfig::computeParameters(
+    int muscleImageHeight,
+    double muscleCameraLineScanTimeUs,
+    int muscleCameraReadoutTimeUs)
+{
+    int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
+    double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
+    int muscleIntervalUs = 1000000 / muscleCameraFPS;
+    int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
+    if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
+        muscleIntervalUs)
+    {
+        spdlog::critical(
+            "Computed muscle camera parameters are invalid: "
+            "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
+            "must be less than or equal to muscleIntervalUs. "
+            "rollingTimeUs = {}, "
+            "muscleCameraReadoutTimeUs = {}, "
+            "muscleLightOnTimeUs = {}, "
+            "muscleIntervalUs = {}",
+            rollingTimeUs, muscleCameraReadoutTimeUs, muscleLightOnTimeUs_,
+            muscleIntervalUs);
+        return false; // Invalid configuration
+    }
+    muscleShutterOpenTimeUs_ = rollingTimeUs + muscleLightOnTimeUs_;
+    muscleCamTriggerDelayUs_ = muscleIntervalUs - rollingTimeUs;
+    muscleToBehaviorCyclesOffset_ =
+        int(rollingTimeUs / behaviorIntervalUs) + 1;
+    int minMuscleIntervalUs =
+        muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
+
+    hasBeenChecked_ = true;
+    return muscleIntervalUs >= minMuscleIntervalUs;
+}
+
+void DualRecordingConfig::saveToFile(const std::string &yamlPath)
+{
+    if (!hasBeenChecked_)
+    {
+        spdlog::error(
+            "DualRecordingConfig::saveToFile called before parameters were "
+            "computed. Call computeParameters() first.");
+        return;
+    }
+
+    YAML::Node config;
+
+    // Save the primary configuration parameters
+    config["record_both"] = recordBoth_;
+    config["behavior_camera_fps"] = behaviorCameraFPS_;
+    config["sync_ratio"] = syncRatio_;
+    config["muscle_light_on_time_us"] = muscleLightOnTimeUs_;
+
+    // Save the computed parameters
+    config["muscle_shutter_open_time_us"] = muscleShutterOpenTimeUs_;
+    config["muscle_to_behavior_cycles_offset"] = muscleToBehaviorCyclesOffset_;
+    config["muscle_cam_trigger_delay_us"] = muscleCamTriggerDelayUs_;
+
+    // Create any parent directories if they don't exist
+    std::filesystem::path filePath(yamlPath);
+    if (auto dir = filePath.parent_path(); !dir.empty())
+    {
+        std::filesystem::create_directories(dir);
+    }
+
+    // Write to file
+    try
+    {
+        YAML::Emitter out;
+        out << config;
+
+        std::ofstream fout(yamlPath);
+        if (!fout.is_open())
+        {
+            spdlog::error("Failed to open file for writing: {}", yamlPath);
+            return;
+        }
+
+        fout << out.c_str();
+        fout.close();
+
+        spdlog::info("Dual recording timing configuration saved to {}",
+                     yamlPath);
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Error saving timing configuration to {}: {}",
+                      yamlPath, e.what());
+    }
 }

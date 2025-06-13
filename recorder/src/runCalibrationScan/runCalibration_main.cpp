@@ -100,7 +100,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
     spdlog::info("Setting up muscle camera acquisition thread");
     muscleRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquierer,
+        muscleImageAcquirer,
         muscleROI.imageWidth,
         muscleROI.imageHeight,
         muscleROI.xOffset,
@@ -122,7 +122,9 @@ void runCalibrationScan(std::filesystem::path profileDir,
     int muscleNumLinesScanned =
         muscleRecordingState->muscleCamera->getNumLinesScanned();
     arduinoCommunication = initializeTriggeringWithDefaultParams(
-        recorderConfig, muscleNumLinesScanned);
+        recorderConfig,
+        muscleNumLinesScanned,
+        1); // sync ratio
 
     // Set up motion control
     MotionControl motionControl(recorderConfig);

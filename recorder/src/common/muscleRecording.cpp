@@ -93,7 +93,7 @@ MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath)
     return roi;
 }
 
-void muscleImageAcquierer(
+void muscleImageAcquirer(
     unsigned int imageWidth,
     unsigned int imageHeight,
     unsigned int xOffset,
@@ -108,11 +108,19 @@ void muscleImageAcquierer(
     spdlog::info("Muscle image acquirer thread started");
 
     // Create muscle camera
+    double rollingShutterLineTimeUs =
+        recorderConfig.getParameter<double>("muscle_camera",
+                                            "rolling_shutter_line_time_us");
+    double sensorReadoutTimeUs =
+        recorderConfig.getParameter<double>("muscle_camera",
+                                            "sensor_readout_time_us");
     muscleRecordingState->muscleCamera =
         std::make_shared<MuscleCamera>(imageWidth,
                                        imageHeight,
                                        xOffset,
                                        yOffset,
+                                       rollingShutterLineTimeUs,
+                                       sensorReadoutTimeUs,
                                        recorderConfig,
                                        profileDir,
                                        logLevel);
@@ -127,7 +135,7 @@ void muscleImageAcquierer(
             muscleRecordingState->muscleCamera->waitForOneFrame();
         if (frameData.image.empty())
         {
-            spdlog::error("muscleImageAcquierer thread got an empty image");
+            spdlog::error("muscleImageAcquirer thread got an empty image");
         }
         muscleRecordingState
             ->latestFrameHolder
@@ -228,7 +236,7 @@ void muscleImageSaver(
         std::filesystem::path muscleSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "muscle_images";
-        
+
         // Reorient image (rotate it so it's consistent with behavior image)
         cv::Mat reorientedImage;
         reorientMuscleImage(frameData.image, reorientedImage);

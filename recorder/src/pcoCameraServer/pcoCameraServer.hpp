@@ -7,7 +7,7 @@
 
 #define WAIT_WITH_SMALL_DELAY true
 #define WAIT_TIMEOUT_SECS 0.1
-#define TIMEOUT_ERROR_CODE 0x80004001  // see PCO manual
+#define TIMEOUT_ERROR_CODE 0x80004001 // see PCO manual
 
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +35,7 @@ namespace PCOCameraServer
         unsigned int x1 = 2048;
         unsigned int y0 = 1;
         unsigned int y1 = 2048;
+        unsigned int delayUs = 0; // Delay after trigger in microseconds
         spdlog::level::level_enum logLevel = spdlog::level::info;
     };
 
@@ -47,25 +48,27 @@ namespace PCOCameraServer
     void signalHandler(int signal);
 
     void setupPCOCamera(pco::Camera &camera,
-                        unsigned int defaultExposureTimeUs,
+                        unsigned int defaultShutterOpenTimeUs,
                         unsigned int x0,
                         unsigned int x1,
                         unsigned int y0,
                         unsigned int y1,
+                        unsigned int delayUs,
                         unsigned int fullFrameWidth,
                         unsigned int fullFrameHeight);
 
     void serveFrames(const std::string &shmFrameDataName,
                      const size_t frameBufferSize,
-                     const std::string &shmExposureTimeName,
+                     const std::string &shmShutterOpenTimeName,
                      const std::string &shmFrameMetadataName,
                      const std::string &shmMutexName,
                      const std::string &shmCondVarName,
-                     const unsigned int defaultExposureTimeUs,
+                     const unsigned int defaultShutterOpenTimeUs,
                      const unsigned int x0,
                      const unsigned int x1,
                      const unsigned int y0,
                      const unsigned int y1,
+                     const unsigned int delayUs,
                      const unsigned int fullFrameWidth,
                      const unsigned int fullFrameHeight);
 }

@@ -72,6 +72,7 @@ class MainGUIWindow : public QWidget
 public:
     explicit MainGUIWindow(
         const RecorderConfig &recorderConfig,
+        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
         std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
         std::shared_ptr<MuscleRecordingState> muscleRecordingState,
         std::shared_ptr<TrackingControlState> trackingControlState,
@@ -95,7 +96,7 @@ private:
     QSpinBox *behaviorFPSSpinBox_;
     QSpinBox *syncRatioSpinBox_;
     QDoubleSpinBox *behaviorExposureTimeSpinBox_;
-    QDoubleSpinBox *muscleExposureTimeSpinBox_;
+    QDoubleSpinBox *muscleLightOnTimeSpinBox_;
     QTextEdit *experimentProtocol_;
     QLineEdit *directoryLineEdit_;
     QCheckBox *trackingEnabledCheckBox_;
@@ -115,6 +116,8 @@ private:
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
+    std::unique_ptr<DualRecordingConfig> dualRecordingConfigForStreaming_;
 
     int muscleImage16To8BitScale_ = 1;
     int muscleImage16To8BitOffset_ = 0;
@@ -126,6 +129,36 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 };
 
+class DualRecordingConfigWindow : public QDialog
+{
+    Q_OBJECT
+public:
+    explicit DualRecordingConfigWindow(
+        const RecorderConfig &recorderConfig,
+        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+        const MuscleCameraROI &muscleCameraROI,
+        QWidget *parent = nullptr);
+    ~DualRecordingConfigWindow();
+
+private slots:
+    void onButtonClicked();
+
+private:
+    QVBoxLayout *mainLayout_;
+    QSpinBox *behaviorCameraFPSSpinBox_;
+    QSpinBox *syncRatioSpinBox_;
+    QDoubleSpinBox *muscleLightOnTimeSpinBox_;
+    QPushButton *withMuscleButton_;
+    QPushButton *withoutMuscleButton_;
+
+    int desiredWidth_ = 400;
+    int desiredHeight_ = 350;
+
+    const RecorderConfig &recorderConfig_;
+    const MuscleCameraROI &muscleCameraROI_;
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
+};
+
 // Helpers
 cv::Mat addCornerMarker(cv::Mat image,
                         int arenaSizeXmm,
@@ -135,5 +168,4 @@ cv::Mat addCornerMarker(cv::Mat image,
 
 int parseProtocolString(const std::string &protocolTextFieldString,
                         std::vector<ProtocolStep> &steps);
-
 #endif // GUI_HPP

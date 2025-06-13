@@ -29,7 +29,8 @@ public:
     void setBehaviorRecordingFPS(int fps);
     void setSyncRatio(int syncRatio);
     void setBehaviorExposureTime(int exposureTimeUs);
-    void setMuscleExposureTime(int exposureTimeUs);
+    void setMuscleLightOnTime(int lightOnTimeUs);
+    void setMuscleCamTriggerDelay(int delayUs);
     void startRecording(std::vector<ProtocolStep> protocolSteps);
     void stopRecording();
     void stopCommunication();
@@ -46,7 +47,6 @@ private:
 std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps);
 std::string findArduinoPortName(RecorderConfig &recorderConfig);
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
-    RecorderConfig &recorderConfig,
-    int muscleNumLinesScanned);
+    RecorderConfig &recorderConfig, int muscleNumLinesScanned, int syncRatio);
 
 #endif // ARDUINO_COMMUNICATION_HPP

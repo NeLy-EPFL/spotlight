@@ -21,11 +21,11 @@ namespace PCOSharedMemory
                         const size_t frameBufferSize,
                         uint8_t *&frameDataPtr,
                         bool createNew);
-    void setupExposureTime(const std::string &shmExposureTimeName,
-                           unsigned int *&exposureTimePtr,
-                           bool createNew);
-    void setupFrameMetadata(const std::string &shmExposureTimeName,
-                            FrameMetadata *&exposureTimePtr,
+    void setupShutterOpenTime(const std::string &shmShutterOpenTimeName,
+                              unsigned int *&shutterOpenTimePtr,
+                              bool createNew);
+    void setupFrameMetadata(const std::string &shmFrameMetadataName,
+                            FrameMetadata *&frameMetadataPtr,
                             bool createNew);
     void setupMutex(const std::string &shmMutexName,
                     pthread_mutex_t *&mutexPtr,
