@@ -154,9 +154,15 @@ void trackingController(
     CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<ProgramState> programState)
 {
+    size_t retryCount = 0;
     while (!trackingControlState->motionControlHandlerReady.load())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        retryCount++;
+        if (retryCount % 10 == 0)
+        {
+            spdlog::warn("Motion control handler is not ready.");
+        }
     }
 
     int trackingUpdateFrequency = recorderConfig.getParameter<int>(

@@ -76,7 +76,7 @@ public:
                  spdlog::level::level_enum logLevel);
     ~MuscleCamera();
     FrameData waitForOneFrame();
-    void setExposureTime(unsigned int lightOnTimeMicrosecs);
+    void setLightOnTime(unsigned int lightOnTimeMicrosecs);
     pid_t getCameraServerPID() const;
     int getNumLinesScanned() const;
 
