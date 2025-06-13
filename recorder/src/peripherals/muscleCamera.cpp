@@ -247,7 +247,7 @@ bool MuscleCamera::isROIValid()
     return true;
 }
 
-void MuscleCamera::setExposureTime(unsigned int lightOnTimeMicrosecs)
+void MuscleCamera::setLightOnTime(unsigned int lightOnTimeMicrosecs)
 {
     if (shutterOpenTimePtr_ != nullptr)
     {

@@ -479,7 +479,7 @@ MainGUIWindow::MainGUIWindow(
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
     arduinoCommunication->setMuscleLightOnTime(
-        muscleCameraDefaultLightOnTimeUs);
+        dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
 
     // Muscle imaging disabled by default
     arduinoCommunication_->setSyncRatio(INT_MAX);
