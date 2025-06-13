@@ -16,6 +16,52 @@
 #include "../common/dataTypes.hpp"
 #include "../common/utils.hpp"
 
+class DualRecordingConfig
+{
+public:
+    DualRecordingConfig()
+        : recordBoth_(false),
+          behaviorCameraFPS_(0),
+          syncRatio_(1),
+          muscleLightOnTimeUs_(0) {}
+    DualRecordingConfig(int behaviorCameraFPS,
+                        int syncRatio,
+                        int muscleLightOnTimeUs,
+                        bool recordBoth = true)
+        : recordBoth_(recordBoth),
+          behaviorCameraFPS_(behaviorCameraFPS),
+          syncRatio_(syncRatio),
+          muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
+
+    bool isRecordingBoth() const { return recordBoth_; }
+    int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
+    int getSyncRatio() const { return syncRatio_; }
+    int getMuscleLightOnTimeUs() const { return muscleLightOnTimeUs_; }
+    int getMuscleCamTriggerDelayUs() const { return muscleCamTriggerDelayUs_; }
+    void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
+    void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
+    void setSyncRatio(int ratio) { syncRatio_ = ratio; }
+    void setMuscleLightOnTimeUs(int lightOnTimeUs) { muscleLightOnTimeUs_ = lightOnTimeUs; }
+
+    bool computeParameters(int muscleImageHeight,
+                           double muscleCameraLineScanTimeUs,
+                           int muscleCameraReadoutTimeUs);
+    void saveToFile(const std::string &yamlPath);
+
+private:
+    // User input parameters
+    bool recordBoth_;
+    int behaviorCameraFPS_;
+    int syncRatio_;
+    int muscleLightOnTimeUs_;
+
+    // Derived parameters
+    bool hasBeenChecked_ = false;
+    int muscleShutterOpenTimeUs_ = -1;
+    int muscleCamTriggerDelayUs_ = -1;
+    int muscleToBehaviorCyclesOffset_ = -1;
+};
+
 class MuscleCamera
 {
 public:
@@ -23,12 +69,14 @@ public:
                  int imageHeight,
                  int xOffset,
                  int yOffset,
+                 double rollingShutterLineTimeUs,
+                 double sensorReadoutTimeUs,
                  const RecorderConfig &recorderConfig,
                  std::string profileDir,
                  spdlog::level::level_enum logLevel);
     ~MuscleCamera();
     FrameData waitForOneFrame();
-    void setExposureTime(unsigned int exposureTimeMicrosecs);
+    void setExposureTime(unsigned int lightOnTimeMicrosecs);
     pid_t getCameraServerPID() const;
     int getNumLinesScanned() const;
 
@@ -39,9 +87,11 @@ private:
     unsigned int y1_;
     unsigned int imageWidth_;
     unsigned int imageHeight_;
+    double rollingShutterLineTimeUs_;
+    double sensorReadoutTimeUs_;
     pid_t pcoCameraServerPID_;
     uint8_t *frameDataPtr_;
-    unsigned int *exposureTimePtr_;
+    unsigned int *shutterOpenTimePtr_;
     PCOSharedMemory::FrameMetadata *frameMetadataPtr_;
     pthread_mutex_t *mutexPtr_;
     pthread_cond_t *condVarPtr_;

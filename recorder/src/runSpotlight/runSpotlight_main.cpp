@@ -91,10 +91,37 @@ int main(int argc, char **argv)
         throw std::runtime_error(errorMessage);
     }
 
+    // Load muscle ROI
+    std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
+    MuscleCameraROI muscleROI = getMuscleCameraROI(roiFilePath);
+
+    // Ask for behavior-muscle synchronization parameters
+    std::shared_ptr<DualRecordingConfig>
+        dualRecordingConfig =
+            std::make_shared<DualRecordingConfig>();
+    DualRecordingConfigWindow configWindow(recorderConfig,
+                                           dualRecordingConfig,
+                                           muscleROI);
+    if (configWindow.exec() == QDialog::Accepted)
+    {
+        spdlog::info(
+            "User accepted the configuration dialog. Setting params: "
+            "recordBoth: {}, behavior FPS: {}, "
+            "sync ratio: {}, muscle light-on time: {} us",
+            dualRecordingConfig->isRecordingBoth(),
+            dualRecordingConfig->getBehaviorCameraFPS(),
+            dualRecordingConfig->getSyncRatio(),
+            dualRecordingConfig->getMuscleLightOnTimeUs());
+    }
+    else
+    {
+        spdlog::info("User cancelled the configuration dialog. Exiting.");
+        return 0;
+    }
+
     // Make atomic variable that holds the save directory
     std::string defaultSaveDirectory =
         recorderConfig.getParameter<std::string>("gui", "default_save_dir");
-    // SaveDirectory saveDirectory(defaultSaveDirectory);
     std::shared_ptr<SaveDirectory> saveDirectory =
         std::make_shared<SaveDirectory>(defaultSaveDirectory);
 
@@ -186,8 +213,6 @@ int main(int argc, char **argv)
     spdlog::info("Behavior camera saver threads started");
 
     // Start muscle image acquirer
-    std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
-    MuscleCameraROI muscleROI = getMuscleCameraROI(roiFilePath);
     spdlog::info(
         "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
         "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
@@ -195,7 +220,7 @@ int main(int argc, char **argv)
         muscleROI.xOffset, muscleROI.yOffset,
         muscleROI.imageWidth, muscleROI.imageHeight);
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquierer,
+        muscleImageAcquirer,
         muscleROI.imageWidth,
         muscleROI.imageHeight,
         muscleROI.xOffset,
@@ -232,6 +257,7 @@ int main(int argc, char **argv)
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(recorderConfig,
+                                     dualRecordingConfig,
                                      behaviorRecordingState,
                                      muscleRecordingState,
                                      trackingControlState,

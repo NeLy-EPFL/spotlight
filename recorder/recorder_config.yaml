@@ -25,13 +25,13 @@ muscle_camera:
   full_frame_height: 2048
   roi_width: 1120
   roi_height: 1120
-  streaming_sync_ratio: 1
+  streaming_sync_ratio: 2
   num_image_saving_threads: 4
   default_recording_sync_ratio: 4
-  default_exposure_time_us: 3000
+  default_light_on_time_us: 3000
   saving_performance_logging_interval: 25
   shared_frame_data_name: "/pco_camera_data"
-  shared_exposure_time_name: "/pco_camera_exposure_time"
+  shared_shutter_open_time_name: "/pco_camera_shutter_open_time"
   shared_frame_metadata_name: "/pco_camera_frame_metadata"
   shared_mutex_name: "/pco_camera_mutex"
   shared_condition_variable_name: "/pco_camera_condition_variable"
@@ -42,6 +42,7 @@ muscle_camera:
   # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
   # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
   rolling_shutter_line_time_us: 12.136
+  sensor_readout_time_us: 10  # actually 4.5, but 10 just to be safe
 
 
 motion_control:

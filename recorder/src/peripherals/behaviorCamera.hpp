@@ -26,7 +26,7 @@ public:
         unsigned int yOffset,
         std::string ioLine);
     ~BehaviorCamera();
-    void start(size_t bufferSize = 20);
+    void start(size_t bufferSize = 40);
     void stop();
     FrameData waitForOneFrame();
     bool isReady() const;

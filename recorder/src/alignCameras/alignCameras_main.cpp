@@ -185,7 +185,7 @@ void alignCamera(std::filesystem::path profileDir)
     muscleRecordingState->latestFrameHolder =
         std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquierer,
+        muscleImageAcquirer,
         fullMuscleImageWidth,
         fullMuscleImageHeight,
         0, // xOffset
@@ -207,7 +207,9 @@ void alignCamera(std::filesystem::path profileDir)
     int muscleNumLinesScanned =
         muscleRecordingState->muscleCamera->getNumLinesScanned();
     arduinoCommunication = initializeTriggeringWithDefaultParams(
-        recorderConfig, muscleNumLinesScanned);
+        recorderConfig,
+        muscleNumLinesScanned,
+        1); // sync ratio
 
     // Set up display windows
     setupDisplayWindows(recorderConfig);

@@ -135,10 +135,21 @@ void ArduinoCommunication::setBehaviorExposureTime(int exposureTimeUs)
     cv_.notify_one();
 }
 
-void ArduinoCommunication::setMuscleExposureTime(int exposureTimeUs)
+void ArduinoCommunication::setMuscleCamTriggerDelay(int delayUs)
 {
     std::string message =
-        ">SET_MUSCLE_EXPOSURE_TIME " + std::to_string(exposureTimeUs) + "\n";
+        ">SET_MUSCLE_CAM_TRIGGER_DELAY " + std::to_string(delayUs) + "\n";
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        arduinoMessagesQueue_.push(message);
+    }
+    cv_.notify_one();
+}
+
+void ArduinoCommunication::setMuscleLightOnTime(int lightOnTimeUs)
+{
+    std::string message =
+        ">SET_MUSCLE_LIGHT_ON_TIME " + std::to_string(lightOnTimeUs) + "\n";
     {
         std::lock_guard<std::mutex> lock(mutex_);
         arduinoMessagesQueue_.push(message);
@@ -206,7 +217,8 @@ std::string findArduinoPortName(RecorderConfig &recorderConfig)
 
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     RecorderConfig &recorderConfig,
-    int muscleNumLinesScanned)
+    int muscleNumLinesScanned,
+    int syncRatio)
 {
     spdlog::info("Starting Arduino communication");
     std::string arduinoPortName = findArduinoPortName(recorderConfig);
@@ -215,18 +227,12 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     spdlog::info("Arduino communication started");
     int behaviorFrameRate = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
-    int syncRatio = recorderConfig.getParameter<int>(
-        "muscle_camera", "streaming_sync_ratio");
     int behaviorExposureTimeUs = recorderConfig.getParameter<int>(
         "behavior_camera", "default_exposure_time_us");
-    int muscleExposureTimePerLineUs = recorderConfig.getParameter<int>(
-        "muscle_camera", "default_exposure_time_us");
+    int muscleLightOnTimeUs = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_light_on_time_us");
     double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
-    int muscleLightOnTimeMicrosecs = calculateMuscleExcitationOnTime(
-        muscleNumLinesScanned,
-        rollingShutterLineTimeUs,
-        muscleExposureTimePerLineUs);
     spdlog::info("Setting behavior recording FPS via Arduino to {}",
                  behaviorFrameRate);
     arduinoCommunication->setBehaviorRecordingFPS(behaviorFrameRate);
@@ -237,8 +243,8 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     arduinoCommunication->setBehaviorExposureTime(behaviorExposureTimeUs);
     spdlog::info("Setting muscle exposure time (light-on time) via Arduino to "
                  "{} us",
-                 muscleLightOnTimeMicrosecs);
-    arduinoCommunication->setMuscleExposureTime(muscleLightOnTimeMicrosecs);
+                 muscleLightOnTimeUs);
+    arduinoCommunication->setMuscleLightOnTime(muscleLightOnTimeUs);
     spdlog::info("Arduino parameters set");
 
     return arduinoCommunication;

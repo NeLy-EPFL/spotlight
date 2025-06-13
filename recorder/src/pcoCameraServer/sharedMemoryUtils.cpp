@@ -56,29 +56,30 @@ namespace PCOSharedMemory
         close(shmFileDesc);
     }
 
-    void setupExposureTime(const std::string &shmExposureTimeName,
-                           unsigned int *&exposureTimePtr,
-                           bool createNew)
+    void setupShutterOpenTime(const std::string &shmShutterOpenTimeName,
+                              unsigned int *&shutterOpenTimePtr,
+                              bool createNew)
     {
         int shmFileDesc = -1;
-        size_t exposureTimeSize = sizeof(unsigned int);
+        size_t shutterOpenTimeSize = sizeof(unsigned int);
 
         if (createNew)
         {
             shmFileDesc = shm_open(
-                shmExposureTimeName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+                shmShutterOpenTimeName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
             if (shmFileDesc == -1)
             {
                 std::string errorMessage =
-                    "Failed to open shared memory for exposure time: " +
+                    "Failed to open shared memory for shutter-open time: " +
                     std::string(strerror(errno));
                 spdlog::critical(errorMessage);
                 throw std::runtime_error(errorMessage);
             }
-            if (ftruncate(shmFileDesc, exposureTimeSize) == -1)
+            if (ftruncate(shmFileDesc, shutterOpenTimeSize) == -1)
             {
                 std::string errorMessage =
-                    "Failed to set size of shared memory for exposure time: " +
+                    "Failed to set size of shared memory for shutter-open "
+                    "time: " +
                     std::string(strerror(errno));
                 spdlog::critical(errorMessage);
                 throw std::runtime_error(errorMessage);
@@ -86,20 +87,20 @@ namespace PCOSharedMemory
         }
         else
         {
-            shmFileDesc = shm_open(shmExposureTimeName.c_str(), O_RDWR, 0666);
+            shmFileDesc = shm_open(shmShutterOpenTimeName.c_str(), O_RDWR, 0666);
         }
 
-        exposureTimePtr = (unsigned int *)mmap(
+        shutterOpenTimePtr = (unsigned int *)mmap(
             0,
-            exposureTimeSize,
+            shutterOpenTimeSize,
             PROT_READ | PROT_WRITE,
             MAP_SHARED,
             shmFileDesc,
             0);
-        if (exposureTimePtr == MAP_FAILED)
+        if (shutterOpenTimePtr == MAP_FAILED)
         {
             std::string errorMessage =
-                "Failed to map shared memory for exposure time: " +
+                "Failed to map shared memory for shutter-open time: " +
                 std::string(strerror(errno));
             spdlog::critical(errorMessage);
             throw std::runtime_error(errorMessage);
@@ -107,8 +108,8 @@ namespace PCOSharedMemory
         close(shmFileDesc);
     }
 
-    void setupFrameMetadata(const std::string &shmExposureTimeName,
-                            FrameMetadata *&exposureTimePtr,
+    void setupFrameMetadata(const std::string &shmFrameMetadataName,
+                            FrameMetadata *&frameMetadataPtr,
                             bool createNew)
     {
         int shmFileDesc = -1;
@@ -116,7 +117,7 @@ namespace PCOSharedMemory
         if (createNew)
         {
             shmFileDesc = shm_open(
-                shmExposureTimeName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+                shmFrameMetadataName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
             if (shmFileDesc == -1)
             {
                 std::string errorMessage =
@@ -136,17 +137,17 @@ namespace PCOSharedMemory
         }
         else
         {
-            shmFileDesc = shm_open(shmExposureTimeName.c_str(), O_RDWR, 0666);
+            shmFileDesc = shm_open(shmFrameMetadataName.c_str(), O_RDWR, 0666);
         }
 
-        exposureTimePtr = (FrameMetadata *)mmap(
+        frameMetadataPtr = (FrameMetadata *)mmap(
             0,
             sizeof(FrameMetadata),
             PROT_READ | PROT_WRITE,
             MAP_SHARED,
             shmFileDesc,
             0);
-        if (exposureTimePtr == MAP_FAILED)
+        if (frameMetadataPtr == MAP_FAILED)
         {
             std::string errorMessage =
                 "Failed to map shared memory for frame metadata: " +
