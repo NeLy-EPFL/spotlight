@@ -341,7 +341,7 @@ void DualRecordingConfig::saveToFile(const std::string &yamlPath)
 
     // Save the computed parameters
     config["muscle_shutter_open_time_us"] = muscleShutterOpenTimeUs_;
-    config["musce_to_behavior_cycles_offset"] = muscleToBehaviorCyclesOffset_;
+    config["muscle_to_behavior_cycles_offset"] = muscleToBehaviorCyclesOffset_;
     config["muscle_cam_trigger_delay_us"] = muscleCamTriggerDelayUs_;
 
     // Create any parent directories if they don't exist
