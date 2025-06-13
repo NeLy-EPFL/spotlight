@@ -199,10 +199,16 @@ void alignCamera(std::filesystem::path profileDir)
     spdlog::info("Muscle camera acquisition thread started");
 
     // Start Arduino triggering interface set default triggering parameters
+    size_t retryCount = 0;
     while (!muscleRecordingState->muscleCamera)
     {
         spdlog::debug("Waiting for muscle camera to be ready");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        retryCount++;
+        if (retryCount % 10 == 0)
+        {
+            spdlog::warn("Muscle camera is not initialized.");
+        }
     }
     int muscleNumLinesScanned =
         muscleRecordingState->muscleCamera->getNumLinesScanned();
