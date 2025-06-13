@@ -161,7 +161,7 @@ void trackingController(
         retryCount++;
         if (retryCount % 10 == 0)
         {
-            spdlog::warn("Muscle camera is not initialized.");
+            spdlog::warn("Motion control handler is not ready.");
         }
     }
 
