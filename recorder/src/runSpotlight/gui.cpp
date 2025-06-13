@@ -604,8 +604,6 @@ void MainGUIWindow::startRecording()
         behaviorFPSSpinBox_->value());
     arduinoCommunication_->setSyncRatio(
         dualRecordingConfigForSaving_->getSyncRatio());
-    arduinoCommunication_->setNumBehaviorToMuscleLeadingCycles(
-        dualRecordingConfigForSaving_->getNumBehaviorToMuscleLeadingCycles());
     arduinoCommunication_->setMuscleCamTriggerDelay(
         dualRecordingConfigForSaving_->getMuscleCamTriggerDelayUs());
     arduinoCommunication_->startRecording(protocolSteps);

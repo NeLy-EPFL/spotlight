@@ -38,7 +38,6 @@ public:
     int getSyncRatio() const { return syncRatio_; }
     int getMuscleLightOnTimeUs() const { return muscleLightOnTimeUs_; }
     int getMuscleCamTriggerDelayUs() const { return muscleCamTriggerDelayUs_; }
-    int getNumBehaviorToMuscleLeadingCycles() const { return numBehaviorToMuscleLeadingCycles_; }
     void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
     void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
     void setSyncRatio(int ratio) { syncRatio_ = ratio; }
@@ -58,9 +57,9 @@ private:
 
     // Derived parameters
     bool hasBeenChecked_ = false;
-    int muscleShutterOpenTimeUs_ = 0;
-    int muscleCamTriggerDelayUs_;
-    int numBehaviorToMuscleLeadingCycles_;
+    int muscleShutterOpenTimeUs_ = -1;
+    int muscleCamTriggerDelayUs_ = -1;
+    int muscleToBehaviorCyclesOffset_ = -1;
 };
 
 class MuscleCamera
