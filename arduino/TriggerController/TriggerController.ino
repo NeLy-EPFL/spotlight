@@ -32,10 +32,8 @@ volatile unsigned int syncRatioK = 1;
 volatile unsigned int behaviorCamExposureTime = 1000;  // in microseconds
 volatile unsigned int muscleCamExposureTime = 3000;  // in microseconds
 
-// Muscle cam should be triggered this many behavior triggers ahead of time for
-// common time exposure. Muscle camera trigger should also have a delay to
-// make sure that the common time is aligned with the excitation-on period
-volatile unsigned int numBehaviorToMuscleLeadingCycles = 0;
+// Muscle camera trigger should have a delay to make sure that the common time
+// is aligned with the excitation-on period
 volatile unsigned int muscleCamTriggerDelayUs = 0;
 
 // Protocol steps
@@ -156,11 +154,7 @@ void loop() {
     }
 
     // Should I trigger muscle *EXCITATION LIGHT* this cycle?
-    int cycleModulus = behaviorTriggerCounter % syncRatioK;
-    if (
-      cycleModulus == numBehaviorToMuscleLeadingCycles &&
-      !muscleLightTriggerState
-    ) {
+    if (behaviorTriggerCounter % syncRatioK == 0 && !muscleLightTriggerState) {
       muscleLightTriggerOn();
       muscleLightTriggerState = true;
       lastMuscleLightTriggerTime = currentTime;
@@ -321,18 +315,6 @@ void parseIncomingCommand(const char* message) {
       Serial.flush();
       litStatusLED(RED);
     }
-  } else if (strncmp(message,
-                     CMDSTR_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES,
-                     CMDLEN_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES) == 0) {
-    // Handle command: SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES
-    const char* cyclesStart =
-      message + CMDLEN_SET_NUM_BEHAVIOR_TO_MUSCLE_LEADING_CYCLES + 1;
-    unsigned int numLeadingCyclesRequested = atoi(cyclesStart);
-    numBehaviorToMuscleLeadingCycles = numLeadingCyclesRequested;
-    Serial.print("Number of behavior to muscle leading cycles set to: ");
-    Serial.println(numBehaviorToMuscleLeadingCycles);
-    Serial.flush();
-    litStatusLED(GREEN);
   } else if (strncmp(message,
                      CMDSTR_SET_MUSCLE_CAM_TRIGGER_DELAY,
                      CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY) == 0) {

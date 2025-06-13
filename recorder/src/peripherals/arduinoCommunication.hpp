@@ -30,7 +30,6 @@ public:
     void setSyncRatio(int syncRatio);
     void setBehaviorExposureTime(int exposureTimeUs);
     void setMuscleLightOnTime(int lightOnTimeUs);
-    void setNumBehaviorToMuscleLeadingCycles(int numCycles);
     void setMuscleCamTriggerDelay(int delayUs);
     void startRecording(std::vector<ProtocolStep> protocolSteps);
     void stopRecording();

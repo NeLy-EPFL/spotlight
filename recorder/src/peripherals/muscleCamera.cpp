@@ -311,10 +311,9 @@ bool DualRecordingConfig::computeParameters(
         return false; // Invalid configuration
     }
     muscleShutterOpenTimeUs_ = rollingTimeUs + muscleLightOnTimeUs_;
-    numBehaviorToMuscleLeadingCycles_ = 0; // delay already accounts for this
-    int behaviorToMuscleLeadingTimeUs =
-        numBehaviorToMuscleLeadingCycles_ * behaviorIntervalUs;
     muscleCamTriggerDelayUs_ = muscleIntervalUs - rollingTimeUs;
+    muscleToBehaviorCyclesOffset_ =
+        int(rollingTimeUs / behaviorIntervalUs) + 1;
     int minMuscleIntervalUs =
         muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
 
@@ -342,8 +341,7 @@ void DualRecordingConfig::saveToFile(const std::string &yamlPath)
 
     // Save the computed parameters
     config["muscle_shutter_open_time_us"] = muscleShutterOpenTimeUs_;
-    config["num_behavior_to_muscle_leading_cycles"] =
-        numBehaviorToMuscleLeadingCycles_;
+    config["musce_to_behavior_cycles_offset"] = muscleToBehaviorCyclesOffset_;
     config["muscle_cam_trigger_delay_us"] = muscleCamTriggerDelayUs_;
 
     // Create any parent directories if they don't exist
