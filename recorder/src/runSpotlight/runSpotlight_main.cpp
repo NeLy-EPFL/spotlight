@@ -232,6 +232,20 @@ int main(int argc, char **argv)
         programState,
         programmedRecordingStop);
     spdlog::info("Muscle camera acquisition thread started");
+    size_t retryCount = 0;
+    while (!muscleRecordingState->muscleCamera)
+    {
+        // Wait for the muscle camera to be initialized
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        spdlog::warn("Waiting for muscle camera to be initialized...");
+        retryCount++;
+        if (retryCount % 10 == 0)
+        {
+            spdlog::warn("Muscle camera is not initialized.");
+        }
+    }
+    muscleRecordingState->muscleCamera->setLightOnTime(
+        dualRecordingConfig->getMuscleLightOnTimeUs());
 
     // Start muscle image savers
     std::vector<std::thread> muscleImageSaverThreads;
