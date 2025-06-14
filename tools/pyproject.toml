@@ -28,11 +28,11 @@ dependencies = [
     "setuptools (>=78,<79)",  # needed for vidgear
     "numba (==0.61.2)",
     "cmasher (>=1.9,<2.0)",
+    "h5py (>=3.13,<4.0)",
 ]
 
 [tool.poetry]
 packages = [{include = "spotlight_tools", from = "src"}]
-
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
