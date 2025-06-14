@@ -11,9 +11,11 @@ from spotlight_tools.postprocessing.frame_metadata import (
 )
 from spotlight_tools.postprocessing.io import check_is_directory_valid
 from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
-from spotlight_tools.postprocessing.visualization import (
-    generate_summary_video,
-)
+from spotlight_tools.postprocessing.visualize import generate_summary_video
+from spotlight_tools.postprocessing.estimate_pose import run_sleap
+
+
+logging.basicConfig(level=logging.INFO)
 
 
 def postprocess_recording_data(
@@ -93,33 +95,43 @@ def postprocess_recording_data(
     behavior_frames_dir = recording_dir / "behavior_images"
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     behavior_timestamps_path = processed_dir / "behavior_frames_metadata.csv"
-    stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
-        behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
-    )
+    # stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
+    #     behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
+    # )
 
     # Merge behavior video
     behavior_video_path = processed_dir / "behavior_video.mkv"
-    jpeg_to_mkv(
-        behavior_frames_dir,
+    # jpeg_to_mkv(
+    #     behavior_frames_dir,
+    #     behavior_video_path,
+    #     overwrite,
+    #     play_fps,
+    #     behavior_video_crf,
+    #     behavior_video_preset,
+    #     num_frames=num_frames,
+    # )
+
+    # Run 2D pose estimation
+    pose_2d_dir = processed_dir / "pose_2d"
+    run_sleap(
         behavior_video_path,
-        overwrite,
-        play_fps,
-        behavior_video_crf,
-        behavior_video_preset,
-        num_frames=num_frames,
+        pose_2d_dir,
+        overwrite=overwrite,
+        num_frames=300,
+        batch_size=128,
     )
 
-    if muscle_camera:
-        # Warp muscle images
-        process_muscle_data(
-            recording_dir,
-            stage_positions_at_behavior_frames,
-            overwrite=overwrite,
-            num_frames=num_frames,
-        )
+    # if muscle_camera:
+    #     # Warp muscle images
+    #     process_muscle_data(
+    #         recording_dir,
+    #         stage_positions_at_behavior_frames,
+    #         overwrite=overwrite,
+    #         num_frames=num_frames,
+    #     )
 
-        # Make overlay video
-        generate_summary_video(recording_dir, num_frames=num_frames)
+    #     # Make overlay video
+    #     generate_summary_video(recording_dir, num_frames=num_frames)
 
 
 def main():
@@ -127,4 +139,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    postprocess_recording_data(
+        "/home/sibwang/Data/spotlight/20250509-fly03-008-grade3", overwrite=True
+    )
