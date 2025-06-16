@@ -59,7 +59,7 @@ def generate_summary_video(
     recording_dir: Path,
     output_video_path: Path | None = None,
     muscle_vrange: tuple[int, int] | None = None,
-    muscle_vrange_quantiles: tuple[float, float] | None = (50.0, 99.99),
+    muscle_vrange_quantiles: tuple[float, float] | None = (97.0, 99.995),
     muscle_vrange_quantiles_sample_rate: float = 0.05,
     play_fps: int = 30,
     num_frames: int | None = None,
@@ -153,6 +153,9 @@ def generate_summary_video(
             muscle_vrange_quantiles_sample_rate,
             unwarped_muscle_images_paths,
         )
+        print(
+            f"Determined adaptive muscle value range: {muscle_vrange}."
+        )
 
     # Initialize video writer
     # writer = cv2.VideoWriter(
@@ -199,7 +202,7 @@ def generate_summary_video(
             muscle_image = muscle_image[:, :width]
             curr_muscle_frame_id = muscle_frame_id
 
-            muscle_image = muscle_image.clip(*muscle_vrange)
+            muscle_image = muscle_image.astype(np.float32).clip(*muscle_vrange)
             muscle_image = (
                 255
                 * (muscle_image - muscle_vrange[0])

@@ -22,6 +22,9 @@ def interpolate_stage_position_for_behavior_images(
     concatenated_df = pd.concat(dataframes, ignore_index=True)
     concatenated_df.sort_values(by=["received_time_us"], inplace=True)
     concatenated_df.reset_index(drop=True, inplace=True)
+    
+    # Rename "frame_id" column to "behavior_frame_id"
+    concatenated_df.rename(columns={"frame_id": "behavior_frame_id"}, inplace=True)
 
     # Interpolate stage positions
     print("Interpolating stage positions for each behavior frame")
