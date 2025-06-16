@@ -59,7 +59,6 @@ private:
     bool hasBeenChecked_ = false;
     int muscleShutterOpenTimeUs_ = -1;
     int muscleCamTriggerDelayUs_ = -1;
-    int muscleToBehaviorCyclesOffset_ = -1;
 };
 
 class MuscleCamera
