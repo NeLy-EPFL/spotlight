@@ -77,7 +77,7 @@ def generate_summary_video(
             quantiles. Defaults to None.
         muscle_vrange_quantiles (tuple[float, float] | None, optional): Quantiles to use
             for determining the adaptive value range of muscle images (if muscle_vrange
-            is not provided). Defaults to (50.0, 99.99).
+            is not provided). Defaults to (97.0, 99.995).
         muscle_vrange_quantiles_sample_rate (float, optional): Sampling rate for
             determining the adaptive value range of muscle images. Only this portion of
             all muscle images are scanned to adaptively determine the vrange. Defaults
@@ -97,14 +97,14 @@ def generate_summary_video(
           `muscle_sync_ratio` from the experiment metadata.
         - The output video consists of concatenated behavior and muscle images, with the
           behavior image in grayscale and the muscle image in green.
-    """    
+    """
     _check_if_preprocessed(recording_dir)
     experiment_metadata, recorder_config = _load_metadata(recording_dir)
     processed_dir = recording_dir / "processed"
     behavior_video_path = processed_dir / "behavior_video.mkv"
     muscle_images_dir = processed_dir / "muscle_images"
     sync_ratio = experiment_metadata["muscle_sync_ratio"]
-    
+
     if output_video_path is None:
         output_video_path = processed_dir / "summary_video.mp4"
     if output_video_path.is_file() and not overwrite:
@@ -153,18 +153,9 @@ def generate_summary_video(
             muscle_vrange_quantiles_sample_rate,
             unwarped_muscle_images_paths,
         )
-        print(
-            f"Determined adaptive muscle value range: {muscle_vrange}."
-        )
+        print(f"Determined adaptive muscle value range: {muscle_vrange}.")
 
     # Initialize video writer
-    # writer = cv2.VideoWriter(
-    #     str(output_video_path),
-    #     cv2.VideoWriter_fourcc(*"mp4v"),
-    #     play_fps,
-    #     (width * 3, height),
-    #     True,
-    # )
     writer = cv2.VideoWriter(
         str(output_video_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
@@ -209,16 +200,10 @@ def generate_summary_video(
                 / (muscle_vrange[1] - muscle_vrange[0])
             ).astype(np.uint8)
 
-        # # Overlay image
-        # overlaid_image = np.repeat(behavior_image[:, :, np.newaxis], 3, axis=2)
-        # overlaid_image[:, :, 1] = np.maximum(behavior_image * alpha, muscle_image)
-
         # Concatenate images
-        # concatenated = np.zeros((height, width * 3, 3), dtype=np.uint8)
         concatenated = np.zeros((height, width * 2, 3), dtype=np.uint8)
         concatenated[:, :width, :] = behavior_image[:, :, np.newaxis]
         concatenated[:, width : 2 * width, 1] = muscle_image
-        # concatenated[:, 2 * width :, :] = overlaid_image
 
         writer.write(concatenated)
 
