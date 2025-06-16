@@ -13,6 +13,7 @@ from spotlight_tools.postprocessing.io import check_is_directory_valid
 from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
 from spotlight_tools.postprocessing.visualization import (
     generate_summary_video,
+    generate_overlay_samples,
 )
 
 
@@ -121,8 +122,11 @@ def postprocess_recording_data(
             num_frames=num_frames,
         )
 
-        # Make overlay video
+        # Make summary video
         generate_summary_video(recording_dir, num_frames=num_frames)
+
+        # Generate overlay samples
+        generate_overlay_samples(recording_dir, overwrite=overwrite)
 
 
 def main():

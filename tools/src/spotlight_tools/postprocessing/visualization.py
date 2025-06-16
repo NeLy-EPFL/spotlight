@@ -343,3 +343,141 @@ def _calculate_num_usable_images(
         )
 
     return num_behavior_images_usable, num_muscle_images_usable
+
+
+def load_muscle_image(recording_dir, muscle_frame_id):
+    muscle_image_path = (
+        recording_dir
+        / "processed/muscle_images"
+        / f"muscle_frame_{muscle_frame_id:09d}.tif"
+    )
+    return cv2.imread(str(muscle_image_path), cv2.IMREAD_UNCHANGED)
+
+
+def load_behavior_frame(recording_dir, behavior_frame_id):
+    behavior_video_path = recording_dir / "processed/behavior_video.mkv"
+    behavior_video_capture = cv2.VideoCapture(str(behavior_video_path))
+    num_frames = int(behavior_video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    if behavior_frame_id >= num_frames:
+        return None  # Return None if the frame ID is out of bounds
+    behavior_video_capture.set(cv2.CAP_PROP_POS_FRAMES, behavior_frame_id)
+    ret, frame = behavior_video_capture.read()
+    if not ret:
+        raise ValueError(f"Could not read frame {behavior_frame_id} from video.")
+    behavior_video_capture.release()
+    return frame[:, :, 0]
+
+
+def generate_overlay_samples(
+    recording_dir: Path,
+    output_image_path: Path | None = None,
+    muscle_vrange: tuple[int, int] | None = None,
+    muscle_vrange_quantiles: tuple[float, float] | None = (97.0, 99.995),
+    muscle_vrange_quantiles_sample_rate: float = 0.05,
+    num_samples: int = 100,
+    num_samples_per_row: int = 10,
+    panel_size: tuple[int, int] = (4, 5),  # width, height per matplotlib style
+    overwrite: bool = False,
+) -> None:
+    """Generate overlay samples from muscle and behavior images.
+
+    Args:
+        recording_dir (Path): Path to the directory containing the recording data.
+        output_image_path (Path | None, optional): Path to save the generated overlay
+            samples image. If None, the image will be saved as "overlay_samples.png" in
+            the "processed" subdirectory of `recording_dir`. Defaults to None.
+        muscle_vrange (tuple[int, int] | None, optional): Value range for normalizing
+            muscle images. If None, the range will be determined adaptively based on
+            quantiles. Defaults to None.
+        muscle_vrange_quantiles (tuple[float, float] | None, optional): Quantiles to use
+            for determining the adaptive value range of muscle images (if muscle_vrange
+            is not provided). Defaults to (97.0, 99.995).
+        muscle_vrange_quantiles_sample_rate (float, optional): Sampling rate for
+            determining the adaptive value range of muscle images. Only this portion of
+            all muscle images are scanned to adaptively determine the vrange. Defaults
+            to 0.05.
+        num_samples (int, optional): Number of samples to generate. Defaults to 100.
+        num_samples_per_row (int, optional): Number of samples to display per row in
+            the output image. Defaults to 10.
+        panel_size (tuple[int, int], optional): Size of each panel in the output image
+            in matplotlib style (width, height). Defaults to (4, 5).
+        overwrite (bool, optional): Whether to overwrite the output image if it already
+            exists. Defaults to False.
+    """
+    _check_if_preprocessed(recording_dir)
+    processed_dir = recording_dir / "processed"
+    muscle_metadata_path = processed_dir / "muscle_frames_metadata.csv"
+
+    # Check output
+    if output_image_path is None:
+        output_image_path = processed_dir / "overlay_samples.jpg"
+    if output_image_path.is_file() and not overwrite:
+        logging.error(
+            f"Output image {output_image_path} already exists. Change the output path "
+            f"or use `overwrite=True`."
+        )
+        raise RuntimeError("Output image already exists.")
+
+    # Load muscle frames metadata
+    muscle_metadata_df = pd.read_csv(muscle_metadata_path)
+    sample_interval = len(muscle_metadata_df) // num_samples
+    sample_muscle_frame_ids = np.arange(0, len(muscle_metadata_df), sample_interval)
+    sample_muscle_frame_ids = np.unique(sample_muscle_frame_ids)
+    num_samples = len(sample_muscle_frame_ids)
+
+    # If necessary, determine vmin and vmax of muscle images for visualization
+    if muscle_vrange is None:
+        unwarped_muscle_images_paths = sorted(
+            list(recording_dir.glob("muscle_images/*.tif"))
+        )
+        muscle_vrange = _determine_adaptive_muscle_vrange(
+            muscle_vrange_quantiles,
+            muscle_vrange_quantiles_sample_rate,
+            unwarped_muscle_images_paths,
+        )
+        print(f"Determined adaptive muscle value range: {muscle_vrange}.")
+
+    # Set up figure
+    num_rows = (num_samples + num_samples_per_row - 1) // num_samples_per_row
+    fig, axes = plt.subplots(
+        num_rows,
+        num_samples_per_row,
+        figsize=(panel_size[0] * num_samples_per_row, panel_size[1] * num_rows),
+        tight_layout=True,
+    )
+    axes = axes.flatten()
+
+    # Generate samples
+    for i, muscle_frame_id in tqdm(
+        enumerate(sample_muscle_frame_ids),
+        total=num_samples,
+        desc="Generating overlay samples",
+    ):
+        metadata_entry = muscle_metadata_df.iloc[muscle_frame_id]
+        assert metadata_entry["muscle_frame_id"] == muscle_frame_id
+        behavior_frame_id = metadata_entry["corresponding_behavior_frame_id"]
+        muscle_image = load_muscle_image(recording_dir, muscle_frame_id)
+        behavior_image = load_behavior_frame(recording_dir, behavior_frame_id)
+        if behavior_image is None:  # behavior id must be out of bounds
+            i -= 1
+            break
+
+        # Overlay images
+        width = min(muscle_image.shape[1], behavior_image.shape[1])
+        muscle_image = muscle_image[:, :width]
+        overlay = np.zeros((behavior_image.shape[0], width, 3), dtype=np.uint8)
+        overlay[:, :, 0] = behavior_image[:, :width]
+        muscle_image_normalized = (
+            np.clip(muscle_image.astype(np.float32), muscle_vrange[0], muscle_vrange[1])
+            - muscle_vrange[0]
+        ) / (muscle_vrange[1] - muscle_vrange[0])
+        overlay[:, :, 1] = (255 * muscle_image_normalized).astype(np.uint8)
+        axes[i].imshow(overlay)
+        axes[i].set_title(
+            f"Behavior frame {behavior_frame_id}, muscle frame {muscle_frame_id}"
+        )
+
+    for j in range(i + 1, len(axes)):
+        axes[j].axis("off")
+
+    fig.savefig(output_image_path)
