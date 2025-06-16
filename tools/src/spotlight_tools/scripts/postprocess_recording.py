@@ -92,9 +92,12 @@ def postprocess_recording_data(
     # Interpolate stage position for each behavior frame
     behavior_frames_dir = recording_dir / "behavior_images"
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
-    behavior_timestamps_path = processed_dir / "behavior_frames_metadata.csv"
+    behavior_timestamps_output_path = processed_dir / "behavior_frames_metadata.csv"
     stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
-        behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
+        behavior_frames_dir,
+        stage_positions_path,
+        behavior_timestamps_output_path,
+        overwrite,
     )
 
     # Merge behavior video
