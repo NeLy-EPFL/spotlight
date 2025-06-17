@@ -129,7 +129,7 @@ def run_sleap(
             "--verbosity",
             "none",
         ]
-        print(" ".join(args))
+        logging.info(f"Calling `{' '.join(args)}`")
         with open(output_dir / f"sleap_track_part{i:03d}.log", "w") as log_file:
             run(args, check=True, stdout=log_file, stderr=log_file)
 
