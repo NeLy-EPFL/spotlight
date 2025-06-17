@@ -11,9 +11,11 @@ from spotlight_tools.postprocessing.frame_metadata import (
 )
 from spotlight_tools.postprocessing.io import check_is_directory_valid
 from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
-from spotlight_tools.postprocessing.visualization import (
-    generate_summary_video,
-)
+from spotlight_tools.postprocessing.visualize import generate_summary_video
+from spotlight_tools.postprocessing.estimate_pose import run_sleap
+
+
+logging.basicConfig(level=logging.INFO)
 
 
 def postprocess_recording_data(
@@ -24,6 +26,7 @@ def postprocess_recording_data(
     behavior_video_preset: str = "slow",
     num_frames: int | None = None,
     muscle_camera: bool = False,
+    sleap_batch_size: int = 128,
 ) -> None:
     """Postprocess data recorded by the Spotlight setup.
 
@@ -83,6 +86,9 @@ def postprocess_recording_data(
             If True, muscle images are warped to be consistent with
             behavior images. Furthermore, a video of the behavior-muscle
             overlay will be generated.
+        sleap_batch_size (int):
+            Batch size for SLEAP pose estimation. This is the number of
+            frames to process in a single `sleap-track` run. Default is 128.
     """
     recording_dir = Path(recording_dir).expanduser()
     check_is_directory_valid(recording_dir)
@@ -107,6 +113,16 @@ def postprocess_recording_data(
         behavior_video_crf,
         behavior_video_preset,
         num_frames=num_frames,
+    )
+
+    # Run 2D pose estimation
+    pose_2d_dir = processed_dir / "pose_2d"
+    run_sleap(
+        behavior_video_path,
+        pose_2d_dir,
+        overwrite=overwrite,
+        num_frames=num_frames,
+        batch_size=sleap_batch_size,
     )
 
     if muscle_camera:

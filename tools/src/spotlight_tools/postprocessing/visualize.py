@@ -12,6 +12,8 @@ from matplotlib import cm
 from pathlib import Path
 from tqdm import tqdm, trange
 
+from spotlight_tools.common.video import get_video_info
+
 
 def visualize_stage_trajectory(
     consolidated_metadata_df: pd.DataFrame,
@@ -116,7 +118,7 @@ def generate_summary_video(
 
     # Index files to be used
     # behavior_images_paths = sorted(list(behavior_images_dir.glob("*.jpg")))
-    width, height, num_behavior_images = _get_video_info(behavior_video_path)
+    width, height, num_behavior_images = get_video_info(behavior_video_path)
     muscle_images_paths = sorted(list(muscle_images_dir.glob("*.tif")))
     num_behavior_images_usable, num_muscle_images_usable = _calculate_num_usable_images(
         num_behavior_images, len(muscle_images_paths), sync_ratio
@@ -220,21 +222,6 @@ def generate_summary_video(
         writer.write(concatenated)
 
     writer.release()
-
-
-def _get_video_info(video_path: Path):
-    video = cv2.VideoCapture(str(video_path))
-    if not video.isOpened():
-        print("Error: Could not open video.")
-        return None
-
-    width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    video.release()
-
-    return width, height, frame_count
 
 
 def _load_metadata(recording_dir: Path):
