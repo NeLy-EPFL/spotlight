@@ -33,7 +33,7 @@ def run_sleap(
     batch_size: int = 4096,
     num_frames: int | None = None,
     overwrite: bool = False,
-) -> np.ndarray:
+) -> tuple[np.ndarray, list[str]]:
     """Run SLEAP on the behavior video.
 
     Args:
@@ -45,6 +45,10 @@ def run_sleap(
             Path to the SLEAP centroid model directory.
         sleap_centered_instance_model_dir (Path):
             Path to the SLEAP centered instance model directory.
+        sleap_conda_env_name (str):
+            Name of the conda environment to run SLEAP in.
+        batch_size (int):
+            Number of frames to process in a single `sleap-track` run.
         num_frames (int | None):
             If set, the video will contain only the first `num_frames`. Useful for
             testing. Default is None.
