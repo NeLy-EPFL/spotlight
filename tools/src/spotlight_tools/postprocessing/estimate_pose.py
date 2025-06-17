@@ -1,27 +1,35 @@
 import logging
 import numpy as np
+import yaml
 from pathlib import Path
 from subprocess import run
 from tqdm import tqdm
 
+import spotlight_tools
 from sleap_utils.fly37 import preprocess_fly37, node_names
 from spotlight_tools.common.video import get_video_info
 
 
-# fmt: off
-_sleap_model_base_dir = Path("~/Data/sleap/models/tl_bottom_cam_1024_250327_002024/").expanduser()
-_sleap_centroid_model_dir = _sleap_model_base_dir / "250327_002024.centroid"
-_sleap_centered_instance_model_dir = (_sleap_model_base_dir / "250327_002024.centered_instance")
-_sleap_conda_env_name = "sleap"
-# fmt: on
+# Load config
+spotlight_package_dir = Path(spotlight_tools.__path__[0]).expanduser()
+config_path = spotlight_package_dir.parent / "config/config.yaml"
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f)
+sleap_centroid_model_dir = Path(
+    config["pose2d"]["sleap_centroid_model_dir"]
+).expanduser()
+sleap_centered_instance_model_dir = Path(
+    config["pose2d"]["sleap_centered_instance_model_dir"]
+).expanduser()
+sleap_conda_env_name = config["pose2d"]["sleap_conda_env_name"]
 
 
 def run_sleap(
     behavior_video_path: Path,
     output_dir: Path,
-    sleap_centroid_model_dir: Path = _sleap_centroid_model_dir,
-    sleap_centered_instance_model_dir: Path = _sleap_centered_instance_model_dir,
-    sleap_conda_env_name: str = _sleap_conda_env_name,
+    sleap_centroid_model_dir: Path = sleap_centroid_model_dir,
+    sleap_centered_instance_model_dir: Path = sleap_centered_instance_model_dir,
+    sleap_conda_env_name: str = sleap_conda_env_name,
     batch_size: int = 4096,
     num_frames: int | None = None,
     overwrite: bool = False,
