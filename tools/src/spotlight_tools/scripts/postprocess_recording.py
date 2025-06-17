@@ -11,6 +11,7 @@ from spotlight_tools.postprocessing.frame_metadata import (
 )
 from spotlight_tools.postprocessing.io import check_is_directory_valid
 from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
+from spotlight_tools.postprocessing.estimate_pose import run_sleap
 from spotlight_tools.postprocessing.visualize import (
     generate_summary_video,
     generate_overlay_samples,
