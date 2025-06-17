@@ -12,7 +12,7 @@ from spotlight_tools.common.video import get_video_info
 
 # Load config
 spotlight_package_dir = Path(spotlight_tools.__path__[0]).expanduser()
-config_path = spotlight_package_dir.parent / "config/config.yaml"
+config_path = spotlight_package_dir.parent.parent / "config/config.yaml"
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 sleap_centroid_model_dir = Path(
