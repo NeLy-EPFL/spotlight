@@ -6,7 +6,7 @@ from pathlib import Path
 from subprocess import run
 from tqdm import tqdm
 
-from sleap_utils.fly37 import preprocess_fly37
+from sleap_utils.fly37 import preprocess_fly37, node_names
 from spotlight_tools.common.video import get_video_info
 
 
@@ -47,8 +47,18 @@ def run_sleap(
 
     Returns:
         np.ndarray:
-            2D pose data in the format (2, num_nodes, num_frames). The first dimension
-            is the x and y coordinates.
+            2D pose data in the format (num_frames, num_keypoints, 2). The last
+            dimension is the x and y coordinates.
+        list[str]:
+            List of node names (keypoints) used in the pose estimation.
+            The names include:
+            - Leg keypoints: "{leg}_{keypoint}" where `leg` is from
+              {"LF", "LM", "LH", "RF", "RM", "RH"} (L/F for left and right, F/M/H for
+              front/middle/hind legs) and `keypoint` is from
+              {"ThC", "CTr", "FTi", "TiTa", "Cl"} for thorax-coxa, coxa-trochanter,
+              femur-tibia, tibia-tarsus, and claw respectively.
+            - Special keypoints: "Th" (thorax), "N" (neck), "A" (abdomen), "LA"/"RA"
+              (left/right antenna), "LW"/"RW" (left/right wing).
     """
     if output_dir.exists() and not overwrite:
         logging.error(
@@ -76,14 +86,17 @@ def run_sleap(
     )
 
     # Run sleap-track
+    all_slp_output_paths = [
+        output_dir / f"sleap_output_part{i:03d}.slp"
+        for i, _ in enumerate(batch_schedule)
+    ]
     for i, (start, end) in tqdm(
         enumerate(batch_schedule),
         desc="Running SLEAP by batch",
         total=len(batch_schedule),
         disable=None,
     ):
-        raw_output_path = output_dir / f"sleap_output_part{i:03d}.slp"
-        analyzed_output_path = output_dir / f"sleap_output_analyzed_part{i:03d}.h5"
+        slp_output_path = all_slp_output_paths[i]
         args = [
             "conda",
             "run",
@@ -92,7 +105,7 @@ def run_sleap(
             "sleap-track",
             str(behavior_video_path),
             "--output",
-            str(raw_output_path),
+            str(slp_output_path),
             "--model",
             str(sleap_centroid_model_dir),
             "--model",
@@ -111,69 +124,30 @@ def run_sleap(
             "none",
         ]
         print(" ".join(args))
-        run(args, check=True)
+        with open(output_dir / f"sleap_track_part{i:03d}.log", "w") as log_file:
+            run(args, check=True, stdout=log_file, stderr=log_file)
 
+    # Extract 2D pose data from SLEAP output files
+    nodes_xy_all_list = []
+    for slp_output_path in all_slp_output_paths:
         nodes_xy = preprocess_fly37(
-            slp_path=raw_output_path,
+            slp_path=slp_output_path,
             n_target_tracks=1,
             interpolation_limit=35,
         )
-        np.savez(output_dir / f"pose_2d_part{i:03d}.npz", nodes_xy=nodes_xy)
+        assert (
+            nodes_xy.shape[1] == 1
+        ), f"Expected 1 target track (i.e. 1 fly), but got {nodes_xy.shape[1]} tracks."
+        nodes_xy = nodes_xy.squeeze(axis=1)  # Remove the track dimension
+        nodes_xy_all_list.append(nodes_xy)
+    nodes_xy_all = np.concatenate(nodes_xy_all_list, axis=0)
 
-    #     # Run sleap-convert
-    #     args = [
-    #         "conda",
-    #         "run",
-    #         "-n",
-    #         sleap_conda_env_name,
-    #         "sleap-convert",
-    #         str(raw_output_path),
-    #         "--output",
-    #         str(analyzed_output_path),
-    #         "--format",
-    #         "analysis",
-    #     ]
-    #     run(args, check=True)
+    np.savez(
+        output_path_2dpose,
+        nodes_xy=nodes_xy_all,
+        node_names=node_names,
+        width=width,
+        height=height,
+    )
 
-    #     # Check if the output file exists
-    #     if not analyzed_output_path.exists():
-    #         raise RuntimeError(
-    #             f"SLEAP analysis failed. Output file {analyzed_output_path} not found."
-    #         )
-
-    # # Merge the output files
-    # with h5py.File(analyzed_output_path, "r") as f:
-    #     node_names = [x.decode("utf-8") for x in f["node_names"]]
-    #     edge_names = [[y.decode("utf-8") for y in x] for x in f["edge_names"]]
-    #     edge_indices = f["edge_inds"][:, :]
-
-    # pose_data_2d = np.empty((2, len(node_names), num_frames_total), dtype=np.float32)
-
-    # for i, (start, end) in enumerate(batch_schedule):
-    #     raw_output_path = output_dir / f"sleap_output_part{i:03d}.slp"
-    #     analyzed_output_path = output_dir / f"sleap_output_analyzed_part{i:03d}.h5"
-    #     with h5py.File(analyzed_output_path, "r") as f:
-    #         node_names = [x.decode("utf-8") for x in f["node_names"]]
-    #         edge_names = [[y.decode("utf-8") for y in x] for x in f["edge_names"]]
-    #         edge_indices = f["edge_inds"][:, :]
-    #         track_id = 0  # max_tracks set to 1, therefore this is the only track
-    #         data_block = f["tracks"][0, :, :, :].shape
-
-    #         if i == 0:
-    #             pose_data_2d = np.empty(
-    #                 (2, len(node_names), num_frames_total), dtype=np.float32
-    #             )
-
-    #         pose_data_2d[:, :, start:end] = f["tracks"][track_id, :, :, :]
-
-    # # Save the output files
-    # np.savez(
-    #     output_path_2dpose,
-    #     pose_data_2d=pose_data_2d,
-    #     node_names=node_names,
-    #     edge_names=edge_names,
-    #     edge_indices=edge_indices,
-    #     batch_schedule=batch_schedule,
-    # )
-
-    # return pose_data_2d
+    return nodes_xy_all, node_names
