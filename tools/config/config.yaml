@@ -1,0 +1,4 @@
+pose2d:
+  sleap_centroid_model_dir: "~/Data/sleap/models/tl_bottom_cam_1024_250327_002024/250327_002024.centroid"
+  sleap_centered_instance_model_dir: "~/Data/sleap/models/tl_bottom_cam_1024_250327_002024/250327_002024.centered_instance"
+  sleap_conda_env_name: "sleap"
