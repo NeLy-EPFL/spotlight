@@ -139,7 +139,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-    postprocess_recording_data(
-        "/home/sibwang/Data/spotlight/20250509-fly03-008-grade3", overwrite=True
-    )
+    main()
