@@ -11,11 +11,10 @@ from spotlight_tools.postprocessing.frame_metadata import (
 )
 from spotlight_tools.postprocessing.io import check_is_directory_valid
 from spotlight_tools.postprocessing.warp_muscle_image import process_muscle_data
-from spotlight_tools.postprocessing.visualize import generate_summary_video
-from spotlight_tools.postprocessing.estimate_pose import run_sleap
-
-
-logging.basicConfig(level=logging.INFO)
+from spotlight_tools.postprocessing.visualize import (
+    generate_summary_video,
+    generate_overlay_samples,
+)
 
 
 def postprocess_recording_data(
@@ -98,9 +97,12 @@ def postprocess_recording_data(
     # Interpolate stage position for each behavior frame
     behavior_frames_dir = recording_dir / "behavior_images"
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
-    behavior_timestamps_path = processed_dir / "behavior_frames_metadata.csv"
+    behavior_timestamps_output_path = processed_dir / "behavior_frames_metadata.csv"
     stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
-        behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
+        behavior_frames_dir,
+        stage_positions_path,
+        behavior_timestamps_output_path,
+        overwrite,
     )
 
     # Merge behavior video
@@ -134,8 +136,11 @@ def postprocess_recording_data(
             num_frames=num_frames,
         )
 
-        # Make overlay video
+        # Make summary video
         generate_summary_video(recording_dir, num_frames=num_frames)
+
+        # Generate overlay samples
+        generate_overlay_samples(recording_dir, overwrite=overwrite)
 
 
 def main():
