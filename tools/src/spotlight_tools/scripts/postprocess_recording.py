@@ -95,21 +95,21 @@ def postprocess_recording_data(
     behavior_frames_dir = recording_dir / "behavior_images"
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     behavior_timestamps_path = processed_dir / "behavior_frames_metadata.csv"
-    # stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
-    #     behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
-    # )
+    stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
+        behavior_frames_dir, stage_positions_path, behavior_timestamps_path, overwrite
+    )
 
     # Merge behavior video
     behavior_video_path = processed_dir / "behavior_video.mkv"
-    # jpeg_to_mkv(
-    #     behavior_frames_dir,
-    #     behavior_video_path,
-    #     overwrite,
-    #     play_fps,
-    #     behavior_video_crf,
-    #     behavior_video_preset,
-    #     num_frames=num_frames,
-    # )
+    jpeg_to_mkv(
+        behavior_frames_dir,
+        behavior_video_path,
+        overwrite,
+        play_fps,
+        behavior_video_crf,
+        behavior_video_preset,
+        num_frames=num_frames,
+    )
 
     # Run 2D pose estimation
     pose_2d_dir = processed_dir / "pose_2d"
@@ -121,17 +121,17 @@ def postprocess_recording_data(
         batch_size=128,
     )
 
-    # if muscle_camera:
-    #     # Warp muscle images
-    #     process_muscle_data(
-    #         recording_dir,
-    #         stage_positions_at_behavior_frames,
-    #         overwrite=overwrite,
-    #         num_frames=num_frames,
-    #     )
+    if muscle_camera:
+        # Warp muscle images
+        process_muscle_data(
+            recording_dir,
+            stage_positions_at_behavior_frames,
+            overwrite=overwrite,
+            num_frames=num_frames,
+        )
 
-    #     # Make overlay video
-    #     generate_summary_video(recording_dir, num_frames=num_frames)
+        # Make overlay video
+        generate_summary_video(recording_dir, num_frames=num_frames)
 
 
 def main():
