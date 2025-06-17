@@ -133,9 +133,10 @@ def run_sleap(
             n_target_tracks=1,
             interpolation_limit=35,
         )
-        assert (
-            nodes_xy.shape[1] == 1
-        ), f"Expected 1 target track (i.e. 1 fly), but got {nodes_xy.shape[1]} tracks."
+        if nodes_xy.shape[1] != 1:
+            raise ValueError(
+                f"Expected 1 target track (i.e. 1 fly), but got {nodes_xy.shape[1]} tracks."
+            )
         nodes_xy = nodes_xy.squeeze(axis=1)  # Remove the track dimension
         nodes_xy_all_list.append(nodes_xy)
     nodes_xy_all = np.concatenate(nodes_xy_all_list, axis=0)
