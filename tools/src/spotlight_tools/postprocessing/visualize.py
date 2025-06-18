@@ -190,7 +190,7 @@ def generate_summary_video(
             logging.error(f"Error: Could not read frame {i} from behavior video.")
             break
         behavior_image_original = behavior_image[:, :width, 0]
-        
+
         # Overlay 2D pose estimation
         pose_image = behavior_image[:, :width, :].copy()
         pose_image = plot_fly37_with_opencv(pose_image, pose_2d_data[i])
@@ -260,6 +260,7 @@ def _determine_adaptive_muscle_vrange(
     paths_to_check = muscle_image_paths[::sample_every_k]
 
     quantiles = np.zeros((len(paths_to_check), 2))
+    print("Detecting muscle vrange adaptively...")
     for i, path in tqdm(
         enumerate(paths_to_check),
         desc="Determining muscle vrange",
@@ -444,10 +445,12 @@ def generate_overlay_samples(
     axes = axes.flatten()
 
     # Generate samples
+    print("Generating samples overlay images...")
     for i, muscle_frame_id in tqdm(
         enumerate(sample_muscle_frame_ids),
         total=num_samples,
         desc="Generating overlay samples",
+        disable=None,
     ):
         metadata_entry = muscle_metadata_df.iloc[muscle_frame_id]
         assert metadata_entry["muscle_frame_id"] == muscle_frame_id

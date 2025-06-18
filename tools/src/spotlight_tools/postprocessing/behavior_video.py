@@ -64,6 +64,7 @@ def jpeg_to_mkv(
         enumerate(input_files_sorted),
         total=len(input_files_sorted),
         desc="Converting frames",
+        disable=None,
     ):
         image = cv2.imread(str(path))
         if image is None:
