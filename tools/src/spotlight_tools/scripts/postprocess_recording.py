@@ -1,9 +1,7 @@
-import logging
+import sys
+import os
 import tyro
-import yaml
-import cv2
 from pathlib import Path
-from tqdm import tqdm
 
 from spotlight_tools.postprocessing.behavior_video import jpeg_to_mkv
 from spotlight_tools.postprocessing.frame_metadata import (
@@ -16,6 +14,12 @@ from spotlight_tools.postprocessing.visualize import (
     generate_summary_video,
     generate_overlay_samples,
 )
+
+
+# Reopen STDOUT in unbuffered mode to ensure that print statements print immediately
+# This is useful when we run this script from a bash script and redirect the output to
+# a non-TTY file.
+sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
 
 def postprocess_recording_data(
@@ -96,6 +100,7 @@ def postprocess_recording_data(
     processed_dir.mkdir(exist_ok=True)
 
     # Interpolate stage position for each behavior frame
+    print("Interpolating stage positions for behavior frames")
     behavior_frames_dir = recording_dir / "behavior_images"
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     behavior_timestamps_output_path = processed_dir / "behavior_frames_metadata.csv"
@@ -106,7 +111,8 @@ def postprocess_recording_data(
         overwrite,
     )
 
-    # Merge behavior video
+    # # Merge behavior video
+    print("Merging behavior frames into a single video")
     behavior_video_path = processed_dir / "behavior_video.mkv"
     jpeg_to_mkv(
         behavior_frames_dir,
@@ -119,6 +125,7 @@ def postprocess_recording_data(
     )
 
     # Run 2D pose estimation
+    print("Running SLEAP for 2D pose estimation")
     pose_2d_dir = processed_dir / "pose_2d"
     run_sleap(
         behavior_video_path,
@@ -130,6 +137,7 @@ def postprocess_recording_data(
 
     if muscle_camera:
         # Warp muscle images
+        print("Warping muscle images to match behavior images")
         process_muscle_data(
             recording_dir,
             stage_positions_at_behavior_frames,
@@ -138,9 +146,13 @@ def postprocess_recording_data(
         )
 
         # Make summary video
-        generate_summary_video(recording_dir, num_frames=num_frames)
+        print("Generating summary video with behavior, pose, and muscle data...")
+        generate_summary_video(
+            recording_dir, num_frames=num_frames, overwrite=overwrite
+        )
 
         # Generate overlay samples
+        print("Generating overlay samples of behavior and muscle data...")
         generate_overlay_samples(recording_dir, overwrite=overwrite)
 
 

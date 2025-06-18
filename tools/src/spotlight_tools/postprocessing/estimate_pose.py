@@ -100,6 +100,7 @@ def run_sleap(
         output_dir / f"sleap_output_part{i:03d}.slp"
         for i, _ in enumerate(batch_schedule)
     ]
+    print(f"Running SLEAP on {behavior_video_path} in {len(batch_schedule)} batches...")
     for i, (start, end) in tqdm(
         enumerate(batch_schedule),
         desc="Running SLEAP by batch",
@@ -139,11 +140,14 @@ def run_sleap(
 
     # Extract 2D pose data from SLEAP output files
     nodes_xy_all_list = []
-    for slp_output_path in all_slp_output_paths:
+    # for slp_output_path in all_slp_output_paths:
+    for i, (start, end) in enumerate(batch_schedule):
+        slp_output_path = all_slp_output_paths[i]
         nodes_xy = preprocess_fly37(
             slp_path=slp_output_path,
             n_target_tracks=1,
             interpolation_limit=35,
+            expected_n_frames=end - start,
         )
         if nodes_xy.shape[1] != 1:
             raise ValueError(

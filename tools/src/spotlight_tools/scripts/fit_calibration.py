@@ -50,7 +50,7 @@ def gather_calibration_points(
 
     suffix = "tif" if camera == "muscle_camera" else "jpg"
     files = sorted(list(calibration_image_dir.glob(f"*.{suffix}")))
-    for path in tqdm(files):
+    for path in tqdm(files, disable=None, desc="Detecting ArUco markers"):
         _parts = path.stem.split("_")
         physical_x_mm = float(_parts[2].replace("x", ""))
         physical_y_mm = float(_parts[3].replace("y", ""))
