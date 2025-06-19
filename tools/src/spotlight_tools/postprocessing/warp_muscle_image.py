@@ -161,7 +161,7 @@ def map_muscle_to_behavior_jit(
 
 def process_muscle_data(
     recording_dir: Path,
-    stage_positions_at_behavior_frames: pd.DataFrame,
+    stage_pos_df_at_behavior_frames: pd.DataFrame,
     num_frames: int | None = None,
     overwrite: bool = False,
     missing_muscle_frames_tolerance: int = 3,
@@ -184,7 +184,7 @@ def process_muscle_data(
     with open(timing_metadata_path, "r") as f:
         timing_metadata = yaml.safe_load(f)
     muscle_behavior_sync_ratio = timing_metadata["sync_ratio"]
-    stage_positions_at_muscle_frames = stage_positions_at_behavior_frames[
+    stage_pos_df_at_muscle_frames = stage_pos_df_at_behavior_frames[
         muscle_behavior_sync_ratio::muscle_behavior_sync_ratio
     ]
 
@@ -230,7 +230,7 @@ def process_muscle_data(
         _muscle_paths_by_frame_idx[frame_idx] = path
 
     muscle_image_paths = []
-    num_expected_frames = stage_positions_at_muscle_frames.shape[0]
+    num_expected_frames = stage_pos_df_at_muscle_frames.shape[0]
     for frame_idx in range(num_expected_frames):
         if frame_idx not in _muscle_paths_by_frame_idx:
             if frame_idx >= num_expected_frames - missing_muscle_frames_tolerance:
@@ -251,27 +251,26 @@ def process_muscle_data(
             f"{num_expected_frames}. This is likely normal because the two cameras "
             f"receive the stop signal at slightly different times."
         )
-        stage_positions_at_muscle_frames = stage_positions_at_muscle_frames.iloc[
+        stage_pos_df_at_muscle_frames = stage_pos_df_at_muscle_frames.iloc[
             :num_muscle_frames
         ].reset_index(drop=True)
 
     if num_frames is not None:
         muscle_image_paths = muscle_image_paths[:num_frames]
-        stage_positions_at_muscle_frames = stage_positions_at_muscle_frames[:num_frames]
+        stage_pos_df_at_muscle_frames = stage_pos_df_at_muscle_frames[:num_frames]
 
     # Create muscle frame metadata dataframe
     # (acquired and received times to be filled later)
-    corresponding_behavior_frame_ids = stage_positions_at_muscle_frames[
-        "behavior_frame_id"
-    ].values
     muscle_frame_metadata = pd.DataFrame(
         {
             "muscle_frame_id": np.arange(len(muscle_image_paths)),
-            "corresponding_behavior_frame_id": corresponding_behavior_frame_ids,
+            "corresponding_behavior_frame_id": stage_pos_df_at_muscle_frames[
+                "behavior_frame_id"
+            ].values,
             "acquired_time_us": np.full(len(muscle_image_paths), -1, dtype=np.int64),
             "received_time_us": np.full(len(muscle_image_paths), -1, dtype=np.int64),
-            "x_pos_mm_interp": stage_positions_at_muscle_frames["x_pos_mm_interp"],
-            "y_pos_mm_interp": stage_positions_at_muscle_frames["y_pos_mm_interp"],
+            "x_pos_mm_interp": stage_pos_df_at_muscle_frames["x_pos_mm_interp"].values,
+            "y_pos_mm_interp": stage_pos_df_at_muscle_frames["y_pos_mm_interp"].values,
         }
     )
 
@@ -293,7 +292,7 @@ def process_muscle_data(
 
         # Apply warping
         in_image = cv2.imread(str(in_path), cv2.IMREAD_UNCHANGED)
-        stage_pos_log_entry = stage_positions_at_muscle_frames.iloc[i]
+        stage_pos_log_entry = stage_pos_df_at_muscle_frames.iloc[i]
         x_stage = stage_pos_log_entry["x_pos_mm_interp"]
         y_stage = stage_pos_log_entry["y_pos_mm_interp"]
         out_image = mapping.warp_muscle_image(in_image, x_stage, y_stage)

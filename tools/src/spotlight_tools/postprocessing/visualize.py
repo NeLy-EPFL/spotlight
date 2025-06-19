@@ -13,6 +13,7 @@ from pathlib import Path
 from tqdm import tqdm, trange
 
 from spotlight_tools.common.video import get_video_info
+from sleap_utils.plotting.skeleton import plot_fly37_with_opencv
 
 
 def visualize_stage_trajectory(
@@ -117,7 +118,6 @@ def generate_summary_video(
         raise RuntimeError("Output video already exists.")
 
     # Index files to be used
-    # behavior_images_paths = sorted(list(behavior_images_dir.glob("*.jpg")))
     width, height, num_behavior_images = get_video_info(behavior_video_path)
     muscle_images_paths = sorted(list(muscle_images_dir.glob("*.tif")))
     num_behavior_images_usable, num_muscle_images_usable = _calculate_num_usable_images(
@@ -157,12 +157,16 @@ def generate_summary_video(
         )
         print(f"Determined adaptive muscle value range: {muscle_vrange}.")
 
+    # Load 2D pose estimation data
+    pose_2d_path = processed_dir / "pose_2d/pose_2d.npz"
+    pose_2d_data = np.load(pose_2d_path)["nodes_xy"]
+
     # Initialize video writer
     writer = cv2.VideoWriter(
         str(output_video_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
         play_fps,
-        (width * 2, height),
+        (width * 3, height),
         True,
     )
 
@@ -185,7 +189,11 @@ def generate_summary_video(
         if not ret:
             logging.error(f"Error: Could not read frame {i} from behavior video.")
             break
-        behavior_image = behavior_image[:, :width, 0]
+        behavior_image_original = behavior_image[:, :width, 0]
+
+        # Overlay 2D pose estimation
+        pose_image = behavior_image[:, :width, :].copy()
+        pose_image = plot_fly37_with_opencv(pose_image, pose_2d_data[i])
 
         # Muscle image
         muscle_frame_id = i // sync_ratio
@@ -203,9 +211,10 @@ def generate_summary_video(
             ).astype(np.uint8)
 
         # Concatenate images
-        concatenated = np.zeros((height, width * 2, 3), dtype=np.uint8)
-        concatenated[:, :width, :] = behavior_image[:, :, np.newaxis]
-        concatenated[:, width : 2 * width, 1] = muscle_image
+        concatenated = np.zeros((height, width * 3, 3), dtype=np.uint8)
+        concatenated[:, :width, :] = behavior_image_original[:, :, np.newaxis]
+        concatenated[:, width : 2 * width, :] = pose_image
+        concatenated[:, 2 * width : 3 * width, 1] = muscle_image  # green channel
 
         writer.write(concatenated)
 
@@ -251,6 +260,7 @@ def _determine_adaptive_muscle_vrange(
     paths_to_check = muscle_image_paths[::sample_every_k]
 
     quantiles = np.zeros((len(paths_to_check), 2))
+    print("Detecting muscle vrange adaptively...")
     for i, path in tqdm(
         enumerate(paths_to_check),
         desc="Determining muscle vrange",
@@ -435,10 +445,12 @@ def generate_overlay_samples(
     axes = axes.flatten()
 
     # Generate samples
+    print("Generating samples overlay images...")
     for i, muscle_frame_id in tqdm(
         enumerate(sample_muscle_frame_ids),
         total=num_samples,
         desc="Generating overlay samples",
+        disable=None,
     ):
         metadata_entry = muscle_metadata_df.iloc[muscle_frame_id]
         assert metadata_entry["muscle_frame_id"] == muscle_frame_id
