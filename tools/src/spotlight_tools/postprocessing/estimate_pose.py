@@ -140,7 +140,6 @@ def run_sleap(
 
     # Extract 2D pose data from SLEAP output files
     nodes_xy_all_list = []
-    # for slp_output_path in all_slp_output_paths:
     for i, (start, end) in enumerate(batch_schedule):
         slp_output_path = all_slp_output_paths[i]
         nodes_xy = preprocess_fly37(
