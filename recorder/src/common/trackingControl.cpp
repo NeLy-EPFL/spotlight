@@ -16,9 +16,8 @@ namespace
             fs::path(saveDirectory) / "stage_position" / "stage_position.csv";
 
         // Remove the file if it exists (otherwise we'd be appending to it)
-        if (std::filesystem::exists(filename))
+        if (std::filesystem::remove(filename))
         {
-            std::filesystem::remove(filename);
             spdlog::info("Removed existing motion stage log file: {}",
                          filename.string());
         }
