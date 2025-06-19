@@ -3,6 +3,7 @@ import cv2
 from vidgear.gears import WriteGear
 from pathlib import Path
 from tqdm import tqdm
+from math import ceil
 
 from spotlight_tools.postprocessing.io import (
     check_is_directory_valid,
@@ -58,11 +59,12 @@ def jpeg_to_mkv(
     # Write each image to the video
     print(f"Writing {len(input_files_sorted) * 3} monochrome frames to video...")
     if num_frames:
-        input_files_sorted = input_files_sorted[: int(num_frames // 3)]
+        input_files_sorted = input_files_sorted[: int(ceil(num_frames / 3))]
     for i, path in tqdm(
         enumerate(input_files_sorted),
         total=len(input_files_sorted),
         desc="Converting frames",
+        disable=None,
     ):
         image = cv2.imread(str(path))
         if image is None:
