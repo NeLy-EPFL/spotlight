@@ -111,7 +111,7 @@ def postprocess_recording_data(
         overwrite,
     )
 
-    # # Merge behavior video
+    # Merge behavior video
     print("Merging behavior frames into a single video")
     behavior_video_path = processed_dir / "behavior_video.mkv"
     jpeg_to_mkv(
