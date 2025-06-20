@@ -387,8 +387,8 @@ void motionStagePositionLogger(
         "motion_control", "position_logging_frequency_hz");
     int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
 
-    std::set<std::string> initializedSaveDirectories; // root save directories
     std::ofstream logFile;
+    bool wasRecordingLastIter = false;
 
     while (!programState->toQuit.load())
     {
@@ -407,31 +407,37 @@ void motionStagePositionLogger(
         // Log position
         if (programState->isRecording.load())
         {
-            if (initializedSaveDirectories.find(saveDirectory->getDirectory()) ==
-                initializedSaveDirectories.end())
+            if (!wasRecordingLastIter)
             {
+                // This is the start of a new recording. We need to initalize
+                // the log file.
+                logFile =
+                    initializeMotionStageLogFile(saveDirectory->getDirectory());
+                wasRecordingLastIter = true;
                 spdlog::info(
-                    "Stage position log file not initialized under {}. "
-                    "Creating one now.",
+                    "Stage position log file initialized under {}. "
+                    "Stage position logging starts now.",
                     saveDirectory->getDirectory().c_str());
-                logFile = initializeMotionStageLogFile(
-                    saveDirectory->getDirectory());
-                initializedSaveDirectories.insert(saveDirectory->getDirectory());
-                spdlog::info("Stage position logging starts now!");
             }
 
             logFile << startTime << ","
                     << currentPosition.xPosMm << ","
                     << currentPosition.yPosMm << "\n";
             logFile.flush();
+
+            wasRecordingLastIter = true;
         }
         else
         {
-            if (logFile.is_open())
+            if (wasRecordingLastIter)
             {
-                spdlog::info("Stage position logging stopped. Closing log file.");
+                assert(logFile.is_open());
+                spdlog::info(
+                    "Stage position logging stopped. Closing log file.");
                 logFile.close();
             }
+            assert(!logFile.is_open());
+            wasRecordingLastIter = false;
         }
 
         // Wait for the next logging interval
