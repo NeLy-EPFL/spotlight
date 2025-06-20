@@ -13,6 +13,7 @@ from pathlib import Path
 from tqdm import tqdm, trange
 
 from spotlight_tools.common.video import get_video_info
+from spotlight_tools.common.dataloader import load_muscle_image, load_behavior_frame
 from sleap_utils.plotting.skeleton import plot_fly37_with_opencv
 
 
@@ -340,29 +341,6 @@ def _calculate_num_usable_images(
         )
 
     return num_behavior_images_usable, num_muscle_images_usable
-
-
-def load_muscle_image(recording_dir, muscle_frame_id):
-    muscle_image_path = (
-        recording_dir
-        / "processed/muscle_images"
-        / f"muscle_frame_{muscle_frame_id:09d}.tif"
-    )
-    return cv2.imread(str(muscle_image_path), cv2.IMREAD_UNCHANGED)
-
-
-def load_behavior_frame(recording_dir, behavior_frame_id):
-    behavior_video_path = recording_dir / "processed/behavior_video.mkv"
-    behavior_video_capture = cv2.VideoCapture(str(behavior_video_path))
-    num_frames = int(behavior_video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    if behavior_frame_id >= num_frames:
-        return None  # Return None if the frame ID is out of bounds
-    behavior_video_capture.set(cv2.CAP_PROP_POS_FRAMES, behavior_frame_id)
-    ret, frame = behavior_video_capture.read()
-    if not ret:
-        raise ValueError(f"Could not read frame {behavior_frame_id} from video.")
-    behavior_video_capture.release()
-    return frame[:, :, 0]
 
 
 def generate_overlay_samples(
