@@ -14,6 +14,15 @@ namespace
     {
         std::filesystem::path filename =
             fs::path(saveDirectory) / "stage_position" / "stage_position.csv";
+
+        // Remove the file if it exists (otherwise we'd be appending to it)
+        if (std::filesystem::exists(filename))
+        {
+            std::filesystem::remove(filename);
+            spdlog::info("Removed existing motion stage log file: {}",
+                         filename.string());
+        }
+
         std::ofstream logFile((filename).string(), std::ios_base::app);
         if (!logFile.is_open())
         {
@@ -378,8 +387,8 @@ void motionStagePositionLogger(
         "motion_control", "position_logging_frequency_hz");
     int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
 
-    std::set<std::string> initializedSaveDirectories; // root save directories
     std::ofstream logFile;
+    bool wasRecordingLastIter = false;
 
     while (!programState->toQuit.load())
     {
@@ -398,31 +407,36 @@ void motionStagePositionLogger(
         // Log position
         if (programState->isRecording.load())
         {
-            if (initializedSaveDirectories.find(saveDirectory->getDirectory()) ==
-                initializedSaveDirectories.end())
+            if (!wasRecordingLastIter)
             {
+                // This is the start of a new recording. We need to initalize
+                // the log file.
+                logFile =
+                    initializeMotionStageLogFile(saveDirectory->getDirectory());
                 spdlog::info(
-                    "Stage position log file not initialized under {}. "
-                    "Creating one now.",
+                    "Stage position log file initialized under {}. "
+                    "Stage position logging starts now.",
                     saveDirectory->getDirectory().c_str());
-                logFile = initializeMotionStageLogFile(
-                    saveDirectory->getDirectory());
-                initializedSaveDirectories.insert(saveDirectory->getDirectory());
-                spdlog::info("Stage position logging starts now!");
             }
 
             logFile << startTime << ","
                     << currentPosition.xPosMm << ","
                     << currentPosition.yPosMm << "\n";
             logFile.flush();
+
+            wasRecordingLastIter = true;
         }
         else
         {
-            if (logFile.is_open())
+            if (wasRecordingLastIter)
             {
-                spdlog::info("Stage position logging stopped. Closing log file.");
+                assert(logFile.is_open());
+                spdlog::info(
+                    "Stage position logging stopped. Closing log file.");
                 logFile.close();
             }
+            assert(!logFile.is_open());
+            wasRecordingLastIter = false;
         }
 
         // Wait for the next logging interval
