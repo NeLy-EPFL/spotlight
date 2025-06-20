@@ -413,7 +413,6 @@ void motionStagePositionLogger(
                 // the log file.
                 logFile =
                     initializeMotionStageLogFile(saveDirectory->getDirectory());
-                wasRecordingLastIter = true;
                 spdlog::info(
                     "Stage position log file initialized under {}. "
                     "Stage position logging starts now.",
