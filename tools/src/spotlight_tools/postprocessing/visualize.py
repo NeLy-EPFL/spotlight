@@ -197,20 +197,25 @@ def generate_summary_video(
         pose_2d_path = processed_dir / "pose_2d.npz"
         pose_2d_data = np.load(pose_2d_path)["nodes_xy"]
 
-    # Initialize video writer
-    writer = cv2.VideoWriter(
-        str(output_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        play_fps,
-        (width * 3, height),
-        True,
-    )
-
     # Initialize behavior image reader
     behavior_video_reader = cv2.VideoCapture(str(behavior_video_path))
     if not behavior_video_reader.isOpened():
         logging.error(f"Error: Could not open behavior video {behavior_video_path}.")
         raise RuntimeError("Could not open behavior video.")
+
+    # Initialize video writer
+    num_panels = 1
+    if draw_pose:
+        num_panels += 1
+    if draw_muscle:
+        num_panels += 1
+    writer = cv2.VideoWriter(
+        str(output_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        play_fps,
+        (width * num_panels, height),
+        True,
+    )
 
     # Process each frame
     curr_muscle_frame_id = None
@@ -250,11 +255,6 @@ def generate_summary_video(
                 ).astype(np.uint8)
 
         # Make final frame (by concatenating behavior and muscle) and write to video
-        num_panels = 1
-        if draw_pose:
-            num_panels += 1
-        if draw_muscle:
-            num_panels += 1
         final_frame = np.zeros((height, width * num_panels, 3), dtype=np.uint8)
         curr_col_start = 0
         # Plot behavior original
