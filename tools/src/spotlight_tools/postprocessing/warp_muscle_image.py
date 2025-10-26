@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import yaml
+from joblib import Parallel, delayed
 from pathlib import Path
 from tqdm import tqdm
 
@@ -27,7 +28,24 @@ def process_muscle_data(
     num_frames: int | None = None,
     overwrite: bool = False,
     missing_muscle_frames_tolerance: int = 3,
+    num_workers: int = -1,
 ) -> None:
+    """Process muscle images to align them with behavior frames.
+
+    Args:
+        recording_dir: Path to the recording directory (as set in the
+            Spotlight recorder GUI).
+        num_frames: If specified, only process this many frames
+            (for debugging).
+        overwrite: If True, overwrite existing processed muscle images.
+        missing_muscle_frames_tolerance: Number of missing muscle frames
+            tolerated at the end of the recording.
+        num_workers: Number of parallel workers to use for processing
+            muscle images. If -1, use all available cores.
+
+    Returns:
+        muscle_frame_metadata (pd.DataFrame)
+    """
     # IO checks
     raw_muscle_images_dir = recording_dir / "muscle_images"
     processed_dir = recording_dir / "processed"
@@ -136,34 +154,43 @@ def process_muscle_data(
         }
     )
 
-    # Process each muscle image
-    print("Warping muscle images...")
-    for i, in_path in tqdm(
-        enumerate(muscle_image_paths),
-        total=len(muscle_image_paths),
-        desc="Warping muscle images",
-        disable=None,
-    ):
-        # Update metadata
-        metadata_path = str(in_path).replace(".tif", ".csv")
+    # Process muscle images in parallel
+    payload_kwargs = []
+    for i, muscle_image_path in enumerate(muscle_image_paths):
+        stage_pos = stage_pos_df_at_muscle_frames.iloc[i][
+            ["x_pos_mm_interp", "y_pos_mm_interp"]
+        ].values.astype(np.float32)
+        output_path = processed_muscle_images_dir / muscle_image_path.name
+        payload_kwargs.append(
+            {
+                "mapper": mapper,
+                "input_path": muscle_image_path,
+                "stage_pos": stage_pos,
+                "behavior_image_dim": behavior_image_dim,
+                "output_path": output_path,
+            }
+        )
+    parallel_runner = Parallel(n_jobs=num_workers)
+    print(
+        f"Warping {len(payload_kwargs)} muscle images using {num_workers} workers"
+        f" (effectively {parallel_runner._effective_n_jobs} workers)"
+    )
+    parallel_runner(
+        delayed(_process_single_frame)(**kwargs)
+        for kwargs in tqdm(
+            payload_kwargs, desc="Warping muscle images", total=len(payload_kwargs)
+        )
+    )
+
+    # Merge metadata into a single file
+    print("Merging metadata")
+    for muscle_path in muscle_image_paths:
+        metadata_path = str(muscle_path).replace(".tif", ".csv")
         metadata_this_frame = pd.read_csv(metadata_path).iloc[0]
         acquired_time_us = metadata_this_frame["acquired_time_us"]
         received_time_us = metadata_this_frame["received_time_us"]
         muscle_frame_metadata.loc[i, "acquired_time_us"] = acquired_time_us
         muscle_frame_metadata.loc[i, "received_time_us"] = received_time_us
-
-        # Apply warping
-        in_image = cv2.imread(str(in_path), cv2.IMREAD_UNCHANGED)
-        stage_pos_log_entry = stage_pos_df_at_muscle_frames.iloc[i]
-        x_stage = stage_pos_log_entry["x_pos_mm_interp"]
-        y_stage = stage_pos_log_entry["y_pos_mm_interp"]
-        out_image = mapper.transform_image_muscle2behavior(
-            stage_pos=np.array([x_stage, y_stage]),
-            muscle_image=in_image,
-            output_dim=behavior_image_dim,
-        )
-        out_path = processed_muscle_images_dir / in_path.name
-        cv2.imwrite(str(out_path), out_image, _imwrite_compression_params)
 
     # Save metadata
     int_columns = [
@@ -182,3 +209,17 @@ def process_muscle_data(
         f"Metadata saved to {metadata_output_path}."
     )
     return muscle_frame_metadata
+
+
+def _process_single_frame(
+    mapper: BehaviorMuscleCrossMapper,
+    input_path: Path,
+    stage_pos: np.ndarray,
+    behavior_image_dim: tuple[int, int],
+    output_path: Path,
+):
+    in_image = cv2.imread(str(input_path), cv2.IMREAD_UNCHANGED)
+    out_image = mapper.transform_image_muscle2behavior(
+        stage_pos, in_image, behavior_image_dim
+    )
+    cv2.imwrite(str(output_path), out_image, _imwrite_compression_params)

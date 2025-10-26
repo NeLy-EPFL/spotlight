@@ -34,6 +34,7 @@ def postprocess_recording_data(
     behavior_video_crf: int = 5,
     behavior_video_preset: str = "slow",
     sleap_batch_size: int = 128,
+    muscle_transform_num_workers: int = -1,
     muscle_vrange: tuple[int, int] | None = None,
     num_frames: int | None = None,
 ) -> None:
@@ -79,6 +80,8 @@ def postprocess_recording_data(
         behavior_video_preset (str): ffmpeg libx264 preset controlling
             encode speed vs. compression.
         sleap_batch_size (int): Batch size passed to the SLEAP runner.
+        muscle_transform_num_workers (int): Number of parallel workers
+            to use when warping muscle images. If -1, use all available cores.
         muscle_vrange (tuple[int,int] | None): Optional (vmin, vmax) to use
             when visualizing muscle images. If None an adaptive range is
             computed when needed.
@@ -143,7 +146,12 @@ def postprocess_recording_data(
     # Warp muscle images to match behavior images
     if warp_muscle_images:
         print("Warping muscle images to match behavior images")
-        process_muscle_data(recording_dir, overwrite=overwrite, num_frames=num_frames)
+        process_muscle_data(
+            recording_dir,
+            overwrite=overwrite,
+            num_frames=num_frames,
+            num_workers=muscle_transform_num_workers,
+        )
 
     # Generate visualizations
     if make_visualizations:
@@ -172,4 +180,18 @@ def main():
 
 
 if __name__ == "__main__":
+    # * CLI
     main()
+
+    # * Example
+    # postprocess_recording_data(
+    #     recording_dir="/home/sibwang/Data/spotlight/20250613-fly1b-002/",
+    #     overwrite=True,
+    #     interpolate_stage_position=True,
+    #     merge_behavior_video=True,
+    #     estimate_2dpose=True,
+    #     warp_muscle_images=True,
+    #     make_visualizations=True,
+    #     play_fps=30,
+    #     num_frames=300,
+    # )
