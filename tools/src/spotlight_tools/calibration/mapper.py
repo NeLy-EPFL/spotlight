@@ -1,5 +1,6 @@
 import numpy as np
 import yaml
+import cv2
 from pathlib import Path
 
 
@@ -321,7 +322,7 @@ class BehaviorMuscleCrossMapper:
 
         return affine_matrix
 
-    def get_affine_matrix_behavior_to_muscle(self, stage_pos: np.ndarray):
+    def get_affine_matrix_behavior2muscle(self, stage_pos: np.ndarray):
         """
         Compute the affine transformation matrix to map pixel coordinates
         from behavior camera to muscle camera at a given stage position.
@@ -338,7 +339,7 @@ class BehaviorMuscleCrossMapper:
             self.behavior_mapper, self.muscle_mapper, stage_pos
         )
 
-    def get_affine_matrix_muscle_to_behavior(self, stage_pos: np.ndarray):
+    def get_affine_matrix_muscle2behavior(self, stage_pos: np.ndarray):
         """
         Compute the affine transformation matrix to map pixel coordinates
         from muscle camera to behavior camera at a given stage position.
@@ -355,66 +356,125 @@ class BehaviorMuscleCrossMapper:
             self.muscle_mapper, self.behavior_mapper, stage_pos
         )
 
-    def transform_pixels_behavior_to_muscle(
-        self, behavior_pixels: np.ndarray, stage_pos: np.ndarray
+    def transform_image_behavior2muscle(
+        self,
+        stage_pos: np.ndarray,
+        behavior_image: np.ndarray,
+        output_dim: tuple[int, int],
+    ):
+        """
+        Warp a behavior image to align with the muscle camera frame at a
+        given stage position.
+
+        Args:
+            stage_pos: Stage position as a numpy array of shape (2,),
+                where the last dimension contains (x, y) coordinates.
+            behavior_image: Input behavior image as a numpy array.
+            output_dim: Tuple (height, width) specifying the dimensions
+                of the output muscle-aligned image.
+
+        Returns:
+            Warped muscle-aligned image as a numpy array.
+        """
+        affine_matrix = self.get_affine_matrix_behavior2muscle(stage_pos)
+        warped_image = cv2.warpAffine(
+            behavior_image,
+            affine_matrix,
+            output_dim[::-1],  # OpenCV uses (width, height) order
+            flags=cv2.INTER_NEAREST,
+        )
+        return warped_image
+
+    def transform_image_muscle2behavior(
+        self,
+        stage_pos: np.ndarray,
+        muscle_image: np.ndarray,
+        output_dim: tuple[int, int],
+    ):
+        """
+        Warp a muscle image to align with the behavior camera frame at a
+        given stage position.
+
+        Args:
+            stage_pos: Stage position as a numpy array of shape (2,),
+                where the last dimension contains (x, y) coordinates.
+            muscle_image: Input muscle image as a numpy array.
+            output_dim: Tuple (height, width) specifying the dimensions
+                of the output behavior-aligned image.
+
+        Returns:
+            Warped behavior-aligned image as a numpy array.
+        """
+        affine_matrix = self.get_affine_matrix_muscle2behavior(stage_pos)
+        warped_image = cv2.warpAffine(
+            muscle_image,
+            affine_matrix,
+            output_dim[::-1],  # OpenCV uses (width, height) order
+            flags=cv2.INTER_NEAREST,
+        )
+        return warped_image
+
+    def map_pixel_coords_behavior2muscle(
+        self, behavior_pixel_coords: np.ndarray, stage_pos: np.ndarray
     ):
         """
         Transform pixel coordinates from behavior camera to muscle camera
         using the computed affine transformation.
 
         Args:
-            behavior_pixels: Pixel coordinates in behavior camera as numpy
-                array of shape (*, 2), where the last dimension contains
-                (x, y) coordinates.
+            behavior_pixel_coords: Pixel coordinates in behavior camera as
+                numpy array of shape (*, 2), where the last dimension
+                contains (x, y) coordinates.
             stage_pos: Stage position as a numpy array of shape (2,),
                 where the last dimension contains (x, y) coordinates.
 
         Returns:
             Pixel coordinates in muscle camera coordinate system.
         """
-        if behavior_pixels.shape[-1] != 2:
+        if behavior_pixel_coords.shape[-1] != 2:
             raise ValueError("behavior_pixels must have the last dimension of size 2")
 
-        original_shape = behavior_pixels.shape
-        behavior_pixels_2d = behavior_pixels.reshape(-1, 2)
-        affine_matrix = self.get_affine_matrix_behavior_to_muscle(stage_pos)
+        original_shape = behavior_pixel_coords.shape
+        behavior_pixels_2d = behavior_pixel_coords.reshape(-1, 2)
+        affine_matrix = self.get_affine_matrix_behavior2muscle(stage_pos)
         muscle_pixels_2d = (
             affine_matrix[:, :2] @ behavior_pixels_2d.T
         ).T + affine_matrix[:, 2]
         return muscle_pixels_2d.reshape(original_shape)
 
-    def transform_pixels_muscle_to_behavior(
-        self, muscle_pixels: np.ndarray, stage_pos: np.ndarray
+    def map_pixel_coords_muscle2behavior(
+        self, muscle_pixel_coords: np.ndarray, stage_pos: np.ndarray
     ):
         """
         Transform pixel coordinates from muscle camera to behavior camera
         using the computed affine transformation.
 
         Args:
-            muscle_pixels: Pixel coordinates in muscle camera as numpy
-                array of shape (*, 2), where the last dimension contains
-                (x, y) coordinates.
+            muscle_pixel_coords: Pixel coordinates in muscle camera as
+                numpy array of shape (*, 2), where the last dimension
+                contains (x, y) coordinates.
             stage_pos: Stage position as a numpy array of shape (2,),
                 where the last dimension contains (x, y) coordinates.
 
         Returns:
             Pixel coordinates in behavior camera coordinate system.
         """
-        if muscle_pixels.shape[-1] != 2:
+        if muscle_pixel_coords.shape[-1] != 2:
             raise ValueError("muscle_pixels must have the last dimension of size 2")
 
-        original_shape = muscle_pixels.shape
-        muscle_pixels_2d = muscle_pixels.reshape(-1, 2)
-        affine_matrix = self.get_affine_matrix_muscle_to_behavior(stage_pos)
+        original_shape = muscle_pixel_coords.shape
+        muscle_pixels_2d = muscle_pixel_coords.reshape(-1, 2)
+        affine_matrix = self.get_affine_matrix_muscle2behavior(stage_pos)
         behavior_pixels_2d = (
             affine_matrix[:, :2] @ muscle_pixels_2d.T
         ).T + affine_matrix[:, 2]
         return behavior_pixels_2d.reshape(original_shape)
 
-    def validate_transformation_accuracy(
+    def _validate_transformation_accuracy(
         self, stage_pos: np.ndarray, test_pixels: np.ndarray = None
     ):
         """
+        FOR DEBUGGING ONLY.
         Validate the accuracy of the cross-mapping by comparing against
         direct transformation through physical coordinates.
 
@@ -445,7 +505,7 @@ class BehaviorMuscleCrossMapper:
         )
 
         # Cross-mapper path
-        muscle_cross = self.transform_pixels_behavior_to_muscle(test_pixels, stage_pos)
+        muscle_cross = self.map_pixel_coords_behavior2muscle(test_pixels, stage_pos)
         error_b2m = np.max(np.abs(muscle_direct - muscle_cross))
 
         # Test muscle-to-behavior transformation
@@ -458,9 +518,7 @@ class BehaviorMuscleCrossMapper:
         )
 
         # Cross-mapper path
-        behavior_cross = self.transform_pixels_muscle_to_behavior(
-            test_pixels, stage_pos
-        )
+        behavior_cross = self.map_pixel_coords_muscle2behavior(test_pixels, stage_pos)
         error_m2b = np.max(np.abs(behavior_direct - behavior_cross))
 
         # Test individual mapper consistency
