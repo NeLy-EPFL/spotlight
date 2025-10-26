@@ -64,7 +64,9 @@ def run_sleap(
     # Extract keypoint coordinates from SLEAP output
     num_frames = len(sleap_output)
     num_keypoints = config["pose2d"]["num_keypoints"]
-    node_names = list(config["pose2d"]["keypoint_names"].values())
+    node_code2name = config["pose2d"]["keypoint_names"]
+    node_names = list(node_code2name.values())
+    node_code2idx = {code: i for i, code in enumerate(node_code2name.keys())}
     nodes_xy = np.full((num_frames, num_keypoints, 2), np.nan, dtype=np.float32)
     for i, sleap_label in enumerate(sleap_output):
         num_flies_detected = len(sleap_label.predicted_instances)
@@ -74,7 +76,10 @@ def run_sleap(
             fly_instance = sleap_label.predicted_instances[0]
             for j in range(num_keypoints):
                 # .points[j] alone gives an np.void array. Last [0] needed to get values
-                nodes_xy[i, j, :] = fly_instance.points[j][0]
+                xy = fly_instance.points[j]["xy"]
+                name = fly_instance.points[j]["name"]
+                keypoint_idx = node_code2idx[name]
+                nodes_xy[i, keypoint_idx, :] = xy
         else:
             logging.error(
                 f"Multiple flies detected in frame {i}; this shouldn't happen."
