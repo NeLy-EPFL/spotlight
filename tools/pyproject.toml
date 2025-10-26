@@ -6,7 +6,7 @@ authors = [
     {name = "Sibo Wang-Chen", email = "sibo.wang@epfl.ch"}
 ]
 readme = "README.md"
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "opencv-python (>=4.11,<5.0)",
     "svgwrite (==1.4.3)",
@@ -26,8 +26,11 @@ dependencies = [
     "tyro (==0.9.17)",
     "vidgear (==0.3.3)",
     "setuptools (>=78,<79)",  # needed for vidgear
-    "numba (==0.61.2)",
     "cmasher (>=1.9,<2.0)",
+    "sleap (==1.5.*)",
+    "sleap-nn (==0.0.3)",
+    "torch (>=2.9.0,<3.0)",
+    "torchvision (==0.24.0)",
 ]
 
 [tool.poetry]

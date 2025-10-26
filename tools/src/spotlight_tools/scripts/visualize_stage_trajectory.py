@@ -2,7 +2,7 @@ import tyro
 import pandas as pd
 from pathlib import Path
 
-from spotlight_tools.postprocessing.visualization import visualize_stage_trajectory
+from spotlight_tools.postprocessing.visualize import visualize_stage_trajectory
 
 
 def generate_trajectory_plot(
