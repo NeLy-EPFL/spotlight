@@ -1,4 +1,7 @@
 pose2d:
-  sleap_centroid_model_dir: "~/Data/sleap/models/tl_bottom_cam_1024_250327_002024/250327_002024.centroid"
-  sleap_centered_instance_model_dir: "~/Data/sleap/models/tl_bottom_cam_1024_250327_002024/250327_002024.centered_instance"
-  sleap_conda_env_name: "sleap"
+  sleap_model_dir: "~/Data/sleap/models/spotlight_3pt_20251023/models/251024_023711.single_instance.n=900"
+  num_keypoints: 3
+  keypoint_names:
+    N: neck
+    Th: thorax
+    Ab: abdomen tip
