@@ -22,6 +22,20 @@ from spotlight_tools.common.dataloader import (
 def visualize_stage_trajectory(
     consolidated_metadata_df: pd.DataFrame,
 ) -> tuple[Figure, Axes]:
+    """Create a matplotlib figure showing the XY trajectory of the stage.
+
+    The trajectory is colored by time (seconds) starting at 0. The function
+    returns the created (fig, ax) so callers can further customize or save
+    the figure.
+
+    Args:
+        consolidated_metadata_df (pd.DataFrame): DataFrame containing at least
+            the columns `x_pos_mm_interp`, `y_pos_mm_interp` and
+            `received_time_us` used to plot the trajectory and color by time.
+
+    Returns:
+        tuple[Figure, Axes]: The matplotlib Figure and Axes containing the plot.
+    """
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.set_title("Stage position trajectory")
     ax.set_xlabel("X Position (mm)")
@@ -72,40 +86,48 @@ def generate_summary_video(
     num_frames: int | None = None,
     overwrite: bool = False,
 ) -> None:
-    """
-    Generates a summary video by combining behavior and muscle images from a recording.
+    """Generate a summary video that combines behavior frames, pose overlays and
+    muscle images for quick visual inspection.
+
+    The generated video is written to ``<recording_dir>/processed/summary_video.mp4``.
+    The output layout depends on ``draw_muscle``:
+      - If ``draw_muscle=True`` the final frame contains three panels: behavior
+        grayscale, behavior with pose overlay, and muscle image (mapped to the
+        green channel).
+      - If ``draw_muscle=False`` the final frame contains two panels: behavior
+        grayscale and behavior with pose overlay.
+
     Args:
-        recording_dir (Path): Path to the directory containing the recording data.
-        output_video_path (Path | None, optional): Path to save the generated summary
-            video. If None, the video will be saved as "summary_video.mp4" in the
-            "processed" subdirectory of `recording_dir`. Defaults to None.
-        muscle_vrange (tuple[int, int] | None, optional): Value range for normalizing
-            muscle images. If None, the range will be determined adaptively based on
-            quantiles. Defaults to None.
-        muscle_vrange_quantiles (tuple[float, float] | None, optional): Quantiles to use
-            for determining the adaptive value range of muscle images (if muscle_vrange
-            is not provided). Defaults to (97.0, 99.995).
-        muscle_vrange_quantiles_sample_rate (float, optional): Sampling rate for
-            determining the adaptive value range of muscle images. Only this portion of
-            all muscle images are scanned to adaptively determine the vrange. Defaults
-            to 0.05.
-        play_fps (int, optional): FPS for the output video. Defaults to 30.
-        num_frames (int | None, optional): Maximum number of frames to include in the
-            video. Can be useful for testing purposes. If set, the video will contain
-            only the first `num_frames` frames. If None, all frames will be processed.
-        overwrite (bool, optional): Whether to overwrite the output video if it already
-            exists. Defaults to False.
+        recording_dir (Path): Path to the recording directory (expects a
+            ``processed`` subdirectory with preprocessed data).
+        draw_pose (bool): If True, overlay 2D pose keypoints (loaded from
+            ``processed/pose_2d.npz``) onto the behavior frames.
+        draw_muscle (bool): If True, include muscle image panels in the output
+            video (loaded from ``processed/muscle_images``).
+        muscle_vrange (tuple[int, int] | None): Optional (vmin, vmax) used to
+            normalize muscle images for display. If None, an adaptive range is
+            computed from sampled images using ``muscle_vrange_quantiles``.
+        muscle_vrange_quantiles (tuple[float, float] | None): Percentiles used
+            to determine an adaptive muscle dynamic range when ``muscle_vrange``
+            is None. Expressed as percentages (e.g. ``(97.0, 99.995)``).
+        muscle_vrange_quantiles_sample_rate (float): Fraction of muscle images to
+            sample when computing the adaptive range (e.g. 0.05 samples 5% of
+            images).
+        play_fps (int): Frames-per-second for the output video.
+        num_frames (int | None): If set, limit processing to the first
+            ``num_frames`` behavior frames (useful for testing).
+        overwrite (bool): If False and the output file already exists the
+            function raises a RuntimeError; if True it will overwrite.
+
     Raises:
-        RuntimeError: If the behavior video cannot be opened.
-    Notes:
-        - The function assumes that the recording directory contains preprocessed data,
-          including a behavior video and muscle images.
-        - The behavior-to-muscle images are synchronized based on the
-          `muscle_sync_ratio` from the experiment metadata.
-        - The output video consists of concatenated behavior and muscle images, with the
-          behavior image in grayscale and the muscle image in green.
+        RuntimeError: If required preprocessed files are missing, the output file
+            already exists and ``overwrite=False``, or the behavior video cannot
+            be opened.
+
+    Returns:
+        None: The function writes the video file to disk and does not return
+        a value.
     """
-    _check_if_preprocessed(recording_dir)
     experiment_metadata, recorder_config = _load_metadata(recording_dir)
     processed_dir = recording_dir / "processed"
     behavior_video_path = processed_dir / "behavior_video.mkv"
@@ -292,6 +314,17 @@ def draw_fly_3keypoints(
 
 
 def _load_metadata(recording_dir: Path):
+    """Load experiment parameters and recorder configuration YAML files.
+
+    Args:
+        recording_dir (Path): Path to the recording directory containing a
+            `metadata` subdirectory with `experiment_parameters.yaml` and
+            `recorder_config.yaml` files.
+
+    Returns:
+        tuple: (experiment_metadata, recorder_config) where each element is the
+            parsed YAML content (typically a dict).
+    """
     experiment_parameters_path = recording_dir / "metadata/experiment_parameters.yaml"
     recorder_config_path = recording_dir / "metadata/recorder_config.yaml"
     with open(experiment_parameters_path, "r") as f:
@@ -301,18 +334,6 @@ def _load_metadata(recording_dir: Path):
     return experiment_metadata, recorder_config
 
 
-def _check_if_preprocessed(processed_dir: Path):
-    processed_dir = processed_dir / "processed"
-    muscle_images_dir = processed_dir / "muscle_images"
-    behavior_frame_metadata_path = processed_dir / "behavior_frames_metadata.csv"
-    if not muscle_images_dir.is_dir() or not behavior_frame_metadata_path.is_file():
-        logging.critical(
-            f"Data has not been preprocessed. Please run the preprocessing "
-            f"script before generating summary videos."
-        )
-        raise RuntimeError("Data has not been preprocessed.")
-
-
 def _determine_adaptive_muscle_vrange(
     muscle_vrange_quantiles,
     muscle_vrange_quantiles_sample_rate,
@@ -320,13 +341,42 @@ def _determine_adaptive_muscle_vrange(
     vmin_percentile_of_quantiles=50.0,
     vmax_percentile_of_quantiles=95.0,
 ):
+    """Determine an adaptive (vmin, vmax) for muscle image visualization.
+
+    The function samples a subset of the provided muscle images, computes the
+    requested quantiles for each sampled image, then computes robust percentiles
+    across those per-image quantiles to produce final vmin and vmax values.
+
+    Args:
+        muscle_vrange_quantiles (tuple[float, float]): Percentiles to compute on
+            each sampled image (e.g. (97.0, 99.995)). Must not be None.
+        muscle_vrange_quantiles_sample_rate (float): Fraction of images to
+            sample when determining the range (0 < sample_rate <= 1).
+        muscle_image_paths (Sequence[Path]): List of file paths to muscle images
+            (tif files) to sample from.
+        vmin_percentile_of_quantiles (float): Percentile to take across the
+            per-image lower-quantiles to produce the final vmin (default 50.0).
+        vmax_percentile_of_quantiles (float): Percentile to take across the
+            per-image upper-quantiles to produce the final vmax (default 95.0).
+
+    Returns:
+        tuple[int, int]: (vmin, vmax) integer values suitable for clipping and
+        mapping muscle images to display range.
+
+    Raises:
+        ValueError: If ``muscle_vrange_quantiles`` is None or if the sample rate
+            is invalid.
+    """
     if muscle_vrange_quantiles is None:
         logging.error(
             "User must specify either muscle_vrange or muscle_vrange_quantiles."
         )
         raise ValueError("Unspecified muscle_vrange or muscle_vrange_quantiles.")
 
-    sample_every_k = int(1 / muscle_vrange_quantiles_sample_rate)
+    if not (0 < muscle_vrange_quantiles_sample_rate <= 1.0):
+        raise ValueError("muscle_vrange_quantiles_sample_rate must be in (0, 1].")
+
+    sample_every_k = max(1, int(1 / muscle_vrange_quantiles_sample_rate))
     paths_to_check = muscle_image_paths[::sample_every_k]
 
     quantiles = np.zeros((len(paths_to_check), 2))
@@ -422,32 +472,35 @@ def generate_overlay_samples(
     panel_size: tuple[int, int] = (4, 5),  # width, height per matplotlib style
     overwrite: bool = False,
 ) -> None:
-    """Generate overlay samples from muscle and behavior images.
+    """Create a grid of overlay sample images combining behavior and muscle frames.
+
+    The resulting image is saved to ``<recording_dir>/processed/overlay_samples.jpg``.
+    Each cell shows the behavior (grayscale) on the red channel and the muscle
+    activity mapped to the green channel.
 
     Args:
-        recording_dir (Path): Path to the directory containing the recording data.
-        output_image_path (Path | None, optional): Path to save the generated overlay
-            samples image. If None, the image will be saved as "overlay_samples.png" in
-            the "processed" subdirectory of `recording_dir`. Defaults to None.
-        muscle_vrange (tuple[int, int] | None, optional): Value range for normalizing
-            muscle images. If None, the range will be determined adaptively based on
-            quantiles. Defaults to None.
-        muscle_vrange_quantiles (tuple[float, float] | None, optional): Quantiles to use
-            for determining the adaptive value range of muscle images (if muscle_vrange
-            is not provided). Defaults to (97.0, 99.995).
-        muscle_vrange_quantiles_sample_rate (float, optional): Sampling rate for
-            determining the adaptive value range of muscle images. Only this portion of
-            all muscle images are scanned to adaptively determine the vrange. Defaults
-            to 0.05.
-        num_samples (int, optional): Number of samples to generate. Defaults to 100.
-        num_samples_per_row (int, optional): Number of samples to display per row in
-            the output image. Defaults to 10.
-        panel_size (tuple[int, int], optional): Size of each panel in the output image
-            in matplotlib style (width, height). Defaults to (4, 5).
-        overwrite (bool, optional): Whether to overwrite the output image if it already
-            exists. Defaults to False.
+        recording_dir (Path): Path to the recording directory (expects a
+            ``processed`` subdirectory with `muscle_frames_metadata.csv` and
+            processed image files).
+        muscle_vrange (tuple[int, int] | None): Optional (vmin, vmax) used to
+            normalize muscle images for display. If None, an adaptive range is
+            computed using ``muscle_vrange_quantiles``.
+        muscle_vrange_quantiles (tuple[float, float] | None): Percentiles used
+            to determine the adaptive muscle dynamic range when ``muscle_vrange``
+            is None. Expressed as percentages (e.g. ``(97.0, 99.995)``).
+        muscle_vrange_quantiles_sample_rate (float): Fraction of muscle images to
+            sample when computing the adaptive range (e.g. 0.05 samples 5% of
+            images).
+        num_samples (int): Number of sample frames to include in the grid.
+        num_samples_per_row (int): Number of columns in the output grid.
+        panel_size (tuple[int, int]): Size (width, height) per sample panel in
+            inches (matplotlib style).
+        overwrite (bool): If False and the output image already exists the
+            function raises a RuntimeError; if True it will overwrite.
+
+    Returns:
+        None: The composed image is written to disk and nothing is returned.
     """
-    _check_if_preprocessed(recording_dir)
     processed_dir = recording_dir / "processed"
     muscle_metadata_path = processed_dir / "muscle_frames_metadata.csv"
 

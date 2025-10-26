@@ -37,67 +37,57 @@ def postprocess_recording_data(
     muscle_vrange: tuple[int, int] | None = None,
     num_frames: int | None = None,
 ) -> None:
-    """Postprocess data recorded by the Spotlight setup.
+    """High-level post-processing pipeline for a single Spotlight recording.
 
-    First, this function consolidate metadata for each behavior frame,
-    generating a single CSV file containing the acquisition time (from
-    camera's internal clock), image-received time (in UNIX epoch time), and
-    the estimated positions of the motion stages (their positions are
-    logged at a frequency typically lower than the behavior recording
-    frequency, so some interpolation is needed.
-
-    Second, this function merges the behavior camera frames into a single
-    video containing monochrome frames using the H.264 codec. Note: during
-    recording, the behavior frames are originally saved in 'pseudo-BGR'
-    files. Namely, each file actually contains three consecutive frames in
-    the three channels. The output of this function no longer employs this
-    trick - each frame is just an actual monochrame frame.
-
-    For more information on the video compression parameters, see
-    https://trac.ffmpeg.org/wiki/Encode/H.264
+    This function runs (a subset of) a sequence of post-processing steps.
+    Use the ``interpolate_stage_position``, ``merge_behavior_video``,
+    ``estimate_2dpose``, ``warp_muscle_images``, and ``make_visualizations``
+    flags to control which steps are executed. The steps are executed in
+    the order listed below, and dependencies between steps are handled
+    automatically.
+      1. Interpolate stage positions per behavior frame and save
+         ``processed/behavior_frames_metadata.csv``.
+      2. Merge behavior frame JPEGs into a single MKV video
+         (``processed/behavior_video.mkv``) using the configured encoding
+         parameters.
+      3. Run 2D pose estimation (SLEAP) on the behavior video and save
+         results to ``processed/pose_2d.npz``.
+      4. Warp muscle images so they align with behavior frames and produce
+         processed muscle images.
+      5. Create visualizations: a summary video and overlay
+         sample grid combining behavior and muscle images.
 
     Args:
-        recording_dir (Path or str):
-            Root directory of the recording. This is the path that you set
-            in the Spotlight recording GUI.
-        overwrite (bool):
-            If True, this function will overwrite existing files.
-            Otherwise, an exception is raised if the output file(s) already
-            exists. Default is False.
-        play_fps (int):
-            Frames per second for the output video. Note that this value is
-            only used for *displaying* the data. The real FPS is set when
-            the data is collected. For example, if data is collected at 300
-            FPS, and `play_fps` here is set to 30, then the video will be
-            played at 0.1x speed when opened by a video player (even if the
-            video player thinks it's playing at 1x speed). This can be
-            handy sometimes. Default is 30.
-        behavior_video_crf (int):
-            Constant Rate Factor (CRF) to be used for video compression.
-            CRF is a quality-based encoding method that lets users target a
-            specific quality level rather than bitrate. CRF values range
-            from 0 to 51. Lower values = higher quality and larger files,
-            vice versa. Generally, 0 is mathematically lossless; 1-5 are
-            visually lossless; 15-18 are very high quality. Default is 5.
-        behavior_video_preset (str):
-            A preset is a collection of options that will provide a certain
-            encoding speed to compression ratio. A slower preset will
-            provide better compression (compression is quality per
-            filesize). Choose from: "veryslow", "slower", "slow", "medium",
-            "fast", "faster", "veryfast", "superfast", "ultrafast". Default
-            is "slow".
-        num_frames (int, optional):
-            If set, the video will contain only the first `num_frames`
-            frames. This is useful if you want to generate a very short
-            video just to make sure that the data pipeline is working.
-            Default is None.
-        muscle_camera (bool):
-            If True, muscle images are warped to be consistent with
-            behavior images. Furthermore, a video of the behavior-muscle
-            overlay will be generated.
-        sleap_batch_size (int):
-            Batch size for SLEAP pose estimation. This is the number of
-            frames to process in a single `sleap-track` run. Default is 128.
+        recording_dir (Path | str): Path to the recording directory (the
+            directory created by the Spotlight acquisition software).
+        overwrite (bool): If True existing output files may be overwritten.
+            Otherwise the function will raise if outputs already exist.
+        interpolate_stage_position (bool): Whether to interpolate stage
+            positions for each behavior frame.
+        merge_behavior_video (bool): Whether to merge behavior frame JPEGs
+            into a single video.
+        estimate_2dpose (bool): Whether to run SLEAP to estimate 2D keypoints
+            keypoints for each frame.
+        warp_muscle_images (bool): Whether to run muscle image warping so
+            muscle frames align with behavior frames.
+        make_visualizations (bool): Whether to generate a summary video and
+            overlay samples after processing is complete.
+        play_fps (int): FPS used for the generated summary/preview videos
+            (for display purposes only).
+        behavior_video_crf (int): Encoder CRF value used when creating the
+            merged behavior video (lower = higher quality).
+        behavior_video_preset (str): ffmpeg libx264 preset controlling
+            encode speed vs. compression.
+        sleap_batch_size (int): Batch size passed to the SLEAP runner.
+        muscle_vrange (tuple[int,int] | None): Optional (vmin, vmax) to use
+            when visualizing muscle images. If None an adaptive range is
+            computed when needed.
+        num_frames (int | None): If set, limit processing to the first
+            ``num_frames`` behavior frames (useful for quick tests).
+
+    Returns:
+        None: The function writes processed outputs into
+        ``<recording_dir>/processed`` and does not return a value.
     """
     # Handle dependencies of processing stages
     if warp_muscle_images:
@@ -182,14 +172,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-    postprocess_recording_data(
-        recording_dir="/home/sibwang/Data/spotlight/20250613-fly1b-002/",
-        overwrite=True,
-        interpolate_stage_position=True,
-        merge_behavior_video=True,
-        estimate_2dpose=True,
-        warp_muscle_images=True,
-        make_visualizations=True,
-        num_frames=300,
-    )
+    main()
