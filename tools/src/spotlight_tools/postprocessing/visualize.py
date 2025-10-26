@@ -250,15 +250,27 @@ def generate_summary_video(
                 ).astype(np.uint8)
 
         # Make final frame (by concatenating behavior and muscle) and write to video
+        num_panels = 1
+        if draw_pose:
+            num_panels += 1
         if draw_muscle:
-            final_frame = np.zeros((height, width * 3, 3), dtype=np.uint8)
-            final_frame[:, :width, :] = behavior_image_original[:, :, None]
-            final_frame[:, width : 2 * width, :] = behavior_image_with_pose[:, :]
-            final_frame[:, 2 * width : 3 * width, 1] = muscle_image  # green channel
-        else:
-            final_frame = np.zeros((height, width * 2, 3), dtype=np.uint8)
-            final_frame[:, :width, :] = behavior_image_original[:, :, None]
-            final_frame[:, width : 2 * width, :] = behavior_image_with_pose[:, :, None]
+            num_panels += 1
+        final_frame = np.zeros((height, width * num_panels, 3), dtype=np.uint8)
+        curr_col_start = 0
+        # Plot behavior original
+        columns = slice(curr_col_start, curr_col_start + width)
+        final_frame[:, columns, :] = behavior_image_original[:, :, None]
+        curr_col_start += width
+        # Plot behavior with pose (if requested)
+        if draw_pose:
+            columns = slice(curr_col_start, curr_col_start + width)
+            final_frame[:, columns, :] = behavior_image_with_pose[:, :]
+            curr_col_start += width
+        # Plot muscle image (if requested)
+        if draw_muscle:
+            columns = slice(curr_col_start, curr_col_start + width)
+            final_frame[:, columns, 1] = muscle_image  # green channel
+            curr_col_start += width
         writer.write(final_frame)
 
     writer.release()
@@ -287,7 +299,6 @@ def draw_fly_3keypoints(
     Returns:
         None: The function modifies the input image in place.
     """
-    line_width = line_width
     for j in range(1, nodes_xy.shape[0]):
         prev_pt_xy = nodes_xy[j - 1, :]
         curr_pt_xy = nodes_xy[j, :]
