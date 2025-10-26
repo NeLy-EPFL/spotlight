@@ -4,164 +4,96 @@ import yaml
 from pathlib import Path
 from subprocess import run
 from tqdm import tqdm
+from sleap_nn.predict import run_inference
 
 import spotlight_tools
-from sleap_utils.fly37 import preprocess_fly37, node_names
 from spotlight_tools.common.video import get_video_info
 
 
-# Load config
-spotlight_package_dir = Path(spotlight_tools.__path__[0]).expanduser()
-config_path = spotlight_package_dir.parent.parent / "config/config.yaml"
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
-sleap_centroid_model_dir = Path(
-    config["pose2d"]["sleap_centroid_model_dir"]
-).expanduser()
-sleap_centered_instance_model_dir = Path(
-    config["pose2d"]["sleap_centered_instance_model_dir"]
-).expanduser()
-sleap_conda_env_name = config["pose2d"]["sleap_conda_env_name"]
+def _load_config() -> dict:
+    spotlight_package_dir = Path(spotlight_tools.__path__[0]).expanduser()
+    config_path = spotlight_package_dir.parent.parent / "config/config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Configuration file {config_path} does not exist. Make sure the "
+            "spotlight-tools package is installed correctly."
+        )
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+    return config
 
 
 def run_sleap(
     behavior_video_path: Path,
-    output_dir: Path,
-    sleap_centroid_model_dir: Path = sleap_centroid_model_dir,
-    sleap_centered_instance_model_dir: Path = sleap_centered_instance_model_dir,
-    sleap_conda_env_name: str = sleap_conda_env_name,
-    batch_size: int = 4096,
+    output_path: Path | None = None,
+    sleap_model_dir: Path | None = None,
+    batch_size: int = 128,
     num_frames: int | None = None,
     overwrite: bool = False,
 ) -> tuple[np.ndarray, list[str]]:
-    """Run SLEAP on the behavior video.
+    config = _load_config()
 
-    Args:
-        behavior_video_path (Path):
-            Path to the behavior video.
-        output_dir (Path):
-            Path to save the output files.
-        sleap_centroid_model_dir (Path):
-            Path to the SLEAP centroid model directory.
-        sleap_centered_instance_model_dir (Path):
-            Path to the SLEAP centered instance model directory.
-        sleap_conda_env_name (str):
-            Name of the conda environment to run SLEAP in.
-        batch_size (int):
-            Number of frames to process in a single `sleap-track` run.
-        num_frames (int | None):
-            If set, the video will contain only the first `num_frames`. Useful for
-            testing. Default is None.
-        overwrite (bool):
-            If True, overwrite existing files. Default is False.
-
-    Returns:
-        np.ndarray:
-            2D pose data in the format (num_frames, num_keypoints, 2). The last
-            dimension is the x and y coordinates.
-        list[str]:
-            List of node names (keypoints) used in the pose estimation.
-            The names include:
-            - Leg keypoints: "{leg}_{keypoint}" where `leg` is from
-              {"LF", "LM", "LH", "RF", "RM", "RH"} (L/F for left and right, F/M/H for
-              front/middle/hind legs) and `keypoint` is from
-              {"ThC", "CTr", "FTi", "TiTa", "Cl"} for thorax-coxa, coxa-trochanter,
-              femur-tibia, tibia-tarsus, and claw respectively.
-            - Special keypoints: "Th" (thorax), "N" (neck), "A" (abdomen), "LA"/"RA"
-              (left/right antenna), "LW"/"RW" (left/right wing).
-    """
-    if output_dir.exists() and not overwrite:
-        logging.error(
-            f"Output directory {output_dir} already exists. Use another directory "
-            "or set `overwrite=True`."
+    # Validate SLEAP model directory
+    if sleap_model_dir is None:
+        sleap_model_dir = Path(config["pose2d"]["sleap_model_dir"]).expanduser()
+        logging.info(f"Using default SLEAP model from config: {sleap_model_dir}")
+    if not sleap_model_dir.exists():
+        raise FileNotFoundError(
+            f"SLEAP model directory {sleap_model_dir} does not exist. Please "
+            "provide a valid SLEAP model directory."
         )
+
+    # Validate output path
+    if output_path is None:
+        output_path = behavior_video_path.parent / "pose_2d.npz"
+    if output_path.exists() and not overwrite:
         raise FileExistsError(
-            f"Output directory {output_dir} already exists. Use another directory "
-            "or set `overwrite=True`."
+            f"Output file {output_path} already exists. To overwrite, set "
+            "overwrite=True."
         )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path_2dpose = output_dir / "pose_2d.npz"
-
-    width, height, num_frames_total = get_video_info(behavior_video_path)
-    if num_frames is not None:
-        num_frames_total = num_frames
-
-    batch_schedule = []
-    for start in range(0, num_frames_total, batch_size):
-        end = min(start + batch_size, num_frames_total)
-        batch_schedule.append((start, end))
-    logging.info(
-        f"Splitting {num_frames_total} frames into {len(batch_schedule)} batches."
+    # Run SLEAP inference
+    sleap_output = run_inference(
+        data_path=str(behavior_video_path),
+        model_paths=[str(sleap_model_dir)],
+        batch_size=batch_size,
+        queue_maxsize=batch_size * 2,
+        frames=None if num_frames is None else list(range(num_frames)),
     )
 
-    # Run sleap-track
-    all_slp_output_paths = [
-        output_dir / f"sleap_output_part{i:03d}.slp"
-        for i, _ in enumerate(batch_schedule)
-    ]
-    print(f"Running SLEAP on {behavior_video_path} in {len(batch_schedule)} batches...")
-    for i, (start, end) in tqdm(
-        enumerate(batch_schedule),
-        desc="Running SLEAP by batch",
-        total=len(batch_schedule),
-        disable=None,
-    ):
-        slp_output_path = all_slp_output_paths[i]
-        args = [
-            "conda",
-            "run",
-            "-n",
-            sleap_conda_env_name,
-            "sleap-track",
-            str(behavior_video_path),
-            "--output",
-            str(slp_output_path),
-            "--model",
-            str(sleap_centroid_model_dir),
-            "--model",
-            str(sleap_centered_instance_model_dir),
-            "--max_instances",
-            "1",
-            "--tracking.target_instance_count",
-            "1",
-            "--tracking.max_tracks",
-            "1",
-            "--gpu",
-            "auto",
-            "--frames",
-            f"{start}-{end - 1}",
-            "--verbosity",
-            "none",
-        ]
-        logging.info(f"Calling `{' '.join(args)}`")
-        with open(output_dir / f"sleap_track_part{i:03d}.log", "w") as log_file:
-            run(args, check=True, stdout=log_file, stderr=log_file)
-
-    # Extract 2D pose data from SLEAP output files
-    nodes_xy_all_list = []
-    for i, (start, end) in enumerate(batch_schedule):
-        slp_output_path = all_slp_output_paths[i]
-        nodes_xy = preprocess_fly37(
-            slp_path=slp_output_path,
-            n_target_tracks=1,
-            interpolation_limit=35,
-            expected_n_frames=end - start,
-        )
-        if nodes_xy.shape[1] != 1:
-            raise ValueError(
-                f"Expected 1 target track (i.e. 1 fly), but got {nodes_xy.shape[1]} tracks."
+    # Extract keypoint coordinates from SLEAP output
+    num_frames = len(sleap_output)
+    num_keypoints = config["pose2d"]["num_keypoints"]
+    node_code2name = config["pose2d"]["keypoint_names"]
+    node_names = list(node_code2name.values())
+    node_code2idx = {code: i for i, code in enumerate(node_code2name.keys())}
+    nodes_xy = np.full((num_frames, num_keypoints, 2), np.nan, dtype=np.float32)
+    for i, sleap_label in enumerate(sleap_output):
+        num_flies_detected = len(sleap_label.predicted_instances)
+        if num_flies_detected == 0:
+            continue  # leave as NaN
+        elif num_flies_detected == 1:
+            fly_instance = sleap_label.predicted_instances[0]
+            for j in range(num_keypoints):
+                # .points[j] alone gives an np.void array. Last [0] needed to get values
+                xy = fly_instance.points[j]["xy"]
+                name = fly_instance.points[j]["name"]
+                keypoint_idx = node_code2idx[name]
+                nodes_xy[i, keypoint_idx, :] = xy
+        else:
+            logging.error(
+                f"Multiple flies detected in frame {i}; this shouldn't happen."
             )
-        nodes_xy = nodes_xy.squeeze(axis=1)  # Remove the track dimension
-        nodes_xy_all_list.append(nodes_xy)
-    nodes_xy_all = np.concatenate(nodes_xy_all_list, axis=0)
 
+    # Save output to NPZ file
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    width, height, num_frames_total = get_video_info(behavior_video_path)
     np.savez(
-        output_path_2dpose,
-        nodes_xy=nodes_xy_all,
+        output_path,
+        nodes_xy=nodes_xy,
         node_names=node_names,
         width=width,
         height=height,
     )
 
-    return nodes_xy_all, node_names
+    return nodes_xy, node_names

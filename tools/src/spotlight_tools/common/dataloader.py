@@ -3,7 +3,9 @@ import cv2
 from pathlib import Path
 
 
-def load_muscle_image(recording_dir: Path, muscle_frame_id: int) -> np.ndarray:
+def load_processed_muscle_image(
+    recording_dir: Path, muscle_frame_id: int
+) -> np.ndarray:
     muscle_image_path = (
         recording_dir
         / "processed/muscle_images"
@@ -12,7 +14,7 @@ def load_muscle_image(recording_dir: Path, muscle_frame_id: int) -> np.ndarray:
     return cv2.imread(str(muscle_image_path), cv2.IMREAD_UNCHANGED)
 
 
-def load_behavior_frame(
+def load_processed_behavior_frame(
     recording_dir: Path,
     behavior_frame_id: int,
     behavior_video_capture: cv2.VideoCapture | None = None,
