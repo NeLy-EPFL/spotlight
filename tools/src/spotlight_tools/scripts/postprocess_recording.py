@@ -25,12 +25,17 @@ sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 def postprocess_recording_data(
     recording_dir: Path | str,
     overwrite: bool = False,
+    interpolate_stage_position: bool = True,
+    merge_behavior_video: bool = True,
+    estimate_2dpose: bool = True,
+    warp_muscle_images: bool = True,
+    make_visualizations: bool = True,
     play_fps: int = 30,
     behavior_video_crf: int = 5,
     behavior_video_preset: str = "slow",
-    num_frames: int | None = None,
-    muscle_camera: bool = False,
     sleap_batch_size: int = 128,
+    muscle_vrange: tuple[int, int] | None = None,
+    num_frames: int | None = None,
 ) -> None:
     """Postprocess data recorded by the Spotlight setup.
 
@@ -94,66 +99,82 @@ def postprocess_recording_data(
             Batch size for SLEAP pose estimation. This is the number of
             frames to process in a single `sleap-track` run. Default is 128.
     """
+    # Handle dependencies of processing stages
+    if warp_muscle_images:
+        interpolate_stage_position = True
+    if estimate_2dpose:
+        merge_behavior_video = True
+
+    # IO setup
     recording_dir = Path(recording_dir).expanduser()
     check_is_directory_valid(recording_dir)
     processed_dir = recording_dir / "processed"
     processed_dir.mkdir(exist_ok=True)
 
     # Interpolate stage position for each behavior frame
-    print("Interpolating stage positions for behavior frames")
-    behavior_frames_dir = recording_dir / "behavior_images"
-    stage_positions_path = recording_dir / "stage_position/stage_position.csv"
-    behavior_timestamps_output_path = processed_dir / "behavior_frames_metadata.csv"
-    stage_positions_at_behavior_frames = interpolate_stage_position_for_behavior_images(
-        behavior_frames_dir,
-        stage_positions_path,
-        behavior_timestamps_output_path,
-        overwrite,
-    )
+    if interpolate_stage_position:
+        print("Interpolating stage positions for behavior frames")
+        behavior_frames_dir = recording_dir / "behavior_images"
+        stage_positions_path = recording_dir / "stage_position/stage_position.csv"
+        behavior_timestamps_output_path = processed_dir / "behavior_frames_metadata.csv"
+        interpolate_stage_position_for_behavior_images(
+            behavior_frames_dir,
+            stage_positions_path,
+            behavior_timestamps_output_path,
+            overwrite,
+        )
 
     # Merge behavior video
-    print("Merging behavior frames into a single video")
-    behavior_video_path = processed_dir / "behavior_video.mkv"
-    jpeg_to_mkv(
-        behavior_frames_dir,
-        behavior_video_path,
-        overwrite,
-        play_fps,
-        behavior_video_crf,
-        behavior_video_preset,
-        num_frames=num_frames,
-    )
-
-    # Run 2D pose estimation
-    print("Running SLEAP for 2D pose estimation")
-    pose_2d_dir = processed_dir / "pose_2d"
-    run_sleap(
-        behavior_video_path,
-        pose_2d_dir,
-        overwrite=overwrite,
-        num_frames=num_frames,
-        batch_size=sleap_batch_size,
-    )
-
-    if muscle_camera:
-        # Warp muscle images
-        print("Warping muscle images to match behavior images")
-        process_muscle_data(
-            recording_dir,
-            stage_positions_at_behavior_frames,
-            overwrite=overwrite,
+    if merge_behavior_video:
+        print("Merging behavior frames into a single video")
+        behavior_video_path = processed_dir / "behavior_video.mkv"
+        jpeg_to_mkv(
+            behavior_frames_dir,
+            behavior_video_path,
+            overwrite,
+            play_fps,
+            behavior_video_crf,
+            behavior_video_preset,
             num_frames=num_frames,
         )
 
+    # Run 2D pose estimation
+    if estimate_2dpose:
+        print("Detecting fly skeleton (neck-thorax-abdomen) using SLEAP")
+        pose_output_path = processed_dir / "pose_2d.npz"
+        run_sleap(
+            behavior_video_path,
+            pose_output_path,
+            overwrite=overwrite,
+            num_frames=num_frames,
+            batch_size=sleap_batch_size,
+        )
+
+    # Warp muscle images to match behavior images
+    if warp_muscle_images:
+        print("Warping muscle images to match behavior images")
+        process_muscle_data(recording_dir, overwrite=overwrite, num_frames=num_frames)
+
+    # Generate visualizations
+    if make_visualizations:
         # Make summary video
         print("Generating summary video with behavior, pose, and muscle data...")
         generate_summary_video(
-            recording_dir, num_frames=num_frames, overwrite=overwrite
+            recording_dir,
+            draw_pose=estimate_2dpose,
+            draw_muscle=warp_muscle_images,
+            num_frames=num_frames,
+            overwrite=overwrite,
         )
 
-        # Generate overlay samples
-        print("Generating overlay samples of behavior and muscle data...")
-        generate_overlay_samples(recording_dir, overwrite=overwrite)
+        # Overlay muscle on top of behavior image for randomly selected samples
+        if warp_muscle_images:
+            print("Generating overlay samples of behavior and muscle data...")
+            generate_overlay_samples(
+                recording_dir,
+                muscle_vrange=muscle_vrange,
+                overwrite=overwrite,
+            )
 
 
 def main():
@@ -161,4 +182,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    postprocess_recording_data(
+        recording_dir="/home/sibwang/Data/spotlight/20250613-fly1b-002/",
+        overwrite=True,
+        interpolate_stage_position=True,
+        merge_behavior_video=True,
+        estimate_2dpose=True,
+        warp_muscle_images=True,
+        make_visualizations=True,
+        num_frames=300,
+    )

@@ -161,7 +161,6 @@ def map_muscle_to_behavior_jit(
 
 def process_muscle_data(
     recording_dir: Path,
-    stage_pos_df_at_behavior_frames: pd.DataFrame,
     num_frames: int | None = None,
     overwrite: bool = False,
     missing_muscle_frames_tolerance: int = 3,
@@ -170,6 +169,7 @@ def process_muscle_data(
     raw_muscle_images_dir = recording_dir / "muscle_images"
     processed_dir = recording_dir / "processed"
     processed_muscle_images_dir = processed_dir / "muscle_images"
+    interpolated_stage_pos_path = processed_dir / "behavior_frames_metadata.csv"
     if processed_muscle_images_dir.is_dir() and not overwrite:
         logging.error(
             f"Output directory (processed muscle images) directory "
@@ -184,6 +184,7 @@ def process_muscle_data(
     with open(timing_metadata_path, "r") as f:
         timing_metadata = yaml.safe_load(f)
     muscle_behavior_sync_ratio = timing_metadata["sync_ratio"]
+    stage_pos_df_at_behavior_frames = pd.read_csv(interpolated_stage_pos_path)
     stage_pos_df_at_muscle_frames = stage_pos_df_at_behavior_frames[
         muscle_behavior_sync_ratio::muscle_behavior_sync_ratio
     ]

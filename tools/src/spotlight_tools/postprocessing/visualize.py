@@ -13,8 +13,10 @@ from pathlib import Path
 from tqdm import tqdm, trange
 
 from spotlight_tools.common.video import get_video_info
-from spotlight_tools.common.dataloader import load_muscle_image, load_behavior_frame
-from sleap_utils.plotting.skeleton import plot_fly37_with_opencv
+from spotlight_tools.common.dataloader import (
+    load_processed_muscle_image,
+    load_processed_behavior_frame,
+)
 
 
 def visualize_stage_trajectory(
@@ -61,7 +63,8 @@ def visualize_stage_trajectory(
 
 def generate_summary_video(
     recording_dir: Path,
-    output_video_path: Path | None = None,
+    draw_pose: bool,
+    draw_muscle: bool,
     muscle_vrange: tuple[int, int] | None = None,
     muscle_vrange_quantiles: tuple[float, float] | None = (97.0, 99.995),
     muscle_vrange_quantiles_sample_rate: float = 0.05,
@@ -109,45 +112,54 @@ def generate_summary_video(
     muscle_images_dir = processed_dir / "muscle_images"
     sync_ratio = experiment_metadata["muscle_sync_ratio"]
 
-    if output_video_path is None:
-        output_video_path = processed_dir / "summary_video.mp4"
-    if output_video_path.is_file() and not overwrite:
+    output_path = processed_dir / "summary_video.mp4"
+    if output_path.is_file() and not overwrite:
         logging.error(
-            f"Output video {output_video_path} already exists. Change the output path "
+            f"Output video {output_path} already exists. Change the output path "
             f"or use `overwrite=True`."
         )
         raise RuntimeError("Output video already exists.")
 
     # Index files to be used
     width, height, num_behavior_images = get_video_info(behavior_video_path)
-    muscle_images_paths = sorted(list(muscle_images_dir.glob("*.tif")))
-    num_behavior_images_usable, num_muscle_images_usable = _calculate_num_usable_images(
-        num_behavior_images, len(muscle_images_paths), sync_ratio
-    )
-    if num_frames is not None:
-        num_behavior_images_usable = min(num_behavior_images_usable, num_frames)
-        num_muscle_images_usable = num_behavior_images_usable // sync_ratio
-    muscle_images_paths = muscle_images_paths[:num_muscle_images_usable]
+    if draw_muscle:
+        muscle_images_paths = sorted(list(muscle_images_dir.glob("*.tif")))
+        num_behavior_images_usable, num_muscle_images_usable = (
+            _calculate_num_usable_images(
+                num_behavior_images, len(muscle_images_paths), sync_ratio
+            )
+        )
+        if num_frames is not None:
+            num_behavior_images_usable = min(num_behavior_images_usable, num_frames)
+            num_muscle_images_usable = num_behavior_images_usable // sync_ratio
+        muscle_images_paths = muscle_images_paths[:num_muscle_images_usable]
+    else:
+        num_behavior_images_usable = num_behavior_images
+        if num_frames is not None:
+            num_behavior_images_usable = min(num_behavior_images_usable, num_frames)
 
     # Check if nominal width of image is incorrect
-    _muscle_image_sample = cv2.imread(str(muscle_images_paths[0]), cv2.IMREAD_UNCHANGED)
-    assert len(_muscle_image_sample.shape) == 2, "Muscle image is not single channel"
-    muscle_width = _muscle_image_sample.shape[1]
-    if muscle_width != width:
-        _behavior_image_width = width
-        width = min(width, muscle_width)
-        logging.warning(
-            f"Behavior images have a width of {_behavior_image_width} pixels, but "
-            f"muscle images have a width of {muscle_width} pixels. This is likely "
-            f"because the user set the desired ROI height is not allowed  by the "
-            f"camera, so the camera rounded it to the nearest allowed value. (Note: "
-            f"the canonically oriented behavior images is 90-degree rotated and "
-            f"flipped compared to how the camera sensor acquires them; hence it's "
-            f"the ROI height parameter that matters. Taking the lower of the widths."
+    if draw_muscle:
+        _muscle_img_sample = cv2.imread(
+            str(muscle_images_paths[0]), cv2.IMREAD_UNCHANGED
         )
+        assert len(_muscle_img_sample.shape) == 2, "Muscle image is not single channel"
+        muscle_width = _muscle_img_sample.shape[1]
+        if muscle_width != width:
+            _behavior_image_width = width
+            width = min(width, muscle_width)
+            logging.warning(
+                f"Behavior images have a width of {_behavior_image_width} pixels, but "
+                f"muscle images have a width of {muscle_width} pixels. This is likely "
+                f"because the user set the desired ROI height is not allowed by the "
+                f"camera, so the camera rounded it to the nearest allowed value. (Note: "
+                f"the canonically oriented behavior images is 90-degree rotated and "
+                f"flipped compared to how the camera sensor acquires them; hence it's "
+                f"the ROI height parameter that matters. Taking the lower of the widths."
+            )
 
     # If necessary, determine vmin and vmax of muscle images for visualization
-    if muscle_vrange is None:
+    if draw_muscle and muscle_vrange is None:
         unwarped_muscle_images_paths = sorted(
             list(recording_dir.glob("muscle_images/*.tif"))
         )
@@ -159,12 +171,13 @@ def generate_summary_video(
         print(f"Determined adaptive muscle value range: {muscle_vrange}.")
 
     # Load 2D pose estimation data
-    pose_2d_path = processed_dir / "pose_2d/pose_2d.npz"
-    pose_2d_data = np.load(pose_2d_path)["nodes_xy"]
+    if draw_pose:
+        pose_2d_path = processed_dir / "pose_2d.npz"
+        pose_2d_data = np.load(pose_2d_path)["nodes_xy"]
 
     # Initialize video writer
     writer = cv2.VideoWriter(
-        str(output_video_path),
+        str(output_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
         play_fps,
         (width * 3, height),
@@ -193,33 +206,89 @@ def generate_summary_video(
         behavior_image_original = behavior_image[:, :width, 0]
 
         # Overlay 2D pose estimation
-        pose_image = behavior_image[:, :width, :].copy()
-        pose_image = plot_fly37_with_opencv(pose_image, pose_2d_data[i])
+        if draw_pose:
+            behavior_image_with_pose = behavior_image[:, :width, :].copy()
+            nodes_xy = pose_2d_data[i, :, :]
+            draw_fly_3keypoints(behavior_image_with_pose, nodes_xy)
 
         # Muscle image
-        muscle_frame_id = i // sync_ratio
-        if muscle_frame_id != curr_muscle_frame_id:
-            muscle_image_path = muscle_images_paths[muscle_frame_id]
-            muscle_image = cv2.imread(str(muscle_image_path), cv2.IMREAD_UNCHANGED)
-            muscle_image = muscle_image[:, :width]
-            curr_muscle_frame_id = muscle_frame_id
+        if draw_muscle:
+            muscle_frame_id = i // sync_ratio
+            if muscle_frame_id != curr_muscle_frame_id:
+                muscle_image_path = muscle_images_paths[muscle_frame_id]
+                muscle_image = cv2.imread(str(muscle_image_path), cv2.IMREAD_UNCHANGED)
+                muscle_image = muscle_image[:, :width]
+                curr_muscle_frame_id = muscle_frame_id
 
-            muscle_image = muscle_image.astype(np.float32).clip(*muscle_vrange)
-            muscle_image = (
-                255
-                * (muscle_image - muscle_vrange[0])
-                / (muscle_vrange[1] - muscle_vrange[0])
-            ).astype(np.uint8)
+                muscle_image = muscle_image.astype(np.float32).clip(*muscle_vrange)
+                muscle_image = (
+                    255
+                    * (muscle_image - muscle_vrange[0])
+                    / (muscle_vrange[1] - muscle_vrange[0])
+                ).astype(np.uint8)
 
-        # Concatenate images
-        concatenated = np.zeros((height, width * 3, 3), dtype=np.uint8)
-        concatenated[:, :width, :] = behavior_image_original[:, :, np.newaxis]
-        concatenated[:, width : 2 * width, :] = pose_image
-        concatenated[:, 2 * width : 3 * width, 1] = muscle_image  # green channel
-
-        writer.write(concatenated)
+        # Make final frame (by concatenating behavior and muscle) and write to video
+        if draw_muscle:
+            final_frame = np.zeros((height, width * 3, 3), dtype=np.uint8)
+            final_frame[:, :width, :] = behavior_image_original[:, :, None]
+            final_frame[:, width : 2 * width, :] = behavior_image_with_pose[:, :]
+            final_frame[:, 2 * width : 3 * width, 1] = muscle_image  # green channel
+        else:
+            final_frame = np.zeros((height, width * 2, 3), dtype=np.uint8)
+            final_frame[:, :width, :] = behavior_image_original[:, :, None]
+            final_frame[:, width : 2 * width, :] = behavior_image_with_pose[:, :, None]
+        writer.write(final_frame)
 
     writer.release()
+
+
+def draw_fly_3keypoints(
+    image,
+    nodes_xy,
+    keypoint_colors=[(31, 119, 180), (255, 127, 14), (44, 160, 44)],
+    keypoint_radius=10,
+    line_color=(128, 128, 128),
+    line_width=4,
+):
+    """
+    Draws a fly skeleton with 3 keypoints (neck, thorax, abdomen) on the given image.
+
+    Args:
+        image (np.ndarray): The image on which to draw the skeleton.
+        nodes_xy (np.ndarray): An array of shape (3, 2) containing the (x, y)
+            coordinates of the 3 keypoints.
+        keypoint_colors (list of tuple, optional): List of RGB colors for each keypoint.
+        keypoint_radius (int, optional): Radius of the circles representing keypoints.
+        line_color (tuple, optional): RGB color for the lines connecting keypoints.
+        line_width (int, optional): Width of the lines connecting keypoints.
+
+    Returns:
+        None: The function modifies the input image in place.
+    """
+    line_width = line_width
+    for j in range(1, nodes_xy.shape[0]):
+        prev_pt_xy = nodes_xy[j - 1, :]
+        curr_pt_xy = nodes_xy[j, :]
+        if np.any(np.isnan(prev_pt_xy)) or np.any(np.isnan(curr_pt_xy)):
+            continue  # Skip if any coordinate is NaN
+        cv2.line(
+            image,
+            (int(round(prev_pt_xy[0])), int(round(prev_pt_xy[1]))),
+            (int(round(curr_pt_xy[0])), int(round(curr_pt_xy[1]))),
+            line_color[::-1],  # Convert RGB to BGR
+            line_width,
+        )
+    for j in range(nodes_xy.shape[0]):
+        curr_pt_xy = nodes_xy[j, :]
+        if np.any(np.isnan(curr_pt_xy)):
+            continue  # Skip if any coordinate is NaN
+        cv2.circle(
+            image,
+            (int(round(curr_pt_xy[0])), int(round(curr_pt_xy[1]))),
+            keypoint_radius,
+            keypoint_colors[j][::-1],  # Convert RGB to BGR
+            -1,
+        )
 
 
 def _load_metadata(recording_dir: Path):
@@ -345,7 +414,6 @@ def _calculate_num_usable_images(
 
 def generate_overlay_samples(
     recording_dir: Path,
-    output_image_path: Path | None = None,
     muscle_vrange: tuple[int, int] | None = None,
     muscle_vrange_quantiles: tuple[float, float] | None = (97.0, 99.995),
     muscle_vrange_quantiles_sample_rate: float = 0.05,
@@ -384,8 +452,7 @@ def generate_overlay_samples(
     muscle_metadata_path = processed_dir / "muscle_frames_metadata.csv"
 
     # Check output
-    if output_image_path is None:
-        output_image_path = processed_dir / "overlay_samples.jpg"
+    output_image_path = processed_dir / "overlay_samples.jpg"
     if output_image_path.is_file() and not overwrite:
         logging.error(
             f"Output image {output_image_path} already exists. Change the output path "
@@ -433,8 +500,8 @@ def generate_overlay_samples(
         metadata_entry = muscle_metadata_df.iloc[muscle_frame_id]
         assert metadata_entry["muscle_frame_id"] == muscle_frame_id
         behavior_frame_id = metadata_entry["corresponding_behavior_frame_id"]
-        muscle_image = load_muscle_image(recording_dir, muscle_frame_id)
-        behavior_image = load_behavior_frame(recording_dir, behavior_frame_id)
+        muscle_image = load_processed_muscle_image(recording_dir, muscle_frame_id)
+        behavior_image = load_processed_behavior_frame(recording_dir, behavior_frame_id)
         if behavior_image is None:  # behavior id must be out of bounds
             i -= 1
             break
