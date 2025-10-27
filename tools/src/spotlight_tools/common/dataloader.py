@@ -22,7 +22,7 @@ def load_processed_behavior_frame(
     cache_behavior_video_capture = behavior_video_capture is not None
     if not cache_behavior_video_capture:
         behavior_video_path = recording_dir / "processed/behavior_video.mkv"
-        behavior_video_capture = get_behavior_video_capture(behavior_video_path)
+        behavior_video_capture = _get_behavior_video_capture(behavior_video_path)
     num_frames = int(behavior_video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
     if behavior_frame_id >= num_frames:
         return None  # Return None if the frame ID is out of bounds
@@ -35,7 +35,7 @@ def load_processed_behavior_frame(
     return frame[:, :, 0]
 
 
-def get_behavior_video_capture(behavior_video_path: Path) -> cv2.VideoCapture:
+def _get_behavior_video_capture(behavior_video_path: Path) -> cv2.VideoCapture:
     behavior_video_capture = cv2.VideoCapture(str(behavior_video_path))
     if not behavior_video_capture.isOpened():
         raise RuntimeError(f"Error: Could not open video {behavior_video_path}.")

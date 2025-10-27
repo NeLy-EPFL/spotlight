@@ -19,7 +19,13 @@ def get_video_info(video_path: Path):
 
 
 def write_video(
-    output_path: Path, frames: list[np.ndarray], fps: int, crf: int, preset: str
+    output_path: Path,
+    frames: list[np.ndarray],
+    fps: int,
+    crf: int,
+    preset: str,
+    logging: bool = False,
+    **kwargs,
 ):
     codec = "libx264"
     output_params = {
@@ -29,9 +35,10 @@ def write_video(
         "-preset": preset,
         "-tune": "film",  # Optimize for high-quality video content
         "-pix_fmt": "yuv420p",
+        **kwargs,
     }
     video_writer = WriteGear(
-        output=output_path, compression_mode=True, logging=False, **output_params
+        output=output_path, compression_mode=True, logging=logging, **output_params
     )
     for frame in frames:
         video_writer.write(frame)
