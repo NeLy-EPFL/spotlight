@@ -9,14 +9,15 @@ from sleap_io import Video
 from sleap_nn.predict import run_inference
 from joblib import Parallel, delayed
 
-import spotlight_tools
 from spotlight_tools.common.video import write_video
 
 
 def decode_and_transform_behavior_frames(
-    pseudo3ch_frame_paths: list[Path],
+    *,
+    raw_behavior_frame_paths: list[Path],
     sleap_model_dir: Path,
-    output_path_stem: Path,
+    output_video_path: Path,
+    output_metadata_path: Path,
     keypoints_code2name: dict[str, str],
     use_shm: bool = False,
     sleap_batch_size: int = 128,
@@ -31,7 +32,7 @@ def decode_and_transform_behavior_frames(
 
     with TemporaryDirectory(dir="/dev/shm" if use_shm else None) as tmpdir:
         logger.info(
-            f"Processing {len(pseudo3ch_frame_paths)} pseudo-BGR frames under "
+            f"Processing {len(raw_behavior_frame_paths)} pseudo-BGR frames under "
             f"temporary directory {tmpdir}"
         )
 
@@ -40,7 +41,7 @@ def decode_and_transform_behavior_frames(
         expanded_frames_dir = Path(tmpdir) / "single_channel_frames"
         expanded_frames_dir.mkdir(parents=True, exist_ok=True)
         single_channel_frame_paths = _expand_all_pseudo_bgr_images(
-            pseudo3ch_frame_paths, expanded_frames_dir, num_workers=num_workers
+            raw_behavior_frame_paths, expanded_frames_dir, num_workers=num_workers
         )
 
         # Expand pseudo 3-channel frames into separate 1-channel frames
@@ -66,9 +67,10 @@ def decode_and_transform_behavior_frames(
         )
 
         # Save transformed frames as video and transformation metadata
-        output_path_stem.parent.mkdir(parents=True, exist_ok=True)
-        video_output_path = output_path_stem.with_suffix(".mkv")
-        metadata_output_path = output_path_stem.with_suffix(".h5")
+        output_video_path.parent.mkdir(parents=True, exist_ok=True)
+        output_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        video_output_path = output_video_path.with_suffix(".mkv")
+        metadata_output_path = output_metadata_path.with_suffix(".h5")
         logger.info(f"Saving aligned behavior video to {video_output_path}")
         write_video(
             output_path=video_output_path,
@@ -85,6 +87,7 @@ def decode_and_transform_behavior_frames(
             transformed_keypoints=transformed_keypoints,
             transform_matrices=transform_matrices,
             keypoints_code2name=keypoints_code2name,
+            output_dim=(crop_dim, crop_dim),
         )
 
 
@@ -314,6 +317,7 @@ def _save_transformation_metadata(
     transformed_keypoints: np.ndarray,
     transform_matrices: np.ndarray,
     keypoints_code2name: dict[str, str],
+    output_dim: tuple[int, int],
 ):
     logger = logging.getLogger(__name__)
 
@@ -332,44 +336,33 @@ def _save_transformation_metadata(
             compression="gzip",
         )
         ds.attrs["keypoint_names"] = list(keypoints_code2name.values())
-        hf.create_dataset(
+        ds = hf.create_dataset(
             "transform_matrices", data=transform_matrices, compression="gzip"
         )
+        ds.attrs["output_dim"] = list(output_dim)
     logger.info("Finished saving transformation metadata")
 
 
-def _load_config() -> dict:
-    spotlight_package_dir = Path(spotlight_tools.__path__[0]).expanduser()
-    config_path = spotlight_package_dir.parent.parent / "config/config.yaml"
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"Configuration file {config_path} does not exist. Make sure the "
-            "spotlight-tools package is installed correctly."
-        )
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-    return config
+# if __name__ == "__main__":
+#     from spotlight_tools.common import load_spotlight_tools_config
 
+#     logging.basicConfig(
+#         level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+#     )
 
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-    raw_beh_dir = Path(
-        "/home/sibwang/Data/spotlight/20250613-fly1b-002/behavior_images/"
-    )
-    sleap_model_dir = Path(
-        "/home/sibwang/Data/sleap/models/spotlight_3pt_20251023/models/251024_023711.single_instance.n=900/"
-    )
-    pseudo3ch_frame_paths = sorted(raw_beh_dir.glob("behavior_frame_*.jpg"))[:90]
-    config = _load_config()
-    decode_and_transform_behavior_frames(
-        pseudo3ch_frame_paths,
-        sleap_model_dir,
-        output_path_stem=Path("test"),
-        use_shm=False,
-        keypoints_code2name=config["pose2d"]["keypoint_names"],
-        crop_dim=900,
-        play_fps=30,
-    )
+#     # fmt: off
+#     recording_dir = Path("/home/sibwang/Data/spotlight/20250613-fly1b-002/")
+#     sleap_model_dir = Path("/home/sibwang/Data/sleap/models/spotlight_3pt_20251023/models/251024_023711.single_instance.n=900/")
+#     pseudo3ch_frame_paths = sorted(recording_dir.glob("behavior_images/behavior_frame_*.jpg"))
+#     config = load_spotlight_tools_config()
+#     decode_and_transform_behavior_frames(
+#         pseudo3ch_frame_paths,
+#         sleap_model_dir,
+#         output_video_path=recording_dir / "processed/aligned_behavior_video.mkv",
+#         output_metadata_path=recording_dir / "processed/behavior_alignment_transforms.h5",
+#         use_shm=False,
+#         keypoints_code2name=config["pose2d"]["keypoint_names"],
+#         crop_dim=900,
+#         play_fps=30,
+#     )
+#     # fmt: on
