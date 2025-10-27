@@ -4,7 +4,6 @@ import numpy as np
 import logging
 import yaml
 from pathlib import Path
-from tqdm import tqdm
 from tempfile import TemporaryDirectory
 from sleap_io import Video
 from sleap_nn.predict import run_inference
@@ -13,121 +12,162 @@ from joblib import Parallel, delayed
 import spotlight_tools
 from spotlight_tools.common.video import write_video
 
-logging.basicConfig(level=logging.INFO)
 
-
-def expand_and_align_frames_single_batch(
+def decode_and_transform_behavior_frames(
     pseudo3ch_frame_paths: list[Path],
     sleap_model_dir: Path,
     output_path_stem: Path,
-    use_shm: bool,
     keypoints_code2name: dict[str, str],
+    use_shm: bool = False,
+    sleap_batch_size: int = 128,
     crop_dim: int = 900,
     play_fps: int = 30,
     behavior_video_crf: int = 5,
     behavior_video_preset: str = "slow",
-):
-    # with TemporaryDirectory(dir="/dev/shm" if use_shm else None) as tmpdir:
-    if True:
-        tmpdir = "/dev/shm/sleap_temp"
-        logging.info(
-            f"Processing {len(pseudo3ch_frame_paths)} pseudo-RGB frames under "
+    num_workers: int = -1,
+) -> None:
+    # Set logging verbosity
+    logger = logging.getLogger(__name__)
+
+    with TemporaryDirectory(dir="/dev/shm" if use_shm else None) as tmpdir:
+        logger.info(
+            f"Processing {len(pseudo3ch_frame_paths)} pseudo-BGR frames under "
             f"temporary directory {tmpdir}"
         )
 
         # Convert pseudo 3-channel images to sequences of 3 monochrome images
+        logger.info("Expanding pseudo-BGR images to single-channel frames")
         expanded_frames_dir = Path(tmpdir) / "single_channel_frames"
         expanded_frames_dir.mkdir(parents=True, exist_ok=True)
-        expanded_frame_paths, real1ch_frames = _expand_pseudo3ch(
-            expanded_frames_dir, return_frames=True
+        single_channel_frame_paths = _expand_all_pseudo_bgr_images(
+            pseudo3ch_frame_paths, expanded_frames_dir, num_workers=num_workers
         )
 
         # Expand pseudo 3-channel frames into separate 1-channel frames
-        keypoints_xy_pre_align = _estimate_2dpose(
-            expanded_frame_paths,
+        logger.info("Running SLEAP 2D pose estimation on expanded frames")
+        keypoints_xy_pre_alignment = estimate_2dpose(
+            single_channel_frame_paths,
             sleap_model_dir,
             keypoints_code2name,
             output_path=Path(tmpdir) / "sleap_predictions.slp",  # will be deleted
+            batch_size=sleap_batch_size,
         )
 
         # Transform frame by frame based on keypoints
+        logger.info("Transforming behavior frames to align the fly")
         transformed_frames, transformed_keypoints, transform_matrices = (
-            _transform_all_behavior_frames(
-                keypoints_xy_pre_align,
-                expanded_frame_paths,
-                real1ch_frames,
+            _transform_all_frames_to_align(
+                keypoints_xy_pre_alignment,
+                single_channel_frame_paths,
                 keypoints_code2name,
                 crop_dim,
+                num_workers=num_workers,
             )
         )
 
         # Save transformed frames as video and transformation metadata
         output_path_stem.parent.mkdir(parents=True, exist_ok=True)
+        video_output_path = output_path_stem.with_suffix(".mkv")
+        metadata_output_path = output_path_stem.with_suffix(".h5")
+        logger.info(f"Saving aligned behavior video to {video_output_path}")
         write_video(
-            output_path=output_path_stem.with_suffix(".mkv"),
+            output_path=video_output_path,
             frames=transformed_frames,
             fps=play_fps,
             crf=behavior_video_crf,
             preset=behavior_video_preset,
+            logging=logger.level <= logging.INFO,
         )
+        logger.info(f"Saving transformation metadata to {metadata_output_path}")
         _save_transformation_metadata(
-            output_path=output_path_stem.with_suffix(".h5"),
-            keypoints_xy_pre_align=keypoints_xy_pre_align,
+            output_path=metadata_output_path,
+            keypoints_xy_pre_alignment=keypoints_xy_pre_alignment,
             transformed_keypoints=transformed_keypoints,
             transform_matrices=transform_matrices,
             keypoints_code2name=keypoints_code2name,
         )
 
 
-def _expand_pseudo3ch(
-    real1ch_frames_dir, return_frames: bool
-) -> list[Path] | tuple[list[Path], list[np.ndarray]]:
-    """Spotlight saves 3 adjacent behavior images as a single pseudo-RGB
+def _expand_all_pseudo_bgr_images(
+    pseudo3ch_frame_paths: list[Path],
+    single_channel_frames_dir: Path,
+    num_workers: int = -1,
+) -> list[Path]:
+    logger = logging.getLogger(__name__)
+    verbosity = 1 if logger.level <= logging.INFO else 0
+
+    single_channel_frames_dir.mkdir(parents=True, exist_ok=True)
+    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky", verbose=verbosity)
+    logger.info(
+        f"Expanding pseudo-BGR images using {num_workers} "
+        f"(effectively {parallel_mapper._effective_n_jobs}) workers"
+    )
+    single_channel_frame_paths_grouped = parallel_mapper(
+        delayed(expand_pseudo_bgr_image)(
+            input_path, single_channel_frames_dir / f"frame_{i:06d}"
+        )
+        for i, input_path in enumerate(pseudo3ch_frame_paths)
+    )
+    logger.info("Finished expanding pseudo-BGR images")
+    single_channel_frame_paths = []
+    for group in single_channel_frame_paths_grouped:
+        single_channel_frame_paths.extend(group)
+    return single_channel_frame_paths
+
+
+def expand_pseudo_bgr_image(
+    pseudo3ch_frame_path: Path, output_path_stem: Path
+) -> list[Path]:
+    """Spotlight saves 3 adjacent behavior images as a single pseudo-BGR
     JPEG image (an IO optimization trick). This function expands it into
     separate monochrome images.
 
+    Args:
+        pseudo3ch_frame_path: Path to the input pseudo-BGR image.
+        output_path_stem: Path stem for the output single-channel images.
+            The function will append suffixes "_ch0.jpg", "_ch1.jpg", "_ch2.jpg"
+            for the three channels.
+
     Returns:
-        list[Path]: List of paths to the expanded single-channel images.
-        (Only if return_frames is True) list[np.ndarray]: List of the
-            expanded single-channel images.
+        list of Paths to the three output single-channel images.
     """
-    real1ch_frame_paths = []
-    real1ch_frames = []
-    for i, pseudo3ch_frame_path in enumerate(pseudo3ch_frame_paths):
-        pseudo3ch_image = cv2.imread(str(pseudo3ch_frame_path))
-        blue, green, red = cv2.split(pseudo3ch_image)
-        for j, channel in enumerate([blue, green, red]):
-            frame_id = i * 3 + j
-            real1ch_frame_path = real1ch_frames_dir / f"frame_{frame_id:06d}.jpg"
-            cv2.imwrite(str(real1ch_frame_path), channel)
-            real1ch_frame_paths.append(real1ch_frame_path)
-            if return_frames:
-                real1ch_frames.append(channel)
-    if return_frames:
-        return real1ch_frame_paths, real1ch_frames
-    else:
-        return real1ch_frame_paths
+    pseudo3ch_image = cv2.imread(str(pseudo3ch_frame_path))
+    blue, green, red = cv2.split(pseudo3ch_image)
+    output_paths = []
+    for j, channel in enumerate([blue, green, red]):
+        single_channel_frame_path = output_path_stem.with_suffix(f".ch{j}.jpg")
+        cv2.imwrite(str(single_channel_frame_path), channel)
+        output_paths.append(single_channel_frame_path)
+    return output_paths
 
 
-def _estimate_2dpose(
-    real1ch_frame_paths: list[Path],
+def estimate_2dpose(
+    single_channel_frame_paths: list[Path],
     sleap_model_dir: Path,
     keypoints_code2name: dict[str, str],
     output_path: Path,
+    batch_size: int = 128,
 ) -> np.ndarray:
     """Run SLEAP 2D pose estimation on single-channel images."""
+    logger = logging.getLogger(__name__)
+
     # Run SLEAP inference
-    video = Video.from_filename([str(path) for path in real1ch_frame_paths])
+    logger.info("Running SLEAP 2D pose estimation")
+    video = Video.from_filename([str(path) for path in single_channel_frame_paths])
     predicted_labels = run_inference(
-        input_video=video, model_paths=[sleap_model_dir], output_path=output_path
+        input_video=video,
+        model_paths=[sleap_model_dir],
+        batch_size=batch_size,
+        output_path=output_path,
     )
+    logger.info("Finished SLEAP 2D pose estimation")
 
     # Format results
     keypoints_code2idx = {
         code: idx for idx, code in enumerate(keypoints_code2name.keys())
     }
     keypoints_xy = np.full(
-        (len(real1ch_frame_paths), len(keypoints_code2name), 2), np.nan
+        (len(single_channel_frame_paths), len(keypoints_code2name), 2), np.nan
     )
     for i, frame_labels in enumerate(predicted_labels):
         n_instances = len(frame_labels.instances)
@@ -146,12 +186,14 @@ def _estimate_2dpose(
     return keypoints_xy  # (num_frames, num_keypoints, 2)
 
 
-def _fill_keypoints_gaps(
+def fill_keypoints_gaps(
     keypoints_xy: np.ndarray,
 ) -> np.ndarray:
     """If any keypoint in a frame is NaN, fill it with the last valid
     keypoints. If the 0th frame is NaN, fill it with the first valid keypoints.
     """
+    logger = logging.getLogger(__name__)
+
     num_frames, _, _ = keypoints_xy.shape
     keypoints_xy_filled = keypoints_xy.copy()
 
@@ -163,7 +205,7 @@ def _fill_keypoints_gaps(
             break
 
     if first_valid_frame is None:
-        logging.error("All frames have NaN keypoints. Cannot fill gaps.")
+        logger.error("All frames have NaN keypoints. Cannot fill gaps.")
         return keypoints_xy_filled
 
     # Fill leading NaNs with the first valid frame
@@ -178,7 +220,7 @@ def _fill_keypoints_gaps(
     return keypoints_xy_filled
 
 
-def _transform_single_frame(
+def transform_frame_to_align(
     input_frame: np.ndarray,
     keypoints: np.ndarray,
     crop_dim: int,
@@ -227,30 +269,37 @@ def _transform_single_frame(
     return output_frame, transformed_keypoints, transform_matrix
 
 
-def _transform_all_behavior_frames(
-    keypoints_xy_pre_align: np.ndarray,
+def _transform_all_frames_to_align(
+    keypoints_xy_pre_alignment: np.ndarray,
     expanded_frame_paths: list[Path],
-    real1ch_frames: list[np.ndarray],
     keypoints_code2name: dict[str, str],
     crop_dim: int,
+    num_workers: int = -1,
 ) -> tuple[list[np.ndarray], np.ndarray, np.ndarray]:
     """Transform all behavior frames based on keypoints."""
-    keypoints_xy_pre_align_filled = _fill_keypoints_gaps(keypoints_xy_pre_align)
+    logger = logging.getLogger(__name__)
+    verbosity = 1 if logger.level <= logging.INFO else 0
+
+    keypoints_xy_pre_alignment_filled = fill_keypoints_gaps(keypoints_xy_pre_alignment)
     num_frames = len(expanded_frame_paths)
     thorax_idx = list(keypoints_code2name.values()).index("thorax")
     neck_idx = list(keypoints_code2name.values()).index("neck")
     abdomen_idx = list(keypoints_code2name.values()).index("abdomen tip")
 
     def _process_frame(i):
-        input_frame = real1ch_frames[i]
-        keypoints = keypoints_xy_pre_align_filled[i, :, :]
-        return _transform_single_frame(
+        input_frame = cv2.imread(str(expanded_frame_paths[i]), cv2.IMREAD_UNCHANGED)
+        keypoints = keypoints_xy_pre_alignment_filled[i, :, :]
+        return transform_frame_to_align(
             input_frame, keypoints, crop_dim, thorax_idx, neck_idx, abdomen_idx
         )
 
-    results = Parallel(n_jobs=-1, backend="loky")(
-        delayed(_process_frame)(i) for i in range(num_frames)
+    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky", verbose=verbosity)
+    logger.info(
+        f"Transforming behavior images to align the fly using {num_workers} "
+        f"(effectively {parallel_mapper._effective_n_jobs}) workers"
     )
+    results = parallel_mapper(delayed(_process_frame)(i) for i in range(num_frames))
+    logger.info("Finished transforming behavior images")
     transformed_frames, transformed_keypoints, transform_matrices = zip(*results)
     transformed_frames = list(transformed_frames)
     transformed_keypoints = np.array(transformed_keypoints)
@@ -261,21 +310,24 @@ def _transform_all_behavior_frames(
 
 def _save_transformation_metadata(
     output_path: Path,
-    keypoints_xy_pre_align: np.ndarray,
+    keypoints_xy_pre_alignment: np.ndarray,
     transformed_keypoints: np.ndarray,
     transform_matrices: np.ndarray,
     keypoints_code2name: dict[str, str],
 ):
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"Saving transformation metadata to {output_path}")
     with h5py.File(output_path, "w") as hf:
         ds = hf.create_dataset(
-            "keypoints_xy_before_alignment",
-            data=keypoints_xy_pre_align,
+            "keypoints_xy_pre_alignment",
+            data=keypoints_xy_pre_alignment,
             compression="gzip",
             dtype="float32",
         )
         ds.attrs["keypoint_names"] = list(keypoints_code2name.values())
         ds = hf.create_dataset(
-            "keypoints_xy_after_alignment",
+            "keypoints_xy_post_alignment",
             data=transformed_keypoints,
             compression="gzip",
         )
@@ -283,6 +335,7 @@ def _save_transformation_metadata(
         hf.create_dataset(
             "transform_matrices", data=transform_matrices, compression="gzip"
         )
+    logger.info("Finished saving transformation metadata")
 
 
 def _load_config() -> dict:
@@ -299,6 +352,10 @@ def _load_config() -> dict:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
     raw_beh_dir = Path(
         "/home/sibwang/Data/spotlight/20250613-fly1b-002/behavior_images/"
     )
@@ -307,11 +364,11 @@ if __name__ == "__main__":
     )
     pseudo3ch_frame_paths = sorted(raw_beh_dir.glob("behavior_frame_*.jpg"))[:90]
     config = _load_config()
-    expand_and_align_frames_single_batch(
+    decode_and_transform_behavior_frames(
         pseudo3ch_frame_paths,
         sleap_model_dir,
         output_path_stem=Path("test"),
-        use_shm=True,
+        use_shm=False,
         keypoints_code2name=config["pose2d"]["keypoint_names"],
         crop_dim=900,
         play_fps=30,
