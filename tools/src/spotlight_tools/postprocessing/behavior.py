@@ -187,16 +187,20 @@ def _transform_single_frame(
     abdomen_idx: int,
 ) -> np.ndarray:
     """Transform a single frame based on keypoints."""
+    # rotation_pivot and heading are both in (x, y), i.e. (col, row)
     rotation_pivot = keypoints[thorax_idx, :]
     heading = keypoints[neck_idx, :] - keypoints[abdomen_idx, :]
-    current_angle = np.degrees(np.arctan2(heading[1], heading[0]))
-    target_angle = -90  # -90 == np.degrees(np.arctan2(-1, 0)), facing up
-    rotation_angle = target_angle - current_angle  # in clockwise degrees
-    # print(f"curr_ang={current_angle:.2f}, rot_ang={rotation_angle:.2f}, heading={heading}")
+    # arctan2 expects inputs in (y, x) order and returns angle from +x in
+    # radians (positive = counter-clockwise)
+    current_angle = np.rad2deg(np.arctan2(heading[1], heading[0]))  # arctan2(y, x)
+    target_angle = -90  # == arctan2(-1, 0) in deg, i.e. facing up (y inverted OpenCV)
+    rotation_angle = target_angle - current_angle  # counter-clockwise positive
 
     # Define affine transformation matrix
     # Step 1: Rotate around thorax so the fly faces up
-    # Note: getRotationMatrix2D expects counter-clockwise angles, hence the minus sign
+    # Note: getRotationMatrix2D expects counter-clockwise angles to be positive
+    # However, the y axis is inverted in image coordinates, so the "counter-clockwise"
+    # angle calculated above needs to be inverted
     transform_matrix = cv2.getRotationMatrix2D(
         rotation_pivot, -rotation_angle, scale=1.0
     )
@@ -244,7 +248,7 @@ def _transform_all_behavior_frames(
             input_frame, keypoints, crop_dim, thorax_idx, neck_idx, abdomen_idx
         )
 
-    results = Parallel(n_jobs=-1, prefer="threads")(
+    results = Parallel(n_jobs=-1, backend="loky")(
         delayed(_process_frame)(i) for i in range(num_frames)
     )
     transformed_frames, transformed_keypoints, transform_matrices = zip(*results)
