@@ -1,6 +1,7 @@
 import cv2
-import logging
+import numpy as np
 from pathlib import Path
+from vidgear.gears import WriteGear
 
 
 def get_video_info(video_path: Path):
@@ -15,3 +16,23 @@ def get_video_info(video_path: Path):
     video.release()
 
     return width, height, frame_count
+
+
+def write_video(
+    output_path: Path, frames: list[np.ndarray], fps: int, crf: int, preset: str
+):
+    codec = "libx264"
+    output_params = {
+        "-input_framerate": fps,
+        "-c:v": codec,
+        "-crf": crf,
+        "-preset": preset,
+        "-tune": "film",  # Optimize for high-quality video content
+        "-pix_fmt": "yuv420p",
+    }
+    video_writer = WriteGear(
+        output=output_path, compression_mode=True, logging=False, **output_params
+    )
+    for frame in frames:
+        video_writer.write(frame)
+    video_writer.close()
