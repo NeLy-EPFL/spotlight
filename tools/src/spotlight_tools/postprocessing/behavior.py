@@ -23,7 +23,7 @@ def decode_and_transform_behavior_frames(
     sleap_batch_size: int = 128,
     crop_dim: int = 900,
     play_fps: int = 30,
-    behavior_video_crf: int = 5,
+    behavior_video_crf: int = 12,
     behavior_video_preset: str = "slow",
     num_workers: int = -1,
 ) -> None:
@@ -103,7 +103,7 @@ def _expand_all_pseudo_bgr_images(
     parallel_mapper = Parallel(n_jobs=num_workers, backend="loky", verbose=verbosity)
     logger.info(
         f"Expanding pseudo-BGR images using {num_workers} "
-        f"(effectively {parallel_mapper._effective_n_jobs}) workers"
+        f"(effectively {parallel_mapper._effective_n_jobs()}) workers"
     )
     single_channel_frame_paths_grouped = parallel_mapper(
         delayed(expand_pseudo_bgr_image)(
@@ -299,7 +299,7 @@ def _transform_all_frames_to_align(
     parallel_mapper = Parallel(n_jobs=num_workers, backend="loky", verbose=verbosity)
     logger.info(
         f"Transforming behavior images to align the fly using {num_workers} "
-        f"(effectively {parallel_mapper._effective_n_jobs}) workers"
+        f"(effectively {parallel_mapper._effective_n_jobs()}) workers"
     )
     results = parallel_mapper(delayed(_process_frame)(i) for i in range(num_frames))
     logger.info("Finished transforming behavior images")

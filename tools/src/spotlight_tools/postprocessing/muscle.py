@@ -39,7 +39,7 @@ def map_muscle_frames_to_behavior(
     logger = logging.getLogger(__name__)
 
     # Get behavior-muscle sync ratio
-    behavior_muscle_sync_ratio = _get_behavior_muscle_sync_ratio(
+    behavior_muscle_sync_ratio = get_behavior_muscle_sync_ratio(
         dual_recording_timing_path
     )
 
@@ -94,7 +94,7 @@ def map_muscle_frames_to_behavior(
     parallel_runner = Parallel(n_jobs=num_workers, backend="loky")
     logger.info(
         f"Warping {len(input_kwargs)} muscle images using {num_workers} workers"
-        f" (effectively {parallel_runner._effective_n_jobs} workers)"
+        f" (effectively {parallel_runner._effective_n_jobs()} workers)"
     )
     parallel_runner(
         delayed(apply_affine_transform_to_muscle_image)(**kwargs)
@@ -114,7 +114,7 @@ def map_muscle_frames_to_behavior(
     logger.info(f"Muscle frame metadata saved to {muscle_metadata_output_path}")
 
 
-def _get_behavior_muscle_sync_ratio(dual_recording_timing_path: Path) -> int:
+def get_behavior_muscle_sync_ratio(dual_recording_timing_path: Path) -> int:
     with open(dual_recording_timing_path, "r") as f:
         timing_metadata = yaml.safe_load(f)
     return timing_metadata["sync_ratio"]

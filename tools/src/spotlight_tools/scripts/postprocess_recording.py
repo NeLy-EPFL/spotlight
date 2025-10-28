@@ -4,10 +4,14 @@ import tyro
 import logging
 from pathlib import Path
 
+from spotlight_tools.common import load_spotlight_tools_config
 from spotlight_tools.postprocessing.stage import interp_stage_pos_at_behavior_frames
 from spotlight_tools.postprocessing.behavior import decode_and_transform_behavior_frames
 from spotlight_tools.postprocessing.muscle import map_muscle_frames_to_behavior
-from spotlight_tools.common import load_spotlight_tools_config
+from spotlight_tools.postprocessing.visualize import (
+    generate_summary_video,
+    generate_overlay_samples,
+)
 
 
 # Reopen STDOUT in unbuffered mode to ensure that print statements print immediately
@@ -23,10 +27,13 @@ def postprocess_recording_data(
     with_muscle: bool = False,
     make_visualizations: bool = True,
     play_fps: int = 30,
-    behavior_video_crf: int = 5,
+    behavior_video_crf: int = 12,
     behavior_video_preset: str = "slow",
+    visualization_crf: int = 20,
+    visualization_preset: str = "slow",
     sleap_batch_size: int = 128,
     muscle_vrange: tuple[int, int] | None = None,
+    num_muscle_samples: int | None = 100,
     use_shm: bool = False,
     missing_muscle_frames_tolerance: int = 3,
     num_workers: int = -1,
@@ -99,12 +106,11 @@ def postprocess_recording_data(
     processed_dir.mkdir(exist_ok=True, parents=True)
 
     # Interpolate stage positions for behavior frames
-    interpolated_behavior_metadata_path = processed_dir / "behavior_frames_metadata.csv"
     logger.info("Interpolating stage positions for behavior frames...")
     interp_stage_pos_at_behavior_frames(
         frames_dir=recording_dir / "behavior_images",
         stage_positions_path=recording_dir / "stage_position/stage_position.csv",
-        output_path=interpolated_behavior_metadata_path,
+        output_path=processed_dir / "behavior_frames_metadata.csv",
     )
 
     # Process behavior frames:
@@ -141,7 +147,7 @@ def postprocess_recording_data(
             muscle_calib_path=recording_dir / "metadata/calibration_parameters_muscle.yaml",
             behavior_calib_path=recording_dir / "metadata/calibration_parameters_behavior.yaml",
             dual_recording_timing_path=recording_dir / "metadata/dual_recording_timing.yaml",
-            processed_behavior_frame_metadata_path=interpolated_behavior_metadata_path,
+            processed_behavior_frame_metadata_path=processed_dir / "behavior_frames_metadata.csv",
             behavior_alignment_metadata_path=processed_dir / "behavior_alignment_transforms.h5",
             raw_muscle_images_dir=recording_dir / "muscle_images",
             transformed_muscle_images_output_dir=processed_dir / "aligned_muscle_images/",
@@ -151,26 +157,33 @@ def postprocess_recording_data(
         )
         # fmt: on
 
-    # # Generate visualizations
-    # if make_visualizations:
-    #     # Make summary video
-    #     print("Generating summary video with behavior, pose, and muscle data...")
-    #     generate_summary_video(
-    #         recording_dir,
-    #         draw_pose=estimate_2dpose,
-    #         draw_muscle=warp_muscle_images,
-    #         num_frames=num_frames,
-    #         overwrite=overwrite,
-    #     )
-
-    #     # Overlay muscle on top of behavior image for randomly selected samples
-    #     if warp_muscle_images:
-    #         print("Generating overlay samples of behavior and muscle data...")
-    #         generate_overlay_samples(
-    #             recording_dir,
-    #             muscle_vrange=muscle_vrange,
-    #             overwrite=overwrite,
-    #         )
+    # Generate visualizations (if requested)
+    if make_visualizations:
+        logger.info("Generating summary video...")
+        # fmt: off
+        generate_summary_video(
+            behavior_video_path=processed_dir / "aligned_behavior_video.mkv",
+            muscle_images_dir=processed_dir / "aligned_muscle_images",
+            dual_recording_timing_path=recording_dir / "metadata/dual_recording_timing.yaml",
+            pose_2d_path=processed_dir / "behavior_alignment_transforms.h5",
+            output_path=processed_dir / "summary_video.mp4",
+            with_muscle=with_muscle,
+            muscle_vrange=muscle_vrange,
+            play_fps=play_fps,
+            crf=visualization_crf,
+            preset=visualization_preset,
+        )
+        
+        generate_overlay_samples(
+            behavior_video_path=processed_dir / "aligned_behavior_video.mkv",
+            muscle_images_dir=processed_dir / "aligned_muscle_images",
+            muscle_metadata_path=processed_dir / "muscle_frames_metadata.csv",
+            dual_recording_timing_path=recording_dir / "metadata/dual_recording_timing.yaml",
+            output_dir=processed_dir / "overlay_samples",
+            muscle_vrange=muscle_vrange,
+            num_samples=num_muscle_samples,
+        )
+        # fmt: on
 
 
 if __name__ == "__main__":

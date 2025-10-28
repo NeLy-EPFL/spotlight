@@ -27,6 +27,17 @@ def write_video(
     logging: bool = False,
     **kwargs,
 ):
+    video_writer = get_video_writer(
+        output_path, fps, crf, preset, logging=logging, **kwargs
+    )
+    for frame in frames:
+        video_writer.write(frame)
+    video_writer.close()
+
+
+def get_video_writer(
+    output_path: Path, fps: int, crf: int, preset: str, logging: bool = False, **kwargs
+):
     codec = "libx264"
     output_params = {
         "-input_framerate": fps,
@@ -37,9 +48,6 @@ def write_video(
         "-pix_fmt": "yuv420p",
         **kwargs,
     }
-    video_writer = WriteGear(
+    return WriteGear(
         output=output_path, compression_mode=True, logging=logging, **output_params
     )
-    for frame in frames:
-        video_writer.write(frame)
-    video_writer.close()
