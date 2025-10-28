@@ -100,13 +100,13 @@ def map_muscle_frames_to_behavior(
         stage_pos = stage_pos_df_at_muscle_frames.iloc[i][
             ["x_pos_mm_interp", "y_pos_mm_interp"]
         ].values.astype(np.float32)
-        muscle2behavior_transorm_matrix = (
+        muscle2behavior_transform_matrix = (
             cross_mapper.get_affine_matrix_muscle2behavior(stage_pos)
         )
         behavior_alignment_transform_matrix = alignment_transforms[i]
         output_path = transformed_muscle_images_output_dir / input_path.name
         kwargs = {
-            "muscle2behavior_trans_mat": muscle2behavior_transorm_matrix,
+            "muscle2behavior_trans_mat": muscle2behavior_transform_matrix,
             "behavior_alignment_trans_mat": behavior_alignment_transform_matrix,
             "input_path": input_path,
             "output_dim": output_dim,

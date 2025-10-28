@@ -100,20 +100,18 @@ def decode_and_transform_behavior_frames(
         # Save transformed frames as video and transformation metadata
         output_video_path.parent.mkdir(parents=True, exist_ok=True)
         output_metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        video_output_path = output_video_path.with_suffix(".mkv")
-        metadata_output_path = output_metadata_path.with_suffix(".h5")
-        logger.info(f"Saving aligned behavior video to {video_output_path}")
+        logger.info(f"Saving aligned behavior video to {output_video_path}")
         write_video(
-            output_path=video_output_path,
+            output_path=output_video_path,
             frames=transformed_frames,
             fps=play_fps,
             crf=behavior_video_crf,
             preset=behavior_video_preset,
             logging=logger.level <= logging.INFO,
         )
-        logger.info(f"Saving transformation metadata to {metadata_output_path}")
+        logger.info(f"Saving transformation metadata to {output_metadata_path}")
         _save_transformation_metadata(
-            output_path=metadata_output_path,
+            output_path=output_metadata_path,
             keypoints_xy_pre_alignment=keypoints_xy_pre_alignment,
             transformed_keypoints=transformed_keypoints,
             transform_matrices=transform_matrices,

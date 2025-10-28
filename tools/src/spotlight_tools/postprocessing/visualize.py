@@ -286,6 +286,8 @@ def _draw_summary_video_frames(
         if with_muscle:
             assert sync_ratio is not None
             assert muscle_vrange is not None
+            # The muscle camera captures first frame only in the second cycle due to its
+            # rolling shutter
             muscle_frameid = (behavior_frameid // sync_ratio) - 1
             if muscle_frameid != _current_muscle_frameid:
                 _current_muscle_frameid = muscle_frameid
@@ -477,6 +479,8 @@ def generate_overlay_samples(
         behavior_frame_id = metadata_entry["corresponding_behavior_frame_id"]
         muscle_path = muscle_images_dir / f"muscle_frame_{muscle_frame_id:09d}.tif"
         muscle_image = cv2.imread(str(muscle_path), cv2.IMREAD_UNCHANGED)
+        # The muscle camera captures first frame only in the second cycle due to its
+        # rolling shutter
         behavior_frame_id = sync_ratio * (muscle_frame_id + 1)
         behavior_video_reader.set(cv2.CAP_PROP_POS_FRAMES, behavior_frame_id)
         ret, behavior_image = behavior_video_reader.read()
@@ -499,7 +503,7 @@ def generate_overlay_samples(
         overlay[:, :, 1] = (255 * muscle_image_normalized).astype(np.uint8)  # green
 
         # Save overlay image
-        overlay_path = output_dir / f"behavior_frame_{behavior_frame_id:03d}.jpg"
+        overlay_path = output_dir / f"behavior_frame_{behavior_frame_id:06d}.jpg"
         cv2.imwrite(str(overlay_path), overlay)
 
     behavior_video_reader.release()
