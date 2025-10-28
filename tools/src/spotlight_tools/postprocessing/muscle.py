@@ -36,6 +36,32 @@ def map_muscle_frames_to_behavior(
     missing_muscle_frames_tolerance: int = 3,
     num_workers: int = -1,
 ):
+    """This function performs muscle-to-behavior frame mapping and transformation:
+
+    1. Determines timing synchronization between muscle and behavior recordings.
+    2. Spatially maps muscle images to behavior coordinate system using Spotlight
+       calibration parameters.
+    3. Applies the same alignment transformations used for behavior frames.
+    4. Saves transformed muscle images in TIFF format and metadata.
+
+    Args:
+        muscle_calib_path (Path): Path to muscle camera calibration parameters.
+        behavior_calib_path (Path): Path to behavior camera calibration parameters.
+        dual_recording_timing_path (Path): Path to dual recording timing metadata.
+        processed_behavior_frame_metadata_path (Path): Path to behavior frames metadata
+            (CSV).
+        behavior_alignment_metadata_path (Path): Path to behavior alignment transforms
+            (HDF5).
+        raw_muscle_images_dir (Path): Directory containing raw muscle image files.
+        transformed_muscle_images_output_dir (Path): Directory to save output frames.
+        muscle_metadata_output_path (Path): Output path for muscle frames metadata (CSV).
+        missing_muscle_frames_tolerance (int): See
+            `scripts.postprocess_recording.postprocess_recording_data`.
+        num_workers (int): Number of parallel workers (-1 for all available cores).
+
+    Returns:
+        None: Outputs are saved to the specified directories and files.
+    """
     logger = logging.getLogger(__name__)
 
     # Get behavior-muscle sync ratio
@@ -115,6 +141,7 @@ def map_muscle_frames_to_behavior(
 
 
 def get_behavior_muscle_sync_ratio(dual_recording_timing_path: Path) -> int:
+    """Extract behavior-to-muscle frame synchronization ratio from timing metadata."""
     with open(dual_recording_timing_path, "r") as f:
         timing_metadata = yaml.safe_load(f)
     return timing_metadata["sync_ratio"]
@@ -198,6 +225,25 @@ def apply_affine_transform_to_muscle_image(
     output_path: Path,
     return_output: bool = True,
 ):
+    """Apply composed affine transformation to align a single muscle frame with the
+    corresponding behavior frame.
+
+    Args:
+        muscle2behavior_trans_mat (np.ndarray): 2x3 transformation matrix mapping muscle
+            to behavior coordinates (derived from Spotlight calibration).
+        behavior_alignment_trans_mat (np.ndarray): 2x3 transformation matrix for
+            behavior frame alignment (whatever that's been applied to the behavior
+            frame; this can be read out from behavior alignment transform metadata).
+        input_path (Path): Path to the input muscle image file.
+        output_dim (tuple[int, int]): Output image dimensions (width, height).
+        output_path (Path): Path where the transformed image will be saved.
+        return_output (bool): Whether to return the transformed image array. Not
+            returning anything may help reduce IO load if called in parallel (automatic
+            garbage collection might not happen until after the map operation).
+
+    Returns:
+        np.ndarray or None (depending on return_output): Transformed muscle frame.
+    """
     # Convert 2x3 transform matrices to 3x3 homogeneous matrices for easier composition
     muscle2behavior_trans_mat = np.vstack([muscle2behavior_trans_mat, [0, 0, 1]])
     behavior_alignment_trans_mat = np.vstack([behavior_alignment_trans_mat, [0, 0, 1]])

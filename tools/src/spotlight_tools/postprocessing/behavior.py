@@ -27,6 +27,37 @@ def decode_and_transform_behavior_frames(
     behavior_video_preset: str = "slow",
     num_workers: int = -1,
 ) -> None:
+    """This function processes behavior frames through the following pipeline:
+
+    1. Expands pseudo-BGR JPEG images into separate monochrome frames (during recording,
+       every three consecutive frames are saved as a single 3-channel JPEG for
+       performance considerations)
+    2. Runs a 3-keypoint pose estimation with SLEAP to detect fly position and heading
+    3. Transforms frames to align and center the fly (facing upward)
+    4. Outputs an aligned behavior video and transformation metadata
+
+    Args:
+        raw_behavior_frame_paths (list[Path]): Paths to input pseudo-BGR JPEG files.
+        sleap_model_dir (Path): Directory containing trained SLEAP model files.
+        output_video_path (Path): Path for the output aligned behavior video.
+        output_metadata_path (Path): Path for the transformation metadata (HDF5).
+        keypoints_code2name (dict[str, str]): Mapping from keypoint codes (used by
+            SLEAP) to meaningful names.
+        use_shm (bool): Whether to use shared memory (/dev/shm) for temporary files.
+            Doing so will avoid duplicated disk read and write, but it is extremely
+            sketchy - if the process runs out of shared memory, the entire OS will
+            likely crash. Default is False.
+        sleap_batch_size (int): Batch size for SLEAP inference.
+        crop_dim (int): Output frame dimensions (actual size is crop_dim x crop_dim px).
+        play_fps (int): Frame rate for the output video. This is for visualization only
+            and has no impact on the actual data (see
+            `scripts.postprocess_recording.postprocess_recording_data`).
+        behavior_video_crf (int): Constant Rate Factor for video encoding quality. Lower
+            is better. 12-17 is visually lossless for most purposes. <10 is overkill.
+        behavior_video_preset (str): ffmpeg preset for encoding speed vs compression.
+            Slower setting = better compression. "slow" or "slower" is recommended.
+        num_workers (int): Number of parallel workers (-1 for all available cores).
+    """
     # Set logging verbosity
     logger = logging.getLogger(__name__)
 
@@ -96,6 +127,16 @@ def _expand_all_pseudo_bgr_images(
     single_channel_frames_dir: Path,
     num_workers: int = -1,
 ) -> list[Path]:
+    """Expand all pseudo-BGR images into individual single-channel frames in parallel.
+
+    Args:
+        pseudo3ch_frame_paths (list[Path]): Paths to pseudo-BGR input images.
+        single_channel_frames_dir (Path): Directory where expanded frames will be saved.
+        num_workers (int): Number of parallel workers (-1 for all available cores).
+
+    Returns:
+        list[Path]: Paths to all generated single-channel frame files.
+    """
     logger = logging.getLogger(__name__)
     verbosity = 1 if logger.level <= logging.INFO else 0
 
@@ -151,7 +192,20 @@ def estimate_2dpose(
     output_path: Path,
     batch_size: int = 128,
 ) -> np.ndarray:
-    """Run SLEAP 2D pose estimation on single-channel images."""
+    """Run SLEAP 2D pose estimation on single-channel behavior images.
+
+    Args:
+        single_channel_frame_paths (list[Path]): Paths to single-channel frame images.
+        sleap_model_dir (Path): Directory containing trained SLEAP model files.
+        keypoints_code2name (dict[str, str]): Mapping from keypoint codes (used by
+            SLEAP) to meaningful names.
+        output_path (Path): Path where SLEAP predictions will be (temporarily) saved.
+        batch_size (int): Batch size for SLEAP inference processing.
+
+    Returns:
+        np.ndarray: Keypoint coordinates with shape (num_frames, num_keypoints, 2).
+            NaN values indicate missing keypoints.
+    """
     logger = logging.getLogger(__name__)
 
     # Run SLEAP inference
@@ -192,8 +246,18 @@ def estimate_2dpose(
 def fill_keypoints_gaps(
     keypoints_xy: np.ndarray,
 ) -> np.ndarray:
-    """If any keypoint in a frame is NaN, fill it with the last valid
-    keypoints. If the 0th frame is NaN, fill it with the first valid keypoints.
+    """Fill missing keypoints (NaN values) using forward and backward filling.
+
+    If any keypoint in a frame is NaN, it is filled with the last valid keypoints.
+    If the 0th frame has NaN values, they are filled with the first valid keypoints
+    found in subsequent frames.
+
+    Args:
+        keypoints_xy (np.ndarray): Keypoint coordinates with shape
+            (num_frames, num_keypoints, 2).
+
+    Returns:
+        np.ndarray: Keypoints with gaps filled, same shape as input.
     """
     logger = logging.getLogger(__name__)
 
@@ -231,7 +295,24 @@ def transform_frame_to_align(
     neck_idx: int,
     abdomen_idx: int,
 ) -> np.ndarray:
-    """Transform a single frame based on keypoints."""
+    """Transform a single behavior frame to align and center the fly.
+
+    The transformation rotates the frame so the fly faces upward (head toward
+    negative y-axis) and crops around the thorax to center the fly in a square image.
+
+    Args:
+        input_frame (np.ndarray): Input frame image as 2D array.
+        keypoints (np.ndarray): Keypoint coordinates with shape (num_keypoints, 2).
+        crop_dim (int): Output dimensions (actual size is crop_dim x crop_dim pixels).
+        thorax_idx (int): Index of the thorax keypoint in SLEAP output.
+        neck_idx (int): Index of the neck keypoint in SLEAP output.
+        abdomen_idx (int): Index of the abdomen keypoint in SLEAP output.
+
+    Returns:
+        np.ndarray: Transformed frame.
+        np.ndarray: Transformed keypoints.
+        np.ndarray: Transformation matrix.
+    """
     # rotation_pivot and heading are both in (x, y), i.e. (col, row)
     rotation_pivot = keypoints[thorax_idx, :]
     heading = keypoints[neck_idx, :] - keypoints[abdomen_idx, :]
@@ -279,7 +360,22 @@ def _transform_all_frames_to_align(
     crop_dim: int,
     num_workers: int = -1,
 ) -> tuple[list[np.ndarray], np.ndarray, np.ndarray]:
-    """Transform all behavior frames based on keypoints."""
+    """Transform all behavior frames to align and center the fly in parallel.
+
+    Args:
+        keypoints_xy_pre_alignment (np.ndarray): Pre-alignment keypoint coordinates with
+            shape (num_frames, num_keypoints, 2).
+        expanded_frame_paths (list[Path]): Paths to pre-alignment single-channel frames.
+        keypoints_code2name (dict[str, str]): Mapping from keypoint codes (used by
+            SLEAP) to meaningful names.
+        crop_dim (int): Output frame dimensions (actual size is crop_dim x crop_dim).
+        num_workers (int): Number of parallel workers (-1 for all available cores).
+
+    Returns:
+        list[np.ndarray]: Transformed frames.
+        np.ndarray: Transformed keypoints with shape (num_frames, num_keypoints, 2).
+        np.ndarray: Transformation matrices with shape (num_frames, 2, 3).
+    """
     logger = logging.getLogger(__name__)
     verbosity = 1 if logger.level <= logging.INFO else 0
 
@@ -319,6 +415,8 @@ def _save_transformation_metadata(
     keypoints_code2name: dict[str, str],
     output_dim: tuple[int, int],
 ):
+    """Save detected pose (both pre- and post-alignment), and transformation matrices
+    used for alignment to an H5 file."""
     logger = logging.getLogger(__name__)
 
     logger.info(f"Saving transformation metadata to {output_path}")

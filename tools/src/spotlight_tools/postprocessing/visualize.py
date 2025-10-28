@@ -88,45 +88,35 @@ def generate_summary_video(
     preset: str = "slow",
     max_num_frames: int | None = None,
 ) -> None:
-    """Generate a summary video that combines behavior frames, pose overlays and
-    muscle images for quick visual inspection.
-
-    The generated video is written to ``<recording_dir>/processed/summary_video.mp4``.
-    The output layout depends on ``with_muscle``:
-      - If ``with_muscle=True`` the final frame contains three panels: behavior
-        grayscale, behavior with pose overlay, and muscle image (mapped to the
-        green channel).
-      - If ``with_muscle=False`` the final frame contains two panels: behavior
-        grayscale and behavior with pose overlay.
+    """Generate a summary video combining behavior frames, predicted pose overlaid on
+    behavior frames, and muscle images.
 
     Args:
-        recording_dir (Path): Path to the recording directory (expects a
-            ``processed`` subdirectory with preprocessed data).
-        draw_pose (bool): If True, overlay 2D pose keypoints (loaded from
-            ``processed/pose_2d.npz``) onto the behavior frames.
-        draw_muscle (bool): If True, include muscle image panels in the output
-            video (loaded from ``processed/muscle_images``).
-        muscle_vrange (tuple[int, int] | None): Optional (vmin, vmax) used to
-            normalize muscle images for display. If None, an adaptive range is
-            computed from sampled images using ``muscle_vrange_quantiles``.
-        muscle_vrange_quantiles (tuple[float, float] | None): Percentiles used
-            to determine an adaptive muscle dynamic range when ``muscle_vrange``
-            is None. Expressed as percentages (e.g. ``(97.0, 99.995)``).
-        muscle_vrange_quantiles_sample_rate (float): Fraction of muscle images to
-            sample when computing the adaptive range (e.g. 0.05 samples 5% of
-            images).
-        play_fps (int): Frames-per-second for the output video.
-        num_frames (int | None): If set, limit processing to the first
-            ``num_frames`` behavior frames (useful for testing).
-
-    Raises:
-        RuntimeError: If required preprocessed files are missing, the output file
-            already exists and ``overwrite=False``, or the behavior video cannot
-            be opened.
-
-    Returns:
-        None: The function writes the video file to disk and does not return
-        a value.
+        behavior_video_path (Path): Path to the aligned behavior video file.
+        muscle_images_dir (Path): Directory containing processed muscle images.
+        dual_recording_timing_path (Path): Path to dual recording timing metadata.
+        pose_2d_path (Path): Path to 2D pose estimation results (HDF5 format).
+        output_path (Path): Path where the summary video will be saved.
+        with_muscle (bool): Whether to include muscle image panels in the output.
+        muscle_vrange (tuple[int, int] | None): Optional (vmin, vmax) for muscle
+            image normalization. If None, computed adaptively.
+        muscle_vrange_quantiles (tuple[float, float] | None): Percentiles for adaptive
+            muscle range computation. For each sampled muscle image, these quantiles
+            will be computed.
+        muscle_vrange_quantiles_sample_rate (float): Fraction of muscle images to sample
+            for range computation if muscle_vrange is None.
+        play_fps (int): Frame rate for the output summary video. This is for
+            visualization only and has no impact on the actual data (see
+            `scripts.postprocess_recording.postprocess_recording_data`).
+        avg_chunks_per_worker (int): Average number of frame chunks per parallel worker.
+            Too small a value may lead to inefficient video read (many seeks). Too large
+            a value may lead to imbalanced workload across workers.
+        crf (int): Constant Rate Factor for video encoding quality. Lower is better.
+            17-23 are reasonable values for visualization.
+        preset (str): ffmpeg preset for encoding speed vs compression. Slower = more
+            space-efficient compression.
+        max_num_frames (int | None): Optional limit on number of frames to process
+            (for testing). If None, process all frames.
     """
     logger = logging.getLogger(__name__)
 
@@ -449,35 +439,9 @@ def generate_overlay_samples(
     muscle_vrange_quantiles_sample_rate: float = 0.05,
     num_samples: int = 100,
 ) -> None:
-    """Create a grid of overlay sample images combining behavior and muscle frames.
-
-    The resulting image is saved to ``<recording_dir>/processed/overlay_samples.jpg``.
-    Each cell shows the behavior (grayscale) on the red channel and the muscle
-    activity mapped to the green channel.
-
-    Args:
-        recording_dir (Path): Path to the recording directory (expects a
-            ``processed`` subdirectory with `muscle_frames_metadata.csv` and
-            processed image files).
-        muscle_vrange (tuple[int, int] | None): Optional (vmin, vmax) used to
-            normalize muscle images for display. If None, an adaptive range is
-            computed using ``muscle_vrange_quantiles``.
-        muscle_vrange_quantiles (tuple[float, float] | None): Percentiles used
-            to determine the adaptive muscle dynamic range when ``muscle_vrange``
-            is None. Expressed as percentages (e.g. ``(97.0, 99.995)``).
-        muscle_vrange_quantiles_sample_rate (float): Fraction of muscle images to
-            sample when computing the adaptive range (e.g. 0.05 samples 5% of
-            images).
-        num_samples (int): Number of sample frames to include in the grid.
-        num_samples_per_row (int): Number of columns in the output grid.
-        panel_size (tuple[int, int]): Size (width, height) per sample panel in
-            inches (matplotlib style).
-        overwrite (bool): If False and the output image already exists the
-            function raises a RuntimeError; if True it will overwrite.
-
-    Returns:
-        None: The composed image is written to disk and nothing is returned.
-    """
+    """Generate sample overlay images combining behavior and muscle frames. This is
+    useful for sanity-checking the alignment between behavior and muscle data.
+    Arguments are similar to generate_summary_video."""
     logger = logging.getLogger(__name__)
 
     # Load muscle frames metadata

@@ -9,6 +9,21 @@ from spotlight_tools.postprocessing.io import find_files_per_frame_by_suffix
 def interp_stage_pos_at_behavior_frames(
     frames_dir: Path, stage_positions_path: Path, output_path: Path
 ) -> pd.DataFrame:
+    """Interpolate stage positions at behavior frame timestamps.
+    
+    This function combines behavior frame timing metadata with stage position
+    data to produce interpolated XY coordinates for each behavior frame.
+    
+    Args:
+        frames_dir (Path): Directory containing behavior frame CSV metadata files.
+        stage_positions_path (Path): Path to the stage positions CSV file.
+        output_path (Path): Path where the merged metadata will be saved.
+        
+    Returns:
+        pd.DataFrame: DataFrame with behavior frame metadata and interpolated
+            stage positions (columns: behavior_frame_id, received_time_us,
+            x_pos_mm_interp, y_pos_mm_interp).
+    """
     logger = logging.getLogger(__name__)
 
     # Merge timestamps for each behavior frame

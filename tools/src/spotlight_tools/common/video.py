@@ -5,6 +5,7 @@ from vidgear.gears import WriteGear
 
 
 def get_video_info(video_path: Path):
+    """Get frame width, height, and total frame count of a video file."""
     video = cv2.VideoCapture(str(video_path))
     if not video.isOpened():
         raise RuntimeError(f"Error: Could not open video {video_path}.")
@@ -27,6 +28,8 @@ def write_video(
     logging: bool = False,
     **kwargs,
 ):
+    """Write a sequence of frames to a video file using ffmpeg/libx264. Additional
+    arguments in kwargs will be passed to the vidgear WriteGear upon init."""
     video_writer = get_video_writer(
         output_path, fps, crf, preset, logging=logging, **kwargs
     )
@@ -38,6 +41,7 @@ def write_video(
 def get_video_writer(
     output_path: Path, fps: int, crf: int, preset: str, logging: bool = False, **kwargs
 ):
+    """Create a vidgear WriteGear video writer configured for encoding with libx264."""
     codec = "libx264"
     output_params = {
         "-input_framerate": fps,
