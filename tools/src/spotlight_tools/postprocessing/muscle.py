@@ -289,8 +289,8 @@ def _make_muscle_metadata_dataframe(muscle_image_paths, stage_pos_df_at_muscle_f
             "corresponding_behavior_frame_id": behavior_frame_ids.astype(np.uint32),
             "x_pos_mm_interp": x_pos_mm_interp.astype(np.float32),
             "y_pos_mm_interp": y_pos_mm_interp.astype(np.float32),
-            "acquired_time_us": np.array(acquired_time_us, dtype=np.uint32),
-            "received_time_us": np.array(received_time_us, dtype=np.uint32),
+            "acquired_time_us": np.array(acquired_time_us, dtype=np.uint64),
+            "received_time_us": np.array(received_time_us, dtype=np.uint64),
         }
     )
 
