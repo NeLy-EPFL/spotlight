@@ -175,8 +175,9 @@ def generate_summary_video(
         tmpdir = Path(tmpdir)
         logger.info(f"Generating summary video frames in temporary directory {tmpdir}")
 
+        # Use higher verbosity because total number of jobs is much lower than usual
         parallel_mapper = Parallel(
-            n_jobs=-1, backend="loky", verbose=8 * int(logger.level <= logging.INFO)
+            n_jobs=-1, backend="loky", verbose=8 if logger.level <= logging.INFO else 0
         )
         effective_n_workers = parallel_mapper._effective_n_jobs()
         n_chunks = avg_chunks_per_worker * effective_n_workers
