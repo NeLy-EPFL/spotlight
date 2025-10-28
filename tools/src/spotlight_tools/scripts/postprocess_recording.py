@@ -201,10 +201,11 @@ def postprocess_recording_data(
         )
         # fmt: on
 
+def main():
+     tyro.cli(postprocess_recording_data)
 
 if __name__ == "__main__":
-    # * CLI
-    tyro.cli(postprocess_recording_data)
+    main()
 
     # * Example from Python natively
     # logging.basicConfig(
