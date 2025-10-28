@@ -189,20 +189,26 @@ def postprocess_recording_data(
             crf=visualization_crf,
             preset=visualization_preset,
         )
-        
-        generate_overlay_samples(
-            behavior_video_path=processed_dir / "aligned_behavior_video.mkv",
-            muscle_images_dir=processed_dir / "aligned_muscle_images",
-            muscle_metadata_path=processed_dir / "muscle_frames_metadata.csv",
-            dual_recording_timing_path=recording_dir / "metadata/dual_recording_timing.yaml",
-            output_dir=processed_dir / "overlay_samples",
-            muscle_vrange=muscle_vrange,
-            num_samples=num_muscle_samples,
-        )
         # fmt: on
 
+        if with_muscle:
+            logger.info("Generating muscle-behavior overlay samples...")
+            # fmt: off
+            generate_overlay_samples(
+                behavior_video_path=processed_dir / "aligned_behavior_video.mkv",
+                muscle_images_dir=processed_dir / "aligned_muscle_images",
+                muscle_metadata_path=processed_dir / "muscle_frames_metadata.csv",
+                dual_recording_timing_path=recording_dir / "metadata/dual_recording_timing.yaml",
+                output_dir=processed_dir / "overlay_samples",
+                muscle_vrange=muscle_vrange,
+                num_samples=num_muscle_samples,
+            )
+            # fmt: on
+
+
 def main():
-     tyro.cli(postprocess_recording_data)
+    tyro.cli(postprocess_recording_data)
+
 
 if __name__ == "__main__":
     main()
