@@ -33,13 +33,16 @@ BehaviorCamera::BehaviorCamera(
                  "device vendor: {}, device model: {}",
                  interfaceID, deviceID, deviceVendorName, deviceModelName);
 
+    spdlog::info("Setting sensor OffsetX and OffsetY to 0, 0");
+    setIntegerAndCheck<RemoteModule>("OffsetX", xOffset);
+    setIntegerAndCheck<RemoteModule>("OffsetY", yOffset);
     spdlog::info("Setting sensor ROI - width: {}, height: {}, "
                  "xOffset: {}, yOffset: {}",
                  imageWidth, imageHeight, xOffset, yOffset);
-    setIntegerAndCheck<RemoteModule>("OffsetX", xOffset);
-    setIntegerAndCheck<RemoteModule>("OffsetY", yOffset);
     setIntegerAndCheck<RemoteModule>("Width", imageWidth);
     setIntegerAndCheck<RemoteModule>("Height", imageHeight);
+    setIntegerAndCheck<RemoteModule>("OffsetX", xOffset);
+    setIntegerAndCheck<RemoteModule>("OffsetY", yOffset);
     spdlog::info("Sensor ROI set");
 
     spdlog::info("Configuring trigger-related settings...");
