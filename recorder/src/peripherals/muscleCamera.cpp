@@ -295,7 +295,7 @@ bool DualRecordingConfig::computeParameters(
     double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
     int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
-    if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
+    if (2 * rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
         muscleIntervalUs)
     {
         spdlog::critical(
