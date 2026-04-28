@@ -59,8 +59,34 @@ namespace
     }
 }
 
+CalibrationScanConfig getCalibrationScanConfig(const RecorderConfig &cfg, bool forHomography)
+{
+    CalibrationScanConfig config;
+    if (forHomography)
+    {    
+        double xCenterMm = cfg.getParameter<double>("motion_control", "homography_x_center_mm");
+        double yCenterMm = cfg.getParameter<double>("motion_control", "homography_y_center_mm");
+        double scanRange = cfg.getParameter<double>("motion_control", "homography_scan_range_mm");
+        config.stageXMinMm = xCenterMm - scanRange;
+        config.stageXMaxMm = xCenterMm + scanRange;
+        config.stageYMinMm = yCenterMm - scanRange;
+        config.stageYMaxMm = yCenterMm + scanRange;
+        config.calibrationScanStrideMm = cfg.getParameter<double>("motion_control", "homography_scan_stride_mm");
+    }
+    else
+    {
+        config.stageXMinMm = cfg.getParameter<double>("motion_control", "x_min_mm");
+        config.stageXMaxMm = cfg.getParameter<double>("motion_control", "x_max_mm");
+        config.stageYMinMm = cfg.getParameter<double>("motion_control", "y_min_mm");
+        config.stageYMaxMm = cfg.getParameter<double>("motion_control", "y_max_mm");
+        config.calibrationScanStrideMm = cfg.getParameter<double>("motion_control", "calibration_scan_stride_mm");
+    }
+    return config;
+}
+
 void runCalibrationScan(std::filesystem::path profileDir,
-                        std::filesystem::path arucoSaveDir)
+                        std::filesystem::path arucoSaveDir,
+                        bool forHomography)
 {
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
     spdlog::info("Loading recorder configuration from {}", configPath.string());
@@ -135,18 +161,15 @@ void runCalibrationScan(std::filesystem::path profileDir,
     // Set up motion control
     MotionControl motionControl(recorderConfig);
 
-    // Figure out which points to park at
-    double stageXMinMm =
-        recorderConfig.getParameter<double>("motion_control", "x_min_mm");
-    double stageXMaxMm =
-        recorderConfig.getParameter<double>("motion_control", "x_max_mm");
-    double stageYMinMm =
-        recorderConfig.getParameter<double>("motion_control", "y_min_mm");
-    double stageYMaxMm =
-        recorderConfig.getParameter<double>("motion_control", "y_max_mm");
-    double calibrationScanStrideMm =
-        recorderConfig.getParameter<double>("motion_control",
-                                            "calibration_scan_stride_mm");
+    // Get calibration scan positions
+    CalibrationScanConfig calibrationScanConfig = getCalibrationScanConfig(
+        recorderConfig, forHomography);
+    double stageXMinMm = calibrationScanConfig.stageXMinMm;
+    double stageXMaxMm = calibrationScanConfig.stageXMaxMm;
+    double stageYMinMm = calibrationScanConfig.stageYMinMm;
+    double stageYMaxMm = calibrationScanConfig.stageYMaxMm;
+    double calibrationScanStrideMm = calibrationScanConfig.calibrationScanStrideMm;
+    
     std::queue<std::tuple<double, double>> calibrationPositions =
         getCalibrationPositions(stageXMinMm,
                                 stageXMaxMm,
@@ -192,6 +215,12 @@ void runCalibrationScan(std::filesystem::path profileDir,
                               ->getLatestFrameData();
         firstBehaviorReceivedTime = behaviorFrameData.receivedTime;
         firstMuscleReceivedTime = muscleFrameData.receivedTime;
+         
+        if (forHomography)
+        {
+            //Few points so make sure there is zero motion when acquiring images
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
 
         while (firstBehaviorReceivedTime == behaviorFrameData.receivedTime ||
                firstMuscleReceivedTime == muscleFrameData.receivedTime)
@@ -208,19 +237,63 @@ void runCalibrationScan(std::filesystem::path profileDir,
         reorientBehaviorImage(behaviorFrameData.image, behaviorImage);
         reorientMuscleImage(muscleFrameData.image, muscleImage);
 
-        // Save Image
-        std::filesystem::path behaviorPath =
-            arucoSaveDir /
-            "behavior_camera" /
-            fmt::format("aruco_scan_x{:.2f}_y{:.2f}.jpg", targetX, targetY);
-        cv::imwrite(behaviorPath.string(), behaviorImage);
-        std::filesystem::path musclePath =
-            arucoSaveDir /
-            "muscle_camera" /
-            fmt::format("aruco_scan_x{:.2f}_y{:.2f}.tif", targetX, targetY);
-        cv::imwrite(musclePath.string(), muscleImage);
-        spdlog::debug("Image saved at stage position ({}, {})",
-                      targetX, targetY);
+        // Save Image(s)
+        int numFramesToSave = forHomography ? 10 : 1; // 10 frames (0-9) for homography, 1 for regular
+
+        for (int frameIdx = 0; frameIdx < numFramesToSave; frameIdx++)
+        {
+            // For frames after the first, wait for new frames in homography mode
+            if (frameIdx > 0 && forHomography)
+            {
+                int64_t previousBehaviorReceivedTime = behaviorFrameData.receivedTime;
+                int64_t previousMuscleReceivedTime = muscleFrameData.receivedTime;
+                
+                while (previousBehaviorReceivedTime == behaviorFrameData.receivedTime ||
+                       previousMuscleReceivedTime == muscleFrameData.receivedTime)
+                {
+                    behaviorFrameData = behaviorRecordingState
+                                            ->latestFrameHolder
+                                            ->getLatestFrameData();
+                    muscleFrameData = muscleRecordingState
+                                          ->latestFrameHolder
+                                          ->getLatestFrameData();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+                
+                reorientBehaviorImage(behaviorFrameData.image, behaviorImage);
+                reorientMuscleImage(muscleFrameData.image, muscleImage);
+            }
+            
+            // Construct filename with frame index for homography mode
+            std::string filenameSuffix = forHomography ? 
+                fmt::format("_frame{}", frameIdx) : "";
+            
+            std::filesystem::path behaviorPath =
+                arucoSaveDir /
+                "behavior_camera" /
+                fmt::format("aruco_scan_x{:.2f}_y{:.2f}{}.jpg", 
+                           targetX, targetY, filenameSuffix);
+            cv::imwrite(behaviorPath.string(), behaviorImage);
+            
+            std::filesystem::path musclePath =
+                arucoSaveDir /
+                "muscle_camera" /
+                fmt::format("aruco_scan_x{:.2f}_y{:.2f}{}.tif", 
+                           targetX, targetY, filenameSuffix);
+            cv::imwrite(musclePath.string(), muscleImage);
+            
+            if (frameIdx == 0)
+            {
+                spdlog::debug("Image saved at stage position ({}, {})",
+                             targetX, targetY);
+            }
+        }
+        
+        if (forHomography && numFramesToSave > 1)
+        {
+            spdlog::debug("Saved {} total frames at position ({}, {})",
+                         numFramesToSave, targetX, targetY);
+        }
 
         // Move to next position
         if (calibrationPositions.empty())
@@ -265,6 +338,37 @@ int main(int argc, char **argv)
     std::signal(SIGINT, [](int)
                 { quitProgram(); });
 
+    // Check for camera homography calibration flag before parsing other options
+    bool forHomography = false;
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if (arg == "-c" || arg == "--camera")
+        {
+            forHomography = true;
+            //remove the camera homography flag from the arguments so it doesn't interfere with CLI parsing
+            for (int j = i; j < argc - 1; ++j)            {
+                argv[j] = argv[j + 1];
+            }
+            argc--;
+            break;
+        }
+        else if (arg == "-h" || arg == "--help")
+        {
+            std::cout << "Usage: " << argv[0] << " [OPTIONS]\n"
+                      << "Options:\n"
+                      << "  -h, --help                 Display this help message\n"
+                      << "  -c, --camera               Run camera homography calibration (uses homography-specific parameters)\n"
+                      << "  -p, --profile-dir PATH     Path to profile directory (default: ~/Spotlight/default/)\n"
+                      << "  -v, --verbose              Enable verbose output (debug level)\n"
+                      << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
+                      << std::endl;
+            return 0;
+        }
+    }
+
+    std::cout<< "HOMOGRAPHY: " << forHomography << std::endl;
+
     CLIOptions options = parseCLI(argc, argv);
 
     spdlog::set_level(options.logLevel);
@@ -274,9 +378,17 @@ int main(int argc, char **argv)
         std::filesystem::path(expandPath(options.profileDir));
 
     // Get save directory
-    std::filesystem::path arucoSaveDir = profileDir / "calibration/aruco_scan";
+    std::filesystem::path arucoSaveDir; 
+    if (forHomography)
+    {
+        arucoSaveDir = profileDir / "calibration/charuco_homography_scan";
+    }
+    else
+    {
+         arucoSaveDir = profileDir / "calibration/aruco_scan";
+    }
 
-    runCalibrationScan(profileDir, arucoSaveDir);
+    runCalibrationScan(profileDir, arucoSaveDir, forHomography);
     spdlog::info("Calibration procedure complete");
 
     return 0;

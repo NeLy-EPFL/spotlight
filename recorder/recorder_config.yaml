@@ -60,6 +60,10 @@ motion_control:
   calibration_scan_stride_mm: 2
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
+  homography_x_center_mm: 90.7
+  homography_y_center_mm: 61.9
+  homography_scan_range_mm: 2.0
+  homography_scan_stride_mm: 1.0
 
 tracking:
   update_frequency_hz: 30

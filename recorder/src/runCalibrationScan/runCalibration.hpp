@@ -19,7 +19,20 @@
 #include "../peripherals/muscleCamera.hpp"
 #include "../peripherals/arduinoCommunication.hpp"
 
+struct CalibrationScanConfig
+{
+    double stageXMinMm;
+    double stageXMaxMm;
+    double stageYMinMm;
+    double stageYMaxMm;
+    double calibrationScanStrideMm;
+};
+
+
+CalibrationScanConfig getCalibrationScanConfig(const RecorderConfig &cfg, bool forHomography);
+
 void runCalibrationScan(std::filesystem::path profileDir,
-                        std::filesystem::path arucoSaveDir);
+                        std::filesystem::path arucoSaveDir,
+                        bool forHomography = false);
 
 #endif // RUN_CALIBRATION_HPP

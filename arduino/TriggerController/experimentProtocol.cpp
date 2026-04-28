@@ -18,6 +18,13 @@ ProtocolStep::ProtocolStep(const std::string& protocolStepStr)
     return;
   }
 
+  // Validate frame number is a multiple of 3
+  unsigned long frameNum = std::stoul(frameStr);
+  if (frameNum % 3 != 0) {
+    isValid = false;
+    return;
+  }
+
   // Parse frame number
   frameCount = std::stoul(frameStr);
 

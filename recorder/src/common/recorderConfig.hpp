@@ -5,6 +5,7 @@
 
 #include <yaml-cpp/yaml.h>
 #include <spdlog/spdlog.h>
+#include <filesystem>
 
 #include "fileFormatVersions.hpp"
 
@@ -12,10 +13,11 @@ class RecorderConfig
 {
 public:
     bool isDefined;
+    std::filesystem::path profileDir;
 
     RecorderConfig();
     RecorderConfig(const std::string &yamlPath);
-    
+
     // Add const qualifier to make it usable with const objects
     template <typename T>
     T getParameter(const std::string &section, const std::string &parameter) const;
@@ -23,7 +25,7 @@ public:
     void saveToFile(const std::string &yamlPath);
 
 private:
-    YAML::Node parameters_;
+    YAML::Node parameters_;;
 };
 
 // Template implementation must be in the header file

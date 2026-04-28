@@ -588,6 +588,33 @@ void MainGUIWindow::startRecording()
             "Muscle camera calibration parameters not defined. Not saving.");
     }
 
+    // Copy homography parameters if they exist
+    std::filesystem::path homographySourceFile =
+        recorderConfig_.profileDir / "calibration/model/homography_consensus/homography_result.yaml";
+    if (std::filesystem::exists(homographySourceFile))
+    {
+        std::filesystem::path homographyDestFile =
+            saveDirectory_->getDirectory() / "metadata/homography_parameters.yaml";
+        
+        try {
+            std::filesystem::copy_file(
+                homographySourceFile, 
+                homographyDestFile,
+                std::filesystem::copy_options::overwrite_existing);
+            spdlog::info("Copied homography parameters from '{}' to '{}'",
+                        homographySourceFile.string(), 
+                        homographyDestFile.string());
+        }
+        catch (const std::filesystem::filesystem_error& e) {
+            spdlog::warn("Failed to copy homography parameters: {}", e.what());
+        }
+    }
+    else
+    {
+        spdlog::warn("Homography parameters file not found at '{}'. Not saving.",
+                    homographySourceFile.string());
+    }
+
     // Save timing metadata
     if (dualRecordingConfigForSaving_->isRecordingBoth())
     {
@@ -602,10 +629,14 @@ void MainGUIWindow::startRecording()
     // Send triggering parameters to Arduino and start recording
     arduinoCommunication_->setBehaviorRecordingFPS(
         behaviorFPSSpinBox_->value());
+    arduinoCommunication_->setBehaviorExposureTime(
+        behaviorExposureTimeSpinBox_->value() * 1000);
     arduinoCommunication_->setSyncRatio(
         dualRecordingConfigForSaving_->getSyncRatio());
     arduinoCommunication_->setMuscleCamTriggerDelay(
         dualRecordingConfigForSaving_->getMuscleCamTriggerDelayUs());
+    arduinoCommunication_->setMuscleLightOnTime(
+        dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
     arduinoCommunication_->startRecording(protocolSteps);
 
     // Arduino will pause 100ms before starting triggering. This is to leave

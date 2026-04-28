@@ -6,8 +6,9 @@ RecorderConfig::RecorderConfig()
 }
 
 RecorderConfig::RecorderConfig(const std::string &yamlPath)
-    : isDefined(true)
+    : isDefined(true), profileDir(std::filesystem::path(yamlPath).parent_path())
 {
+
     try
     {
         parameters_ = YAML::LoadFile(yamlPath);

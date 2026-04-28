@@ -122,6 +122,7 @@ void setup() {
 
 void loop() {
   while (Serial.available() > 0) {
+    // Serial.println("Reading serial");
     char c = Serial.read();
     
     // Handle end of command (newline)
@@ -159,7 +160,10 @@ void loop() {
       muscleLightTriggerState = true;
       lastMuscleLightTriggerTime = currentTime;
     }
-
+    // if (behaviorTriggerCounter%500==0){
+    //   Serial.println("Triggering");
+    //   Serial.println(behaviorTriggerCounter);
+    // }
     behaviorTriggerCounter++;
   }
 
@@ -196,6 +200,7 @@ void loop() {
 
   // Should I execute the next protocol step?
   while (!protocolSteps.empty()) {
+    // Serial.println("Reading protocol");
     ProtocolStep &currentStep = protocolSteps.front();
     if (currentStep.frameCount == behaviorTriggerCounter) {
       if (currentStep.operation == PROTOCOL_ENDS &&

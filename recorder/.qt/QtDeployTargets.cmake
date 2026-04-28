@@ -1,0 +1,8 @@
+set(__QT_DEPLOY_TARGET_pco-camera-server_FILE /home/spotlight/project/spotlight-control/recorder/pco-camera-server)
+set(__QT_DEPLOY_TARGET_pco-camera-server_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_run-spotlight_FILE /home/spotlight/project/spotlight-control/recorder/run-spotlight)
+set(__QT_DEPLOY_TARGET_run-spotlight_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_run-calibration-scan_FILE /home/spotlight/project/spotlight-control/recorder/run-calibration-scan)
+set(__QT_DEPLOY_TARGET_run-calibration-scan_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_align-cameras_FILE /home/spotlight/project/spotlight-control/recorder/align-cameras)
+set(__QT_DEPLOY_TARGET_align-cameras_TYPE EXECUTABLE)
