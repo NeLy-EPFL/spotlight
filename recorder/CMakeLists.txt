@@ -137,7 +137,38 @@ target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws
 target_link_libraries(align-cameras PRIVATE yaml-cpp)
 set_target_properties(align-cameras PROPERTIES AUTOMOC ON)
 
+# Compile arena registration tool
+find_library(DMTX_LIB NAMES dmtx REQUIRED)
+file(GLOB REGISTER_ARENA_SOURCES
+    "src/registerArena/registerArena_main.cpp"
+    "src/registerArena/registerArena.hpp"
+    "src/peripherals/behaviorCamera.*"
+    "src/peripherals/motionControl.*"
+    "src/peripherals/arduinoCommunication.*"
+    "src/peripherals/experimentProtocol.*"
+    "src/pcoCameraServer/sharedMemoryUtils.*"
+    "src/common/cli.*"
+    "src/common/recorderConfig.*"
+    "src/common/behaviorRecording.*"
+    "src/common/utils.*"
+    "src/common/fileFormatVersions.*")
+add_executable(register-arena ${REGISTER_ARENA_SOURCES})
+target_link_libraries(register-arena Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(register-arena ${OpenCV_LIBS})
+target_link_libraries(register-arena ${ZABER_MOTION_LIB})
+target_link_libraries(register-arena spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(register-arena yaml-cpp)
+target_link_libraries(register-arena ${DMTX_LIB})
+
 # Install compiled binaries to the bin folder
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
-install(TARGETS pco-camera-server run-spotlight run-calibration-scan align-cameras
-        RUNTIME DESTINATION bin)
+install(
+    TARGETS
+        pco-camera-server
+        run-spotlight
+        run-calibration-scan
+        align-cameras
+        register-arena
+    RUNTIME DESTINATION
+        bin
+)
