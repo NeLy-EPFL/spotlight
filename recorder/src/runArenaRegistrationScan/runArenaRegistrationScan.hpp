@@ -1,5 +1,5 @@
-#ifndef REGISTER_ARENA_HPP
-#define REGISTER_ARENA_HPP
+#ifndef RUN_ARENA_REGISTRATION_SCAN_HPP
+#define RUN_ARENA_REGISTRATION_SCAN_HPP
 
 #include <filesystem>
 #include <string>
@@ -13,6 +13,7 @@
 #include "../peripherals/motionControl.hpp"
 #include "../peripherals/arduinoCommunication.hpp"
 
-void registerArena(std::filesystem::path profileDir, std::string arenaName);
+void runArenaRegistrationScan(std::filesystem::path profileDir,
+                              std::filesystem::path arenaDir);
 
-#endif // REGISTER_ARENA_HPP
+#endif // RUN_ARENA_REGISTRATION_SCAN_HPP

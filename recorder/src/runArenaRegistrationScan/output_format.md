@@ -1,6 +1,7 @@
-# registerArena output format
+# runArenaRegistrationScan output format
 
-All output is written to `<profile_dir>/arenas/<arena_name>/`.
+All output is written to `<arena_dir>/mapping_scan/`, where `<arena_dir>` is
+the path passed to `-a`/`--arena`.
 
 ## Apriltag images
 
@@ -10,9 +11,11 @@ All output is written to `<profile_dir>/arenas/<arena_name>/`.
 - `<i>` — zero-based image index within the burst (0–9).
 
 Each file is a single-channel (grayscale) 8-bit JPEG saved at maximum quality
-(`IMWRITE_JPEG_QUALITY=100`). The image has been reoriented relative to the raw
-sensor output: rotated 90° counter-clockwise and then flipped horizontally, so
-the scene appears in the same orientation as the live preview window.
+(`IMWRITE_JPEG_QUALITY=100`). The image is rotated 90° counter-clockwise
+relative to the raw sensor output, but is **not** horizontally flipped — it
+represents the actual camera view. The live preview window applies an
+additional horizontal flip for user comfort, but that flip is not applied to
+saved images.
 
 Ten consecutive frames are acquired per apriltag. The first frame after the
 stage stops is discarded before the burst begins, so that frames exposed during

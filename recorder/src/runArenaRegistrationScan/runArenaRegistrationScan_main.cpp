@@ -1,5 +1,5 @@
 // Requires libdmtx-dev: sudo apt install libdmtx-dev
-#include "registerArena.hpp"
+#include "runArenaRegistrationScan.hpp"
 
 #include <csignal>
 #include <fstream>
@@ -8,6 +8,7 @@
 
 #include <dmtx.h>
 #include <yaml-cpp/yaml.h>
+#include <zaber/motion/exceptions/bad_data_exception.h>
 
 namespace
 {
@@ -29,22 +30,23 @@ namespace
         std::exit(0);
     }
 
-    // Decode a data matrix from an 8-bit grayscale image. Returns empty string on failure.
-    std::string readDataMatrix(const cv::Mat &gray8u)
+    // Single decode attempt at a given shrink factor.
+    std::string tryDecodeDataMatrix(const cv::Mat &gray8u, int shrink,
+                                    int timeoutMs)
     {
         DmtxImage *dmtxImg = dmtxImageCreate(
             gray8u.data, gray8u.cols, gray8u.rows, DmtxPack8bppK);
         if (!dmtxImg)
             return "";
 
-        DmtxDecode *dec = dmtxDecodeCreate(dmtxImg, 1);
+        DmtxDecode *dec = dmtxDecodeCreate(dmtxImg, shrink);
         if (!dec)
         {
             dmtxImageDestroy(&dmtxImg);
             return "";
         }
 
-        DmtxTime timeout = dmtxTimeAdd(dmtxTimeNow(), 5000);
+        DmtxTime timeout = dmtxTimeAdd(dmtxTimeNow(), timeoutMs);
         DmtxRegion *reg = dmtxRegionFindNext(dec, &timeout);
 
         std::string result;
@@ -53,8 +55,8 @@ namespace
             DmtxMessage *msg = dmtxDecodeMatrixRegion(dec, reg, DmtxUndefined);
             if (msg)
             {
-                int len = msg->outputSize > 0 ? msg->outputSize - 1 : 0;
-                result = std::string(reinterpret_cast<char *>(msg->output), len);
+                result = std::string(reinterpret_cast<char *>(msg->output),
+                                     msg->outputIdx);
                 dmtxMessageDestroy(&msg);
             }
             dmtxRegionDestroy(&reg);
@@ -62,6 +64,39 @@ namespace
         dmtxDecodeDestroy(&dec);
         dmtxImageDestroy(&dmtxImg);
         return result;
+    }
+
+    // Decode a data matrix from an 8-bit grayscale image. Returns empty string
+    // on failure. Tries Otsu-binarized and raw inputs across several shrink
+    // factors, since a single libdmtx pass often misses matrices that dominate
+    // the frame or have uneven illumination.
+    std::string readDataMatrix(const cv::Mat &gray8u)
+    {
+        cv::Mat binary;
+        cv::threshold(gray8u, binary, 0, 255,
+                      cv::THRESH_BINARY | cv::THRESH_OTSU);
+
+        const std::vector<int> shrinkFactors = {2, 1, 4};
+        const int perAttemptTimeoutMs = 1000;
+        const std::vector<std::pair<const char *, const cv::Mat *>> inputs = {
+            {"otsu", &binary}, {"raw", &gray8u}};
+        for (const auto &[label, img] : inputs)
+        {
+            for (int shrink : shrinkFactors)
+            {
+                spdlog::debug("dmtx attempt: input={}, shrink={}",
+                              label, shrink);
+                std::string result =
+                    tryDecodeDataMatrix(*img, shrink, perAttemptTimeoutMs);
+                if (!result.empty())
+                {
+                    spdlog::info("Data matrix decoded (input={}, shrink={})",
+                                 label, shrink);
+                    return result;
+                }
+            }
+        }
+        return "";
     }
 
     // Block until a frame with a receivedTime different from afterTime arrives.
@@ -80,9 +115,9 @@ namespace
     }
 }
 
-void registerArena(std::filesystem::path profileDir, std::string arenaName)
+void runArenaRegistrationScan(std::filesystem::path profileDir,
+                              std::filesystem::path arenaDir)
 {
-    std::filesystem::path arenaDir = profileDir / "arenas" / arenaName;
     std::filesystem::path metadataPath = arenaDir / "metadata.yaml";
 
     if (!std::filesystem::exists(arenaDir))
@@ -133,13 +168,31 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
     MotionControl motionControl(recorderConfig);
     double motionVelocity = recorderConfig.getParameter<double>(
         "motion_control", "default_velocity_mm_per_sec");
+    int settlingFrames = recorderConfig.getParameter<int>(
+        "motion_control", "apriltag_mapping_settling_frames");
+
+    auto shutdown = [&]()
+    {
+        programState->toQuit.store(true);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (behaviorRecordingState->behaviorCamera)
+        {
+            behaviorRecordingState->behaviorCamera->stop();
+            behaviorRecordingState->behaviorCamera = nullptr;
+        }
+        if (behaviorThread.joinable())
+            behaviorThread.join();
+        arduinoCommunication->setBehaviorRecordingFPS(0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        arduinoCommunication->stopCommunication();
+    };
 
     // -------------------------------------------------------------------
     // Phase 1: Live preview with crosshairs; wait for user to press ENTER
     // -------------------------------------------------------------------
     cv::namedWindow("Behavior Camera", cv::WINDOW_NORMAL);
     // After reorientation the displayed dimensions are swapped relative to sensor
-    int roiWidth  = recorderConfig.getParameter<int>("behavior_camera", "roi_width");
+    int roiWidth = recorderConfig.getParameter<int>("behavior_camera", "roi_width");
     int roiHeight = recorderConfig.getParameter<int>("behavior_camera", "roi_height");
     cv::resizeWindow("Behavior Camera", roiHeight / 2, roiWidth / 2);
 
@@ -165,34 +218,37 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
         // Crosshairs at image center
         int cx = display.cols / 2;
         int cy = display.rows / 2;
-        cv::Scalar green(0, 255, 0);
-        cv::line(display, cv::Point(cx, 0), cv::Point(cx, display.rows - 1), green, 1);
-        cv::line(display, cv::Point(0, cy), cv::Point(display.cols - 1, cy), green, 1);
+        cv::Scalar red(0, 0, 255);
+        cv::line(display, cv::Point(cx, 0), cv::Point(cx, display.rows - 1), red, 1);
+        cv::line(display, cv::Point(0, cy), cv::Point(display.cols - 1, cy), red, 1);
 
         cv::putText(display,
                     "Center camera on data matrix, then press ENTER",
-                    cv::Point(8, 22), cv::FONT_HERSHEY_SIMPLEX, 0.5,
-                    cv::Scalar(0, 255, 255), 1);
+                    cv::Point(24, 66), cv::FONT_HERSHEY_SIMPLEX, 1.5,
+                    red, 3);
 
-        cv::imshow("Behavior Camera", display);
+        // Downsample before imshow so the display pipeline isn't saturated by
+        // full-resolution frames at the loop rate (caused a session lockup).
+        cv::Mat displaySmall;
+        cv::resize(display, displaySmall, {}, 0.5, 0.5);
+        cv::imshow("Behavior Camera", displaySmall);
         int key = cv::waitKey(33);
         if (key == 13 || key == 10) // ENTER
         {
+            // Capture the raw (un-reoriented) frame so dmtx sees the data
+            // matrix in its un-mirrored orientation. The display has been
+            // horizontally flipped to look natural to the user, but that
+            // flip would mirror the data matrix and make it unreadable.
             rawFrame = frameData.image.clone();
             break;
         }
         if (key == 27) // ESC
         {
             spdlog::info("ESC pressed. Exiting.");
-            programState->toQuit.store(true);
-            behaviorRecordingState->behaviorCamera->stop();
-            behaviorThread.join();
-            arduinoCommunication->setBehaviorRecordingFPS(0);
-            arduinoCommunication->stopCommunication();
+            shutdown();
             return;
         }
     }
-    cv::destroyAllWindows();
 
     // -------------------------------------------------------------------
     // Phase 2: Decode data matrix
@@ -202,11 +258,7 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
     if (dmContent.empty())
     {
         spdlog::error("No data matrix found in the captured frame.");
-        programState->toQuit.store(true);
-        behaviorRecordingState->behaviorCamera->stop();
-        behaviorThread.join();
-        arduinoCommunication->setBehaviorRecordingFPS(0);
-        arduinoCommunication->stopCommunication();
+        shutdown();
         throw std::runtime_error("No data matrix found");
     }
     spdlog::info("Data matrix decoded: '{}'", dmContent);
@@ -221,11 +273,7 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
     {
         spdlog::error("Checksum mismatch: data matrix='{}', expected='{}'",
                       dmContent, expectedChecksum);
-        programState->toQuit.store(true);
-        behaviorRecordingState->behaviorCamera->stop();
-        behaviorThread.join();
-        arduinoCommunication->setBehaviorRecordingFPS(0);
-        arduinoCommunication->stopCommunication();
+        shutdown();
         throw std::runtime_error("Data matrix checksum mismatch");
     }
     spdlog::info("Checksum verified: '{}'", dmContent);
@@ -241,15 +289,20 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
     auto dmCenterVec = metadata["datamatrix_pos"]["center"].as<std::vector<double>>();
     double dmCenterX = dmCenterVec[0];
     double dmCenterY = dmCenterVec[1];
-    // offset such that: stage_pos = arena_pos + offset
-    double offsetX = currentX - dmCenterX;
-    double offsetY = currentY - dmCenterY;
+    // Per-axis sign between stage and arena coords: stage_pos = sign * arena_pos
+    // + offset. The arena is mounted face-down, which mirrors the X axis but
+    // leaves Y unchanged.
+    const int xSign = -1;
+    const int ySign = 1;
+    double offsetX = currentX - xSign * dmCenterX;
+    double offsetY = currentY - ySign * dmCenterY;
     spdlog::info("Data matrix center in arena coords: ({:.4f}, {:.4f})", dmCenterX, dmCenterY);
+    spdlog::info("Axis signs (arena -> stage): x_sign={}, y_sign={}", xSign, ySign);
     spdlog::info("Offset (arena -> stage): ({:.4f}, {:.4f})", offsetX, offsetY);
     spdlog::info("Arena origin (0,0) maps to stage position ({:.4f}, {:.4f})", offsetX, offsetY);
 
     // -------------------------------------------------------------------
-    // Phase 5: Visit each apriltag, acquire 10 frames, save images + CSV
+    // Phase 5: Visit each AprilTag, acquire 10 frames, save images + CSV
     // -------------------------------------------------------------------
     YAML::Node apriltagPositions = metadata["apriltag_positions"];
 
@@ -258,46 +311,106 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
     for (auto it = apriltagPositions.begin(); it != apriltagPositions.end(); ++it)
         sortedTags[it->first.as<int>()] = it->second;
 
-    std::filesystem::path csvPath = arenaDir / "apriltag_stage_positions.csv";
+    std::filesystem::path scanDir = arenaDir / "mapping_scan";
+    std::filesystem::create_directories(scanDir);
+    std::filesystem::path csvPath = scanDir / "apriltag_stage_positions.csv";
     std::ofstream csvFile(csvPath.string());
     csvFile << "apriltag_id,image_id,stage_x_mm,stage_y_mm\n";
 
     std::vector<int> jpegParams = {cv::IMWRITE_JPEG_QUALITY, 100};
 
+    // Live preview overlay during the apriltag visit; red dot = shutter.
+    auto showStatus = [&](int tagId, bool shutter)
+    {
+        FrameData fd = behaviorRecordingState->latestFrameHolder->getLatestFrameData();
+        if (fd.image.empty())
+            return;
+        cv::Mat oriented, display;
+        reorientBehaviorImage(fd.image, oriented);
+        cv::cvtColor(oriented, display, cv::COLOR_GRAY2BGR);
+        cv::Scalar red(0, 0, 255);
+        int cx = display.cols / 2, cy = display.rows / 2;
+        cv::line(display, {cx, 0}, {cx, display.rows - 1}, red, 1);
+        cv::line(display, {0, cy}, {display.cols - 1, cy}, red, 1);
+        cv::putText(display,
+                    fmt::format("{} AprilTag #{}",
+                                shutter ? "Capturing" : "Moving to", tagId),
+                    {24, 66}, cv::FONT_HERSHEY_SIMPLEX, 1.5, red, 3);
+        if (shutter)
+            cv::circle(display, {display.cols - 40, 40}, 20, red, -1);
+        cv::Mat displaySmall;
+        cv::resize(display, displaySmall, {}, 0.5, 0.5);
+        cv::imshow("Behavior Camera", displaySmall);
+        cv::waitKey(1);
+    };
+
     for (auto &[tagId, tagNode] : sortedTags)
     {
         auto tagCenter = tagNode["center"].as<std::vector<double>>();
-        double targetX = tagCenter[0] + offsetX;
-        double targetY = tagCenter[1] + offsetY;
+        double targetX = xSign * tagCenter[0] + offsetX;
+        double targetY = ySign * tagCenter[1] + offsetY;
 
-        spdlog::info("Apriltag {}: arena ({:.4f}, {:.4f}) -> stage ({:.4f}, {:.4f})",
+        spdlog::info("AprilTag {}: arena ({:.4f}, {:.4f}) -> stage ({:.4f}, {:.4f})",
                      tagId, tagCenter[0], tagCenter[1], targetX, targetY);
 
-        motionControl.moveAbsolute(X_AXIS, targetX, false, motionVelocity);
-        motionControl.moveAbsolute(Y_AXIS, targetY, false, motionVelocity);
+        auto safeMoveAbsolute = [&](MotionAxis axis, const char *axisName,
+                                    double target)
+        {
+            try
+            {
+                motionControl.moveAbsolute(axis, target, false, motionVelocity);
+            }
+            catch (const zaber::motion::exceptions::BadDataException &)
+            {
+                spdlog::error(
+                    "Arena placed outside physical range of motion of linear "
+                    "stages. Axis: {}, target: {:.4f} mm",
+                    axisName, target);
+                shutdown();
+                throw std::runtime_error(
+                    "Target stage position out of physical range");
+            }
+        };
+
+        safeMoveAbsolute(X_AXIS, "X", targetX);
+        safeMoveAbsolute(Y_AXIS, "Y", targetY);
 
         while (!motionControl.checkIfIdle(X_AXIS) || !motionControl.checkIfIdle(Y_AXIS))
+        {
+            showStatus(tagId, false);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
 
-        // Drop the first frame (may have been exposed while stages were still settling)
-        uint64_t lastTime = behaviorRecordingState->latestFrameHolder
-                                ->getLatestFrameData().receivedTime;
-        waitForNextFrame(behaviorRecordingState->latestFrameHolder, lastTime);
-        spdlog::debug("Apriltag {}: dropped initial frame", tagId);
+        // Drop N settling frames (may have been exposed while stages were
+        // still settling, or while mechanical vibration was decaying).
+        for (int i = 0; i < settlingFrames; i++)
+        {
+            uint64_t lastTime = behaviorRecordingState->latestFrameHolder
+                                    ->getLatestFrameData()
+                                    .receivedTime;
+            waitForNextFrame(behaviorRecordingState->latestFrameHolder, lastTime);
+            showStatus(tagId, false);
+        }
+        spdlog::debug("AprilTag {}: dropped {} settling frames",
+                      tagId, settlingFrames);
 
         // Acquire 10 consecutive frames
         for (int imgId = 0; imgId < 10; imgId++)
         {
-            lastTime = behaviorRecordingState->latestFrameHolder
-                           ->getLatestFrameData().receivedTime;
+            uint64_t lastTime = behaviorRecordingState->latestFrameHolder
+                                    ->getLatestFrameData()
+                                    .receivedTime;
             FrameData frameData =
                 waitForNextFrame(behaviorRecordingState->latestFrameHolder, lastTime);
 
+            // Save the rotated-only image (no horizontal flip) so the file
+            // represents the actual camera view, not the user-facing display.
             cv::Mat image;
-            reorientBehaviorImage(frameData.image, image);
+            cv::rotate(frameData.image, image, cv::ROTATE_90_COUNTERCLOCKWISE);
 
             std::string filename = fmt::format("apriltag{}_img{}.jpg", tagId, imgId);
-            cv::imwrite((arenaDir / filename).string(), image, jpegParams);
+            cv::imwrite((scanDir / filename).string(), image, jpegParams);
+            showStatus(tagId, true);
 
             double posX = motionControl.getPosition(X_AXIS);
             double posY = motionControl.getPosition(Y_AXIS);
@@ -307,7 +420,7 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
 
             spdlog::debug("Saved {} at stage ({:.4f}, {:.4f})", filename, posX, posY);
         }
-        spdlog::info("Apriltag {} done: 10 frames saved", tagId);
+        spdlog::info("AprilTag {} done: 10 frames saved", tagId);
     }
 
     csvFile.close();
@@ -316,27 +429,17 @@ void registerArena(std::filesystem::path profileDir, std::string arenaName)
     // -------------------------------------------------------------------
     // Cleanup
     // -------------------------------------------------------------------
-    programState->toQuit.store(true);
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (behaviorRecordingState->behaviorCamera)
-    {
-        behaviorRecordingState->behaviorCamera->stop();
-        behaviorRecordingState->behaviorCamera = nullptr;
-    }
-    behaviorThread.join();
-
-    arduinoCommunication->setBehaviorRecordingFPS(0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    arduinoCommunication->stopCommunication();
+    shutdown();
 }
 
 int main(int argc, char **argv)
 {
-    std::signal(SIGINT, [](int) { quitProgram(); });
+    std::signal(SIGINT, [](int)
+                { quitProgram(); });
 
     // Parse CLI
     std::string profileDirStr = "~/Spotlight/default/";
-    std::string arenaName;
+    std::string arenaDirStr;
     spdlog::level::level_enum logLevel = spdlog::level::info;
 
     for (int i = 1; i < argc; ++i)
@@ -345,9 +448,9 @@ int main(int argc, char **argv)
         if (arg == "-h" || arg == "--help")
         {
             std::cout << "Usage: " << argv[0]
-                      << " -p PROFILE_DIR -a ARENA_NAME [OPTIONS]\n"
+                      << " -p PROFILE_DIR -a ARENA_DIR [OPTIONS]\n"
                       << "  -p, --profile-dir PATH  Profile directory\n"
-                      << "  -a, --arena NAME        Arena name\n"
+                      << "  -a, --arena PATH        Arena directory (containing metadata.yaml)\n"
                       << "  -v, --verbose           Debug-level logging\n"
                       << "  --verbosity LEVEL       trace/debug/info/warn/error/critical/off\n";
             return 0;
@@ -355,18 +458,24 @@ int main(int argc, char **argv)
         else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc)
             profileDirStr = argv[++i];
         else if ((arg == "-a" || arg == "--arena") && i + 1 < argc)
-            arenaName = argv[++i];
+            arenaDirStr = argv[++i];
         else if (arg == "-v" || arg == "--verbose")
             logLevel = spdlog::level::debug;
         else if (arg == "--verbosity" && i + 1 < argc)
         {
             std::string lvl = argv[++i];
-            if (lvl == "trace")    logLevel = spdlog::level::trace;
-            else if (lvl == "debug")    logLevel = spdlog::level::debug;
-            else if (lvl == "warn")     logLevel = spdlog::level::warn;
-            else if (lvl == "error")    logLevel = spdlog::level::err;
-            else if (lvl == "critical") logLevel = spdlog::level::critical;
-            else if (lvl == "off")      logLevel = spdlog::level::off;
+            if (lvl == "trace")
+                logLevel = spdlog::level::trace;
+            else if (lvl == "debug")
+                logLevel = spdlog::level::debug;
+            else if (lvl == "warn")
+                logLevel = spdlog::level::warn;
+            else if (lvl == "error")
+                logLevel = spdlog::level::err;
+            else if (lvl == "critical")
+                logLevel = spdlog::level::critical;
+            else if (lvl == "off")
+                logLevel = spdlog::level::off;
         }
         else
         {
@@ -375,7 +484,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (arenaName.empty())
+    if (arenaDirStr.empty())
     {
         std::cerr << "Error: -a/--arena is required\n";
         return 1;
@@ -384,7 +493,8 @@ int main(int argc, char **argv)
     spdlog::set_level(logLevel);
 
     std::filesystem::path profileDir(expandPath(profileDirStr));
-    registerArena(profileDir, arenaName);
+    std::filesystem::path arenaDir(expandPath(arenaDirStr));
+    runArenaRegistrationScan(profileDir, arenaDir);
     spdlog::info("Arena registration complete");
 
     return 0;

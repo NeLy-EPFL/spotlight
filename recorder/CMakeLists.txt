@@ -137,11 +137,11 @@ target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws
 target_link_libraries(align-cameras PRIVATE yaml-cpp)
 set_target_properties(align-cameras PROPERTIES AUTOMOC ON)
 
-# Compile arena registration tool
+# Compile arena registration scan tool
 find_library(DMTX_LIB NAMES dmtx REQUIRED)
-file(GLOB REGISTER_ARENA_SOURCES
-    "src/registerArena/registerArena_main.cpp"
-    "src/registerArena/registerArena.hpp"
+file(GLOB RUN_ARENA_REGISTRATION_SCAN_SOURCES
+    "src/runArenaRegistrationScan/runArenaRegistrationScan_main.cpp"
+    "src/runArenaRegistrationScan/runArenaRegistrationScan.hpp"
     "src/peripherals/behaviorCamera.*"
     "src/peripherals/motionControl.*"
     "src/peripherals/arduinoCommunication.*"
@@ -152,13 +152,13 @@ file(GLOB REGISTER_ARENA_SOURCES
     "src/common/behaviorRecording.*"
     "src/common/utils.*"
     "src/common/fileFormatVersions.*")
-add_executable(register-arena ${REGISTER_ARENA_SOURCES})
-target_link_libraries(register-arena Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(register-arena ${OpenCV_LIBS})
-target_link_libraries(register-arena ${ZABER_MOTION_LIB})
-target_link_libraries(register-arena spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-target_link_libraries(register-arena yaml-cpp)
-target_link_libraries(register-arena ${DMTX_LIB})
+add_executable(run-arena-registration-scan ${RUN_ARENA_REGISTRATION_SCAN_SOURCES})
+target_link_libraries(run-arena-registration-scan Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(run-arena-registration-scan ${OpenCV_LIBS})
+target_link_libraries(run-arena-registration-scan ${ZABER_MOTION_LIB})
+target_link_libraries(run-arena-registration-scan spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-arena-registration-scan yaml-cpp)
+target_link_libraries(run-arena-registration-scan ${DMTX_LIB})
 
 # Install compiled binaries to the bin folder
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
@@ -168,7 +168,7 @@ install(
         run-spotlight
         run-calibration-scan
         align-cameras
-        register-arena
+        run-arena-registration-scan
     RUNTIME DESTINATION
         bin
 )
