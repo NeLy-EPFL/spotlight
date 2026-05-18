@@ -156,6 +156,16 @@ double MotionControl::getPosition(MotionAxis axis)
     return axisPtrLookup_[axis]->getPosition(lengthUnitEnum_);
 }
 
+double MotionControl::getMinPosition(MotionAxis axis)
+{
+    return axisPtrLookup_[axis]->getSettings().get("limit.min", lengthUnitEnum_);
+}
+
+double MotionControl::getMaxPosition(MotionAxis axis)
+{
+    return axisPtrLookup_[axis]->getSettings().get("limit.max", lengthUnitEnum_);
+}
+
 void MotionControl::waitUntilIdle(MotionAxis axis)
 {
     axisPtrLookup_[axis]->waitUntilIdle();

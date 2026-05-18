@@ -52,6 +52,19 @@ void motionControlRequestHandler(
     std::shared_ptr<ProgramState> programState)
 {
     MotionControl motionControl(recorderConfig);
+
+    // Query the stages' soft travel limits once at init so that we can
+    // clamp target positions and avoid BADDATA rejections from the
+    // controller.
+    double xMinMm = motionControl.getMinPosition(X_AXIS);
+    double xMaxMm = motionControl.getMaxPosition(X_AXIS);
+    double yMinMm = motionControl.getMinPosition(Y_AXIS);
+    double yMaxMm = motionControl.getMaxPosition(Y_AXIS);
+    spdlog::info(
+        "Motion stage travel limits: X=[{:.3f}, {:.3f}] mm, "
+        "Y=[{:.3f}, {:.3f}] mm",
+        xMinMm, xMaxMm, yMinMm, yMaxMm);
+
     trackingControlState->motionControlHandlerReady.store(true);
 
     while (!programState->toQuit.load())
@@ -95,23 +108,47 @@ void motionControlRequestHandler(
             bool waitForCompletion = false;
             if (myRequest.position.positionType == ABSOLUTE)
             {
+                double targetX = std::clamp(
+                    myRequest.position.xPosMm, xMinMm, xMaxMm);
+                double targetY = std::clamp(
+                    myRequest.position.yPosMm, yMinMm, yMaxMm);
+                if (targetX != myRequest.position.xPosMm ||
+                    targetY != myRequest.position.yPosMm)
+                {
+                    spdlog::warn(
+                        "Target stage position ({:.3f}, {:.3f}) mm clamped "
+                        "to ({:.3f}, {:.3f}) mm to stay within travel "
+                        "limits X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
+                        myRequest.position.xPosMm, myRequest.position.yPosMm,
+                        targetX, targetY,
+                        xMinMm, xMaxMm, yMinMm, yMaxMm);
+                }
                 motionControl.moveAbsolute(X_AXIS,
-                                           myRequest.position.xPosMm,
+                                           targetX,
                                            waitForCompletion,
                                            myRequest.velocity);
                 motionControl.moveAbsolute(Y_AXIS,
-                                           myRequest.position.yPosMm,
+                                           targetY,
                                            waitForCompletion,
                                            myRequest.velocity);
             }
             else
             {
-                motionControl.moveRelative(X_AXIS,
-                                           myRequest.position.xPosMm,
+                // Convert the relative request to an absolute target so we
+                // can clamp against the travel limits before issuing the
+                // move.
+                double currentX = motionControl.getPosition(X_AXIS);
+                double currentY = motionControl.getPosition(Y_AXIS);
+                double targetX = std::clamp(
+                    currentX + myRequest.position.xPosMm, xMinMm, xMaxMm);
+                double targetY = std::clamp(
+                    currentY + myRequest.position.yPosMm, yMinMm, yMaxMm);
+                motionControl.moveAbsolute(X_AXIS,
+                                           targetX,
                                            waitForCompletion,
                                            myRequest.velocity);
-                motionControl.moveRelative(Y_AXIS,
-                                           myRequest.position.yPosMm,
+                motionControl.moveAbsolute(Y_AXIS,
+                                           targetY,
                                            waitForCompletion,
                                            myRequest.velocity);
             }
@@ -158,6 +195,8 @@ void motionControlRequestHandler(
 
 void trackingController(
     const RecorderConfig &recorderConfig,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
@@ -220,6 +259,8 @@ void trackingController(
                 std::tie(isFound, physicalPosX, physicalPosY) =
                     calculateFlyPositionAbsoluteMm(myBehaviorImage,
                                                    myMotionStagePosition,
+                                                   arenaSizeXMm,
+                                                   arenaSizeYMm,
                                                    behaviorCamCalibrationParams,
                                                    recorderConfig);
             }
@@ -318,6 +359,8 @@ void trackingController(
 
 cv::Mat blackoutOutside(cv::Mat image,
                         MotionStagePosition stagePos,
+                        double arenaSizeXMm,
+                        double arenaSizeYMm,
                         CalibrationParams &behaviorCamCalibrationParams,
                         const RecorderConfig &recorderConfig)
 {
@@ -330,10 +373,6 @@ cv::Mat blackoutOutside(cv::Mat image,
 
     double boundaryMarginMm = recorderConfig.getParameter<double>(
         "tracking", "boundary_margin_mm");
-    double arenaSizeXMm = recorderConfig.getParameter<double>(
-        "arena", "size_x_mm");
-    double arenaSizeYMm = recorderConfig.getParameter<double>(
-        "arena", "size_y_mm");
     double xMinPhysical = boundaryMarginMm;
     double xMaxPhysical = arenaSizeXMm - boundaryMarginMm;
     double yMinPhysical = boundaryMarginMm;
@@ -463,6 +502,8 @@ void motionStagePositionLogger(
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
     CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig)
 {
@@ -487,6 +528,8 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     // Remove pixels outside the stage boundaries
     cv::Mat blackedOutImage = blackoutOutside(behaviorImage,
                                               stagePosition,
+                                              arenaSizeXMm,
+                                              arenaSizeYMm,
                                               behaviorCamCalibrationParams,
                                               recorderConfig);
 

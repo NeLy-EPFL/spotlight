@@ -36,6 +36,8 @@ public:
         double velocity);
     void home(MotionAxis axis, bool wait);
     double getPosition(MotionAxis axis);
+    double getMinPosition(MotionAxis axis);
+    double getMaxPosition(MotionAxis axis);
     void waitUntilIdle(MotionAxis axis);
     bool checkIfIdle(MotionAxis axis);
 

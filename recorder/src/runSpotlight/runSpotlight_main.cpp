@@ -233,6 +233,8 @@ int runSpotlightMain(int argc, char **argv)
     std::thread trackingControllerThread(
         trackingController,
         recorderConfig,
+        arenaSizeXMm,
+        arenaSizeYMm,
         behaviorRecordingState,
         trackingControlState,
         std::ref(behaviorCamCalibrationParams),
@@ -335,6 +337,8 @@ int runSpotlightMain(int argc, char **argv)
                                      arduinoCommunication,
                                      programState,
                                      programmedRecordingStop,
+                                     arenaSizeXMm,
+                                     arenaSizeYMm,
                                      stageMinXMm,
                                      stageMaxXMm,
                                      stageMinYMm,

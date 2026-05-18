@@ -157,6 +157,8 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
     double stageMinXMm,
     double stageMaxXMm,
     double stageMinYMm,
@@ -174,6 +176,8 @@ MainGUIWindow::MainGUIWindow(
       programState_(programState),
       programmedRecordingStop_(programmedRecordingStop),
       dualRecordingConfigForSaving_(dualRecordingConfig),
+      arenaSizeXMm_(arenaSizeXMm),
+      arenaSizeYMm_(arenaSizeYMm),
       stageMinXMm_(stageMinXMm),
       stageMaxXMm_(stageMaxXMm),
       stageMinYMm_(stageMinYMm),
@@ -687,8 +691,8 @@ void MainGUIWindow::browseDirectory()
 }
 
 cv::Mat addCornerMarker(cv::Mat image,
-                        int arenaSizeXmm,
-                        int arenaSizeYmm,
+                        double arenaSizeXMm,
+                        double arenaSizeYMm,
                         MotionStagePosition stagePosition,
                         CalibrationParams &behaviorCamCalibrationParams)
 {
@@ -696,10 +700,10 @@ cv::Mat addCornerMarker(cv::Mat image,
     assert(imageForDisplay.size() == image.size());
 
     std::vector<std::tuple<double, double>> cornerPositions = {
-        {0, 0},
-        {arenaSizeXmm, 0},
-        {arenaSizeXmm, arenaSizeYmm},
-        {0, arenaSizeYmm}};
+        {0.0, 0.0},
+        {arenaSizeXMm, 0.0},
+        {arenaSizeXMm, arenaSizeYMm},
+        {0.0, arenaSizeYMm}};
 
     std::vector<cv::Point> pixelPoints;
     for (auto [x, y] : cornerPositions)
@@ -714,21 +718,6 @@ cv::Mat addCornerMarker(cv::Mat image,
                    5,
                    cv::Scalar(255, 255, 255),
                    -1);
-
-        // if (0 <= pixelCol && pixelCol < imageForDisplay.cols &&
-        //     0 <= pixelRow && pixelRow < imageForDisplay.rows)
-        // {
-        //     spdlog::info(
-        //         "Corner marker drawn: "
-        //         "(stagePos=({:.2f}, {:.2f}), physicalPos=({:.2f}, {:.2f})) "
-        //         "-> pixelPos(r{}, c{})",
-        //         stagePosition.xPosMm,
-        //         stagePosition.yPosMm,
-        //         x,
-        //         y,
-        //         pixelRow,
-        //         pixelCol);
-        // }
     }
     for (size_t i = 0; i < pixelPoints.size(); ++i)
     {
@@ -764,14 +753,14 @@ void MainGUIWindow::updateBehaviorImageDisplay()
     cv::Mat maskedImage = blackoutOutside(
         correctedFrame,
         myStagePosition,
+        arenaSizeXMm_,
+        arenaSizeYMm_,
         behaviorCamCalibrationParams_,
         recorderConfig_);
 
-    int arenaSizeXmm = recorderConfig_.getParameter<int>("arena", "size_x_mm");
-    int arenaSizeYmm = recorderConfig_.getParameter<int>("arena", "size_y_mm");
     cv::Mat imageForDisplay = addCornerMarker(maskedImage,
-                                              arenaSizeXmm,
-                                              arenaSizeYmm,
+                                              arenaSizeXMm_,
+                                              arenaSizeYMm_,
                                               myStagePosition,
                                               behaviorCamCalibrationParams_);
 

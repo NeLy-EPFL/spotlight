@@ -1,6 +1,7 @@
 #ifndef TRACKING_CONTROL_HPP
 #define TRACKING_CONTROL_HPP
 
+#include <algorithm>
 #include <iostream>
 #include <mutex>
 #include <condition_variable>
@@ -41,6 +42,8 @@ void motionControlRequestHandler(
 // Tracking thread
 void trackingController(
     const RecorderConfig &recorderConfig,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
@@ -68,11 +71,15 @@ void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState)
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
     CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig);
 
 cv::Mat blackoutOutside(cv::Mat image,
                         MotionStagePosition stagePos,
+                        double arenaSizeXMm,
+                        double arenaSizeYMm,
                         CalibrationParams &behaviorCamCalibrationParams,
                         const RecorderConfig &recorderConfig);
 

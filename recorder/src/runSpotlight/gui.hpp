@@ -86,6 +86,8 @@ public:
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
         std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+        double arenaSizeXMm,
+        double arenaSizeYMm,
         double stageMinXMm,
         double stageMaxXMm,
         double stageMinYMm,
@@ -126,6 +128,8 @@ private:
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
     std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
     std::unique_ptr<DualRecordingConfig> dualRecordingConfigForStreaming_;
+    double arenaSizeXMm_;
+    double arenaSizeYMm_;
     double stageMinXMm_;
     double stageMaxXMm_;
     double stageMinYMm_;
@@ -173,8 +177,8 @@ private:
 
 // Helpers
 cv::Mat addCornerMarker(cv::Mat image,
-                        int arenaSizeXmm,
-                        int arenaSizeYmm,
+                        double arenaSizeXMm,
+                        double arenaSizeYMm,
                         MotionStagePosition stagePosition,
                         CalibrationParams &behaviorCamCalibrationParams);
 
