@@ -1,5 +1,7 @@
 #include "muscleCamera.hpp"
 
+#include <filesystem>
+
 namespace
 {
     std::string logLevelToStr(spdlog::level::level_enum logLevel)
@@ -69,29 +71,35 @@ MuscleCamera::MuscleCamera(int imageWidth,
     }
     else if (pid == 0)
     {
-        // Child process
-        execlp("pco-camera-server",
-               "pco-camera-server",
-               "--profile-dir",
-               profileDir.c_str(),
-               "--x-min",
-               std::to_string(x0_).c_str(),
-               "--x-max",
-               std::to_string(x1_).c_str(),
-               "--y-min",
-               std::to_string(y0_).c_str(),
-               "--y-max",
-               std::to_string(y1_).c_str(),
-               "--delay",
-               "0", // sync delay is implemented in Arduino code, not here!
-               "--verbosity",
-               logLevelToStr(logLevel).c_str(),
-               (char *)nullptr);
+        // Child process: resolve pco-camera-server alongside the running
+        // recorder binary so we always launch the matching build, rather
+        // than whatever happens to be on $PATH.
+        std::filesystem::path serverPath =
+            std::filesystem::canonical("/proc/self/exe").parent_path() /
+            "pco-camera-server";
+
+        execl(serverPath.c_str(),
+              "pco-camera-server",
+              "--profile-dir",
+              profileDir.c_str(),
+              "--x-min",
+              std::to_string(x0_).c_str(),
+              "--x-max",
+              std::to_string(x1_).c_str(),
+              "--y-min",
+              std::to_string(y0_).c_str(),
+              "--y-max",
+              std::to_string(y1_).c_str(),
+              "--delay",
+              "0", // sync delay is implemented in Arduino code, not here!
+              "--verbosity",
+              logLevelToStr(logLevel).c_str(),
+              (char *)nullptr);
 
         // If execl returns, it must have failed
         std::string errorMessage =
-            "Failed to execute PCO camera server: " +
-            std::string(strerror(errno));
+            "Failed to execute PCO camera server at " + serverPath.string() +
+            ": " + std::string(strerror(errno));
         spdlog::critical(errorMessage);
         exit(EXIT_FAILURE); // Exit child process
     }

@@ -43,6 +43,10 @@ public:
     MotionControlWidget(
         const RecorderConfig &recorderConfig,
         std::shared_ptr<TrackingControlState> trackingControlState,
+        double minXAbsoluteMm,
+        double maxXAbsoluteMm,
+        double minYAbsoluteMm,
+        double maxYAbsoluteMm,
         QWidget *parent = nullptr);
     ~MotionControlWidget();
 
@@ -82,6 +86,10 @@ public:
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
         std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+        double stageMinXMm,
+        double stageMaxXMm,
+        double stageMinYMm,
+        double stageMaxYMm,
         QWidget *parent = nullptr);
 
 private slots:
@@ -118,6 +126,10 @@ private:
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
     std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
     std::unique_ptr<DualRecordingConfig> dualRecordingConfigForStreaming_;
+    double stageMinXMm_;
+    double stageMaxXMm_;
+    double stageMinYMm_;
+    double stageMaxYMm_;
 
     int muscleImage16To8BitScale_ = 1;
     int muscleImage16To8BitOffset_ = 0;

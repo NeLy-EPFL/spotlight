@@ -437,8 +437,9 @@ int main(int argc, char *argv[])
     std::filesystem::path profileDir =
         std::filesystem::path(PCOCameraServer::expandPath(options.profileDir));
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("Loading recorder configuration from {}",
-                 configPath.string());
+    spdlog::info(
+        "pcoCameraServer loading recorder configuration from {}",
+        configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     const unsigned int fullFrameWidth =

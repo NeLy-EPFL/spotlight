@@ -20,12 +20,6 @@ bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight)
 int MuscleCameraROI::toFile(std::filesystem::path path)
 {
     YAML::Node node;
-    node["metadata"]["file_format_version"]["major"] =
-        MUSCLE_CAMERA_ROI_MAJOR;
-    node["metadata"]["file_format_version"]["minor"] =
-        MUSCLE_CAMERA_ROI_MINOR;
-    node["metadata"]["file_format_version"]["patch"] =
-        MUSCLE_CAMERA_ROI_PATCH;
     node["x0"] = x0;
     node["x1"] = x1;
     node["y0"] = y0;
@@ -54,36 +48,43 @@ std::tuple<int, int> MuscleCameraROI::getCenterXY()
 
 MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath)
 {
-    // read yaml file
-    YAML::Node node = YAML::LoadFile(roiFilePath.string());
-    if (!node)
+    YAML::Node node;
+    try
     {
-        spdlog::critical("Failed to load muscle camera ROI from YAML file: {}",
-                         roiFilePath.string());
+        node = YAML::LoadFile(roiFilePath.string());
+    }
+    catch (const YAML::Exception &e)
+    {
+        throw std::runtime_error(fmt::format(
+            "Failed to load muscle camera ROI from {}: {}",
+            roiFilePath.string(), e.what()));
     }
 
-    // Check if version is compatible
-    int majorVersion =
-        node["metadata"]["file_format_version"]["major"].as<int>();
-    int minorVersion =
-        node["metadata"]["file_format_version"]["minor"].as<int>();
-    bool isVersionCompatible =
-        checkVersionCompatibility(majorVersion,
-                                  minorVersion,
-                                  MUSCLE_CAMERA_ROI_MAJOR,
-                                  MUSCLE_CAMERA_ROI_MINOR);
-    if (!isVersionCompatible)
-    {
-        throw std::runtime_error(
-            "File version incompatible: " + roiFilePath.string());
-    }
+    auto readInt = [&](const char *key) {
+        if (!node[key])
+        {
+            throw std::runtime_error(fmt::format(
+                "Muscle camera ROI file {} is missing key '{}'",
+                roiFilePath.string(), key));
+        }
+        try
+        {
+            return node[key].as<int>();
+        }
+        catch (const YAML::Exception &e)
+        {
+            throw std::runtime_error(fmt::format(
+                "Muscle camera ROI key '{}' in {} is not an int: {}",
+                key, roiFilePath.string(), e.what()));
+        }
+    };
 
-    int x0 = node["x0"].as<int>();
-    int x1 = node["x1"].as<int>();
-    int y0 = node["y0"].as<int>();
-    int y1 = node["y1"].as<int>();
-    int imageWidth = node["imageWidth"].as<int>();
-    int imageHeight = node["imageHeight"].as<int>();
+    int x0 = readInt("x0");
+    int x1 = readInt("x1");
+    int y0 = readInt("y0");
+    int y1 = readInt("y1");
+    int imageWidth = readInt("imageWidth");
+    int imageHeight = readInt("imageHeight");
     MuscleCameraROI roi(x0, x1, y0, y1);
 
     spdlog::info(

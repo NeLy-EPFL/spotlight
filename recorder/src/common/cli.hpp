@@ -4,7 +4,8 @@
 #include <spdlog/spdlog.h>
 
 struct CLIOptions {
-    std::string profileDir = "~/Spotlight/default/";
+    std::string profileDir = "";
+    std::string arenaDir = "";
     spdlog::level::level_enum logLevel = spdlog::level::info;
 };
 

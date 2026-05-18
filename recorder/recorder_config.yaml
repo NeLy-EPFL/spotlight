@@ -1,9 +1,3 @@
-metadata:
-  file_format_version:
-    major: 1
-    minor: 0
-    patch: 0
-
 arena:
   size_x_mm: 48
   size_y_mm: 72

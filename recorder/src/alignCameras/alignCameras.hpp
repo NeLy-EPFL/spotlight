@@ -18,7 +18,6 @@
 #include "../common/recorderConfig.hpp"
 #include "../common/dataTypes.hpp"
 #include "../common/cli.hpp"
-#include "../common/fileFormatVersions.hpp"
 
 void alignCamera(std::filesystem::path profileDir);
 

@@ -63,7 +63,7 @@ void runCalibrationScan(std::filesystem::path profileDir,
                         std::filesystem::path arucoSaveDir)
 {
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("Loading recorder configuration from {}", configPath.string());
+    spdlog::info("runCalibrationScan loading recorder configuration from {}", configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     arucoSaveDir = prepareOutputFolder(arucoSaveDir, true);

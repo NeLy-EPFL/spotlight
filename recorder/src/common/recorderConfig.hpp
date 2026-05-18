@@ -6,8 +6,6 @@
 #include <yaml-cpp/yaml.h>
 #include <spdlog/spdlog.h>
 
-#include "fileFormatVersions.hpp"
-
 class RecorderConfig
 {
 public:

@@ -17,21 +17,6 @@ RecorderConfig::RecorderConfig(const std::string &yamlPath)
         spdlog::error("Failed to load parameters file: {}", e.what());
         throw std::runtime_error("Failed to load parameters file");
     }
-
-    // Check if version is compatible
-    int majorVersion =
-        parameters_["metadata"]["file_format_version"]["major"].as<int>();
-    int minorVersion =
-        parameters_["metadata"]["file_format_version"]["minor"].as<int>();
-    bool isVersionCompatible =
-        checkVersionCompatibility(majorVersion,
-                                  minorVersion,
-                                  RECORDER_CONFIG_MAJOR,
-                                  RECORDER_CONFIG_MINOR);
-    if (!isVersionCompatible)
-    {
-        throw std::runtime_error("File version incompatible: " + yamlPath);
-    }
 }
 
 void RecorderConfig::saveToFile(const std::string &yamlPath)

@@ -13,22 +13,6 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
     {
         calibration_ = YAML::LoadFile(calibrationFilePath);
 
-        // Check if version is compatible
-        int majorVersion =
-            calibration_["metadata"]["file_format_version"]["major"].as<int>();
-        int minorVersion =
-            calibration_["metadata"]["file_format_version"]["minor"].as<int>();
-        bool isVersionCompatible =
-            checkVersionCompatibility(majorVersion,
-                                      minorVersion,
-                                      CALIBRATION_RESULT_MAJOR,
-                                      CALIBRATION_RESULT_MINOR);
-        if (!isVersionCompatible)
-        {
-            throw std::runtime_error(
-                "File version incompatible: " + calibrationFilePath);
-        }
-
         // Validate that all required sections exist
         if (!calibration_["stage_and_pixel_to_physical"] ||
             !calibration_["stage_and_physical_to_pixel"])
@@ -114,6 +98,50 @@ CalibrationParams::stagePosAndPhysicalPosToPixelPos(
 
     return std::make_tuple(static_cast<int>(std::round(pixelPosRow)),
                            static_cast<int>(std::round(pixelPosCol)));
+}
+
+std::tuple<double, double>
+CalibrationParams::physicalPosAndPixelPosToStagePos(
+    double physicalPosX,
+    double physicalPosY,
+    int pixelPosRow,
+    int pixelPosCol) const
+{
+    if (!calibration_.IsDefined())
+    {
+        throw std::runtime_error("Calibration data not loaded");
+    }
+
+    // Forward model:
+    //   physical_x = a*sx + b*sy + c*pixCol + d*pixRow + bias_x
+    //   physical_y = e*sx + f*sy + g*pixCol + h*pixRow + bias_y
+    // Holding pixel fixed, solve the 2x2 system [[a, b], [e, f]] [sx; sy] = rhs.
+    auto px = calibration_["stage_and_pixel_to_physical"]["physical_pos_x"];
+    auto py = calibration_["stage_and_pixel_to_physical"]["physical_pos_y"];
+    double a = px["stage_pos_x"].as<double>();
+    double b = px["stage_pos_y"].as<double>();
+    double c = px["pixel_pos_x"].as<double>();
+    double d = px["pixel_pos_y"].as<double>();
+    double biasX = px["bias"].as<double>();
+    double e = py["stage_pos_x"].as<double>();
+    double f = py["stage_pos_y"].as<double>();
+    double g = py["pixel_pos_x"].as<double>();
+    double h = py["pixel_pos_y"].as<double>();
+    double biasY = py["bias"].as<double>();
+
+    double rhsX = physicalPosX - c * pixelPosCol - d * pixelPosRow - biasX;
+    double rhsY = physicalPosY - g * pixelPosCol - h * pixelPosRow - biasY;
+
+    double det = a * f - b * e;
+    if (std::abs(det) < 1e-12)
+    {
+        throw std::runtime_error(
+            "Calibration stage-block is singular; cannot invert.");
+    }
+
+    double sx = (f * rhsX - b * rhsY) / det;
+    double sy = (a * rhsY - e * rhsX) / det;
+    return std::make_tuple(sx, sy);
 }
 
 void CalibrationParams::saveToFile(const std::string &yamlPath)

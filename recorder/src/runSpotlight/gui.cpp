@@ -19,18 +19,21 @@ namespace
 MotionControlWidget::MotionControlWidget(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<TrackingControlState> trackingControlState,
+    double minXAbsoluteMm,
+    double maxXAbsoluteMm,
+    double minYAbsoluteMm,
+    double maxYAbsoluteMm,
     QWidget *parent)
     : QWidget(parent),
       trackingControlState_(trackingControlState)
 {
-    minXAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
-                                                          "x_min_mm");
-    maxXAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
-                                                          "x_max_mm");
-    minYAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
-                                                          "y_min_mm");
-    maxYAbsoluteMm_ = recorderConfig.getParameter<double>("motion_control",
-                                                          "y_max_mm");
+    // Stage bounds are now derived externally (in runSpotlight_main) from
+    // the arena dimensions and the fitted calibration model, instead of
+    // being read from removed motion_control.x_min_mm/etc. config keys.
+    minXAbsoluteMm_ = minXAbsoluteMm;
+    maxXAbsoluteMm_ = maxXAbsoluteMm;
+    minYAbsoluteMm_ = minYAbsoluteMm;
+    maxYAbsoluteMm_ = maxYAbsoluteMm;
 
     int guiMotionStagePreviewUpdateFreq = recorderConfig.getParameter<int>(
         "gui", "motion_stage_preview_update_frequency_hz");
@@ -154,6 +157,10 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+    double stageMinXMm,
+    double stageMaxXMm,
+    double stageMinYMm,
+    double stageMaxYMm,
     QWidget *parent)
     : QWidget(parent),
       recorderConfig_(recorderConfig),
@@ -166,7 +173,11 @@ MainGUIWindow::MainGUIWindow(
       arduinoCommunication_(arduinoCommunication),
       programState_(programState),
       programmedRecordingStop_(programmedRecordingStop),
-      dualRecordingConfigForSaving_(dualRecordingConfig)
+      dualRecordingConfigForSaving_(dualRecordingConfig),
+      stageMinXMm_(stageMinXMm),
+      stageMaxXMm_(stageMaxXMm),
+      stageMinYMm_(stageMinYMm),
+      stageMaxYMm_(stageMaxYMm)
 {
     streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
@@ -417,6 +428,10 @@ MainGUIWindow::MainGUIWindow(
     // Motion stage state display
     motionControlWidget_ = new MotionControlWidget(recorderConfig,
                                                    trackingControlState,
+                                                   stageMinXMm_,
+                                                   stageMaxXMm_,
+                                                   stageMinYMm_,
+                                                   stageMaxYMm_,
                                                    this);
 
     // Record and stop buttons

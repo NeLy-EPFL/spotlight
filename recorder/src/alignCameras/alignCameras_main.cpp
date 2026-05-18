@@ -140,7 +140,9 @@ namespace
 void alignCamera(std::filesystem::path profileDir)
 {
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("Loading recorder configuration from {}", configPath.string());
+    spdlog::info(
+        "alignCameras loading recorder configuration from {}",
+        configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     // Load muscle camera full frame size

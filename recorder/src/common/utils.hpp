@@ -16,7 +16,6 @@
 #include <spdlog/spdlog.h>
 
 #include "dataTypes.hpp"
-#include "fileFormatVersions.hpp"
 
 namespace fs = std::filesystem;
 

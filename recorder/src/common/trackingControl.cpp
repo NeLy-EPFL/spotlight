@@ -140,7 +140,7 @@ void motionControlRequestHandler(
             spdlog::critical(
                 "Motion stage request handler thread received unknown "
                 "request type: {}",
-                myRequest.requestType);
+                static_cast<int>(myRequest.requestType));
             throw std::runtime_error(
                 "Motion stage request handler thread received unknown "
                 "request type.");

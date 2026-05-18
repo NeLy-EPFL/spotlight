@@ -133,7 +133,9 @@ void runArenaRegistrationScan(std::filesystem::path profileDir,
 
     // Load recorder config
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("Loading recorder configuration from {}", configPath.string());
+    spdlog::info(
+        "arenaRegistrationScan loading recorder configuration from {}",
+        configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     // Set up shared state and start behavior camera acquisition thread

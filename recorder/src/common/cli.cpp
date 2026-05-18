@@ -4,7 +4,8 @@ void printHelp(const char* programName) {
     std::cout << "Usage: " << programName << " [OPTIONS]\n"
               << "Options:\n"
               << "  -h, --help                 Display this help message\n"
-              << "  -p, --profile-dir PATH     Path to profile directory (default: ~/Spotlight/default/)\n"
+              << "  -p, --profile-dir PATH     Path to profile directory (required)\n"
+              << "  -a, --arena PATH           Path to arena directory (containing metadata.yaml and model/)\n"
               << "  -v, --verbose              Enable verbose output (debug level)\n"
               << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
               << std::endl;
@@ -38,15 +39,20 @@ CLIOptions parseCLI(int argc, char** argv) {
             options.logLevel = parseLogLevel(argv[++i]);
         } else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc) {
             options.profileDir = argv[++i];
-        } else if (i == 1 && arg[0] != '-') {
-            // Support for positional argument (for backward compatibility)
-            options.profileDir = arg;
+        } else if ((arg == "-a" || arg == "--arena") && i + 1 < argc) {
+            options.arenaDir = argv[++i];
         } else {
             std::cerr << "Unknown option: " << arg << std::endl;
             printHelp(argv[0]);
             std::exit(1);
         }
     }
-    
+
+    if (options.profileDir.empty()) {
+        std::cerr << "Error: -p/--profile-dir is required.\n";
+        printHelp(argv[0]);
+        std::exit(1);
+    }
+
     return options;
 }
