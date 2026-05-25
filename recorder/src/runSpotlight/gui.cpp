@@ -754,17 +754,23 @@ void MainGUIWindow::updateBehaviorImageDisplay()
         myStagePosition = trackingControlState_->latestMotionStagePosition;
     }
 
-    // Warp the active-area mask into camera-image space, then convert the
-    // grayscale frame to BGR and tint out-of-arena pixels blue.
-    cv::Mat activeMask = activeAreaMask_.warpToCurrentView(correctedFrame,
-                                                           myStagePosition);
+    // Warp the active-area mask into camera-image space and convert the
+    // grayscale frame to BGR and tint out-of-arena pixels red at 50% opacity
+    // for visualization.
+    cv::Mat activeMaskCurrView = activeAreaMask_.warpToCurrentView(
+        correctedFrame, myStagePosition);
     cv::Mat bgrImage;
     cv::cvtColor(correctedFrame, bgrImage, cv::COLOR_GRAY2BGR);
     cv::Mat outsideArena;
-    cv::threshold(activeMask, outsideArena, 0, 255, cv::THRESH_BINARY_INV);
+    cv::threshold(activeMaskCurrView, outsideArena, 0, 255, cv::THRESH_BINARY_INV);
     std::vector<cv::Mat> channels(3);
     cv::split(bgrImage, channels);
-    channels[0].setTo(255, outsideArena); // blue channel (BGR)
+    // Red tint at 50% opacity: new_red = curr + (255 - curr) / 2
+    cv::Mat inv, halfInv, tintedRed;
+    cv::subtract(cv::Scalar(255), channels[2], inv);
+    cv::divide(inv, 2, halfInv);
+    cv::add(channels[2], halfInv, tintedRed);
+    tintedRed.copyTo(channels[2], outsideArena); // red channel (BGR)
     cv::merge(channels, bgrImage);
 
     cv::Mat imageForDisplay = addCornerMarker(bgrImage,
@@ -920,8 +926,8 @@ void DualRecordingConfigWindow::onButtonClicked()
 
     bool isValid =
         dualRecordingConfigForSaving_->computeParameters(muscleImageHeight,
-                                                muscleCameraLineScanTimeUs,
-                                                muscleCameraReadoutTimeUs);
+                                                         muscleCameraLineScanTimeUs,
+                                                         muscleCameraReadoutTimeUs);
 
     if (!isValid)
     {

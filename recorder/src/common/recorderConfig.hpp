@@ -61,6 +61,7 @@ public:
     LinearMapper2x2to2 &stageAndPixelToPhysical;
 
     ActiveAreaMask(const std::string &arenaSpecDir,
+                   double boundaryMarginMm,
                    LinearMapper2x2to2 &stageAndPixelToPhysical);
     cv::Mat warpToCurrentView(cv::Mat currentImage,
                               MotionStagePosition stagePos);

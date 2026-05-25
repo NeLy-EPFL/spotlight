@@ -240,6 +240,9 @@ void trackingController(
                                           ->getLatestFrameData()
                                           .image;
             reorientBehaviorImage(myBehaviorImage, myBehaviorImage);
+            cv::Mat activeAreaMaskCurrView = activeAreaMask.warpToCurrentView(
+                myBehaviorImage,
+                getCurrentMotionStagePosition());
 
             MotionStagePosition myMotionStagePosition;
             {
@@ -258,7 +261,7 @@ void trackingController(
                 std::tie(isFound, physicalPosX, physicalPosY) =
                     calculateFlyPositionAbsoluteMm(myBehaviorImage,
                                                    myMotionStagePosition,
-                                                   activeAreaMask,
+                                                   activeAreaMaskCurrView,
                                                    behaviorCamCalibrationParams,
                                                    recorderConfig);
             }
@@ -287,7 +290,10 @@ void trackingController(
                     continue;
                 }
 
-                double dx = physicalPosX - currentPhysicalPosX;
+                // X stage should move in the OPPOSITE direction: the arena is
+                // facing downward, so the +x direction of the arena is the
+                // opposite of the +x direction of the stage.
+                double dx = -1 * (physicalPosX - currentPhysicalPosX);
                 double dy = physicalPosY - currentPhysicalPosY;
                 MotionStagePosition targetMotionStagePosition = {
                     myMotionStagePosition.xPosMm + dx,
@@ -356,17 +362,11 @@ void trackingController(
 }
 
 ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir,
+                               double boundaryMarginMm,
                                LinearMapper2x2to2 &stageAndPixelToPhysical)
     : stageAndPixelToPhysical(stageAndPixelToPhysical)
 {
-    fs::path maskPath = fs::path(arenaSpecDir) / "active_area.png";
-    fullArenaMask = cv::imread(maskPath.string(), cv::IMREAD_GRAYSCALE);
-    if (fullArenaMask.empty())
-    {
-        throw std::runtime_error(
-            "Failed to load active area mask from: " + maskPath.string());
-    }
-
+    // Load arena metadata
     fs::path metadataPath = fs::path(arenaSpecDir) / "metadata.yaml";
     YAML::Node metadata = YAML::LoadFile(metadataPath.string());
     if (!metadata["unit"] || metadata["unit"].as<std::string>() != "mm")
@@ -380,20 +380,47 @@ ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir,
     resolutionMmPerPixel =
         metadata["active_area_raster_resolution"].as<double>();
 
+    // Load rasterized active area mask
+    fs::path maskPath = fs::path(arenaSpecDir) / "active_area.png";
+    fullArenaMask = cv::imread(maskPath.string(), cv::IMREAD_GRAYSCALE);
+    if (fullArenaMask.empty())
+    {
+        throw std::runtime_error(
+            "Failed to load active area mask from: " + maskPath.string());
+    }
+    int expectCols = static_cast<int>(arenaWidthMm / resolutionMmPerPixel);
+    int expectRows = static_cast<int>(arenaHeightMm / resolutionMmPerPixel);
+    if (fullArenaMask.cols != expectCols || fullArenaMask.rows != expectRows)
+    {
+        throw std::runtime_error(
+            "Active area mask has incorrect dimensions: " + maskPath.string());
+    }
+
+    // Shrink active area mask by boundary margin
+    // double pixelPerMmX = 1 / abs(stageAndPixelToPhysical.w_X2toX);
+    // int boundaryMarginPixels = static_cast<int>(boundaryMarginMm * pixelPerMmX);
+    // cv::Mat erosionKernel = cv::getStructuringElement(
+    //     cv::MORPH_ELLIPSE,
+    //     cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
+    //     cv::Point(boundaryMarginPixels, boundaryMarginPixels));
+    // cv::erode(fullArenaMask, fullArenaMask, erosionKernel);
+    // std::cout << "pixelsPerMmX: " << pixelPerMmX
+    //      << ", boundaryMarginPixels: " << boundaryMarginPixels << std::endl;
+
     // Build the affine matrix that maps a camera pixel (col, row) to the
     // corresponding arena-mask pixel (col, row) when stage is at zero.
     // With WARP_INVERSE_MAP, warpAffine uses this matrix as:
     //   mask_col = M[0,0]*cam_col + M[0,1]*cam_row + M[0,2]
     //   mask_row = M[1,0]*cam_col + M[1,1]*cam_row + M[1,2]
     // which is exactly (stageAndPixelToPhysical(stage=0, pixel) / R).
-    double R = resolutionMmPerPixel;
-    transformMatrixAtZeroStagePos_ = (cv::Mat_<double>(2, 3) <<
-        stageAndPixelToPhysical.w_X2toX / R,
-        stageAndPixelToPhysical.w_Y2toX / R,
-        stageAndPixelToPhysical.biasX    / R,
-        stageAndPixelToPhysical.w_X2toY / R,
-        stageAndPixelToPhysical.w_Y2toY / R,
-        stageAndPixelToPhysical.biasY    / R);
+    transformMatrixAtZeroStagePos_ =
+        (cv::Mat_<double>(2, 3) << stageAndPixelToPhysical.w_X2toX,
+         stageAndPixelToPhysical.w_Y2toX,
+         stageAndPixelToPhysical.biasX,
+         stageAndPixelToPhysical.w_X2toY,
+         stageAndPixelToPhysical.w_Y2toY,
+         stageAndPixelToPhysical.biasY);
+    transformMatrixAtZeroStagePos_ /= resolutionMmPerPixel;
 }
 
 cv::Mat ActiveAreaMask::warpToCurrentView(cv::Mat currentImage,
@@ -419,7 +446,6 @@ cv::Mat ActiveAreaMask::warpToCurrentView(cv::Mat currentImage,
                    cv::Scalar(0));
     return warpedMask;
 }
-
 
 void motionStagePositionLogger(
     const RecorderConfig &recorderConfig,
@@ -507,7 +533,7 @@ void motionStagePositionLogger(
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
-    ActiveAreaMask &activeAreaMask,
+    cv::Mat &activeAreaMaskCurrView,
     CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig)
 {
@@ -530,11 +556,9 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     }
 
     // Zero out pixels that fall outside the active arena area.
-    cv::Mat activeMask = activeAreaMask.warpToCurrentView(behaviorImage,
-                                                          stagePosition);
     cv::Mat blackedOutImage = cv::Mat::zeros(behaviorImage.size(),
                                              behaviorImage.type());
-    behaviorImage.copyTo(blackedOutImage, activeMask);
+    behaviorImage.copyTo(blackedOutImage, activeAreaMaskCurrView);
 
     assert(blackedOutImage.channels() == 1);
 

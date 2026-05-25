@@ -161,8 +161,11 @@ int runSpotlightMain(int argc, char **argv)
     CalibrationParams muscleCamCalibrationParams;
 
     // Load the active-area mask for closed-loop tracking.
+    double boundaryMarginMm = recorderConfig.getParameter<double>(
+        "tracking", "boundary_margin_mm");
     ActiveAreaMask activeAreaMask(
         arenaDir.string(),
+        boundaryMarginMm,
         behaviorCamCalibrationParams.stageAndPixelToPhysical);
     spdlog::info("Loaded active area mask from {}", arenaDir.string());
 

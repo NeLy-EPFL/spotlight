@@ -11,11 +11,9 @@ the path passed to `-a`/`--arena`.
 - `<i>` — zero-based image index within the burst (0–9).
 
 Each file is a single-channel (grayscale) 8-bit JPEG saved at maximum quality
-(`IMWRITE_JPEG_QUALITY=100`). The image is rotated 90° counter-clockwise
-relative to the raw sensor output, but is **not** horizontally flipped — it
-represents the actual camera view. The live preview window applies an
-additional horizontal flip for user comfort, but that flip is not applied to
-saved images.
+(`IMWRITE_JPEG_QUALITY=100`). The image is processed with `reorientBehaviorImage`
+(rotate 90° counter-clockwise, then horizontal flip), matching exactly what is
+shown in the live preview window.
 
 Ten consecutive frames are acquired per apriltag. The first frame after the
 stage stops is discarded before the burst begins, so that frames exposed during

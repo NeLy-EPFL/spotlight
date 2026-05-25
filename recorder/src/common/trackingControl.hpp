@@ -70,7 +70,7 @@ void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState)
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
-    ActiveAreaMask &activeAreaMask,
+    cv::Mat &activeAreaMaskCurrView,
     CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig);
 

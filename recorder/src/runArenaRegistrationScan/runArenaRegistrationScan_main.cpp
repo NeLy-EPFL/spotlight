@@ -405,10 +405,8 @@ void runArenaRegistrationScan(std::filesystem::path profileDir,
             FrameData frameData =
                 waitForNextFrame(behaviorRecordingState->latestFrameHolder, lastTime);
 
-            // Save the rotated-only image (no horizontal flip) so the file
-            // represents the actual camera view, not the user-facing display.
             cv::Mat image;
-            cv::rotate(frameData.image, image, cv::ROTATE_90_COUNTERCLOCKWISE);
+            reorientBehaviorImage(frameData.image, image);
 
             std::string filename = fmt::format("apriltag{}_img{}.jpg", tagId, imgId);
             cv::imwrite((scanDir / filename).string(), image, jpegParams);
