@@ -397,15 +397,22 @@ ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir,
     }
 
     // Shrink active area mask by boundary margin
-    // double pixelPerMmX = 1 / abs(stageAndPixelToPhysical.w_X2toX);
-    // int boundaryMarginPixels = static_cast<int>(boundaryMarginMm * pixelPerMmX);
-    // cv::Mat erosionKernel = cv::getStructuringElement(
-    //     cv::MORPH_ELLIPSE,
-    //     cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
-    //     cv::Point(boundaryMarginPixels, boundaryMarginPixels));
-    // cv::erode(fullArenaMask, fullArenaMask, erosionKernel);
-    // std::cout << "pixelsPerMmX: " << pixelPerMmX
-    //      << ", boundaryMarginPixels: " << boundaryMarginPixels << std::endl;
+    int boundaryMarginPixels = static_cast<int>(
+        boundaryMarginMm / resolutionMmPerPixel);
+    cv::Mat erosionKernel = cv::getStructuringElement(
+        cv::MORPH_ELLIPSE,
+        cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
+        cv::Point(boundaryMarginPixels, boundaryMarginPixels));
+    cv::erode(fullArenaMask,
+              fullArenaMask,
+              erosionKernel,
+              cv::Point(-1, -1), // anchor (default)
+              1,                 // iterations (default)
+              // Set border value to 0 so that the erosion treats arena walls as
+              // out-of-arena boundaries, so the edges are shrunk even if there
+              // is no black pixels along the edges.
+              cv::BORDER_CONSTANT, // borderType
+              cv::Scalar(0));      // borderValue
 
     // Build the affine matrix that maps a camera pixel (col, row) to the
     // corresponding arena-mask pixel (col, row) when stage is at zero.
