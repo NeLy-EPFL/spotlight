@@ -160,6 +160,12 @@ int runSpotlightMain(int argc, char **argv)
     // reads it keeps working.
     CalibrationParams muscleCamCalibrationParams;
 
+    // Load the active-area mask for closed-loop tracking.
+    ActiveAreaMask activeAreaMask(
+        arenaDir.string(),
+        behaviorCamCalibrationParams.stageAndPixelToPhysical);
+    spdlog::info("Loaded active area mask from {}", arenaDir.string());
+
     // Compute the stage range covering the arena, for the motion-stage
     // preview widget. Read arena dimensions from <arenaDir>/metadata.yaml,
     // then invert the calibration model at the image center to find which
@@ -233,8 +239,7 @@ int runSpotlightMain(int argc, char **argv)
     std::thread trackingControllerThread(
         trackingController,
         recorderConfig,
-        arenaSizeXMm,
-        arenaSizeYMm,
+        std::ref(activeAreaMask),
         behaviorRecordingState,
         trackingControlState,
         std::ref(behaviorCamCalibrationParams),
@@ -337,8 +342,7 @@ int runSpotlightMain(int argc, char **argv)
                                      arduinoCommunication,
                                      programState,
                                      programmedRecordingStop,
-                                     arenaSizeXMm,
-                                     arenaSizeYMm,
+                                     activeAreaMask,
                                      stageMinXMm,
                                      stageMaxXMm,
                                      stageMinYMm,

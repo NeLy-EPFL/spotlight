@@ -86,8 +86,7 @@ public:
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
         std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-        double arenaSizeXMm,
-        double arenaSizeYMm,
+        ActiveAreaMask &activeAreaMask,
         double stageMinXMm,
         double stageMaxXMm,
         double stageMinYMm,
@@ -123,13 +122,12 @@ private:
     std::shared_ptr<TrackingControlState> trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
     CalibrationParams &muscleCamCalibrationParams_;
+    ActiveAreaMask &activeAreaMask_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
     std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
     std::unique_ptr<DualRecordingConfig> dualRecordingConfigForStreaming_;
-    double arenaSizeXMm_;
-    double arenaSizeYMm_;
     double stageMinXMm_;
     double stageMaxXMm_;
     double stageMinYMm_;

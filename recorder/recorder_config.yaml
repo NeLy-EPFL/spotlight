@@ -1,7 +1,3 @@
-arena:
-  size_x_mm: 48
-  size_y_mm: 72
-
 behavior_camera:
   full_frame_width: 2560
   full_frame_height: 2048

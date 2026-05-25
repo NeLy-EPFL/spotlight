@@ -8,11 +8,17 @@ namespace
         {
             return QImage();
         }
-        return QImage(mat.data,
-                      mat.cols,
-                      mat.rows,
-                      mat.step,
-                      QImage::Format_Grayscale8);
+        if (mat.channels() == 1)
+        {
+            return QImage(mat.data, mat.cols, mat.rows, mat.step,
+                          QImage::Format_Grayscale8);
+        }
+        // 3-channel BGR → RGB for Qt
+        cv::Mat rgb;
+        cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
+        return QImage(rgb.data, rgb.cols, rgb.rows, rgb.step,
+                      QImage::Format_RGB888)
+            .copy();
     }
 }
 
@@ -157,8 +163,7 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-    double arenaSizeXMm,
-    double arenaSizeYMm,
+    ActiveAreaMask &activeAreaMask,
     double stageMinXMm,
     double stageMaxXMm,
     double stageMinYMm,
@@ -176,8 +181,7 @@ MainGUIWindow::MainGUIWindow(
       programState_(programState),
       programmedRecordingStop_(programmedRecordingStop),
       dualRecordingConfigForSaving_(dualRecordingConfig),
-      arenaSizeXMm_(arenaSizeXMm),
-      arenaSizeYMm_(arenaSizeYMm),
+      activeAreaMask_(activeAreaMask),
       stageMinXMm_(stageMinXMm),
       stageMaxXMm_(stageMaxXMm),
       stageMinYMm_(stageMinYMm),
@@ -750,17 +754,22 @@ void MainGUIWindow::updateBehaviorImageDisplay()
         myStagePosition = trackingControlState_->latestMotionStagePosition;
     }
 
-    cv::Mat maskedImage = blackoutOutside(
-        correctedFrame,
-        myStagePosition,
-        arenaSizeXMm_,
-        arenaSizeYMm_,
-        behaviorCamCalibrationParams_,
-        recorderConfig_);
+    // Warp the active-area mask into camera-image space, then convert the
+    // grayscale frame to BGR and tint out-of-arena pixels blue.
+    cv::Mat activeMask = activeAreaMask_.warpToCurrentView(correctedFrame,
+                                                           myStagePosition);
+    cv::Mat bgrImage;
+    cv::cvtColor(correctedFrame, bgrImage, cv::COLOR_GRAY2BGR);
+    cv::Mat outsideArena;
+    cv::threshold(activeMask, outsideArena, 0, 255, cv::THRESH_BINARY_INV);
+    std::vector<cv::Mat> channels(3);
+    cv::split(bgrImage, channels);
+    channels[0].setTo(255, outsideArena); // blue channel (BGR)
+    cv::merge(channels, bgrImage);
 
-    cv::Mat imageForDisplay = addCornerMarker(maskedImage,
-                                              arenaSizeXMm_,
-                                              arenaSizeYMm_,
+    cv::Mat imageForDisplay = addCornerMarker(bgrImage,
+                                              activeAreaMask_.arenaWidthMm,
+                                              activeAreaMask_.arenaHeightMm,
                                               myStagePosition,
                                               behaviorCamCalibrationParams_);
 

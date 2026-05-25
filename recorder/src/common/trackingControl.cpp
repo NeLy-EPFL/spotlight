@@ -195,8 +195,7 @@ void motionControlRequestHandler(
 
 void trackingController(
     const RecorderConfig &recorderConfig,
-    double arenaSizeXMm,
-    double arenaSizeYMm,
+    ActiveAreaMask &activeAreaMask,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
@@ -259,8 +258,7 @@ void trackingController(
                 std::tie(isFound, physicalPosX, physicalPosY) =
                     calculateFlyPositionAbsoluteMm(myBehaviorImage,
                                                    myMotionStagePosition,
-                                                   arenaSizeXMm,
-                                                   arenaSizeYMm,
+                                                   activeAreaMask,
                                                    behaviorCamCalibrationParams,
                                                    recorderConfig);
             }
@@ -357,64 +355,71 @@ void trackingController(
     }
 }
 
-cv::Mat blackoutOutside(cv::Mat image,
-                        MotionStagePosition stagePos,
-                        double arenaSizeXMm,
-                        double arenaSizeYMm,
-                        CalibrationParams &behaviorCamCalibrationParams,
-                        const RecorderConfig &recorderConfig)
+ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir,
+                               LinearMapper2x2to2 &stageAndPixelToPhysical)
+    : stageAndPixelToPhysical(stageAndPixelToPhysical)
 {
-    if (!behaviorCamCalibrationParams.isDefined)
+    fs::path maskPath = fs::path(arenaSpecDir) / "active_area.png";
+    fullArenaMask = cv::imread(maskPath.string(), cv::IMREAD_GRAYSCALE);
+    if (fullArenaMask.empty())
     {
-        // If calibration is not defined, don't do anything because we don't
-        // know where the boundaries are in pixel coordinates
-        return image;
+        throw std::runtime_error(
+            "Failed to load active area mask from: " + maskPath.string());
     }
 
-    double boundaryMarginMm = recorderConfig.getParameter<double>(
-        "tracking", "boundary_margin_mm");
-    double xMinPhysical = boundaryMarginMm;
-    double xMaxPhysical = arenaSizeXMm - boundaryMarginMm;
-    double yMinPhysical = boundaryMarginMm;
-    double yMaxPhysical = arenaSizeYMm - boundaryMarginMm;
+    fs::path metadataPath = fs::path(arenaSpecDir) / "metadata.yaml";
+    YAML::Node metadata = YAML::LoadFile(metadataPath.string());
+    if (!metadata["unit"] || metadata["unit"].as<std::string>() != "mm")
+    {
+        throw std::runtime_error(
+            "Arena metadata unit is not 'mm': " + metadataPath.string());
+    }
+    auto arenaDim = metadata["arena_dim"].as<std::vector<double>>();
+    arenaWidthMm = arenaDim[0];
+    arenaHeightMm = arenaDim[1];
+    resolutionMmPerPixel =
+        metadata["active_area_raster_resolution"].as<double>();
 
-    int x0, y0, x1, y1, x2, y2, x3, y3;
-    std::tie(y0, x0) =
-        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
-            stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMinPhysical);
-    std::tie(y1, x1) =
-        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
-            stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMinPhysical);
-    std::tie(y2, x2) =
-        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
-            stagePos.xPosMm, stagePos.yPosMm, xMaxPhysical, yMaxPhysical);
-    std::tie(y3, x3) =
-        behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
-            stagePos.xPosMm, stagePos.yPosMm, xMinPhysical, yMaxPhysical);
-
-    // Clamp values to image boundaries
-    int numRows = image.rows;
-    int numCols = image.cols;
-    std::vector<cv::Point> corners = {
-        cv::Point(x0, y0),
-        cv::Point(x1, y1),
-        cv::Point(x2, y2),
-        cv::Point(x3, y3)};
-    // Wrap it in a vector of vector for fillPoly
-    std::vector<std::vector<cv::Point>> pts = {corners};
-
-    // Create black image
-    cv::Mat blackedOutImage = cv::Mat::zeros(image.size(), image.type());
-
-    // Create mask for what's within the stage boundaries, with a boundary width
-    // considered
-    cv::fillPoly(blackedOutImage, pts, cv::Scalar(1));
-
-    // Copy the ROI from the original image to the blacked out image
-    image.copyTo(blackedOutImage, blackedOutImage);
-
-    return blackedOutImage;
+    // Build the affine matrix that maps a camera pixel (col, row) to the
+    // corresponding arena-mask pixel (col, row) when stage is at zero.
+    // With WARP_INVERSE_MAP, warpAffine uses this matrix as:
+    //   mask_col = M[0,0]*cam_col + M[0,1]*cam_row + M[0,2]
+    //   mask_row = M[1,0]*cam_col + M[1,1]*cam_row + M[1,2]
+    // which is exactly (stageAndPixelToPhysical(stage=0, pixel) / R).
+    double R = resolutionMmPerPixel;
+    transformMatrixAtZeroStagePos_ = (cv::Mat_<double>(2, 3) <<
+        stageAndPixelToPhysical.w_X2toX / R,
+        stageAndPixelToPhysical.w_Y2toX / R,
+        stageAndPixelToPhysical.biasX    / R,
+        stageAndPixelToPhysical.w_X2toY / R,
+        stageAndPixelToPhysical.w_Y2toY / R,
+        stageAndPixelToPhysical.biasY    / R);
 }
+
+cv::Mat ActiveAreaMask::warpToCurrentView(cv::Mat currentImage,
+                                          MotionStagePosition stagePos)
+{
+    // Add contribution of non-zero stage position to the transformation matrix
+    double xOffset = (stageAndPixelToPhysical.w_X1toX * stagePos.xPosMm +
+                      stageAndPixelToPhysical.w_Y1toX * stagePos.yPosMm);
+    double yOffset = (stageAndPixelToPhysical.w_X1toY * stagePos.xPosMm +
+                      stageAndPixelToPhysical.w_Y1toY * stagePos.yPosMm);
+    cv::Mat transformMatrix = transformMatrixAtZeroStagePos_.clone();
+    transformMatrix.at<double>(0, 2) += xOffset / resolutionMmPerPixel;
+    transformMatrix.at<double>(1, 2) += yOffset / resolutionMmPerPixel;
+
+    // Apply affine transform
+    cv::Mat warpedMask;
+    cv::warpAffine(fullArenaMask,
+                   warpedMask,
+                   transformMatrix,
+                   currentImage.size(),
+                   cv::WARP_INVERSE_MAP | cv::INTER_NEAREST,
+                   cv::BORDER_CONSTANT,
+                   cv::Scalar(0));
+    return warpedMask;
+}
+
 
 void motionStagePositionLogger(
     const RecorderConfig &recorderConfig,
@@ -502,8 +507,7 @@ void motionStagePositionLogger(
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat behaviorImage,
     MotionStagePosition stagePosition,
-    double arenaSizeXMm,
-    double arenaSizeYMm,
+    ActiveAreaMask &activeAreaMask,
     CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig)
 {
@@ -525,13 +529,12 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
 
-    // Remove pixels outside the stage boundaries
-    cv::Mat blackedOutImage = blackoutOutside(behaviorImage,
-                                              stagePosition,
-                                              arenaSizeXMm,
-                                              arenaSizeYMm,
-                                              behaviorCamCalibrationParams,
-                                              recorderConfig);
+    // Zero out pixels that fall outside the active arena area.
+    cv::Mat activeMask = activeAreaMask.warpToCurrentView(behaviorImage,
+                                                          stagePosition);
+    cv::Mat blackedOutImage = cv::Mat::zeros(behaviorImage.size(),
+                                             behaviorImage.type());
+    behaviorImage.copyTo(blackedOutImage, activeMask);
 
     assert(blackedOutImage.channels() == 1);
 

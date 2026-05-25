@@ -2,9 +2,14 @@
 #define RECORDER_CONFIG_HPP
 
 #include <fstream>
+#include <filesystem>
 
 #include <yaml-cpp/yaml.h>
 #include <spdlog/spdlog.h>
+#include <opencv2/opencv.hpp>
+
+#include "calibration.hpp"
+#include "dataTypes.hpp"
 
 class RecorderConfig
 {
@@ -13,11 +18,11 @@ public:
 
     RecorderConfig();
     RecorderConfig(const std::string &yamlPath);
-    
+
     // Add const qualifier to make it usable with const objects
     template <typename T>
     T getParameter(const std::string &section, const std::string &parameter) const;
-    
+
     void saveToFile(const std::string &yamlPath);
 
 private:
@@ -40,10 +45,28 @@ T RecorderConfig::getParameter(const std::string &section, const std::string &pa
     catch (const YAML::Exception &e)
     {
         // Use spdlog to match your include
-        spdlog::error("Failed to get parameter: {}.{} - {}", 
+        spdlog::error("Failed to get parameter: {}.{} - {}",
                       section, parameter, e.what());
         throw std::runtime_error("Failed to get parameter");
     }
 }
+
+class ActiveAreaMask
+{
+public:
+    cv::Mat fullArenaMask;
+    double resolutionMmPerPixel;
+    double arenaWidthMm;
+    double arenaHeightMm;
+    LinearMapper2x2to2 &stageAndPixelToPhysical;
+
+    ActiveAreaMask(const std::string &arenaSpecDir,
+                   LinearMapper2x2to2 &stageAndPixelToPhysical);
+    cv::Mat warpToCurrentView(cv::Mat currentImage,
+                              MotionStagePosition stagePos);
+
+private:
+    cv::Mat transformMatrixAtZeroStagePos_;
+};
 
 #endif // RECORDER_CONFIG_HPP
