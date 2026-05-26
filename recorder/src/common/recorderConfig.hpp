@@ -44,20 +44,4 @@ T RecorderConfig::getParameter(const std::string &section, const std::string &pa
     }
 }
 
-class ActiveAreaMask {
-  public:
-    cv::Mat fullArenaMask;
-    double resolutionMmPerPixel;
-    double arenaWidthMm;
-    double arenaHeightMm;
-    LinearMapper2x2to2 &stageAndPixelToPhysical;
-
-    ActiveAreaMask(const std::string &arenaSpecDir, double boundaryMarginMm,
-                   LinearMapper2x2to2 &stageAndPixelToPhysical);
-    cv::Mat warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos);
-
-  private:
-    cv::Mat transformMatrixAtZeroStagePos_;
-};
-
 #endif // RECORDER_CONFIG_HPP

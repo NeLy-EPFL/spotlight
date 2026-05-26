@@ -22,6 +22,22 @@
 #include "recorderConfig.hpp"
 #include "utils.hpp"
 
+class ActiveAreaMask {
+  public:
+    cv::Mat fullArenaMask;
+    double resolutionMmPerPixel;
+    double arenaWidthMm;
+    double arenaHeightMm;
+    LinearMapper2x2to2 &stageAndPixelToPhysical;
+
+    ActiveAreaMask(const std::string &arenaSpecDir, double boundaryMarginMm,
+                   LinearMapper2x2to2 &stageAndPixelToPhysical);
+    cv::Mat warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos);
+
+  private:
+    cv::Mat transformMatrixAtZeroStagePos_;
+};
+
 struct TrackingControlState {
     std::atomic<bool> motionControlHandlerReady = false;
     MotionStagePosition latestMotionStagePosition;
