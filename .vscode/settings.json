@@ -102,5 +102,4 @@
         "qserialportinfo": "cpp",
         "qserialport": "cpp"
     },
-    "cmake.sourceDirectory": "/home/spotlight/project/spotlight-dev/spotlight-control/recorder"
 }
