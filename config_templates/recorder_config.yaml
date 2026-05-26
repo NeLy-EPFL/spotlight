@@ -34,7 +34,6 @@ muscle_camera:
   rolling_shutter_line_time_us: 12.136
   sensor_readout_time_us: 10  # actually 4.5, but 10 just to be safe
 
-
 motion_control:
   motion_stage_device_manufacturer: "X-MCC2"
   motion_stage_device_description: "Zaber Technologies Inc."
@@ -42,14 +41,11 @@ motion_control:
   stage_serial_no_y_axis: 122390
   length_unit: "mm"
   velocity_unit: "mm/s"
-  x_min_mm: 68
-  x_max_mm: 115
-  y_min_mm: 45
-  y_max_mm: 111
   default_velocity_mm_per_sec: 63
   calibration_scan_stride_mm: 2
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
+  apriltag_mapping_settling_frames: 5
 
 tracking:
   update_frequency_hz: 30

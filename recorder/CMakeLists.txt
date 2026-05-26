@@ -88,29 +88,6 @@ target_link_libraries(run-spotlight spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-spotlight yaml-cpp)
 set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
 
-# Compile calibration tool
-file(GLOB RUN_CALIBRATION_SOURCES
-    "src/runCalibrationScan/runCalibration_main.cpp"
-    "src/runCalibrationScan/runCalibration.hpp"
-    "src/peripherals/behaviorCamera.*"
-    "src/peripherals/muscleCamera.*"
-    "src/peripherals/motionControl.*"
-    "src/peripherals/arduinoCommunication.*"
-    "src/peripherals/experimentProtocol.*"
-    "src/pcoCameraServer/sharedMemoryUtils.*"
-    "src/common/cli.*"
-    "src/common/recorderConfig.*"
-    "src/common/behaviorRecording.*"
-    "src/common/muscleRecording.*"
-    "src/common/utils.*")
-add_executable(run-calibration-scan ${RUN_CALIBRATION_SOURCES})
-# target_link_libraries(run-calibration-scan pthread rt dl)
-target_link_libraries(run-calibration-scan Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(run-calibration-scan ${OpenCV_LIBS})
-target_link_libraries(run-calibration-scan ${ZABER_MOTION_LIB})
-target_link_libraries(run-calibration-scan spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-target_link_libraries(run-calibration-scan yaml-cpp)
-
 # Compile camera alignment tool
 file(GLOB ALIGN_CAMERAS_SOURCES
     "src/alignCameras/*.cpp"
@@ -162,7 +139,6 @@ install(
     TARGETS
         pco-camera-server
         run-spotlight
-        run-calibration-scan
         align-cameras
         run-arena-registration-scan
     RUNTIME DESTINATION

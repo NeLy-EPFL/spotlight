@@ -1,3 +1,31 @@
+/**
+ * run-arena-registration-scan
+ *
+ * Performs the arena registration scan needed to fit the
+ * (stage, pixel) <-> physical mapping model.
+ *
+ * Workflow
+ * --------
+ * 1. Live preview with crosshairs -- the user centres the camera on the
+ *    DataMatrix barcode printed on the mapping board, then presses ENTER.
+ * 2. The DataMatrix is decoded and its checksum is verified against
+ *    <arena_dir>/metadata.yaml to confirm the correct arena is mounted.
+ * 3. The stage-to-arena offset is computed from the current stage position
+ *    and the known DataMatrix position in arena coordinates.
+ * 4. The stage visits each AprilTag position in sequence, acquires 10
+ *    consecutive frames per tag (after dropping a configurable number of
+ *    settling frames), and saves:
+ *      <arena_dir>/mapping_scan/apriltag<id>_img<i>.jpg
+ *      <arena_dir>/mapping_scan/apriltag_stage_positions.csv
+ *
+ * After the scan, run `fit-arena-registration -a <arena_dir>` to fit the
+ * calibration model.
+ *
+ * CLI:  run-arena-registration-scan -p PROFILE_DIR -a ARENA_DIR [OPTIONS]
+ *       (see --help for details)
+ *
+ * Requires libdmtx-dev: sudo apt install libdmtx-dev
+ */
 // Requires libdmtx-dev: sudo apt install libdmtx-dev
 #include "runArenaRegistrationScan.hpp"
 

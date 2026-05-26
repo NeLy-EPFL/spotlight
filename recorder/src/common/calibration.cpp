@@ -62,7 +62,7 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
     }
 
     // Populate stageAndPixelToPhysical_
-    // YAML keys: stage_pos_x/y → first input pair; pixel_pos_x(col)/y(row) → second
+    // YAML keys: stage_pos_x/y -> first input pair; pixel_pos_x(col)/y(row) -> second
     auto sptp_x = calibration_["stage_and_pixel_to_physical"]["physical_pos_x"];
     auto sptp_y = calibration_["stage_and_pixel_to_physical"]["physical_pos_y"];
     stageAndPixelToPhysical_.w_X1toX = sptp_x["stage_pos_x"].as<double>();

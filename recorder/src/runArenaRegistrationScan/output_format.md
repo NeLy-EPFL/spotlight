@@ -7,12 +7,12 @@ the path passed to `-a`/`--arena`.
 
 **Filename pattern:** `apriltag<id>_img<i>.jpg`
 
-- `<id>` — integer apriltag ID, matching the keys in `metadata.yaml` under `apriltag_positions`.
-- `<i>` — zero-based image index within the burst (0–9).
+- `<id>` - integer apriltag ID, matching the keys in `metadata.yaml` under `apriltag_positions`.
+- `<i>` - zero-based image index within the burst (0-9).
 
 Each file is a single-channel (grayscale) 8-bit JPEG saved at maximum quality
 (`IMWRITE_JPEG_QUALITY=100`). The image is processed with `reorientBehaviorImage`
-(rotate 90° counter-clockwise, then horizontal flip), matching exactly what is
+(rotate 90 degrees counter-clockwise, then horizontal flip), matching exactly what is
 shown in the live preview window.
 
 Ten consecutive frames are acquired per apriltag. The first frame after the
@@ -28,7 +28,7 @@ One row per image, covering all apriltags in ascending ID order.
 | Column | Type | Description |
 |---|---|---|
 | `apriltag_id` | integer | Apriltag ID |
-| `image_id` | integer | Zero-based index within the burst (0–9) |
+| `image_id` | integer | Zero-based index within the burst (0-9) |
 | `stage_x_mm` | float (6 d.p.) | X translation stage position at the moment of image readout, in mm |
 | `stage_y_mm` | float (6 d.p.) | Y translation stage position at the moment of image readout, in mm |
 

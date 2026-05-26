@@ -13,7 +13,7 @@ namespace
             return QImage(mat.data, mat.cols, mat.rows, mat.step,
                           QImage::Format_Grayscale8);
         }
-        // 3-channel BGR → RGB for Qt
+        // 3-channel BGR -> RGB for Qt
         cv::Mat rgb;
         cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
         return QImage(rgb.data, rgb.cols, rgb.rows, rgb.step,

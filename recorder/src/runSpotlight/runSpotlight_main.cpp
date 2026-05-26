@@ -1,3 +1,19 @@
+/**
+ * run-spotlight -- main recording application.
+ *
+ * Loads the recorder config from <profile_dir>/recorder_config.yaml, the
+ * muscle-camera ROI from <profile_dir>/muscle_camera_roi.yaml, and the
+ * arena registration model from <arena_dir>/model/calibration_result.yaml.
+ * Reads arena dimensions from <arena_dir>/metadata.yaml to derive the stage
+ * range used by the motion-stage preview widget.
+ *
+ * Shows a DualRecordingConfigWindow dialog at startup to set behaviour/muscle
+ * frame rates and exposure. Then launches all acquisition, saving, tracking,
+ * and Arduino threads and opens the main GUI window.
+ *
+ * CLI:  run-spotlight -p PROFILE_DIR -a ARENA_DIR [OPTIONS]
+ *       (see --help for details; -a/--arena is required)
+ */
 #include "runSpotlight.hpp"
 
 namespace

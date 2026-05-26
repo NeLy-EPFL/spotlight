@@ -1,3 +1,10 @@
+/**
+ * runArenaRegistrationScan.hpp
+ *
+ * Declares runArenaRegistrationScan(profileDir, arenaDir), which performs
+ * the automated mapping-board scan.  See runArenaRegistrationScan_main.cpp
+ * for the full workflow description and output_format.md for the output spec.
+ */
 #ifndef RUN_ARENA_REGISTRATION_SCAN_HPP
 #define RUN_ARENA_REGISTRATION_SCAN_HPP
 
