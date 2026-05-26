@@ -58,7 +58,8 @@ struct MotionStageRequest {
 
 struct MotionStageResponse {
     MotionStagePosition position = MotionStagePosition{
-        std::numeric_limits<double>::signaling_NaN(), std::numeric_limits<double>::signaling_NaN()};
+        std::numeric_limits<double>::signaling_NaN(),
+        std::numeric_limits<double>::signaling_NaN()};
     bool isIdle = false;
     bool setSuccess = false;
 };

@@ -6,7 +6,8 @@ uint64_t getCurrentTimeMicroseconds() {
         .count();
 }
 
-cv::Mat makePseudoBGRImageFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames) {
+cv::Mat makePseudoBGRImageFromThreeFrames(
+    const GroupOfThreeFrames &groupOfThreeFrames) {
     std::vector<cv::Mat> channels = {
         groupOfThreeFrames.frame0.image,
         groupOfThreeFrames.frame1.image,
@@ -26,24 +27,32 @@ void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage) {
     cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
 }
 
-std::string makeMetadataStringFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames) {
+std::string makeMetadataStringFromThreeFrames(
+    const GroupOfThreeFrames &groupOfThreeFrames) {
     std::string metadataString = "frame_id,acquired_time_us,received_time_us\n";
     for (const FrameData &frameData :
-         {groupOfThreeFrames.frame0, groupOfThreeFrames.frame1, groupOfThreeFrames.frame2}) {
+         {groupOfThreeFrames.frame0,
+          groupOfThreeFrames.frame1,
+          groupOfThreeFrames.frame2}) {
         metadataString += fmt::format(
-            "{},{},{}\n", frameData.frameId, frameData.acquisitionTime, frameData.receivedTime);
+            "{},{},{}\n",
+            frameData.frameId,
+            frameData.acquisitionTime,
+            frameData.receivedTime);
     }
     return metadataString;
 }
 
-std::string getSerialPortName(std::string deviceDescription, std::string deviceManufacturer) {
+std::string getSerialPortName(
+    std::string deviceDescription, std::string deviceManufacturer) {
     std::vector<SerialPortInfo> allSerialPortInfo;
 
     foreach (const QSerialPortInfo &port, QSerialPortInfo::availablePorts()) {
         std::string portName = port.portName().toStdString();
         std::string description = port.description().toStdString();
         std::string manufacturer = port.manufacturer().toStdString();
-        if (description == deviceDescription && manufacturer == deviceManufacturer) {
+        if (description == deviceDescription &&
+            manufacturer == deviceManufacturer) {
             spdlog::info(
                 "Serial port found. "
                 "Port name: '{}', description: '{}', manufacturer: '{}'",
@@ -73,7 +82,9 @@ std::string getSerialPortName(std::string deviceDescription, std::string deviceM
 }
 
 int calculateBehaviorCameraPreviewWidth(
-    int behaviorCameraPreviewHeight, int motionStageXRange, int motionStageYRange) {
+    int behaviorCameraPreviewHeight,
+    int motionStageXRange,
+    int motionStageYRange) {
     return behaviorCameraPreviewHeight *
            (static_cast<float>(motionStageXRange) / motionStageYRange);
 }
@@ -104,13 +115,16 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder) {
 
     try {
         fs::create_directories(absoluteDir);
-        spdlog::info("Created directory '{}' (if it didn't already exist)", absoluteDir.string());
+        spdlog::info(
+            "Created directory '{}' (if it didn't already exist)",
+            absoluteDir.string());
 
         if (clearFolder) {
             for (const auto &entry : fs::directory_iterator(absoluteDir)) {
                 fs::remove_all(entry);
             }
-            spdlog::info("Cleared content of directory '{}'", absoluteDir.string());
+            spdlog::info(
+                "Cleared content of directory '{}'", absoluteDir.string());
         }
     } catch (const fs::filesystem_error &e) {
         spdlog::error(
@@ -137,7 +151,8 @@ std::string expandPath(const std::string &path) {
 
         // If HOME is available, replace "~/" with the home directory
         if (homeDir) {
-            std::filesystem::path expandedPath = std::filesystem::path(homeDir) / path.substr(2);
+            std::filesystem::path expandedPath =
+                std::filesystem::path(homeDir) / path.substr(2);
             return expandedPath.string();
         } else {
             spdlog::error(
@@ -152,7 +167,8 @@ std::string expandPath(const std::string &path) {
     return path;
 }
 
-void convert16BitTo8Bit(cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset) {
+void convert16BitTo8Bit(
+    cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset) {
     // Normalize the range of a 16-bit image (0 - 2^16) to that of a 8-bit
     // image (0 - 2^8): divide whatever factor the caller wants by 2^(16-8)
     double alpha = scale / 255.0;
@@ -161,7 +177,8 @@ void convert16BitTo8Bit(cv::Mat &sourceImage, cv::Mat &targetImage, int scale, i
 
 int calculateMuscleShutterOpenTime(
     int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs) {
-    int maxRollingShutterDelay = static_cast<int>(numLinesScanned * rollingShutterLineTimeUs);
+    int maxRollingShutterDelay =
+        static_cast<int>(numLinesScanned * rollingShutterLineTimeUs);
     return maxRollingShutterDelay + exposureTimeUs;
 }
 
@@ -177,18 +194,23 @@ void writeExperimentParameters(
     out << YAML::BeginMap;
 
     out << YAML::Key << "behavior_fps" << YAML::Value << behavior_fps;
-    out << YAML::Key << "muscle_imaging_enabled" << YAML::Value << muscle_imaging_enabled;
+    out << YAML::Key << "muscle_imaging_enabled" << YAML::Value
+        << muscle_imaging_enabled;
     out << YAML::Key << "muscle_sync_ratio" << YAML::Value << muscle_sync_ratio;
-    out << YAML::Key << "behavior_exposure_time_ms" << YAML::Value << behavior_exposure_time_ms;
-    out << YAML::Key << "muscle_exposure_time_ms" << YAML::Value << muscle_exposure_time_ms;
-    out << YAML::Key << "experiment_protocol" << YAML::Value << experiment_protocol;
+    out << YAML::Key << "behavior_exposure_time_ms" << YAML::Value
+        << behavior_exposure_time_ms;
+    out << YAML::Key << "muscle_exposure_time_ms" << YAML::Value
+        << muscle_exposure_time_ms;
+    out << YAML::Key << "experiment_protocol" << YAML::Value
+        << experiment_protocol;
 
     out << YAML::EndMap;
 
     std::ofstream fout(outputPath);
     if (!fout.is_open()) {
         std::string errorMessage =
-            "Failed to open file for writing experiment parameters: " + outputPath.string();
+            "Failed to open file for writing experiment parameters: " +
+            outputPath.string();
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     }
@@ -219,7 +241,10 @@ void SaveDirectory::initialize() {
         fs::create_directories(directory_ / "stage_position");
         fs::create_directories(directory_ / "metadata");
     } catch (const fs::filesystem_error &e) {
-        spdlog::error("Failed to create directories in '{}': {}", directory_.string(), e.what());
+        spdlog::error(
+            "Failed to create directories in '{}': {}",
+            directory_.string(),
+            e.what());
         throw;
     }
 }

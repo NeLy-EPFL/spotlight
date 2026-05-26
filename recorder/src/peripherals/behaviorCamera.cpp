@@ -6,8 +6,8 @@ BehaviorCamera::BehaviorCamera(
     unsigned int xOffset,
     unsigned int yOffset,
     std::string ioLine)
-    : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset), yOffset_(yOffset),
-      ioLine_(ioLine) {
+    : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset),
+      yOffset_(yOffset), ioLine_(ioLine) {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
     using Euresys::RemoteModule;
@@ -110,7 +110,8 @@ FrameData BehaviorCamera::waitForOneFrame() {
     // Get image data and metadata
     uint64_t receivedTime = getCurrentTimeMicroseconds();
     uint8_t *dataPtr = buffer.getInfo<uint8_t *>(Euresys::gc::BUFFER_INFO_BASE);
-    uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
+    uint64_t grabberTimestamp =
+        buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
     uint64_t acquisitionTime = grabberTimestamp / 1000;
 
     // Make FrameData object
@@ -136,7 +137,8 @@ bool BehaviorCamera::setIntegerAndCheck(const std::string key, int value) {
 }
 
 template <typename Module>
-bool BehaviorCamera::setStringAndCheck(const std::string key, const std::string value) {
+bool BehaviorCamera::setStringAndCheck(
+    const std::string key, const std::string value) {
     spdlog::info("Setting GenICam string parameter {} to {}", key, value);
     frameGrabberPtr_->setString<Module>(key, value);
     std::string retrievedValue = frameGrabberPtr_->getString<Module>(key);
@@ -152,9 +154,11 @@ int roundToNearestValidBehaviorCamDimension(int value) {
     return value - remainder + (remainder < 32 ? 0 : 64);
 }
 
-std::tuple<int, int>
-getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight) {
-    int xOffset = roundToNearestValidBehaviorCamDimension((fullFrameWidth - imageWidth) / 2);
-    int yOffset = roundToNearestValidBehaviorCamDimension((fullFrameHeight - imageHeight) / 2);
+std::tuple<int, int> getCenteredOffsets(
+    int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight) {
+    int xOffset = roundToNearestValidBehaviorCamDimension(
+        (fullFrameWidth - imageWidth) / 2);
+    int yOffset = roundToNearestValidBehaviorCamDimension(
+        (fullFrameHeight - imageHeight) / 2);
     return std::make_tuple(xOffset, yOffset);
 }

@@ -34,7 +34,8 @@ class ActiveAreaMask {
         const std::string &arenaSpecDir,
         double boundaryMarginMm,
         LinearMapper2x2to2 &stageAndPixelToPhysical);
-    cv::Mat warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos);
+    cv::Mat
+    warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos);
 
   private:
     cv::Mat transformMatrixAtZeroStagePos_;
@@ -75,13 +76,16 @@ void motionStagePositionLogger(
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
 MotionStagePosition getCurrentMotionStagePosition();
-void setTargetMotionStagePosition(MotionStagePosition targetPosition, float velocity);
-void setMotionStageLimits(double xMinMm, double xMaxMm, double yMinMm, double yMaxMm);
+void setTargetMotionStagePosition(
+    MotionStagePosition targetPosition, float velocity);
+void setMotionStageLimits(
+    double xMinMm, double xMaxMm, double yMinMm, double yMaxMm);
 void waitUntilMotionStageIdleSync();
 void waitUntilMotionStageIdleAsync();
 bool checkIfMotionStageIdle();
 void startHomingMotionStage();
-void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState);
+void stopMotionControlRequestHandler(
+    std::shared_ptr<ProgramState> programState);
 
 // High-level helper functions
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(

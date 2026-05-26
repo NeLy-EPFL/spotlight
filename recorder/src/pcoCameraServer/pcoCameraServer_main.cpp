@@ -6,15 +6,23 @@ void printHelp(const char *programName) {
         << "Usage: " << programName << " [OPTIONS]\n"
         << "Options:\n"
         << "  -h,  --help              Display this help message\n"
-        << "  -p,  --profile-dir PATH  Path to profile directory (default: ~/Spotlight/default/)\n"
-        << "  -x0, --x-min X_MIN       x_min coordinate of the region of interest (default: 1)\n"
-        << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
-        << "  -y0, --y-min Y_MIN       y_min coordinate of the region of interest (default: 2048)\n"
-        << "  -y1, --y-max Y_MAX       y_max coordinate of the region of interest (default: 2048)\n"
-        << "  -d,  --delay DELAY       Delay of shutter-open after trigger in microseconds "
+        << "  -p,  --profile-dir PATH  Path to profile directory (default: "
+           "~/Spotlight/default/)\n"
+        << "  -x0, --x-min X_MIN       x_min coordinate of the region of "
+           "interest (default: 1)\n"
+        << "  -x1, --x-max X_MAX       x_max coordinate of the region of "
+           "interest (default: 1)\n"
+        << "  -y0, --y-min Y_MIN       y_min coordinate of the region of "
+           "interest (default: 2048)\n"
+        << "  -y1, --y-max Y_MAX       y_max coordinate of the region of "
+           "interest (default: 2048)\n"
+        << "  -d,  --delay DELAY       Delay of shutter-open after trigger in "
+           "microseconds "
            "(default: 0)\n"
         << "  -v,  --verbose           Enable verbose output (debug level)\n"
-        << "  --verbosity LEVEL        Set verbosity level (trace, debug, info, warn, error, "
+        << "  --verbosity LEVEL        Set verbosity level (trace, debug, "
+           "info, "
+           "warn, error, "
            "critical, off)\n"
         << std::endl;
 }
@@ -89,7 +97,8 @@ std::string expandPath(const std::string &path) {
 
         // If HOME is available, replace "~/" with the home directory
         if (homeDir) {
-            std::filesystem::path expandedPath = std::filesystem::path(homeDir) / path.substr(2);
+            std::filesystem::path expandedPath =
+                std::filesystem::path(homeDir) / path.substr(2);
             return expandedPath.string();
         } else {
             spdlog::error(
@@ -110,7 +119,9 @@ void signalHandler(int signal) {
                              : signal == SIGTERM ? "SIGTERM"
                                                  : "Unknown signal";
     spdlog::info(
-        "Shutdown signal received ({}: {}). Cleaning up and exiting...", signal, signalName);
+        "Shutdown signal received ({}: {}). Cleaning up and exiting...",
+        signal,
+        signalName);
     shutdownRequested.store(true);
 }
 
@@ -156,14 +167,17 @@ void setupPCOCamera(
         delayUs);
 
     // Set exposure time
-    spdlog::info("Setting PCO camera shutter-open time to {} us", defaultShutterOpenTimeUs);
+    spdlog::info(
+        "Setting PCO camera shutter-open time to {} us",
+        defaultShutterOpenTimeUs);
     camera.setExposureTime(defaultShutterOpenTimeUs / 1000000.0);
     camera.autoExposureOff();
     spdlog::info("PCO camera shutter-open time set");
 
     // Set trigger polarity
     spdlog::info("Setting PCO camera trigger polarity to rising edge");
-    camera.configureHWIO_1_exposureTrigger(true, pco::HWIO_EdgePolarity::rising_edge);
+    camera.configureHWIO_1_exposureTrigger(
+        true, pco::HWIO_EdgePolarity::rising_edge);
 
     // Let SMA #4 line output indicate common time
     camera.configureHWIO_4_statusExpos(
@@ -195,15 +209,20 @@ void serveFrames(
 
     spdlog::info("PCO camera server: Setting up shared memory for frame data");
     uint8_t *frameDataPtr;
-    PCOSharedMemory::setupFrameData(shmFrameDataName, frameBufferSize, frameDataPtr, createNew);
+    PCOSharedMemory::setupFrameData(
+        shmFrameDataName, frameBufferSize, frameDataPtr, createNew);
 
-    spdlog::info("PCO camera server: Setting up shared memory for exposure time");
+    spdlog::info(
+        "PCO camera server: Setting up shared memory for exposure time");
     unsigned int *shutterOpenTimePtr;
-    PCOSharedMemory::setupShutterOpenTime(shmShutterOpenTimeName, shutterOpenTimePtr, createNew);
+    PCOSharedMemory::setupShutterOpenTime(
+        shmShutterOpenTimeName, shutterOpenTimePtr, createNew);
 
-    spdlog::info("PCO camera server: Setting up shared memory for frame metadata");
+    spdlog::info(
+        "PCO camera server: Setting up shared memory for frame metadata");
     PCOSharedMemory::FrameMetadata *frameMetadataPtr;
-    PCOSharedMemory::setupFrameMetadata(shmFrameMetadataName, frameMetadataPtr, createNew);
+    PCOSharedMemory::setupFrameMetadata(
+        shmFrameMetadataName, frameMetadataPtr, createNew);
 
     spdlog::info("PCO camera server: Setting up shared memory for mutex");
     pthread_mutex_t *mutexPtr;
@@ -211,7 +230,8 @@ void serveFrames(
 
     spdlog::info("PCO camera server: Setting up shared memory for cond var");
     pthread_cond_t *condVarPtr;
-    PCOSharedMemory::setupConditionVariable(shmCondVarName, condVarPtr, createNew);
+    PCOSharedMemory::setupConditionVariable(
+        shmCondVarName, condVarPtr, createNew);
 
     spdlog::info("PCO camera server: Shared memory setup complete");
 
@@ -223,7 +243,15 @@ void serveFrames(
     spdlog::info("Setting up PCO camera");
     pco::Camera camera;
     PCOCameraServer::setupPCOCamera(
-        camera, defaultShutterOpenTimeUs, x0, x1, y0, y1, delayUs, fullFrameWidth, fullFrameHeight);
+        camera,
+        defaultShutterOpenTimeUs,
+        x0,
+        x1,
+        y0,
+        y1,
+        delayUs,
+        fullFrameWidth,
+        fullFrameHeight);
     spdlog::info("PCO camera setup complete");
 
     // Create local data holders
@@ -247,10 +275,12 @@ void serveFrames(
         unsigned int targetExposureTime = *shutterOpenTimePtr;
         if (targetExposureTime != currentExposureTimeUs) {
             spdlog::info(
-                "PCO camera server is changing exposure time to {} us", targetExposureTime);
+                "PCO camera server is changing exposure time to {} us",
+                targetExposureTime);
             camera.setExposureTime(targetExposureTime / 1000000.0);
             currentExposureTimeUs = targetExposureTime;
-            spdlog::info("Changed exposure time to {} us", currentExposureTimeUs);
+            spdlog::info(
+                "Changed exposure time to {} us", currentExposureTimeUs);
         }
 
         // Wait for new frame to arrive
@@ -269,7 +299,8 @@ void serveFrames(
         while (true) {
             if (isFirstFrame) {
                 try {
-                    camera.waitForFirstImage(WAIT_WITH_SMALL_DELAY, WAIT_TIMEOUT_SECS);
+                    camera.waitForFirstImage(
+                        WAIT_WITH_SMALL_DELAY, WAIT_TIMEOUT_SECS);
                     isFirstFrame = false;
                     // spdlog::debug(
                     //     "First frame received, breaking out of waiting "
@@ -289,7 +320,8 @@ void serveFrames(
                 }
             } else {
                 try {
-                    camera.waitForNewImage(WAIT_WITH_SMALL_DELAY, WAIT_TIMEOUT_SECS);
+                    camera.waitForNewImage(
+                        WAIT_WITH_SMALL_DELAY, WAIT_TIMEOUT_SECS);
                     // spdlog::debug(
                     //     "New frame received, breaking out of waiting "
                     //     "inner loop");
@@ -308,8 +340,9 @@ void serveFrames(
                 }
             }
             if (shutdownRequested.load()) {
-                spdlog::info("PCO camera server: Shutdown requested, breaking out "
-                             "of inner waiting loop");
+                spdlog::info(
+                    "PCO camera server: Shutdown requested, breaking out "
+                    "of inner waiting loop");
                 break;
             }
         }
@@ -319,18 +352,27 @@ void serveFrames(
 
         // Fetch image and convert to OpenCV format
         // spdlog::debug("PCO camera server got new frame. Serving.");
-        camera.image(pcoImage, PCO_RECORDER_LATEST_IMAGE, pco::DataFormat::Mono16);
-        cvImage = cv::Mat(pcoImage.height(), pcoImage.width(), CV_16UC1, pcoImage.raw_data().first);
+        camera.image(
+            pcoImage, PCO_RECORDER_LATEST_IMAGE, pco::DataFormat::Mono16);
+        cvImage = cv::Mat(
+            pcoImage.height(),
+            pcoImage.width(),
+            CV_16UC1,
+            pcoImage.raw_data().first);
 
         // Gather metadata
         PCOSharedMemory::FrameMetadata frameMetadata;
         frameMetadata.frameCount = frameCount++;
-        frameMetadata.acquisitionTime = PCOCameraServer::getCurrentTimeMicroseconds();
+        frameMetadata.acquisitionTime =
+            PCOCameraServer::getCurrentTimeMicroseconds();
 
         // Mutex-protected zone! Updata image buffer and frame count
         pthread_mutex_lock(mutexPtr);
         memcpy(frameDataPtr, cvImage.data, frameBufferSize);
-        memcpy(frameMetadataPtr, &frameMetadata, sizeof(PCOSharedMemory::FrameMetadata));
+        memcpy(
+            frameMetadataPtr,
+            &frameMetadata,
+            sizeof(PCOSharedMemory::FrameMetadata));
         pthread_cond_signal(condVarPtr);
         // spdlog::debug("PCO camera server signaled new frame");
         pthread_mutex_unlock(mutexPtr);
@@ -351,7 +393,9 @@ int main(int argc, char *argv[]) {
     std::filesystem::path profileDir =
         std::filesystem::path(PCOCameraServer::expandPath(options.profileDir));
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("pcoCameraServer loading recorder configuration from {}", configPath.string());
+    spdlog::info(
+        "pcoCameraServer loading recorder configuration from {}",
+        configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     const unsigned int fullFrameWidth =
@@ -362,16 +406,19 @@ int main(int argc, char *argv[]) {
     unsigned int roiHeight = options.y1 - options.y0 + 1;
 
     const unsigned int defaultLightOnTimeUs =
-        recorderConfig.getParameter<unsigned int>("muscle_camera", "default_light_on_time_us");
-    const double rollingShutterLineTimeUs =
-        recorderConfig.getParameter<double>("muscle_camera", "rolling_shutter_line_time_us");
+        recorderConfig.getParameter<unsigned int>(
+            "muscle_camera", "default_light_on_time_us");
+    const double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "rolling_shutter_line_time_us");
     const unsigned int rollingTime =
         static_cast<unsigned int>(roiHeight * rollingShutterLineTimeUs);
-    const unsigned int defaultShutterOpenTimeUs = defaultLightOnTimeUs + rollingTime;
+    const unsigned int defaultShutterOpenTimeUs =
+        defaultLightOnTimeUs + rollingTime;
 
     // Validate image dimensions
     if (options.x0 == 0 || options.y0 == 0 || options.x1 > fullFrameWidth ||
-        options.y1 > fullFrameHeight || options.x0 >= options.x1 || options.y0 >= options.y1) {
+        options.y1 > fullFrameHeight || options.x0 >= options.x1 ||
+        options.y0 >= options.y1) {
         spdlog::critical(
             "Invalid image dimensions. The following is required: "
             "0 < x0 < x1 <= {}; 0 < y0 < y1 <= {}.",
@@ -380,10 +427,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (roiWidth % 32 != 0 || roiHeight % 8 != 0 || roiWidth < 64 || roiHeight < 16) {
-        spdlog::critical("Invalid ROI for muscle camera. ROI width must be a multiple of "
-                         "32 and ROI height must be a multiple of 8. Furthermore, the "
-                         "minimum size of the ROI is 64x16 pixels.");
+    if (roiWidth % 32 != 0 || roiHeight % 8 != 0 || roiWidth < 64 ||
+        roiHeight < 16) {
+        spdlog::critical(
+            "Invalid ROI for muscle camera. ROI width must be a multiple of "
+            "32 and ROI height must be a multiple of 8. Furthermore, the "
+            "minimum size of the ROI is 64x16 pixels.");
         return 1;
     }
 
@@ -393,15 +442,18 @@ int main(int argc, char *argv[]) {
 
     // Set up shared memory buffers for frame data, mutex, and semaphore
     const std::string shmFrameDataName =
-        recorderConfig.getParameter<std::string>("muscle_camera", "shared_frame_data_name");
+        recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_frame_data_name");
     const std::string shmShutterOpenTimeName =
-        recorderConfig.getParameter<std::string>("muscle_camera", "shared_shutter_open_time_name");
+        recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_shutter_open_time_name");
     const std::string shmFrameMetadataName =
-        recorderConfig.getParameter<std::string>("muscle_camera", "shared_frame_metadata_name");
-    const std::string shmMutexName =
-        recorderConfig.getParameter<std::string>("muscle_camera", "shared_mutex_name");
-    const std::string shmCondVarName =
-        recorderConfig.getParameter<std::string>("muscle_camera", "shared_condition_variable_name");
+        recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_frame_metadata_name");
+    const std::string shmMutexName = recorderConfig.getParameter<std::string>(
+        "muscle_camera", "shared_mutex_name");
+    const std::string shmCondVarName = recorderConfig.getParameter<std::string>(
+        "muscle_camera", "shared_condition_variable_name");
 
     PCOCameraServer::serveFrames(
         shmFrameDataName,

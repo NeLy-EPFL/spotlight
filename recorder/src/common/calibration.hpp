@@ -22,7 +22,8 @@ class LinearMapper2x2to2 {
     // Expects canonical YAML format: x/y nodes each with x1/y1/x2/y2/bias keys.
     LinearMapper2x2to2(const YAML::Node &calibrationNode);
 
-    std::tuple<double, double> map(double x1, double y1, double x2, double y2) const;
+    std::tuple<double, double>
+    map(double x1, double y1, double x2, double y2) const;
 };
 
 class CalibrationParams {
@@ -39,11 +40,20 @@ class CalibrationParams {
     LinearMapper2x2to2 &physicalAndPixelToStage;
 
     std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(
-        double stagePosX, double stagePosY, int pixelPosRow, int pixelPosCol) const;
+        double stagePosX,
+        double stagePosY,
+        int pixelPosRow,
+        int pixelPosCol) const;
     std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(
-        double stagePosX, double stagePosY, double physicalPosX, double physicalPosY) const;
+        double stagePosX,
+        double stagePosY,
+        double physicalPosX,
+        double physicalPosY) const;
     std::tuple<double, double> physicalPosAndPixelPosToStagePos(
-        double physicalPosX, double physicalPosY, int pixelPosRow, int pixelPosCol) const;
+        double physicalPosX,
+        double physicalPosY,
+        int pixelPosRow,
+        int pixelPosCol) const;
 
     void saveToFile(const std::string &yamlPath);
 

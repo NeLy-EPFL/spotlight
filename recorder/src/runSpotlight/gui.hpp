@@ -180,7 +180,8 @@ cv::Mat addCornerMarker(
     CalibrationParams &behaviorCamCalibrationParams);
 
 int parseProtocolString(
-    const std::string &protocolTextFieldString, std::vector<ProtocolStep> &steps);
+    const std::string &protocolTextFieldString,
+    std::vector<ProtocolStep> &steps);
 
 std::string incrementDirectoryName(const std::string &path);
 #endif // GUI_HPP

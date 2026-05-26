@@ -1,13 +1,15 @@
 #include "experimentProtocol.hpp"
 
-ProtocolStep::ProtocolStep(unsigned long frameCount, ProtocolOperation operation, int optoChannel)
+ProtocolStep::ProtocolStep(
+    unsigned long frameCount, ProtocolOperation operation, int optoChannel)
     : frameCount(frameCount), operation(operation), optoChannel(optoChannel) {}
 
 ProtocolStep::ProtocolStep(const std::string &protocolStepStr) {
     std::istringstream tokenStream(protocolStepStr);
     std::string frameStr, channelStr, opStr;
 
-    if (!std::getline(tokenStream, frameStr, '/') || !std::getline(tokenStream, channelStr, '/') ||
+    if (!std::getline(tokenStream, frameStr, '/') ||
+        !std::getline(tokenStream, channelStr, '/') ||
         !std::getline(tokenStream, opStr, '/')) {
         isValid = false;
         return;
@@ -52,11 +54,12 @@ std::string ProtocolStep::toString() const {
     if (operation == PROTOCOL_ENDS) {
         return std::to_string(frameCount) + "/x/stop";
     }
-    return std::to_string(frameCount) + "/ch" + std::to_string(optoChannel) + "/" +
-           (operation == OPTO_ON ? "on" : "off");
+    return std::to_string(frameCount) + "/ch" + std::to_string(optoChannel) +
+           "/" + (operation == OPTO_ON ? "on" : "off");
 }
 
-int parseProtocolSequence(const std::string &sequence, std::vector<ProtocolStep> &steps) {
+int parseProtocolSequence(
+    const std::string &sequence, std::vector<ProtocolStep> &steps) {
     steps.clear(); // Ensure the vector is empty before parsing
 
     if (sequence == ";") {

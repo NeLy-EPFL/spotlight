@@ -15,7 +15,8 @@ std::unique_ptr<ArduinoCommunication> arduinoCommunication = nullptr;
 
 std::tuple<int, int> displayToCameraSensorCoords(int displayX, int displayY) {
     // Reverse the 90 degrees counterclockwise rotation and scale back up
-    int sensorX = fullMuscleImageWidth - (displayY * DISPLAY_DOWNSAMPLE_FACTOR) - 1;
+    int sensorX =
+        fullMuscleImageWidth - (displayY * DISPLAY_DOWNSAMPLE_FACTOR) - 1;
     int sensorY = displayX * DISPLAY_DOWNSAMPLE_FACTOR;
     return std::make_tuple(sensorX, sensorY);
 }
@@ -23,13 +24,16 @@ std::tuple<int, int> displayToCameraSensorCoords(int displayX, int displayY) {
 std::tuple<int, int> cameraSensorToDisplayCoords(int sensorX, int sensorY) {
     // This is the opposite of displayToCameraSensorCoords
     int displayX = sensorY / DISPLAY_DOWNSAMPLE_FACTOR;
-    int displayY = (fullMuscleImageWidth - sensorX - 1) / DISPLAY_DOWNSAMPLE_FACTOR;
+    int displayY =
+        (fullMuscleImageWidth - sensorX - 1) / DISPLAY_DOWNSAMPLE_FACTOR;
     return std::make_tuple(displayX, displayY);
 }
 
-MuscleCameraROI getROIFromDisplayCenter(int xCenterDisplay, int yCenterDisplay) {
+MuscleCameraROI
+getROIFromDisplayCenter(int xCenterDisplay, int yCenterDisplay) {
     auto [muscleCameraCenterXSensor, muscleCameraCenterYSensor] =
-        displayToCameraSensorCoords(userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+        displayToCameraSensorCoords(
+            userSelectedCenterXDisplay, userSelectedCenterYDisplay);
     int xOffset = muscleCameraCenterXSensor - (muscleImageROIWidth / 2);
     int yOffset = muscleCameraCenterYSensor - (muscleImageROIHeight / 2);
     int x0 = roundToNearestValidMuscleCamHorizontal(xOffset) + 1;
@@ -50,12 +54,13 @@ void drawMuscleImageROI(cv::Mat &image) {
 
     // Draw user-selected center point
     cv::Scalar redColor(0, 0, 255);
-    cv::Point pointIdeal(userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+    cv::Point pointIdeal(
+        userSelectedCenterXDisplay, userSelectedCenterYDisplay);
     cv::circle(image, pointIdeal, 5, redColor, -1);
 
     // Figure out center point coords on the camera sensor
-    MuscleCameraROI roi =
-        getROIFromDisplayCenter(userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+    MuscleCameraROI roi = getROIFromDisplayCenter(
+        userSelectedCenterXDisplay, userSelectedCenterYDisplay);
 
     // Draw closest feasible center point
     auto [xCenterSensorActual, yCenterSensorActual] = roi.getCenterXY();
@@ -103,15 +108,21 @@ void setupDisplayWindows(RecorderConfig &recorderConfig) {
     int behaviorImageDisplayHeight =
         recorderConfig.getParameter<int>("behavior_camera", "roi_width") /
         DISPLAY_DOWNSAMPLE_FACTOR;
-    int muscleImageDisplayWidth = fullMuscleImageHeight / DISPLAY_DOWNSAMPLE_FACTOR;
-    int muscleImageDisplayHeight = fullMuscleImageWidth / DISPLAY_DOWNSAMPLE_FACTOR;
+    int muscleImageDisplayWidth =
+        fullMuscleImageHeight / DISPLAY_DOWNSAMPLE_FACTOR;
+    int muscleImageDisplayHeight =
+        fullMuscleImageWidth / DISPLAY_DOWNSAMPLE_FACTOR;
 
     // Create named windows
     cv::namedWindow("Behavior Camera", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Behavior Camera", behaviorImageDisplayWidth, behaviorImageDisplayHeight);
+    cv::resizeWindow(
+        "Behavior Camera",
+        behaviorImageDisplayWidth,
+        behaviorImageDisplayHeight);
 
     cv::namedWindow("Muscle Camera", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Muscle Camera", muscleImageDisplayWidth, muscleImageDisplayHeight);
+    cv::resizeWindow(
+        "Muscle Camera", muscleImageDisplayWidth, muscleImageDisplayHeight);
 
     // Add callback for muscle camera window
     cv::setMouseCallback("Muscle Camera", onMouse, nullptr);
@@ -120,14 +131,20 @@ void setupDisplayWindows(RecorderConfig &recorderConfig) {
 
 void alignCamera(std::filesystem::path profileDir) {
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("alignCameras loading recorder configuration from {}", configPath.string());
+    spdlog::info(
+        "alignCameras loading recorder configuration from {}",
+        configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     // Load muscle camera full frame size
-    fullMuscleImageWidth = recorderConfig.getParameter<int>("muscle_camera", "full_frame_width");
-    fullMuscleImageHeight = recorderConfig.getParameter<int>("muscle_camera", "full_frame_height");
-    muscleImageROIWidth = recorderConfig.getParameter<int>("muscle_camera", "roi_width");
-    muscleImageROIHeight = recorderConfig.getParameter<int>("muscle_camera", "roi_height");
+    fullMuscleImageWidth =
+        recorderConfig.getParameter<int>("muscle_camera", "full_frame_width");
+    fullMuscleImageHeight =
+        recorderConfig.getParameter<int>("muscle_camera", "full_frame_height");
+    muscleImageROIWidth =
+        recorderConfig.getParameter<int>("muscle_camera", "roi_width");
+    muscleImageROIHeight =
+        recorderConfig.getParameter<int>("muscle_camera", "roi_height");
 
     // Load parameters for displaying 16-bit image
     int muscleImage16To8BitScale = recorderConfig.getParameter<int>(
@@ -136,8 +153,10 @@ void alignCamera(std::filesystem::path profileDir) {
         "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
 
     // Set up shared recording states
-    std::shared_ptr<ProgramState> programState = std::make_shared<ProgramState>();
-    std::shared_ptr<ProgrammedStop> programmedRecordingStop = std::make_shared<ProgrammedStop>();
+    std::shared_ptr<ProgramState> programState =
+        std::make_shared<ProgramState>();
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop =
+        std::make_shared<ProgrammedStop>();
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState =
         std::make_shared<BehaviorRecordingState>();
     std::shared_ptr<MuscleRecordingState> muscleRecordingState =
@@ -180,7 +199,8 @@ void alignCamera(std::filesystem::path profileDir) {
             spdlog::warn("Muscle camera is not initialized.");
         }
     }
-    int muscleNumLinesScanned = muscleRecordingState->muscleCamera->getNumLinesScanned();
+    int muscleNumLinesScanned =
+        muscleRecordingState->muscleCamera->getNumLinesScanned();
     arduinoCommunication = initializeTriggeringWithDefaultParams(
         recorderConfig,
         muscleNumLinesScanned,
@@ -197,22 +217,27 @@ void alignCamera(std::filesystem::path profileDir) {
     cv::Mat muscleImageDisplay;
     while (true) {
         // Fetch latest images from both cameras
-        behaviorImage = behaviorRecordingState->latestFrameHolder->getLatestFrameData().image;
-        muscleImage = muscleRecordingState->latestFrameHolder->getLatestFrameData().image;
+        behaviorImage =
+            behaviorRecordingState->latestFrameHolder->getLatestFrameData()
+                .image;
+        muscleImage =
+            muscleRecordingState->latestFrameHolder->getLatestFrameData().image;
 
         // Skip display if images are empty
         if (behaviorImage.empty()) {
-            spdlog::warn("Behavior image is empty. Skipping display. This is normal "
-                         "if it only happens a few times at the beginning of the "
-                         "program while the camera initializes.");
+            spdlog::warn(
+                "Behavior image is empty. Skipping display. This is normal "
+                "if it only happens a few times at the beginning of the "
+                "program while the camera initializes.");
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
 
         if (muscleImage.empty()) {
-            spdlog::warn("Muscle image is empty. Skipping display. This is normal "
-                         "if it only happens a few times at the beginning of the "
-                         "program while the camera initializes.");
+            spdlog::warn(
+                "Muscle image is empty. Skipping display. This is normal "
+                "if it only happens a few times at the beginning of the "
+                "program while the camera initializes.");
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
@@ -226,13 +251,17 @@ void alignCamera(std::filesystem::path profileDir) {
         reorientBehaviorImage(behaviorImageDisplay, behaviorImageDisplay);
 
         convert16BitTo8Bit(
-            muscleImage, muscleImage, muscleImage16To8BitScale, muscleImage16To8BitOffset);
+            muscleImage,
+            muscleImage,
+            muscleImage16To8BitScale,
+            muscleImage16To8BitOffset);
         targetSize = cv::Size(
             muscleImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
             muscleImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
         cv::resize(muscleImage, muscleImageDisplay, targetSize);
         reorientMuscleImage(muscleImageDisplay, muscleImageDisplay);
-        cv::cvtColor(muscleImageDisplay, muscleImageDisplay, cv::COLOR_GRAY2BGR);
+        cv::cvtColor(
+            muscleImageDisplay, muscleImageDisplay, cv::COLOR_GRAY2BGR);
 
         // Draw markers on the displayed image to indicate ROI
         drawMuscleImageROI(muscleImageDisplay);
@@ -247,9 +276,11 @@ void alignCamera(std::filesystem::path profileDir) {
         }
         if (pressedKey == 13) {
             // Enter key pressed
-            if (userSelectedCenterXDisplay == -1 || userSelectedCenterYDisplay == -1) {
-                spdlog::error("ROI center not set yet. Please select a center point on "
-                              "the muscle camera image before saving the ROI.");
+            if (userSelectedCenterXDisplay == -1 ||
+                userSelectedCenterYDisplay == -1) {
+                spdlog::error(
+                    "ROI center not set yet. Please select a center point on "
+                    "the muscle camera image before saving the ROI.");
                 continue;
             }
 
@@ -257,15 +288,16 @@ void alignCamera(std::filesystem::path profileDir) {
                 "User selected muscle camera center point at (x={}, y={})",
                 userSelectedCenterXDisplay,
                 userSelectedCenterYDisplay);
-            MuscleCameraROI roi =
-                getROIFromDisplayCenter(userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+            MuscleCameraROI roi = getROIFromDisplayCenter(
+                userSelectedCenterXDisplay, userSelectedCenterYDisplay);
             if (roi.x0 <= 0 || roi.y0 <= 0 || roi.x1 > fullMuscleImageWidth ||
                 roi.y1 > fullMuscleImageHeight) {
                 spdlog::error("Selected ROI out of bound. Please try again.");
                 continue;
             }
 
-            std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
+            std::filesystem::path roiFilePath =
+                profileDir / "muscle_camera_roi.yaml";
             spdlog::info(
                 "Saving muscle camera ROI (x0={}, x1={}, y0={}, y1={}) to {}",
                 roi.x0,

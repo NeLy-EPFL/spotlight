@@ -1,11 +1,13 @@
 #include "muscleRecording.hpp"
 
 MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
-    : x0(x0), x1(x1), y0(y0), y1(y1), xOffset(x0 - 1), yOffset(y0 - 1), imageWidth(x1 - x0 + 1),
-      imageHeight(y1 - y0 + 1) {}
+    : x0(x0), x1(x1), y0(y0), y1(y1), xOffset(x0 - 1), yOffset(y0 - 1),
+      imageWidth(x1 - x0 + 1), imageHeight(y1 - y0 + 1) {}
 
 bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight) {
-    return (x0 > 0 && x1 <= fullWidth && y0 > 0 && y1 <= fullHeight && x0 < x1 && y0 < y1);
+    return (
+        x0 > 0 && x1 <= fullWidth && y0 > 0 && y1 <= fullHeight && x0 < x1 &&
+        y0 < y1);
 }
 
 int MuscleCameraROI::toFile(std::filesystem::path path) {
@@ -40,13 +42,17 @@ MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath) {
         node = YAML::LoadFile(roiFilePath.string());
     } catch (const YAML::Exception &e) {
         throw std::runtime_error(fmt::format(
-            "Failed to load muscle camera ROI from {}: {}", roiFilePath.string(), e.what()));
+            "Failed to load muscle camera ROI from {}: {}",
+            roiFilePath.string(),
+            e.what()));
     }
 
     auto readInt = [&](const char *key) {
         if (!node[key]) {
             throw std::runtime_error(fmt::format(
-                "Muscle camera ROI file {} is missing key '{}'", roiFilePath.string(), key));
+                "Muscle camera ROI file {} is missing key '{}'",
+                roiFilePath.string(),
+                key));
         }
         try {
             return node[key].as<int>();
@@ -93,10 +99,10 @@ void muscleImageAcquirer(
     spdlog::info("Muscle image acquirer thread started");
 
     // Create muscle camera
-    double rollingShutterLineTimeUs =
-        recorderConfig.getParameter<double>("muscle_camera", "rolling_shutter_line_time_us");
-    double sensorReadoutTimeUs =
-        recorderConfig.getParameter<double>("muscle_camera", "sensor_readout_time_us");
+    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "rolling_shutter_line_time_us");
+    double sensorReadoutTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "sensor_readout_time_us");
     muscleRecordingState->muscleCamera = std::make_shared<MuscleCamera>(
         imageWidth,
         imageHeight,
@@ -113,7 +119,8 @@ void muscleImageAcquirer(
     bool notExpectingMoreFrames = false;
 
     while (!programState->toQuit.load()) {
-        FrameData frameData = muscleRecordingState->muscleCamera->waitForOneFrame();
+        FrameData frameData =
+            muscleRecordingState->muscleCamera->waitForOneFrame();
         if (frameData.image.empty()) {
             spdlog::error("muscleImageAcquirer thread got an empty image");
         }
@@ -122,18 +129,21 @@ void muscleImageAcquirer(
         if (programState->isRecording.load()) {
             frameData.frameId = currentFrameId++;
             {
-                std::lock_guard<std::mutex> lock(muscleRecordingState->muscleImageQueueMutex);
+                std::lock_guard<std::mutex> lock(
+                    muscleRecordingState->muscleImageQueueMutex);
                 muscleRecordingState->muscleImageQueue.push(frameData);
             }
             muscleRecordingState->muscleImageQueueCondVar.notify_one();
 
             if (notExpectingMoreFrames) {
-                spdlog::error("Muscle camera is not expecting more frames because a "
-                              "programmed stop was reached, but it got one anyway!");
+                spdlog::error(
+                    "Muscle camera is not expecting more frames because a "
+                    "programmed stop was reached, but it got one anyway!");
             }
 
             // Whether we've reached a programmed stop
-            int numFramesExpected = programmedRecordingStop->numMuscleFramesExpected;
+            int numFramesExpected =
+                programmedRecordingStop->numMuscleFramesExpected;
             if (currentFrameId == numFramesExpected && numFramesExpected >= 0) {
                 // Placeholder - nothing to do here actually because the
                 // Arduino will stop triggering the muscle camera by itself
@@ -161,7 +171,8 @@ void muscleImageSaver(
     std::stringstream ss;
     ss << myThreadId;
     std::string threadIdString = ss.str();
-    spdlog::info("Muscle image saver thread started (thread ID {})", threadIdString);
+    spdlog::info(
+        "Muscle image saver thread started (thread ID {})", threadIdString);
 
     std::vector<int> compressionParams;
     compressionParams.push_back(cv::IMWRITE_TIFF_COMPRESSION);
@@ -173,12 +184,13 @@ void muscleImageSaver(
     uint64_t walltime = 0;
     FrameData frameData;
 
-    int performanceLoggingInterval =
-        recorderConfig.getParameter<int>("muscle_camera", "saving_performance_logging_interval");
+    int performanceLoggingInterval = recorderConfig.getParameter<int>(
+        "muscle_camera", "saving_performance_logging_interval");
 
     while (!programState->toQuit.load()) {
         {
-            std::unique_lock<std::mutex> lock(muscleRecordingState->muscleImageQueueMutex);
+            std::unique_lock<std::mutex> lock(
+                muscleRecordingState->muscleImageQueueMutex);
             muscleRecordingState->muscleImageQueueCondVar.wait(
                 lock, [&muscleRecordingState, programState] {
                     return !muscleRecordingState->muscleImageQueue.empty() ||
@@ -186,7 +198,8 @@ void muscleImageSaver(
                 });
 
             if (programState->toQuit.load()) {
-                spdlog::info("Muscle image saver thread is breaking out of loop.");
+                spdlog::info(
+                    "Muscle image saver thread is breaking out of loop.");
                 break;
             }
 
@@ -195,9 +208,11 @@ void muscleImageSaver(
             muscleRecordingState->muscleImageQueue.pop();
         }
         startTime = getCurrentTimeMicroseconds();
-        std::string filenameStem = "muscle_frame_" + fmt::format("{:09}", frameData.frameId);
+        std::string filenameStem =
+            "muscle_frame_" + fmt::format("{:09}", frameData.frameId);
         std::filesystem::path muscleSaveDir =
-            std::filesystem::path(saveDirectory->getDirectory()) / "muscle_images";
+            std::filesystem::path(saveDirectory->getDirectory()) /
+            "muscle_images";
 
         // Reorient image (rotate it so it's consistent with behavior image)
         cv::Mat reorientedImage;
@@ -215,10 +230,12 @@ void muscleImageSaver(
         std::string metadataPath = muscleSaveDir / (filenameStem + ".csv");
         std::ofstream metadataFile(metadataPath);
         if (!metadataFile.is_open()) {
-            spdlog::error("Failed to open metadata file: {}", metadataPath.c_str());
+            spdlog::error(
+                "Failed to open metadata file: {}", metadataPath.c_str());
         } else {
             metadataFile << "frame_id,acquired_time_us,received_time_us\n";
-            metadataFile << frameData.frameId << "," << frameData.acquisitionTime << ","
+            metadataFile << frameData.frameId << ","
+                         << frameData.acquisitionTime << ","
                          << frameData.receivedTime << "\n";
             metadataFile.close();
         }

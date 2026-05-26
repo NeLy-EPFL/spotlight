@@ -23,13 +23,18 @@ uint64_t getCurrentTimeMicroseconds();
 
 void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage);
 void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage);
-cv::Mat makePseudoBGRImageFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
-std::string makeMetadataStringFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
+cv::Mat
+makePseudoBGRImageFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
+std::string
+makeMetadataStringFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
 
-std::string getSerialPortName(std::string deviceDescription, std::string deviceManufacturer);
+std::string getSerialPortName(
+    std::string deviceDescription, std::string deviceManufacturer);
 
 int calculateBehaviorCameraPreviewWidth(
-    int behaviorCameraPreviewHeight, int motionStageXRange, int motionStageYRange);
+    int behaviorCameraPreviewHeight,
+    int motionStageXRange,
+    int motionStageYRange);
 
 fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 
@@ -37,7 +42,8 @@ size_t getMyThreadIdHash();
 
 std::string expandPath(const std::string &path);
 
-void convert16BitTo8Bit(cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
+void convert16BitTo8Bit(
+    cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
 
 int calculateMuscleShutterOpenTime(
     int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs);

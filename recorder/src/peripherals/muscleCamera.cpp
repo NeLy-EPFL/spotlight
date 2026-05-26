@@ -36,10 +36,12 @@ MuscleCamera::MuscleCamera(
     const RecorderConfig &recorderConfig,
     std::string profileDir,
     spdlog::level::level_enum logLevel)
-    : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1), y1_(yOffset + imageHeight),
+    : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1),
+      y1_(yOffset + imageHeight),
       rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
-      sensorReadoutTimeUs_(sensorReadoutTimeUs), imageWidth_(imageWidth), imageHeight_(imageHeight),
-      recorderConfig_(recorderConfig), pcoCameraServerPID_(-1), frameDataPtr_(nullptr),
+      sensorReadoutTimeUs_(sensorReadoutTimeUs), imageWidth_(imageWidth),
+      imageHeight_(imageHeight), recorderConfig_(recorderConfig),
+      pcoCameraServerPID_(-1), frameDataPtr_(nullptr),
       shutterOpenTimePtr_(nullptr), mutexPtr_(nullptr), condVarPtr_(nullptr),
       lastFrameCount_(UINT_MAX) {
     if (!isROIValid()) {
@@ -49,8 +51,9 @@ MuscleCamera::MuscleCamera(
     pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
 
     if (pid < 0) {
-        std::string errorMessage = "Failed to fork process in order to start PCO camera server: " +
-                                   std::string(strerror(errno));
+        std::string errorMessage =
+            "Failed to fork process in order to start PCO camera server: " +
+            std::string(strerror(errno));
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     } else if (pid == 0) {
@@ -58,7 +61,8 @@ MuscleCamera::MuscleCamera(
         // recorder binary so we always launch the matching build, rather
         // than whatever happens to be on $PATH.
         std::filesystem::path serverPath =
-            std::filesystem::canonical("/proc/self/exe").parent_path() / "pco-camera-server";
+            std::filesystem::canonical("/proc/self/exe").parent_path() /
+            "pco-camera-server";
 
         execl(
             serverPath.c_str(),
@@ -80,14 +84,17 @@ MuscleCamera::MuscleCamera(
             (char *)nullptr);
 
         // If execl returns, it must have failed
-        std::string errorMessage = "Failed to execute PCO camera server at " + serverPath.string() +
-                                   ": " + std::string(strerror(errno));
+        std::string errorMessage = "Failed to execute PCO camera server at " +
+                                   serverPath.string() + ": " +
+                                   std::string(strerror(errno));
         spdlog::critical(errorMessage);
         exit(EXIT_FAILURE); // Exit child process
     } else {
         // Parent process
         pcoCameraServerPID_ = pid;
-        spdlog::info("PCO camera server started with process ID (PID): {}", pcoCameraServerPID_);
+        spdlog::info(
+            "PCO camera server started with process ID (PID): {}",
+            pcoCameraServerPID_);
 
         // Wait for the camera server to initialize
         sleep(1); // sleep for 1 second
@@ -95,36 +102,44 @@ MuscleCamera::MuscleCamera(
         // Setup shared memory buffers
         spdlog::info("Muscle camera API: Setting up shared memory buffer...");
 
-        spdlog::info("Muscle camera API: Setting up shared memory for frame data");
+        spdlog::info(
+            "Muscle camera API: Setting up shared memory for frame data");
         bool createNew = false;
 
         size_t frameBufferSize = imageWidth * imageHeight * 2; // CV_16UC1
-        std::string shmFrameDataName =
-            recorderConfig.getParameter<std::string>("muscle_camera", "shared_frame_data_name");
+        std::string shmFrameDataName = recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_frame_data_name");
         PCOSharedMemory::setupFrameData(
             shmFrameDataName, frameBufferSize, frameDataPtr_, createNew);
 
-        spdlog::info("Muscle camera API: Setting up shared memory for shutter-open "
-                     "time");
-        std::string shmShutterOpenTimeName = recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_shutter_open_time_name");
+        spdlog::info(
+            "Muscle camera API: Setting up shared memory for shutter-open "
+            "time");
+        std::string shmShutterOpenTimeName =
+            recorderConfig.getParameter<std::string>(
+                "muscle_camera", "shared_shutter_open_time_name");
         PCOSharedMemory::setupShutterOpenTime(
             shmShutterOpenTimeName, shutterOpenTimePtr_, createNew);
 
-        spdlog::info("Muscle camera API: Setting up shared memory for frame metadata");
+        spdlog::info(
+            "Muscle camera API: Setting up shared memory for frame metadata");
         std::string shmFrameMetadataName =
-            recorderConfig.getParameter<std::string>("muscle_camera", "shared_frame_metadata_name");
-        PCOSharedMemory::setupFrameMetadata(shmFrameMetadataName, frameMetadataPtr_, createNew);
+            recorderConfig.getParameter<std::string>(
+                "muscle_camera", "shared_frame_metadata_name");
+        PCOSharedMemory::setupFrameMetadata(
+            shmFrameMetadataName, frameMetadataPtr_, createNew);
 
         spdlog::info("Muscle camera API: Setting up shared memory for mutex");
-        std::string shmMutexName =
-            recorderConfig.getParameter<std::string>("muscle_camera", "shared_mutex_name");
+        std::string shmMutexName = recorderConfig.getParameter<std::string>(
+            "muscle_camera", "shared_mutex_name");
         PCOSharedMemory::setupMutex(shmMutexName, mutexPtr_, createNew);
 
-        spdlog::info("Muscle camera API: Setting up shared memory for cond var");
+        spdlog::info(
+            "Muscle camera API: Setting up shared memory for cond var");
         std::string shmCondVarName = recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_condition_variable_name");
-        PCOSharedMemory::setupConditionVariable(shmCondVarName, condVarPtr_, createNew);
+        PCOSharedMemory::setupConditionVariable(
+            shmCondVarName, condVarPtr_, createNew);
         spdlog::info("Shared memory setup complete for PCO camera");
     }
 }
@@ -160,10 +175,11 @@ FrameData MuscleCamera::waitForOneFrame() {
         pthread_mutex_unlock(mutexPtr_);
 
         if (frameCount == lastFrameCount_) {
-            spdlog::warn("PCO camera API is waken up by the camera server, but no new "
-                         "frame is available. This could be a spurious wakeup of the "
-                         "condition variable (very rare), but more likely it indicates "
-                         "a problem in shared memory or synchronization primitives.");
+            spdlog::warn(
+                "PCO camera API is waken up by the camera server, but no new "
+                "frame is available. This could be a spurious wakeup of the "
+                "condition variable (very rare), but more likely it indicates "
+                "a problem in shared memory or synchronization primitives.");
             continue;
         } else {
             lastFrameCount_ = frameCount;
@@ -177,11 +193,13 @@ FrameData MuscleCamera::waitForOneFrame() {
 }
 
 bool MuscleCamera::isROIValid() {
-    int fullFrameWidth = recorderConfig_.getParameter<int>("muscle_camera", "full_frame_width");
-    int fullFrameHeight = recorderConfig_.getParameter<int>("muscle_camera", "full_frame_height");
-    if (x0_ < 1 || x1_ > fullFrameWidth || y0_ < 1 || y1_ > fullFrameHeight || x0_ >= x1_ ||
-        y0_ >= y1_ || imageWidth_ % 32 != 0 || imageHeight_ % 8 != 0 || imageWidth_ < 64 ||
-        imageHeight_ < 16) {
+    int fullFrameWidth =
+        recorderConfig_.getParameter<int>("muscle_camera", "full_frame_width");
+    int fullFrameHeight =
+        recorderConfig_.getParameter<int>("muscle_camera", "full_frame_height");
+    if (x0_ < 1 || x1_ > fullFrameWidth || y0_ < 1 || y1_ > fullFrameHeight ||
+        x0_ >= x1_ || y0_ >= y1_ || imageWidth_ % 32 != 0 ||
+        imageHeight_ % 8 != 0 || imageWidth_ < 64 || imageHeight_ < 16) {
         spdlog::critical(
             "Invalid ROI for muscle camera. The following conditions must be "
             "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
@@ -201,7 +219,8 @@ void MuscleCamera::setLightOnTime(unsigned int lightOnTimeMicrosecs) {
             imageHeight_, rollingShutterLineTimeUs_, lightOnTimeMicrosecs);
         *shutterOpenTimePtr_ = shutterOnTimeUs;
     } else {
-        spdlog::error("Cannot set exposure time. Shared memory pointer is null.");
+        spdlog::error(
+            "Cannot set exposure time. Shared memory pointer is null.");
     }
 }
 
@@ -220,12 +239,15 @@ int roundToNearestValidMuscleCamVertical(int value) {
 }
 
 bool DualRecordingConfig::computeParameters(
-    int muscleImageHeight, double muscleCameraLineScanTimeUs, int muscleCameraReadoutTimeUs) {
+    int muscleImageHeight,
+    double muscleCameraLineScanTimeUs,
+    int muscleCameraReadoutTimeUs) {
     int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
     double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
     int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
-    if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ > muscleIntervalUs) {
+    if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
+        muscleIntervalUs) {
         spdlog::critical(
             "Computed muscle camera parameters are invalid: "
             "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
@@ -242,7 +264,8 @@ bool DualRecordingConfig::computeParameters(
     }
     muscleShutterOpenTimeUs_ = rollingTimeUs + muscleLightOnTimeUs_;
     muscleCamTriggerDelayUs_ = muscleIntervalUs - rollingTimeUs;
-    int minMuscleIntervalUs = muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
+    int minMuscleIntervalUs =
+        muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
 
     hasBeenChecked_ = true;
     return muscleIntervalUs >= minMuscleIntervalUs;
@@ -250,8 +273,9 @@ bool DualRecordingConfig::computeParameters(
 
 void DualRecordingConfig::saveToFile(const std::string &yamlPath) {
     if (!hasBeenChecked_) {
-        spdlog::error("DualRecordingConfig::saveToFile called before parameters were "
-                      "computed. Call computeParameters() first.");
+        spdlog::error(
+            "DualRecordingConfig::saveToFile called before parameters were "
+            "computed. Call computeParameters() first.");
         return;
     }
 
@@ -287,8 +311,10 @@ void DualRecordingConfig::saveToFile(const std::string &yamlPath) {
         fout << out.c_str();
         fout.close();
 
-        spdlog::info("Dual recording timing configuration saved to {}", yamlPath);
+        spdlog::info(
+            "Dual recording timing configuration saved to {}", yamlPath);
     } catch (const std::exception &e) {
-        spdlog::error("Error saving timing configuration to {}: {}", yamlPath, e.what());
+        spdlog::error(
+            "Error saving timing configuration to {}: {}", yamlPath, e.what());
     }
 }

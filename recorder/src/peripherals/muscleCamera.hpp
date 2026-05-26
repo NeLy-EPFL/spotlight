@@ -19,11 +19,15 @@
 class DualRecordingConfig {
   public:
     DualRecordingConfig()
-        : recordBoth_(false), behaviorCameraFPS_(0), syncRatio_(1), muscleLightOnTimeUs_(0) {}
+        : recordBoth_(false), behaviorCameraFPS_(0), syncRatio_(1),
+          muscleLightOnTimeUs_(0) {}
     DualRecordingConfig(
-        int behaviorCameraFPS, int syncRatio, int muscleLightOnTimeUs, bool recordBoth = true)
-        : recordBoth_(recordBoth), behaviorCameraFPS_(behaviorCameraFPS), syncRatio_(syncRatio),
-          muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
+        int behaviorCameraFPS,
+        int syncRatio,
+        int muscleLightOnTimeUs,
+        bool recordBoth = true)
+        : recordBoth_(recordBoth), behaviorCameraFPS_(behaviorCameraFPS),
+          syncRatio_(syncRatio), muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
 
     bool isRecordingBoth() const { return recordBoth_; }
     int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
@@ -33,10 +37,14 @@ class DualRecordingConfig {
     void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
     void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
     void setSyncRatio(int ratio) { syncRatio_ = ratio; }
-    void setMuscleLightOnTimeUs(int lightOnTimeUs) { muscleLightOnTimeUs_ = lightOnTimeUs; }
+    void setMuscleLightOnTimeUs(int lightOnTimeUs) {
+        muscleLightOnTimeUs_ = lightOnTimeUs;
+    }
 
     bool computeParameters(
-        int muscleImageHeight, double muscleCameraLineScanTimeUs, int muscleCameraReadoutTimeUs);
+        int muscleImageHeight,
+        double muscleCameraLineScanTimeUs,
+        int muscleCameraReadoutTimeUs);
     void saveToFile(const std::string &yamlPath);
 
   private:

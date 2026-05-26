@@ -1,8 +1,8 @@
 #include "calibration.hpp"
 
 LinearMapper2x2to2::LinearMapper2x2to2()
-    : w_X1toX(0), w_Y1toX(0), w_X2toX(0), w_Y2toX(0), biasX(0), w_X1toY(0), w_Y1toY(0), w_X2toY(0),
-      w_Y2toY(0), biasY(0) {}
+    : w_X1toX(0), w_Y1toX(0), w_X2toX(0), w_Y2toX(0), biasX(0), w_X1toY(0),
+      w_Y1toY(0), w_X2toY(0), w_Y2toY(0), biasY(0) {}
 
 LinearMapper2x2to2::LinearMapper2x2to2(const YAML::Node &calibrationNode) {
     auto xNode = calibrationNode["x"];
@@ -44,11 +44,13 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
             throw std::runtime_error("Missing required calibration sections");
         }
     } catch (const YAML::Exception &e) {
-        throw std::runtime_error("Failed to load calibration file: " + std::string(e.what()));
+        throw std::runtime_error(
+            "Failed to load calibration file: " + std::string(e.what()));
     }
 
     // Populate stageAndPixelToPhysical_
-    // YAML keys: stage_pos_x/y -> first input pair; pixel_pos_x(col)/y(row) -> second
+    // YAML keys: stage_pos_x/y -> first input pair; pixel_pos_x(col)/y(row) ->
+    // second
     auto sptp_x = calibration_["stage_and_pixel_to_physical"]["physical_pos_x"];
     auto sptp_y = calibration_["stage_and_pixel_to_physical"]["physical_pos_y"];
     stageAndPixelToPhysical_.w_X1toX = sptp_x["stage_pos_x"].as<double>();
@@ -93,7 +95,8 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
     double bY = stageAndPixelToPhysical_.biasY;
     double det = a * f - b * e;
     if (std::abs(det) < 1e-12) {
-        throw std::runtime_error("Calibration stage-block is singular; cannot invert.");
+        throw std::runtime_error(
+            "Calibration stage-block is singular; cannot invert.");
     }
     physicalAndPixelToStage_.w_X1toX = f / det;
     physicalAndPixelToStage_.w_Y1toX = -b / det;
@@ -108,29 +111,41 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
 }
 
 std::tuple<double, double> CalibrationParams::stagePosAndPixelPosToPhysicalPos(
-    double stagePosX, double stagePosY, int pixelPosRow, int pixelPosCol) const {
+    double stagePosX,
+    double stagePosY,
+    int pixelPosRow,
+    int pixelPosCol) const {
     if (!isDefined) {
         throw std::runtime_error("Calibration data not loaded");
     }
-    return stageAndPixelToPhysical_.map(stagePosX, stagePosY, pixelPosCol, pixelPosRow);
+    return stageAndPixelToPhysical_.map(
+        stagePosX, stagePosY, pixelPosCol, pixelPosRow);
 }
 
 std::tuple<int, int> CalibrationParams::stagePosAndPhysicalPosToPixelPos(
-    double stagePosX, double stagePosY, double physicalPosX, double physicalPosY) const {
+    double stagePosX,
+    double stagePosY,
+    double physicalPosX,
+    double physicalPosY) const {
     if (!isDefined) {
         throw std::runtime_error("Calibration data not loaded");
     }
-    auto [col, row] =
-        stageAndPhysicalToPixel_.map(stagePosX, stagePosY, physicalPosX, physicalPosY);
-    return {static_cast<int>(std::round(row)), static_cast<int>(std::round(col))};
+    auto [col, row] = stageAndPhysicalToPixel_.map(
+        stagePosX, stagePosY, physicalPosX, physicalPosY);
+    return {
+        static_cast<int>(std::round(row)), static_cast<int>(std::round(col))};
 }
 
 std::tuple<double, double> CalibrationParams::physicalPosAndPixelPosToStagePos(
-    double physicalPosX, double physicalPosY, int pixelPosRow, int pixelPosCol) const {
+    double physicalPosX,
+    double physicalPosY,
+    int pixelPosRow,
+    int pixelPosCol) const {
     if (!isDefined) {
         throw std::runtime_error("Calibration data not loaded");
     }
-    return physicalAndPixelToStage_.map(physicalPosX, physicalPosY, pixelPosCol, pixelPosRow);
+    return physicalAndPixelToStage_.map(
+        physicalPosX, physicalPosY, pixelPosCol, pixelPosRow);
 }
 
 void CalibrationParams::saveToFile(const std::string &yamlPath) {
@@ -142,7 +157,9 @@ void CalibrationParams::saveToFile(const std::string &yamlPath) {
         std::ofstream fout(yamlPath);
         fout << calibration_;
     } catch (const std::exception &e) {
-        spdlog::error("Failed to save calibration parameters to file: {}", e.what());
-        throw std::runtime_error("Failed to save calibration parameters to file");
+        spdlog::error(
+            "Failed to save calibration parameters to file: {}", e.what());
+        throw std::runtime_error(
+            "Failed to save calibration parameters to file");
     }
 }

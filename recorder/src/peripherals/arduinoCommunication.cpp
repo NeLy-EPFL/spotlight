@@ -32,7 +32,9 @@ void arduinoCommThreadFunc(
         std::string message;
         {
             std::unique_lock<std::mutex> lock(mutex);
-            cv.wait(lock, [&] { return !arduinoMessagesQueue.empty() || stopCommunication; });
+            cv.wait(lock, [&] {
+                return !arduinoMessagesQueue.empty() || stopCommunication;
+            });
             if (stopCommunication) {
                 break;
             }
@@ -50,14 +52,16 @@ void arduinoCommThreadFunc(
             QByteArray responseData = serialPort.readAll();
             if (!responseData.isEmpty()) {
                 // Append new data to the buffer
-                incomingMessageBuffer +=
-                    std::string(responseData.constData(), responseData.length());
+                incomingMessageBuffer += std::string(
+                    responseData.constData(), responseData.length());
 
                 // Process complete lines
                 size_t newlinePos;
-                while ((newlinePos = incomingMessageBuffer.find('\n')) != std::string::npos) {
+                while ((newlinePos = incomingMessageBuffer.find('\n')) !=
+                       std::string::npos) {
                     // Extract the complete line
-                    std::string completeLine = incomingMessageBuffer.substr(0, newlinePos);
+                    std::string completeLine =
+                        incomingMessageBuffer.substr(0, newlinePos);
                     // Remove the processed line from the buffer
                     incomingMessageBuffer.erase(0, newlinePos + 1);
                     // Log the complete line
@@ -73,7 +77,8 @@ void arduinoCommThreadFunc(
 }
 } // namespace
 
-ArduinoCommunication::ArduinoCommunication(const std::string &portName, int baudRate) {
+ArduinoCommunication::ArduinoCommunication(
+    const std::string &portName, int baudRate) {
     arduinoCommThread_ = std::thread(
         arduinoCommThreadFunc,
         portName,
@@ -105,7 +110,8 @@ void ArduinoCommunication::setSyncRatio(int syncRatio) {
 }
 
 void ArduinoCommunication::setBehaviorExposureTime(int exposureTimeUs) {
-    std::string message = ">SET_BEHAVIOR_EXPOSURE_TIME " + std::to_string(exposureTimeUs) + "\n";
+    std::string message =
+        ">SET_BEHAVIOR_EXPOSURE_TIME " + std::to_string(exposureTimeUs) + "\n";
     {
         std::lock_guard<std::mutex> lock(mutex_);
         arduinoMessagesQueue_.push(message);
@@ -114,7 +120,8 @@ void ArduinoCommunication::setBehaviorExposureTime(int exposureTimeUs) {
 }
 
 void ArduinoCommunication::setMuscleCamTriggerDelay(int delayUs) {
-    std::string message = ">SET_MUSCLE_CAM_TRIGGER_DELAY " + std::to_string(delayUs) + "\n";
+    std::string message =
+        ">SET_MUSCLE_CAM_TRIGGER_DELAY " + std::to_string(delayUs) + "\n";
     {
         std::lock_guard<std::mutex> lock(mutex_);
         arduinoMessagesQueue_.push(message);
@@ -123,7 +130,8 @@ void ArduinoCommunication::setMuscleCamTriggerDelay(int delayUs) {
 }
 
 void ArduinoCommunication::setMuscleLightOnTime(int lightOnTimeUs) {
-    std::string message = ">SET_MUSCLE_LIGHT_ON_TIME " + std::to_string(lightOnTimeUs) + "\n";
+    std::string message =
+        ">SET_MUSCLE_LIGHT_ON_TIME " + std::to_string(lightOnTimeUs) + "\n";
     {
         std::lock_guard<std::mutex> lock(mutex_);
         arduinoMessagesQueue_.push(message);
@@ -131,7 +139,8 @@ void ArduinoCommunication::setMuscleLightOnTime(int lightOnTimeUs) {
     cv_.notify_one();
 }
 
-void ArduinoCommunication::startRecording(std::vector<ProtocolStep> protocolSteps) {
+void ArduinoCommunication::startRecording(
+    std::vector<ProtocolStep> protocolSteps) {
     std::string protocolString = generateProtocolString(protocolSteps);
     std::string message = ">START_RECORDING " + protocolString + "\n";
     {
@@ -170,11 +179,12 @@ std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps) {
 }
 
 std::string findArduinoPortName(RecorderConfig &recorderConfig) {
-    std::string arduinoManufacturer =
-        recorderConfig.getParameter<std::string>("triggering", "arduino_device_manufacturer");
-    std::string arduinoDescription =
-        recorderConfig.getParameter<std::string>("triggering", "arduino_device_description");
-    std::string portName = getSerialPortName(arduinoDescription, arduinoManufacturer);
+    std::string arduinoManufacturer = recorderConfig.getParameter<std::string>(
+        "triggering", "arduino_device_manufacturer");
+    std::string arduinoDescription = recorderConfig.getParameter<std::string>(
+        "triggering", "arduino_device_description");
+    std::string portName =
+        getSerialPortName(arduinoDescription, arduinoManufacturer);
     return "/dev/" + portName;
 }
 
@@ -185,19 +195,22 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     std::unique_ptr<ArduinoCommunication> arduinoCommunication =
         std::make_unique<ArduinoCommunication>(arduinoPortName);
     spdlog::info("Arduino communication started");
-    int behaviorFrameRate =
-        recorderConfig.getParameter<int>("behavior_camera", "streaming_frame_rate");
-    int behaviorExposureTimeUs =
-        recorderConfig.getParameter<int>("behavior_camera", "default_exposure_time_us");
-    int muscleLightOnTimeUs =
-        recorderConfig.getParameter<int>("muscle_camera", "default_light_on_time_us");
-    double rollingShutterLineTimeUs =
-        recorderConfig.getParameter<double>("muscle_camera", "rolling_shutter_line_time_us");
-    spdlog::info("Setting behavior recording FPS via Arduino to {}", behaviorFrameRate);
+    int behaviorFrameRate = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    int behaviorExposureTimeUs = recorderConfig.getParameter<int>(
+        "behavior_camera", "default_exposure_time_us");
+    int muscleLightOnTimeUs = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_light_on_time_us");
+    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "rolling_shutter_line_time_us");
+    spdlog::info(
+        "Setting behavior recording FPS via Arduino to {}", behaviorFrameRate);
     arduinoCommunication->setBehaviorRecordingFPS(behaviorFrameRate);
     spdlog::info("Setting sync ratio via Arduino to {}", syncRatio);
     arduinoCommunication->setSyncRatio(syncRatio);
-    spdlog::info("Setting behavior exposure time via Arduino to {} us", behaviorExposureTimeUs);
+    spdlog::info(
+        "Setting behavior exposure time via Arduino to {} us",
+        behaviorExposureTimeUs);
     arduinoCommunication->setBehaviorExposureTime(behaviorExposureTimeUs);
     spdlog::info(
         "Setting muscle exposure time (light-on time) via Arduino to "

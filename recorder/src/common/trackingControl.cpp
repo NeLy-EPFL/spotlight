@@ -16,12 +16,14 @@ std::ofstream initializeMotionStageLogFile(std::string saveDirectory) {
     // Remove the file if it exists (otherwise we'd be appending to it)
     if (std::filesystem::exists(filename)) {
         std::filesystem::remove(filename);
-        spdlog::info("Removed existing motion stage log file: {}", filename.string());
+        spdlog::info(
+            "Removed existing motion stage log file: {}", filename.string());
     }
 
     std::ofstream logFile((filename).string(), std::ios_base::app);
     if (!logFile.is_open()) {
-        spdlog::error("Failed to open motion stage log file: {}", filename.string());
+        spdlog::error(
+            "Failed to open motion stage log file: {}", filename.string());
     } else {
         spdlog::info("Opened motion stage log file: {}", filename.string());
     }
@@ -89,14 +91,19 @@ void motionControlRequestHandler(
         MotionStageResponse myResponse;
         if (myRequest.requestType == GET_CURRENT_POSITION) {
             MotionStagePosition currentPosition = {
-                motionControl.getPosition(X_AXIS), motionControl.getPosition(Y_AXIS), ABSOLUTE};
+                motionControl.getPosition(X_AXIS),
+                motionControl.getPosition(Y_AXIS),
+                ABSOLUTE};
             myResponse.position = currentPosition;
         } else if (myRequest.requestType == SET_TARGET_POSITION) {
             bool waitForCompletion = false;
             if (myRequest.position.positionType == ABSOLUTE) {
-                double targetX = std::clamp(myRequest.position.xPosMm, xMinMm, xMaxMm);
-                double targetY = std::clamp(myRequest.position.yPosMm, yMinMm, yMaxMm);
-                if (targetX != myRequest.position.xPosMm || targetY != myRequest.position.yPosMm) {
+                double targetX =
+                    std::clamp(myRequest.position.xPosMm, xMinMm, xMaxMm);
+                double targetY =
+                    std::clamp(myRequest.position.yPosMm, yMinMm, yMaxMm);
+                if (targetX != myRequest.position.xPosMm ||
+                    targetY != myRequest.position.yPosMm) {
                     spdlog::warn(
                         "Target stage position ({:.3f}, {:.3f}) mm clamped "
                         "to ({:.3f}, {:.3f}) mm to stay within travel "
@@ -110,18 +117,24 @@ void motionControlRequestHandler(
                         yMinMm,
                         yMaxMm);
                 }
-                motionControl.moveAbsolute(X_AXIS, targetX, waitForCompletion, myRequest.velocity);
-                motionControl.moveAbsolute(Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
+                motionControl.moveAbsolute(
+                    X_AXIS, targetX, waitForCompletion, myRequest.velocity);
+                motionControl.moveAbsolute(
+                    Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
             } else {
                 // Convert the relative request to an absolute target so we
                 // can clamp against the travel limits before issuing the
                 // move.
                 double currentX = motionControl.getPosition(X_AXIS);
                 double currentY = motionControl.getPosition(Y_AXIS);
-                double targetX = std::clamp(currentX + myRequest.position.xPosMm, xMinMm, xMaxMm);
-                double targetY = std::clamp(currentY + myRequest.position.yPosMm, yMinMm, yMaxMm);
-                motionControl.moveAbsolute(X_AXIS, targetX, waitForCompletion, myRequest.velocity);
-                motionControl.moveAbsolute(Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
+                double targetX = std::clamp(
+                    currentX + myRequest.position.xPosMm, xMinMm, xMaxMm);
+                double targetY = std::clamp(
+                    currentY + myRequest.position.yPosMm, yMinMm, yMaxMm);
+                motionControl.moveAbsolute(
+                    X_AXIS, targetX, waitForCompletion, myRequest.velocity);
+                motionControl.moveAbsolute(
+                    Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
             }
             myResponse.setSuccess = true;
         } else if (myRequest.requestType == WAIT_UNTIL_IDLE) {
@@ -129,8 +142,8 @@ void motionControlRequestHandler(
             motionControl.waitUntilIdle(Y_AXIS);
             myResponse.isIdle = true;
         } else if (myRequest.requestType == CHECK_IF_IDLE) {
-            myResponse.isIdle =
-                motionControl.checkIfIdle(X_AXIS) && motionControl.checkIfIdle(Y_AXIS);
+            myResponse.isIdle = motionControl.checkIfIdle(X_AXIS) &&
+                                motionControl.checkIfIdle(Y_AXIS);
         } else if (myRequest.requestType == START_HOMING) {
             bool waitForCompletion = false;
             motionControl.home(X_AXIS, waitForCompletion);
@@ -141,8 +154,9 @@ void motionControlRequestHandler(
                 "Motion stage request handler thread received unknown "
                 "request type: {}",
                 static_cast<int>(myRequest.requestType));
-            throw std::runtime_error("Motion stage request handler thread received unknown "
-                                     "request type.");
+            throw std::runtime_error(
+                "Motion stage request handler thread received unknown "
+                "request type.");
         }
 
         // Send response back
@@ -175,14 +189,14 @@ void trackingController(
         recorderConfig.getParameter<int>("tracking", "update_frequency_hz");
     uint64_t updateIntervalMicrosecs = 1e6 / trackingUpdateFrequency;
 
-    float trackingDistanceThresholdMm =
-        recorderConfig.getParameter<float>("tracking", "distance_threshold_for_moving_mm");
+    float trackingDistanceThresholdMm = recorderConfig.getParameter<float>(
+        "tracking", "distance_threshold_for_moving_mm");
 
-    float defaultVelocity =
-        recorderConfig.getParameter<float>("motion_control", "default_velocity_mm_per_sec");
+    float defaultVelocity = recorderConfig.getParameter<float>(
+        "motion_control", "default_velocity_mm_per_sec");
 
-    imageBinarizeThreshold =
-        recorderConfig.getParameter<int>("tracking", "image_binarize_threshold");
+    imageBinarizeThreshold = recorderConfig.getParameter<int>(
+        "tracking", "image_binarize_threshold");
 
     while (!programState->toQuit.load()) {
         uint64_t startTime = getCurrentTimeMicroseconds();
@@ -191,16 +205,18 @@ void trackingController(
             // Nothing to do here
         } else if (!trackingControlState->shouldOverrideTracking.load()) {
             cv::Mat myBehaviorImage =
-                behaviorRecordingState->latestFrameHolder->getLatestFrameData().image;
+                behaviorRecordingState->latestFrameHolder->getLatestFrameData()
+                    .image;
             reorientBehaviorImage(myBehaviorImage, myBehaviorImage);
-            cv::Mat activeAreaMaskCurrView =
-                activeAreaMask.warpToCurrentView(myBehaviorImage, getCurrentMotionStagePosition());
+            cv::Mat activeAreaMaskCurrView = activeAreaMask.warpToCurrentView(
+                myBehaviorImage, getCurrentMotionStagePosition());
 
             MotionStagePosition myMotionStagePosition;
             {
                 std::lock_guard<std::mutex> lock(
                     trackingControlState->latestMotionStagePositionMutex);
-                myMotionStagePosition = trackingControlState->latestMotionStagePosition;
+                myMotionStagePosition =
+                    trackingControlState->latestMotionStagePosition;
             }
 
             bool isFound = false;
@@ -208,24 +224,29 @@ void trackingController(
             double physicalPosY = 0;
             if (behaviorRecordingState->behaviorCamera &&
                 behaviorRecordingState->behaviorCamera->isReady()) {
-                std::tie(isFound, physicalPosX, physicalPosY) = calculateFlyPositionAbsoluteMm(
-                    myBehaviorImage,
-                    myMotionStagePosition,
-                    activeAreaMaskCurrView,
-                    behaviorCamCalibrationParams,
-                    recorderConfig);
+                std::tie(isFound, physicalPosX, physicalPosY) =
+                    calculateFlyPositionAbsoluteMm(
+                        myBehaviorImage,
+                        myMotionStagePosition,
+                        activeAreaMaskCurrView,
+                        behaviorCamCalibrationParams,
+                        recorderConfig);
             }
 
             if (isFound) {
                 auto [currentPhysicalPosX, currentPhysicalPosY] =
-                    behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
-                        myMotionStagePosition.xPosMm,
-                        myMotionStagePosition.yPosMm,
-                        myBehaviorImage.rows / 2,
-                        myBehaviorImage.cols / 2);
+                    behaviorCamCalibrationParams
+                        .stagePosAndPixelPosToPhysicalPos(
+                            myMotionStagePosition.xPosMm,
+                            myMotionStagePosition.yPosMm,
+                            myBehaviorImage.rows / 2,
+                            myBehaviorImage.cols / 2);
 
                 double distanceToTarget = calculateDistance(
-                    physicalPosX, physicalPosY, currentPhysicalPosX, currentPhysicalPosY);
+                    physicalPosX,
+                    physicalPosY,
+                    currentPhysicalPosX,
+                    currentPhysicalPosY);
 
                 if (distanceToTarget < trackingDistanceThresholdMm) {
                     // If the fly is close enough to the center of the view,
@@ -240,7 +261,9 @@ void trackingController(
                 double dx = -1 * (physicalPosX - currentPhysicalPosX);
                 double dy = physicalPosY - currentPhysicalPosY;
                 MotionStagePosition targetMotionStagePosition = {
-                    myMotionStagePosition.xPosMm + dx, myMotionStagePosition.yPosMm + dy, ABSOLUTE};
+                    myMotionStagePosition.xPosMm + dx,
+                    myMotionStagePosition.yPosMm + dy,
+                    ABSOLUTE};
 
                 // spdlog::debug(
                 //     "Fly found at physical ({:.2}, {:.2}). "
@@ -252,7 +275,8 @@ void trackingController(
                 //     currentPhysicalPosY,
                 //     dx,
                 //     dy);
-                setTargetMotionStagePosition(targetMotionStagePosition, defaultVelocity);
+                setTargetMotionStagePosition(
+                    targetMotionStagePosition, defaultVelocity);
             }
         } else {
             // spdlog::debug("Tracking controller is overriding tracking.");
@@ -263,7 +287,8 @@ void trackingController(
                 currentPos.xPosMm,
                 currentPos.yPosMm);
 
-            if (distanceToTarget < trackingDistanceThresholdMm && checkIfMotionStageIdle()) {
+            if (distanceToTarget < trackingDistanceThresholdMm &&
+                checkIfMotionStageIdle()) {
                 trackingControlState->shouldOverrideTracking.store(false);
                 continue;
             } else {
@@ -278,7 +303,8 @@ void trackingController(
         uint64_t elapsedTime = currentTime - startTime;
         long int timeToSleepMicrosecs = updateIntervalMicrosecs - elapsedTime;
         if (timeToSleepMicrosecs > 0) {
-            std::this_thread::sleep_for(std::chrono::microseconds(timeToSleepMicrosecs));
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(timeToSleepMicrosecs));
         } else {
             spdlog::warn(
                 "Tracking controller thread is running behind. "
@@ -301,27 +327,32 @@ ActiveAreaMask::ActiveAreaMask(
     fs::path metadataPath = fs::path(arenaSpecDir) / "metadata.yaml";
     YAML::Node metadata = YAML::LoadFile(metadataPath.string());
     if (!metadata["unit"] || metadata["unit"].as<std::string>() != "mm") {
-        throw std::runtime_error("Arena metadata unit is not 'mm': " + metadataPath.string());
+        throw std::runtime_error(
+            "Arena metadata unit is not 'mm': " + metadataPath.string());
     }
     auto arenaDim = metadata["arena_dim"].as<std::vector<double>>();
     arenaWidthMm = arenaDim[0];
     arenaHeightMm = arenaDim[1];
-    resolutionMmPerPixel = metadata["active_area_raster_resolution"].as<double>();
+    resolutionMmPerPixel =
+        metadata["active_area_raster_resolution"].as<double>();
 
     // Load rasterized active area mask
     fs::path maskPath = fs::path(arenaSpecDir) / "active_area.png";
     fullArenaMask = cv::imread(maskPath.string(), cv::IMREAD_GRAYSCALE);
     if (fullArenaMask.empty()) {
-        throw std::runtime_error("Failed to load active area mask from: " + maskPath.string());
+        throw std::runtime_error(
+            "Failed to load active area mask from: " + maskPath.string());
     }
     int expectCols = static_cast<int>(arenaWidthMm / resolutionMmPerPixel);
     int expectRows = static_cast<int>(arenaHeightMm / resolutionMmPerPixel);
     if (fullArenaMask.cols != expectCols || fullArenaMask.rows != expectRows) {
-        throw std::runtime_error("Active area mask has incorrect dimensions: " + maskPath.string());
+        throw std::runtime_error(
+            "Active area mask has incorrect dimensions: " + maskPath.string());
     }
 
     // Shrink active area mask by boundary margin
-    int boundaryMarginPixels = static_cast<int>(boundaryMarginMm / resolutionMmPerPixel);
+    int boundaryMarginPixels =
+        static_cast<int>(boundaryMarginMm / resolutionMmPerPixel);
     cv::Mat erosionKernel = cv::getStructuringElement(
         cv::MORPH_ELLIPSE,
         cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
@@ -354,7 +385,8 @@ ActiveAreaMask::ActiveAreaMask(
     transformMatrixAtZeroStagePos_ /= resolutionMmPerPixel;
 }
 
-cv::Mat ActiveAreaMask::warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos) {
+cv::Mat ActiveAreaMask::warpToCurrentView(
+    cv::Mat currentImage, MotionStagePosition stagePos) {
     // Add contribution of non-zero stage position to the transformation matrix
     double xOffset =
         (stageAndPixelToPhysical.w_X1toX * stagePos.xPosMm +
@@ -384,8 +416,8 @@ void motionStagePositionLogger(
     std::shared_ptr<TrackingControlState> trackingControlState,
     std::shared_ptr<SaveDirectory> saveDirectory,
     std::shared_ptr<ProgramState> programState) {
-    int positionLoggingFreq =
-        recorderConfig.getParameter<int>("motion_control", "position_logging_frequency_hz");
+    int positionLoggingFreq = recorderConfig.getParameter<int>(
+        "motion_control", "position_logging_frequency_hz");
     int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
 
     std::ofstream logFile;
@@ -399,7 +431,8 @@ void motionStagePositionLogger(
 
         // Update latest position for other threads
         {
-            std::lock_guard<std::mutex> lock(trackingControlState->latestMotionStagePositionMutex);
+            std::lock_guard<std::mutex> lock(
+                trackingControlState->latestMotionStagePositionMutex);
             trackingControlState->latestMotionStagePosition = currentPosition;
         }
 
@@ -408,22 +441,24 @@ void motionStagePositionLogger(
             if (!wasRecordingLastIter) {
                 // This is the start of a new recording. We need to initalize
                 // the log file.
-                logFile = initializeMotionStageLogFile(saveDirectory->getDirectory());
+                logFile =
+                    initializeMotionStageLogFile(saveDirectory->getDirectory());
                 spdlog::info(
                     "Stage position log file initialized under {}. "
                     "Stage position logging starts now.",
                     saveDirectory->getDirectory().c_str());
             }
 
-            logFile << startTime << "," << currentPosition.xPosMm << "," << currentPosition.yPosMm
-                    << "\n";
+            logFile << startTime << "," << currentPosition.xPosMm << ","
+                    << currentPosition.yPosMm << "\n";
             logFile.flush();
 
             wasRecordingLastIter = true;
         } else {
             if (wasRecordingLastIter) {
                 assert(logFile.is_open());
-                spdlog::info("Stage position logging stopped. Closing log file.");
+                spdlog::info(
+                    "Stage position logging stopped. Closing log file.");
                 logFile.close();
             }
             assert(!logFile.is_open());
@@ -434,7 +469,8 @@ void motionStagePositionLogger(
         uint64_t elapsedTime = endTime - startTime;
         long int timeToSleepMicrosecs = loggingIntervalMicrosecs - elapsedTime;
         if (timeToSleepMicrosecs > 0) {
-            std::this_thread::sleep_for(std::chrono::microseconds(timeToSleepMicrosecs));
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(timeToSleepMicrosecs));
         } else {
             spdlog::warn(
                 "Motion stage position logging thread is running behind. "
@@ -460,8 +496,9 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     double physicalPosYMm = 0;
 
     if (behaviorImage.empty()) {
-        spdlog::warn("Input behavior image is empty. It's normal if this happens "
-                     "only one or two times at the start of recording.");
+        spdlog::warn(
+            "Input behavior image is empty. It's normal if this happens "
+            "only one or two times at the start of recording.");
         return {isFound, physicalPosXMm, physicalPosYMm};
     }
     if (!behaviorCamCalibrationParams.isDefined) {
@@ -471,7 +508,8 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     }
 
     // Zero out pixels that fall outside the active arena area.
-    cv::Mat blackedOutImage = cv::Mat::zeros(behaviorImage.size(), behaviorImage.type());
+    cv::Mat blackedOutImage =
+        cv::Mat::zeros(behaviorImage.size(), behaviorImage.type());
     behaviorImage.copyTo(blackedOutImage, activeAreaMaskCurrView);
 
     assert(blackedOutImage.channels() == 1);
@@ -479,7 +517,12 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     // Threshold the image at a cutout of 100
     // spdlog::debug("Thresholding");
     cv::Mat binaryImage;
-    cv::threshold(blackedOutImage, binaryImage, imageBinarizeThreshold, 255, cv::THRESH_BINARY);
+    cv::threshold(
+        blackedOutImage,
+        binaryImage,
+        imageBinarizeThreshold,
+        255,
+        cv::THRESH_BINARY);
     if (binaryImage.empty()) {
         spdlog::error("Binary image after thresholding is empty");
         return {isFound, physicalPosXMm, physicalPosYMm};
@@ -504,7 +547,8 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
 
     // spdlog::debug("Finding connected components");
     cv::Mat labels, stats, centroids;
-    int numLabels = cv::connectedComponentsWithStats(morphedImage, labels, stats, centroids);
+    int numLabels = cv::connectedComponentsWithStats(
+        morphedImage, labels, stats, centroids);
 
     // Find the largest connected component (excluding the background which is
     // label 0).
@@ -521,15 +565,20 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
 
     // If the largest connected component is large enough, this is the fly
 
-    int minFlySizeSqPixels = recorderConfig.getParameter<int>("tracking", "min_fly_size_sq_pixels");
+    int minFlySizeSqPixels =
+        recorderConfig.getParameter<int>("tracking", "min_fly_size_sq_pixels");
     if (maxLabel > 0 && maxArea > minFlySizeSqPixels) {
         // spdlog::debug(
         //     "Getting the center of mass of the largest connected component");
         double centerOfMassCol = centroids.at<double>(maxLabel, 0); // x
         double centerOfMassRow = centroids.at<double>(maxLabel, 1); // y
 
-        auto [x, y] = behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
-            stagePosition.xPosMm, stagePosition.yPosMm, centerOfMassRow, centerOfMassCol);
+        auto [x, y] =
+            behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
+                stagePosition.xPosMm,
+                stagePosition.yPosMm,
+                centerOfMassRow,
+                centerOfMassCol);
         isFound = true;
         physicalPosXMm = x;
         physicalPosYMm = y;
@@ -569,11 +618,15 @@ MotionStagePosition getCurrentMotionStagePosition() {
     return myResponse.position;
 }
 
-void setTargetMotionStagePosition(MotionStagePosition targetPosition, float velocity) {
+void setTargetMotionStagePosition(
+    MotionStagePosition targetPosition, float velocity) {
     if (targetPosition.positionType == ABSOLUTE) {
-        double clampedX = std::clamp(targetPosition.xPosMm, softwareXMinMm, softwareXMaxMm);
-        double clampedY = std::clamp(targetPosition.yPosMm, softwareYMinMm, softwareYMaxMm);
-        if (clampedX != targetPosition.xPosMm || clampedY != targetPosition.yPosMm) {
+        double clampedX =
+            std::clamp(targetPosition.xPosMm, softwareXMinMm, softwareXMaxMm);
+        double clampedY =
+            std::clamp(targetPosition.yPosMm, softwareYMinMm, softwareYMaxMm);
+        if (clampedX != targetPosition.xPosMm ||
+            clampedY != targetPosition.yPosMm) {
             spdlog::warn(
                 "Target stage position ({:.3f}, {:.3f}) mm clamped to "
                 "({:.3f}, {:.3f}) mm by software motion stage limits "
@@ -645,10 +698,12 @@ void waitUntilMotionStageIdleSync() {
         responseMap.erase(myThreadIdHash);
     }
     if (!myResponse.isIdle) {
-        spdlog::critical("Motion stage request handler thread responed to WAIT_UNTIL_IDLE "
-                         "request, but the stages are not idle.");
-        throw std::runtime_error("Motion stage request handler thread responed to WAIT_UNTIL_IDLE "
-                                 "request, but the stages are not idle.");
+        spdlog::critical(
+            "Motion stage request handler thread responed to WAIT_UNTIL_IDLE "
+            "request, but the stages are not idle.");
+        throw std::runtime_error(
+            "Motion stage request handler thread responed to WAIT_UNTIL_IDLE "
+            "request, but the stages are not idle.");
     }
 }
 
@@ -722,7 +777,8 @@ void startHomingMotionStage() {
     }
 }
 
-void setMotionStageLimits(double xMinMm, double xMaxMm, double yMinMm, double yMaxMm) {
+void setMotionStageLimits(
+    double xMinMm, double xMaxMm, double yMinMm, double yMaxMm) {
     softwareXMinMm = xMinMm;
     softwareXMaxMm = xMaxMm;
     softwareYMinMm = yMinMm;
@@ -736,12 +792,14 @@ void setMotionStageLimits(double xMinMm, double xMaxMm, double yMinMm, double yM
         yMaxMm);
 }
 
-void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState) {
+void stopMotionControlRequestHandler(
+    std::shared_ptr<ProgramState> programState) {
     if (!programState->toQuit.load()) {
         spdlog::critical("stopMotionControlRequestHandler() called but toQuit "
                          "is not set to true. This shouldn't happen.");
-        throw std::runtime_error("stopMotionControlRequestHandler() called but toQuit "
-                                 "is not set to true. This shouldn't happen.");
+        throw std::runtime_error(
+            "stopMotionControlRequestHandler() called but toQuit "
+            "is not set to true. This shouldn't happen.");
     } else {
         requestCondVar.notify_one();
     }

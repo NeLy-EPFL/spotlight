@@ -20,6 +20,7 @@
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/motionControl.hpp"
 
-void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem::path arenaDir);
+void runArenaRegistrationScan(
+    std::filesystem::path profileDir, std::filesystem::path arenaDir);
 
 #endif // RUN_ARENA_REGISTRATION_SCAN_HPP

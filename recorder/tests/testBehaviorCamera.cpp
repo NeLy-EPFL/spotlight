@@ -30,7 +30,10 @@ TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64RoundUp) {
 TEST(TestGetCenteredOffsets, GetCenteredOffsets) {
     unsigned int xOffset, yOffset;
     std::tie(xOffset, yOffset) = getCenteredOffsets(
-        640, 512, BEHAVIOR_CAMERA_FULL_FRAME_WIDTH, BEHAVIOR_CAMERA_FULL_FRAME_HEIGHT);
+        640,
+        512,
+        BEHAVIOR_CAMERA_FULL_FRAME_WIDTH,
+        BEHAVIOR_CAMERA_FULL_FRAME_HEIGHT);
     ASSERT_EQ(xOffset, 960);
     ASSERT_EQ(yOffset, 768);
 }
@@ -110,7 +113,8 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
         cv::Mat diffImage;
         cv::absdiff(thisImage, nextImage, diffImage);
         double diffSum = cv::sum(diffImage)[0];
-        ASSERT_GT(diffSum, 0) << "Frames " << i << " and " << i + 1 << " are identical";
+        ASSERT_GT(diffSum, 0)
+            << "Frames " << i << " and " << i + 1 << " are identical";
     }
 
     // Check if acquisition is fast enough
@@ -118,10 +122,12 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
     for (int i = 0; i < (int)blockingTimesMicroseconds.size(); i++) {
         blockingTimeSum += blockingTimesMicroseconds[i];
     }
-    double meanBlockingTime = blockingTimeSum / blockingTimesMicroseconds.size();
+    double meanBlockingTime =
+        blockingTimeSum / blockingTimesMicroseconds.size();
     std::cerr << "a" << meanBlockingTime << std::endl;
     double meanProcessingTime = (1e6 / expectedFrameRate) - meanBlockingTime;
     ASSERT_LT(meanProcessingTime, maxPerFrameProcessingTimeAllowedMicroseconds)
         << "Mean processing time: " << meanProcessingTime << " us; "
-        << "max allowed processing time: " << maxPerFrameProcessingTimeAllowedMicroseconds << " us";
+        << "max allowed processing time: "
+        << maxPerFrameProcessingTimeAllowedMicroseconds << " us";
 }

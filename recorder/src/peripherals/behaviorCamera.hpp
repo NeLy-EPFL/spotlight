@@ -43,7 +43,8 @@ class BehaviorCamera {
     int currentFPS_;
     std::atomic<bool> cameraReadyFlag_{false};
 
-    template <typename Module> bool setIntegerAndCheck(const std::string key, int value);
+    template <typename Module>
+    bool setIntegerAndCheck(const std::string key, int value);
 
     template <typename Module>
     bool setStringAndCheck(const std::string key, const std::string value);
@@ -51,7 +52,7 @@ class BehaviorCamera {
 
 int roundToNearestValidBehaviorCamDimension(int value);
 
-std::tuple<int, int>
-getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);
+std::tuple<int, int> getCenteredOffsets(
+    int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);
 
 #endif // BEHAVIOR_CAMERA_HPP
