@@ -34,37 +34,39 @@ void arduinoCommThreadFunc(
             std::string message;
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                cv.wait(lock, [&]
-                        { return !arduinoMessagesQueue.empty() ||
-                                 stopCommunication; });
-                if (stopCommunication)
-                {
+                cv.wait(lock, [&] {
+                    return !arduinoMessagesQueue.empty() || stopCommunication;
+                });
+                if (stopCommunication) {
                     break;
                 }
                 message = arduinoMessagesQueue.front();
                 arduinoMessagesQueue.pop();
             }
 
-            // Try sending the message if fails twice in a row reconnect to the serial port
+            // Try sending the message if fails twice in a row reconnect to the
+            // serial port
             int consecutiveFailedWrites = 0;
-            int maxConsecutiveFailedWrites = 2; // Threshold for consecutive failed writes before attempting reconnection
-            while (true){
+            int maxConsecutiveFailedWrites = 2;
+            while (true) {
                 serialPort.write(message.c_str());
-                if (!serialPort.waitForBytesWritten(1000))
-                {
-                    spdlog::error("Failed to write message: {} to serial port", message);
+                if (!serialPort.waitForBytesWritten(1000)) {
+                    spdlog::error(
+                        "Failed to write message: {} to serial port", message);
                     consecutiveFailedWrites++;
-                    if (consecutiveFailedWrites >= maxConsecutiveFailedWrites)
-                    {
-                        spdlog::error("Max consecutive failed writes reached. Reconnecting...");
+                    if (consecutiveFailedWrites >= maxConsecutiveFailedWrites) {
+                        spdlog::error("Max consecutive failed writes reached. "
+                                      "Reconnecting...");
                         serialPort.close();
-                        if (!serialPort.open(QIODevice::ReadWrite))
-                        {
-                            spdlog::error("Failed to reopen serial port. Stopping Arduino communication thread.");
+                        if (!serialPort.open(QIODevice::ReadWrite)) {
+                            spdlog::error(
+                                "Failed to reopen serial port. Stopping "
+                                "Arduino communication thread.");
                             break;
                         }
                         consecutiveFailedWrites = 0;
-                        spdlog::info("Successfully reconnected to serial port.");
+                        spdlog::info(
+                            "Successfully reconnected to serial port.");
                     }
                     continue;
                 }
@@ -213,22 +215,22 @@ std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps) {
     return protocolString;
 }
 
-std::string findArduinoPortName(RecorderConfig &recorderConfig)
-{
+std::string findArduinoPortName(RecorderConfig &recorderConfig) {
     std::string udev_port_name = "/dev/arduino_trigger";
-    if (fs::exists(udev_port_name))
-    {
+    if (fs::exists(udev_port_name)) {
         spdlog::info(
             "Serial port '{}' found via udev. Using it without further checks.",
             udev_port_name);
         return udev_port_name;
-    }else{
-        std::string arduinoManufacturer = recorderConfig.getParameter<std::string>(
-            "triggering", "arduino_device_manufacturer");
-        std::string arduinoDescription = recorderConfig.getParameter<std::string>(
-            "triggering", "arduino_device_description");
-        std::string portName = getSerialPortName(arduinoDescription,
-                                                arduinoManufacturer);
+    } else {
+        std::string arduinoManufacturer =
+            recorderConfig.getParameter<std::string>(
+                "triggering", "arduino_device_manufacturer");
+        std::string arduinoDescription =
+            recorderConfig.getParameter<std::string>(
+                "triggering", "arduino_device_description");
+        std::string portName =
+            getSerialPortName(arduinoDescription, arduinoManufacturer);
         return "/dev/" + portName;
     }
 }

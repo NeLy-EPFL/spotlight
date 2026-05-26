@@ -251,8 +251,7 @@ bool DualRecordingConfig::computeParameters(
     int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
     if (2 * rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
-        muscleIntervalUs)
-    {
+        muscleIntervalUs) {
         spdlog::critical(
             "Computed muscle camera parameters are invalid: "
             "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
