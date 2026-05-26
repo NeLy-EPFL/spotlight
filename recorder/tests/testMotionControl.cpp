@@ -5,7 +5,9 @@
 
 const float positionTolerance = 0.001;
 
-TEST(TestMotionStages, ConfigureMotionStages) { MotionControl motionControl; }
+TEST(TestMotionStages, ConfigureMotionStages) {
+    MotionControl motionControl;
+}
 
 TEST(TestMotionStages, Homing) {
     MotionControl motionControl;

@@ -79,7 +79,9 @@ MotionControlWidget::MotionControlWidget(
     setFixedSize(guiMotionStagePreviewWidth, guiMotionStagePreviewHeight);
 }
 
-MotionControlWidget::~MotionControlWidget() { timer_.stop(); }
+MotionControlWidget::~MotionControlWidget() {
+    timer_.stop();
+}
 
 void MotionControlWidget::paintEvent(QPaintEvent *event) {
     if (!trackingControlState_->motionControlHandlerReady.load()) {

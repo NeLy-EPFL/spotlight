@@ -224,9 +224,13 @@ void MuscleCamera::setLightOnTime(unsigned int lightOnTimeMicrosecs) {
     }
 }
 
-pid_t MuscleCamera::getCameraServerPID() const { return pcoCameraServerPID_; }
+pid_t MuscleCamera::getCameraServerPID() const {
+    return pcoCameraServerPID_;
+}
 
-int MuscleCamera::getNumLinesScanned() const { return imageHeight_; }
+int MuscleCamera::getNumLinesScanned() const {
+    return imageHeight_;
+}
 
 int roundToNearestValidMuscleCamHorizontal(int value) {
     int remainder = value % 32;

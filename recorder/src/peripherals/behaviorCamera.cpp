@@ -101,7 +101,9 @@ void BehaviorCamera::start(size_t bufferSize) {
     frameGrabberPtr_->start();
 }
 
-void BehaviorCamera::stop() { frameGrabberPtr_->stop(); }
+void BehaviorCamera::stop() {
+    frameGrabberPtr_->stop();
+}
 
 FrameData BehaviorCamera::waitForOneFrame() {
     // Getting the buffer is the main blocking call
@@ -122,7 +124,9 @@ FrameData BehaviorCamera::waitForOneFrame() {
     return frameData;
 }
 
-bool BehaviorCamera::isReady() const { return cameraReadyFlag_.load(); }
+bool BehaviorCamera::isReady() const {
+    return cameraReadyFlag_.load();
+}
 
 template <typename Module>
 bool BehaviorCamera::setIntegerAndCheck(const std::string key, int value) {

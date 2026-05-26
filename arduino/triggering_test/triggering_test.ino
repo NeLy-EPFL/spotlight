@@ -1,6 +1,6 @@
 /*
  * Arduino Pin Timing Control
- * 
+ *
  * This program:
  * - Turns pin 2 on at 100Hz, duration 1000us
  * - Turns pin 3 on at 100Hz, duration 1000us
@@ -27,65 +27,66 @@ bool isBehTriggerOn = false;
 bool isMuscleTriggerOn = false;
 
 void setup() {
-  // Initialize all pins as outputs
-  pinMode(behCamPin, OUTPUT);
-  pinMode(irLightPin, OUTPUT);
-  pinMode(muscleCamPin, OUTPUT);
-  pinMode(blueLightPin, OUTPUT);
-  pinMode(optoCh1Pin, OUTPUT);
-  pinMode(optoCh2Pin, OUTPUT);
-  
-  // Ensure all pins start in the OFF state
-  digitalWrite(behCamPin, LOW);
-  digitalWrite(irLightPin, LOW);
-  digitalWrite(muscleCamPin, LOW);
-  digitalWrite(blueLightPin, LOW);
-  digitalWrite(optoCh1Pin, LOW);
-  digitalWrite(optoCh2Pin, LOW);
+    // Initialize all pins as outputs
+    pinMode(behCamPin, OUTPUT);
+    pinMode(irLightPin, OUTPUT);
+    pinMode(muscleCamPin, OUTPUT);
+    pinMode(blueLightPin, OUTPUT);
+    pinMode(optoCh1Pin, OUTPUT);
+    pinMode(optoCh2Pin, OUTPUT);
 
-  // Start serial comm
-  Serial.begin(9600);
+    // Ensure all pins start in the OFF state
+    digitalWrite(behCamPin, LOW);
+    digitalWrite(irLightPin, LOW);
+    digitalWrite(muscleCamPin, LOW);
+    digitalWrite(blueLightPin, LOW);
+    digitalWrite(optoCh1Pin, LOW);
+    digitalWrite(optoCh2Pin, LOW);
+
+    // Start serial comm
+    Serial.begin(9600);
 }
 
 void loop() {
-  unsigned long currentTime = micros();
-  unsigned long timeSinceLastTriggerStart = currentTime - lastBehTriggerStartTime;
+    unsigned long currentTime = micros();
+    unsigned long timeSinceLastTriggerStart =
+        currentTime - lastBehTriggerStartTime;
 
-  // Turn behavior trigger off if exposure time has passed
-  if (timeSinceLastTriggerStart >= behExposureTime) {
-    if (isBehTriggerOn) {
-        isBehTriggerOn = false;
-        digitalWrite(behCamPin, LOW);
-        digitalWrite(irLightPin, LOW);
-    }
-  }
-
-  // Turn muscle trigger off if exposure time has passed
-  if (timeSinceLastTriggerStart >= muscleExposureTime) {
-    if (isMuscleTriggerOn) {
-        isMuscleTriggerOn = false;
-        digitalWrite(muscleCamPin, LOW);
-        digitalWrite(blueLightPin, LOW);
-    }
-  }
-  
-  // Turn behavior trigger on for the next round
-  if (timeSinceLastTriggerStart >= behCycleInterval) {
-    if (isBehTriggerOn) {
-        Serial.println("Error: Behavior trigger shouldn't be on here!");
+    // Turn behavior trigger off if exposure time has passed
+    if (timeSinceLastTriggerStart >= behExposureTime) {
+        if (isBehTriggerOn) {
+            isBehTriggerOn = false;
+            digitalWrite(behCamPin, LOW);
+            digitalWrite(irLightPin, LOW);
+        }
     }
 
-    isBehTriggerOn = true;
-    digitalWrite(behCamPin, HIGH);
-    digitalWrite(irLightPin, HIGH);
-    
-    if (behaviorTriggerCycleCount % muscleBehMultiple == 0) {
-        isMuscleTriggerOn = true;
-        digitalWrite(muscleCamPin, HIGH);
-        digitalWrite(blueLightPin, HIGH);
+    // Turn muscle trigger off if exposure time has passed
+    if (timeSinceLastTriggerStart >= muscleExposureTime) {
+        if (isMuscleTriggerOn) {
+            isMuscleTriggerOn = false;
+            digitalWrite(muscleCamPin, LOW);
+            digitalWrite(blueLightPin, LOW);
+        }
     }
 
-    lastBehTriggerStartTime = currentTime;
-    ++behaviorTriggerCycleCount;
-  }
+    // Turn behavior trigger on for the next round
+    if (timeSinceLastTriggerStart >= behCycleInterval) {
+        if (isBehTriggerOn) {
+            Serial.println("Error: Behavior trigger shouldn't be on here!");
+        }
+
+        isBehTriggerOn = true;
+        digitalWrite(behCamPin, HIGH);
+        digitalWrite(irLightPin, HIGH);
+
+        if (behaviorTriggerCycleCount % muscleBehMultiple == 0) {
+            isMuscleTriggerOn = true;
+            digitalWrite(muscleCamPin, HIGH);
+            digitalWrite(blueLightPin, HIGH);
+        }
+
+        lastBehTriggerStartTime = currentTime;
+        ++behaviorTriggerCycleCount;
+    }
 }

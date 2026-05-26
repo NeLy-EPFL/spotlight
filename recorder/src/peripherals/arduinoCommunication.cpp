@@ -89,7 +89,9 @@ ArduinoCommunication::ArduinoCommunication(
         std::ref(arduinoMessagesQueue_));
 }
 
-ArduinoCommunication::~ArduinoCommunication() { arduinoCommThread_.join(); }
+ArduinoCommunication::~ArduinoCommunication() {
+    arduinoCommThread_.join();
+}
 
 void ArduinoCommunication::setBehaviorRecordingFPS(int fps) {
     std::string message = ">SET_BEHAVIOR_FPS " + std::to_string(fps) + "\n";

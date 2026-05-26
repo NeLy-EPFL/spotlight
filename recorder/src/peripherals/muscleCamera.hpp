@@ -29,14 +29,30 @@ class DualRecordingConfig {
         : recordBoth_(recordBoth), behaviorCameraFPS_(behaviorCameraFPS),
           syncRatio_(syncRatio), muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
 
-    bool isRecordingBoth() const { return recordBoth_; }
-    int getBehaviorCameraFPS() const { return behaviorCameraFPS_; }
-    int getSyncRatio() const { return syncRatio_; }
-    int getMuscleLightOnTimeUs() const { return muscleLightOnTimeUs_; }
-    int getMuscleCamTriggerDelayUs() const { return muscleCamTriggerDelayUs_; }
-    void setRecordBoth(bool recordBoth) { recordBoth_ = recordBoth; }
-    void setBehaviorCameraFPS(int fps) { behaviorCameraFPS_ = fps; }
-    void setSyncRatio(int ratio) { syncRatio_ = ratio; }
+    bool isRecordingBoth() const {
+        return recordBoth_;
+    }
+    int getBehaviorCameraFPS() const {
+        return behaviorCameraFPS_;
+    }
+    int getSyncRatio() const {
+        return syncRatio_;
+    }
+    int getMuscleLightOnTimeUs() const {
+        return muscleLightOnTimeUs_;
+    }
+    int getMuscleCamTriggerDelayUs() const {
+        return muscleCamTriggerDelayUs_;
+    }
+    void setRecordBoth(bool recordBoth) {
+        recordBoth_ = recordBoth;
+    }
+    void setBehaviorCameraFPS(int fps) {
+        behaviorCameraFPS_ = fps;
+    }
+    void setSyncRatio(int ratio) {
+        syncRatio_ = ratio;
+    }
     void setMuscleLightOnTimeUs(int lightOnTimeUs) {
         muscleLightOnTimeUs_ = lightOnTimeUs;
     }

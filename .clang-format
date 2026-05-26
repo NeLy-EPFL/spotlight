@@ -4,3 +4,4 @@ ColumnLimit: 80
 AlignAfterOpenBracket: AlwaysBreak
 BinPackArguments: false
 BinPackParameters: false
+AllowShortFunctionsOnASingleLine: Empty
