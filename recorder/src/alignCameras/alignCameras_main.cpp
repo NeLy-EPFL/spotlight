@@ -97,6 +97,19 @@ void onMouse(int event, int x, int y, int flags, void *userdata) {
             sensorX,
             sensorY);
     }
+
+    void addCrossToBehaviorImage(cv::Mat &image)
+    {
+        // Add a cross to the middle of the behavior image to help with alignment
+        cv::line(image,
+                 cv::Point(image.cols / 2, 0),
+                 cv::Point(image.cols / 2, image.rows),
+                 cv::Scalar(255, 255, 255), 1);
+        cv::line(image,
+                 cv::Point(0, image.rows / 2),
+                 cv::Point(image.cols, image.rows / 2),
+                 cv::Scalar(255, 255, 255), 1);
+    }
 }
 
 void setupDisplayWindows(RecorderConfig &recorderConfig) {
@@ -249,6 +262,8 @@ void alignCamera(std::filesystem::path profileDir) {
             behaviorImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
         cv::resize(behaviorImage, behaviorImageDisplay, targetSize);
         reorientBehaviorImage(behaviorImageDisplay, behaviorImageDisplay);
+        // Add a cross to the middle of the behavior image to help with alignment
+        addCrossToBehaviorImage(behaviorImageDisplay);
 
         convert16BitTo8Bit(
             muscleImage,

@@ -33,6 +33,13 @@ BehaviorCamera::BehaviorCamera(
         deviceVendorName,
         deviceModelName);
 
+    // Set offset to 0 first - if the new image size is larger than the current
+    // one, setting the new image size directly may fail if newSize + currOffset
+    // exceeds the current image size.
+    spdlog::info("Setting sensor OffsetX and OffsetY to 0, 0");
+    setIntegerAndCheck<RemoteModule>("OffsetX", 0);
+    setIntegerAndCheck<RemoteModule>("OffsetY", 0);
+
     spdlog::info(
         "Setting sensor ROI - width: {}, height: {}, "
         "xOffset: {}, yOffset: {}",
@@ -40,11 +47,6 @@ BehaviorCamera::BehaviorCamera(
         imageHeight,
         xOffset,
         yOffset);
-    // Set offset to 0 first - if the new image size is larger than the current
-    // one, setting the new image size directly may fail if newSize + currOffset
-    // exceeds the current image size.
-    setIntegerAndCheck<RemoteModule>("OffsetX", 0);
-    setIntegerAndCheck<RemoteModule>("OffsetY", 0);
     setIntegerAndCheck<RemoteModule>("Width", imageWidth);
     setIntegerAndCheck<RemoteModule>("Height", imageHeight);
     setIntegerAndCheck<RemoteModule>("OffsetX", xOffset);
