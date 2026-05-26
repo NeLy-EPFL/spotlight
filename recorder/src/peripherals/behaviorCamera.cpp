@@ -1,17 +1,9 @@
 #include "behaviorCamera.hpp"
 
-BehaviorCamera::BehaviorCamera(
-    unsigned int imageWidth,
-    unsigned int imageHeight,
-    unsigned int xOffset,
-    unsigned int yOffset,
-    std::string ioLine)
-    : imageWidth_(imageWidth),
-      imageHeight_(imageHeight),
-      xOffset_(xOffset),
-      yOffset_(yOffset),
-      ioLine_(ioLine)
-{
+BehaviorCamera::BehaviorCamera(unsigned int imageWidth, unsigned int imageHeight,
+                               unsigned int xOffset, unsigned int yOffset, std::string ioLine)
+    : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset), yOffset_(yOffset),
+      ioLine_(ioLine) {
     using Euresys::DeviceModule;
     using Euresys::InterfaceModule;
     using Euresys::RemoteModule;
@@ -87,34 +79,26 @@ BehaviorCamera::BehaviorCamera(
     cameraReadyFlag_.store(true);
 }
 
-BehaviorCamera::~BehaviorCamera()
-{
+BehaviorCamera::~BehaviorCamera() {
     spdlog::debug("Behavior camera destructor called");
     cameraReadyFlag_.store(false);
 }
 
-void BehaviorCamera::start(size_t bufferSize)
-{
+void BehaviorCamera::start(size_t bufferSize) {
     frameGrabberPtr_->reallocBuffers(bufferSize);
     frameGrabberPtr_->start();
 }
 
-void BehaviorCamera::stop()
-{
-    frameGrabberPtr_->stop();
-}
+void BehaviorCamera::stop() { frameGrabberPtr_->stop(); }
 
-FrameData BehaviorCamera::waitForOneFrame()
-{
+FrameData BehaviorCamera::waitForOneFrame() {
     // Getting the buffer is the main blocking call
     Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
 
     // Get image data and metadata
     uint64_t receivedTime = getCurrentTimeMicroseconds();
-    uint8_t *dataPtr = buffer.getInfo<uint8_t *>(
-        Euresys::gc::BUFFER_INFO_BASE);
-    uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(
-        Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
+    uint8_t *dataPtr = buffer.getInfo<uint8_t *>(Euresys::gc::BUFFER_INFO_BASE);
+    uint64_t grabberTimestamp = buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
     uint64_t acquisitionTime = grabberTimestamp / 1000;
 
     // Make FrameData object
@@ -125,20 +109,14 @@ FrameData BehaviorCamera::waitForOneFrame()
     return frameData;
 }
 
-bool BehaviorCamera::isReady() const
-{
-    return cameraReadyFlag_.load();
-}
+bool BehaviorCamera::isReady() const { return cameraReadyFlag_.load(); }
 
 template <typename Module>
-bool BehaviorCamera::setIntegerAndCheck(
-    const std::string key, int value)
-{
+bool BehaviorCamera::setIntegerAndCheck(const std::string key, int value) {
     spdlog::info("Setting GenICam integer parameter {} to {}", key, value);
     frameGrabberPtr_->setInteger<Module>(key, value);
     int retrievedValue = frameGrabberPtr_->getInteger<Module>(key);
-    if (retrievedValue != value)
-    {
+    if (retrievedValue != value) {
         spdlog::error("Failed to set GenICam parameter {} to {}", key, value);
         return false;
     }
@@ -146,32 +124,25 @@ bool BehaviorCamera::setIntegerAndCheck(
 }
 
 template <typename Module>
-bool BehaviorCamera::setStringAndCheck(
-    const std::string key, const std::string value)
-{
+bool BehaviorCamera::setStringAndCheck(const std::string key, const std::string value) {
     spdlog::info("Setting GenICam string parameter {} to {}", key, value);
     frameGrabberPtr_->setString<Module>(key, value);
     std::string retrievedValue = frameGrabberPtr_->getString<Module>(key);
-    if (retrievedValue != value)
-    {
+    if (retrievedValue != value) {
         spdlog::error("Failed to set GenICam parameter {} to {}", key, value);
         return false;
     }
     return true;
 }
 
-int roundToNearestValidBehaviorCamDimension(int value)
-{
+int roundToNearestValidBehaviorCamDimension(int value) {
     int remainder = value % 64;
     return value - remainder + (remainder < 32 ? 0 : 64);
 }
 
-std::tuple<int, int> getCenteredOffsets(
-    int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight)
-{
-    int xOffset = roundToNearestValidBehaviorCamDimension(
-        (fullFrameWidth - imageWidth) / 2);
-    int yOffset = roundToNearestValidBehaviorCamDimension(
-        (fullFrameHeight - imageHeight) / 2);
+std::tuple<int, int> getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth,
+                                        int fullFrameHeight) {
+    int xOffset = roundToNearestValidBehaviorCamDimension((fullFrameWidth - imageWidth) / 2);
+    int yOffset = roundToNearestValidBehaviorCamDimension((fullFrameHeight - imageHeight) / 2);
     return std::make_tuple(xOffset, yOffset);
 }

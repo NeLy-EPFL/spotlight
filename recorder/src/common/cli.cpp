@@ -1,6 +1,7 @@
 #include "cli.hpp"
 
-void printHelp(const char* programName) {
+void printHelp(const char *programName) {
+    // clang-format off
     std::cout << "Usage: " << programName << " [OPTIONS]\n"
               << "Options:\n"
               << "  -h, --help                 Display this help message\n"
@@ -9,27 +10,35 @@ void printHelp(const char* programName) {
               << "  -v, --verbose              Enable verbose output (debug level)\n"
               << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
               << std::endl;
+    // clang-format on
 }
 
-spdlog::level::level_enum parseLogLevel(const std::string& level) {
-    if (level == "trace") return spdlog::level::trace;
-    if (level == "debug") return spdlog::level::debug;
-    if (level == "info") return spdlog::level::info;
-    if (level == "warn") return spdlog::level::warn;
-    if (level == "error") return spdlog::level::err;
-    if (level == "critical") return spdlog::level::critical;
-    if (level == "off") return spdlog::level::off;
-    
+spdlog::level::level_enum parseLogLevel(const std::string &level) {
+    if (level == "trace")
+        return spdlog::level::trace;
+    if (level == "debug")
+        return spdlog::level::debug;
+    if (level == "info")
+        return spdlog::level::info;
+    if (level == "warn")
+        return spdlog::level::warn;
+    if (level == "error")
+        return spdlog::level::err;
+    if (level == "critical")
+        return spdlog::level::critical;
+    if (level == "off")
+        return spdlog::level::off;
+
     spdlog::error("Unknown log level: {}. Using 'info'.", level);
     return spdlog::level::info;
 }
 
-CLIOptions parseCLI(int argc, char** argv) {
+CLIOptions parseCLI(int argc, char **argv) {
     CLIOptions options;
-    
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
+
         if (arg == "-h" || arg == "--help") {
             printHelp(argv[0]);
             std::exit(0);

@@ -1,42 +1,37 @@
 #ifndef DATA_TYPES_HPP
 #define DATA_TYPES_HPP
 
-#include <opencv2/opencv.hpp>
 #include <atomic>
+#include <opencv2/opencv.hpp>
 
-struct FrameData
-{
+struct FrameData {
     unsigned int frameId = -1;
     uint64_t acquisitionTime = 0; // as returned by frame grabber
     uint64_t receivedTime = 0;    // as returned by frame grabber
     cv::Mat image;
 };
 
-struct BehaviorCameraROI
-{
+struct BehaviorCameraROI {
     unsigned int imageWidth;
     unsigned int imageHeight;
     unsigned int xOffset;
     unsigned int yOffset;
 };
 
-struct GroupOfThreeFrames
-{
+struct GroupOfThreeFrames {
     FrameData frame0;
     FrameData frame1;
     FrameData frame2;
 };
 
-struct SerialPortInfo
-{
+struct SerialPortInfo {
     std::string portName;
     std::string description;
     std::string manufacturer;
 };
 
 // Request type enum
-enum MotionStageRequestType
-{
+enum MotionStageRequestType {
     GET_CURRENT_POSITION,
     SET_TARGET_POSITION,
     WAIT_UNTIL_IDLE,
@@ -45,51 +40,37 @@ enum MotionStageRequestType
 };
 
 // Position structure
-enum PositionType
-{
-    ABSOLUTE,
-    RELATIVE
-};
+enum PositionType { ABSOLUTE, RELATIVE };
 
-struct MotionStagePosition
-{
+struct MotionStagePosition {
     double xPosMm;
     double yPosMm;
     PositionType positionType;
 };
 
 // Single request and response structure for all request types
-struct MotionStageRequest
-{
+struct MotionStageRequest {
     size_t clientIdHash;
     MotionStageRequestType requestType;
     MotionStagePosition position;
     float velocity;
 };
 
-struct MotionStageResponse
-{
+struct MotionStageResponse {
     MotionStagePosition position = MotionStagePosition{
-        std::numeric_limits<double>::signaling_NaN(),
-        std::numeric_limits<double>::signaling_NaN()};
+        std::numeric_limits<double>::signaling_NaN(), std::numeric_limits<double>::signaling_NaN()};
     bool isIdle = false;
     bool setSuccess = false;
 };
 
-enum CalibrationScanDirection
-{
-    ROW_BY_ROW,
-    COLUMN_BY_COLUMN
-};
+enum CalibrationScanDirection { ROW_BY_ROW, COLUMN_BY_COLUMN };
 
-struct ProgramState
-{
+struct ProgramState {
     std::atomic<bool> toQuit = false;
     std::atomic<bool> isRecording = false;
 };
 
-struct ProgrammedStop
-{
+struct ProgrammedStop {
     int numBehaviorFramesExpected = -1;
     int numMuscleFramesExpected = -1;
     std::atomic<bool> hasEndedFlagForGUI = false;

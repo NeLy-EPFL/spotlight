@@ -13,14 +13,13 @@
 
 #include <spdlog/spdlog.h>
 
+#include "../common/behaviorRecording.hpp"
 #include "../common/recorderConfig.hpp"
 #include "../common/utils.hpp"
-#include "../common/behaviorRecording.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/motionControl.hpp"
-#include "../peripherals/arduinoCommunication.hpp"
 
-void runArenaRegistrationScan(std::filesystem::path profileDir,
-                              std::filesystem::path arenaDir);
+void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem::path arenaDir);
 
 #endif // RUN_ARENA_REGISTRATION_SCAN_HPP

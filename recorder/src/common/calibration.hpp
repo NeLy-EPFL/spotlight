@@ -1,11 +1,11 @@
 #ifndef CALIBRATION_HPP
 #define CALIBRATION_HPP
 
-#include <tuple>
 #include <fstream>
+#include <tuple>
 
-#include <yaml-cpp/yaml.h>
 #include <spdlog/spdlog.h>
+#include <yaml-cpp/yaml.h>
 
 /**
  * @brief A linear mapping from two 2D spaces (plus intercept) to 2D space.
@@ -13,9 +13,8 @@
  * position) to physical position. The first 2x2 block is the stage block, the
  * second 2x2 block is the pixel block, and then there are two bias terms.
  */
-class LinearMapper2x2to2
-{
-public:
+class LinearMapper2x2to2 {
+  public:
     double w_X1toX, w_Y1toX, w_X2toX, w_Y2toX, biasX;
     double w_X1toY, w_Y1toY, w_X2toY, w_Y2toY, biasY;
 
@@ -26,9 +25,8 @@ public:
     std::tuple<double, double> map(double x1, double y1, double x2, double y2) const;
 };
 
-class CalibrationParams
-{
-public:
+class CalibrationParams {
+  public:
     bool isDefined;
 
     CalibrationParams();
@@ -40,25 +38,20 @@ public:
     LinearMapper2x2to2 &stageAndPhysicalToPixel;
     LinearMapper2x2to2 &physicalAndPixelToStage;
 
-    std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(
-        double stagePosX,
-        double stagePosY,
-        int pixelPosRow,
-        int pixelPosCol) const;
-    std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(
-        double stagePosX,
-        double stagePosY,
-        double physicalPosX,
-        double physicalPosY) const;
-    std::tuple<double, double> physicalPosAndPixelPosToStagePos(
-        double physicalPosX,
-        double physicalPosY,
-        int pixelPosRow,
-        int pixelPosCol) const;
+    std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(double stagePosX, double stagePosY,
+                                                                int pixelPosRow,
+                                                                int pixelPosCol) const;
+    std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(double stagePosX, double stagePosY,
+                                                          double physicalPosX,
+                                                          double physicalPosY) const;
+    std::tuple<double, double> physicalPosAndPixelPosToStagePos(double physicalPosX,
+                                                                double physicalPosY,
+                                                                int pixelPosRow,
+                                                                int pixelPosCol) const;
 
     void saveToFile(const std::string &yamlPath);
 
-private:
+  private:
     YAML::Node calibration_;
     LinearMapper2x2to2 stageAndPixelToPhysical_;
     LinearMapper2x2to2 stageAndPhysicalToPixel_;

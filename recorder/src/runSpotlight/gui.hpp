@@ -1,60 +1,55 @@
 #ifndef GUI_HPP
 #define GUI_HPP
 
-#include <memory>
 #include <atomic>
-#include <queue>
+#include <memory>
 #include <mutex>
+#include <queue>
 #include <tuple>
 #include <vector>
 
-#include <QWidget>
+#include <QCheckBox>
+#include <QCloseEvent>
+#include <QFileDialog>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QPainter>
 #include <QPushButton>
 #include <QSerialPort>
 #include <QSerialPortInfo>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QSpinBox>
-#include <QCheckBox>
 #include <QTextEdit>
-#include <QLineEdit>
-#include <QLabel>
 #include <QTimer>
-#include <QFileDialog>
-#include <QCloseEvent>
-#include <QMessageBox>
-#include <QPainter>
+#include <QVBoxLayout>
+#include <QWidget>
 
-#include "../common/utils.hpp"
-#include "../common/recorderConfig.hpp"
 #include "../common/behaviorRecording.hpp"
-#include "../common/muscleRecording.hpp"
-#include "../common/trackingControl.hpp"
 #include "../common/calibration.hpp"
+#include "../common/muscleRecording.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/trackingControl.hpp"
+#include "../common/utils.hpp"
 #include "../peripherals/arduinoCommunication.hpp"
 #include "../peripherals/experimentProtocol.hpp"
 
 // Forward declaration from main.hpp
 bool quitProgram();
 
-class MotionControlWidget : public QWidget
-{
-public:
-    MotionControlWidget(
-        const RecorderConfig &recorderConfig,
-        std::shared_ptr<TrackingControlState> trackingControlState,
-        double minXAbsoluteMm,
-        double maxXAbsoluteMm,
-        double minYAbsoluteMm,
-        double maxYAbsoluteMm,
-        QWidget *parent = nullptr);
+class MotionControlWidget : public QWidget {
+  public:
+    MotionControlWidget(const RecorderConfig &recorderConfig,
+                        std::shared_ptr<TrackingControlState> trackingControlState,
+                        double minXAbsoluteMm, double maxXAbsoluteMm, double minYAbsoluteMm,
+                        double maxYAbsoluteMm, QWidget *parent = nullptr);
     ~MotionControlWidget();
 
-protected:
+  protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
 
-private:
+  private:
     int mapToPixelX(float x) const;
     int mapToPixelY(float y) const;
     float mapToStageX(int x) const;
@@ -69,31 +64,25 @@ private:
     std::shared_ptr<TrackingControlState> trackingControlState_;
 };
 
-class MainGUIWindow : public QWidget
-{
+class MainGUIWindow : public QWidget {
     Q_OBJECT
 
-public:
-    explicit MainGUIWindow(
-        const RecorderConfig &recorderConfig,
-        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-        std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-        std::shared_ptr<TrackingControlState> trackingControlState,
-        CalibrationParams &behaviorCamCalibrationParams,
-        CalibrationParams &muscleCamCalibrationParams,
-        std::shared_ptr<SaveDirectory> saveDirectory,
-        std::shared_ptr<ArduinoCommunication> arduinoCommunication,
-        std::shared_ptr<ProgramState> programState,
-        std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-        ActiveAreaMask &activeAreaMask,
-        double stageMinXMm,
-        double stageMaxXMm,
-        double stageMinYMm,
-        double stageMaxYMm,
-        QWidget *parent = nullptr);
+  public:
+    explicit MainGUIWindow(const RecorderConfig &recorderConfig,
+                           std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+                           std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+                           std::shared_ptr<MuscleRecordingState> muscleRecordingState,
+                           std::shared_ptr<TrackingControlState> trackingControlState,
+                           CalibrationParams &behaviorCamCalibrationParams,
+                           CalibrationParams &muscleCamCalibrationParams,
+                           std::shared_ptr<SaveDirectory> saveDirectory,
+                           std::shared_ptr<ArduinoCommunication> arduinoCommunication,
+                           std::shared_ptr<ProgramState> programState,
+                           std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+                           ActiveAreaMask &activeAreaMask, double stageMinXMm, double stageMaxXMm,
+                           double stageMinYMm, double stageMaxYMm, QWidget *parent = nullptr);
 
-private slots:
+  private slots:
     void startRecording();
     void stopRecording();
     void updateBehaviorImageDisplay();
@@ -101,7 +90,7 @@ private slots:
     void browseDirectory();
     void incrementDirectory();
 
-private:
+  private:
     std::shared_ptr<ProgramState> programState_;
     QSpinBox *behaviorFPSSpinBox_;
     QSpinBox *syncRatioSpinBox_;
@@ -140,25 +129,23 @@ private:
     int streamingSyncRatio_ = INT_MAX;
     bool muscleImagingEnabled_ = false;
 
-protected:
+  protected:
     void closeEvent(QCloseEvent *event) override;
 };
 
-class DualRecordingConfigWindow : public QDialog
-{
+class DualRecordingConfigWindow : public QDialog {
     Q_OBJECT
-public:
-    explicit DualRecordingConfigWindow(
-        const RecorderConfig &recorderConfig,
-        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-        const MuscleCameraROI &muscleCameraROI,
-        QWidget *parent = nullptr);
+  public:
+    explicit DualRecordingConfigWindow(const RecorderConfig &recorderConfig,
+                                       std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+                                       const MuscleCameraROI &muscleCameraROI,
+                                       QWidget *parent = nullptr);
     ~DualRecordingConfigWindow();
 
-private slots:
+  private slots:
     void onButtonClicked();
 
-private:
+  private:
     QVBoxLayout *mainLayout_;
     QSpinBox *behaviorCameraFPSSpinBox_;
     QSpinBox *syncRatioSpinBox_;
@@ -175,9 +162,7 @@ private:
 };
 
 // Helpers
-cv::Mat addCornerMarker(cv::Mat image,
-                        double arenaSizeXMm,
-                        double arenaSizeYMm,
+cv::Mat addCornerMarker(cv::Mat image, double arenaSizeXMm, double arenaSizeYMm,
                         MotionStagePosition stagePosition,
                         CalibrationParams &behaviorCamCalibrationParams);
 

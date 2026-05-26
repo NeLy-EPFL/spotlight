@@ -5,13 +5,9 @@
 
 const float positionTolerance = 0.001;
 
-TEST(TestMotionStages, ConfigureMotionStages)
-{
-    MotionControl motionControl;
-}
+TEST(TestMotionStages, ConfigureMotionStages) { MotionControl motionControl; }
 
-TEST(TestMotionStages, Homing)
-{
+TEST(TestMotionStages, Homing) {
     MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
@@ -21,8 +17,7 @@ TEST(TestMotionStages, Homing)
     ASSERT_NEAR(yPosition, 0.0, positionTolerance);
 }
 
-TEST(TestMotionStages, MoveAbsolute)
-{
+TEST(TestMotionStages, MoveAbsolute) {
     MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
@@ -34,8 +29,7 @@ TEST(TestMotionStages, MoveAbsolute)
     ASSERT_NEAR(yPosition, 20.0, positionTolerance);
 }
 
-TEST(TestMotionStages, MoveRelative)
-{
+TEST(TestMotionStages, MoveRelative) {
     MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
@@ -53,8 +47,7 @@ TEST(TestMotionStages, MoveRelative)
     ASSERT_NEAR(yPosition, 20.0 - 10.0, positionTolerance);
 }
 
-TEST(TestMotionStages, WaitOrNotWait)
-{
+TEST(TestMotionStages, WaitOrNotWait) {
     MotionControl motionControl;
     motionControl.home(X_AXIS);
     motionControl.home(Y_AXIS);
@@ -86,8 +79,7 @@ TEST(TestMotionStages, WaitOrNotWait)
            "yet when moving in async mode (wait=false)";
 }
 
-TEST(TestMotionStages, MoveBothSyncAndAsync)
-{
+TEST(TestMotionStages, MoveBothSyncAndAsync) {
     MotionControl motionControl;
     uint64_t startTime, endTime;
 
