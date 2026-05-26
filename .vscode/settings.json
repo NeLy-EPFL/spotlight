@@ -101,5 +101,5 @@
         "filesystem": "cpp",
         "qserialportinfo": "cpp",
         "qserialport": "cpp"
-    },
+    }
 }
