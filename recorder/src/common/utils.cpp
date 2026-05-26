@@ -18,12 +18,12 @@ cv::Mat makePseudoBGRImageFromThreeFrames(
     return pseudoBGRImage;
 }
 
-void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage) {
+void reorientBehaviorImage(const cv::Mat &sourceImage, cv::Mat &targetImage) {
     cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
     cv::flip(targetImage, targetImage, 1); // dim 1 is horizontal)
 }
 
-void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage) {
+void reorientMuscleImage(const cv::Mat &sourceImage, cv::Mat &targetImage) {
     cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
 }
 
@@ -44,7 +44,8 @@ std::string makeMetadataStringFromThreeFrames(
 }
 
 std::string getSerialPortName(
-    std::string deviceDescription, std::string deviceManufacturer) {
+    const std::string &deviceDescription,
+    const std::string &deviceManufacturer) {
     std::vector<SerialPortInfo> allSerialPortInfo;
 
     foreach (const QSerialPortInfo &port, QSerialPortInfo::availablePorts()) {
@@ -70,7 +71,7 @@ std::string getSerialPortName(
         "Available ports are:",
         deviceManufacturer,
         deviceDescription);
-    for (SerialPortInfo serialPortInfo : allSerialPortInfo) {
+    for (const SerialPortInfo &serialPortInfo : allSerialPortInfo) {
         spdlog::critical(
             "* Port name: '{}', description: '{}', manufacturer: '{}'",
             serialPortInfo.portName,
@@ -168,7 +169,7 @@ std::string expandPath(const std::string &path) {
 }
 
 void convert16BitTo8Bit(
-    cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset) {
+    const cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset) {
     // Normalize the range of a 16-bit image (0 - 2^16) to that of a 8-bit
     // image (0 - 2^8): divide whatever factor the caller wants by 2^(16-8)
     double alpha = scale / 255.0;
@@ -219,12 +220,12 @@ void writeExperimentParameters(
     fout.close();
 }
 
-SaveDirectory::SaveDirectory(std::string directory) {
+SaveDirectory::SaveDirectory(const std::string &directory) {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);
 }
 
-void SaveDirectory::setDirectory(std::string directory) {
+void SaveDirectory::setDirectory(const std::string &directory) {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);
 }
@@ -256,7 +257,7 @@ FrameData LatestFrame::getLatestFrameData() {
     return latestFrameData_;
 }
 
-void LatestFrame::setLatestFrameData(FrameData frameData) {
+void LatestFrame::setLatestFrameData(const FrameData &frameData) {
     std::lock_guard<std::mutex> lock(latestFrameMutex_);
     latestFrameData_ = frameData;
 }

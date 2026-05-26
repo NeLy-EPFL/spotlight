@@ -103,8 +103,8 @@ void MotionControlWidget::paintEvent(QPaintEvent *event) {
             trackingControlState_->latestMotionStagePositionMutex);
         currStagePosition = trackingControlState_->latestMotionStagePosition;
     }
-    float physicalX = currStagePosition.xPosMm;
-    float physicalY = currStagePosition.yPosMm;
+    const float physicalX = currStagePosition.xPosMm;
+    const float physicalY = currStagePosition.yPosMm;
     int pixelX = mapToPixelX(physicalX);
     int pixelY = mapToPixelY(physicalY);
 
@@ -733,11 +733,11 @@ void MainGUIWindow::incrementDirectory() {
 }
 
 cv::Mat addCornerMarker(
-    cv::Mat image,
+    const cv::Mat &image,
     double arenaSizeXMm,
     double arenaSizeYMm,
     MotionStagePosition stagePosition,
-    CalibrationParams &behaviorCamCalibrationParams) {
+    const CalibrationParams &behaviorCamCalibrationParams) {
     cv::Mat imageForDisplay = image.clone();
     assert(imageForDisplay.size() == image.size());
 

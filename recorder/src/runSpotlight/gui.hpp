@@ -173,11 +173,11 @@ class DualRecordingConfigWindow : public QDialog {
 
 // Helpers
 cv::Mat addCornerMarker(
-    cv::Mat image,
+    const cv::Mat &image,
     double arenaSizeXMm,
     double arenaSizeYMm,
     MotionStagePosition stagePosition,
-    CalibrationParams &behaviorCamCalibrationParams);
+    const CalibrationParams &behaviorCamCalibrationParams);
 
 int parseProtocolString(
     const std::string &protocolTextFieldString,

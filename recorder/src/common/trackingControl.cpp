@@ -9,7 +9,7 @@ std::condition_variable responseCondVar;
 std::queue<MotionStageRequest> requestQueue;
 std::map<int, MotionStageResponse> responseMap;
 
-std::ofstream initializeMotionStageLogFile(std::string saveDirectory) {
+std::ofstream initializeMotionStageLogFile(const std::string &saveDirectory) {
     std::filesystem::path filename =
         fs::path(saveDirectory) / "stage_position" / "stage_position.csv";
 
@@ -52,10 +52,10 @@ void motionControlRequestHandler(
     // Query the stages' soft travel limits once at init so that we can
     // clamp target positions and avoid BADDATA rejections from the
     // controller.
-    double xMinMm = motionControl.getMinPosition(X_AXIS);
-    double xMaxMm = motionControl.getMaxPosition(X_AXIS);
-    double yMinMm = motionControl.getMinPosition(Y_AXIS);
-    double yMaxMm = motionControl.getMaxPosition(Y_AXIS);
+    const double xMinMm = motionControl.getMinPosition(X_AXIS);
+    const double xMaxMm = motionControl.getMaxPosition(X_AXIS);
+    const double yMinMm = motionControl.getMinPosition(Y_AXIS);
+    const double yMaxMm = motionControl.getMaxPosition(Y_AXIS);
     spdlog::info(
         "Motion stage travel limits: X=[{:.3f}, {:.3f}] mm, "
         "Y=[{:.3f}, {:.3f}] mm",
@@ -174,7 +174,7 @@ void trackingController(
     ActiveAreaMask &activeAreaMask,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
-    CalibrationParams &behaviorCamCalibrationParams,
+    const CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<ProgramState> programState) {
     size_t retryCount = 0;
     while (!trackingControlState->motionControlHandlerReady.load()) {
@@ -185,14 +185,15 @@ void trackingController(
         }
     }
 
-    int trackingUpdateFrequency =
+    const int trackingUpdateFrequency =
         recorderConfig.getParameter<int>("tracking", "update_frequency_hz");
-    uint64_t updateIntervalMicrosecs = 1e6 / trackingUpdateFrequency;
+    const uint64_t updateIntervalMicrosecs = 1e6 / trackingUpdateFrequency;
 
-    float trackingDistanceThresholdMm = recorderConfig.getParameter<float>(
-        "tracking", "distance_threshold_for_moving_mm");
+    const float trackingDistanceThresholdMm =
+        recorderConfig.getParameter<float>(
+            "tracking", "distance_threshold_for_moving_mm");
 
-    float defaultVelocity = recorderConfig.getParameter<float>(
+    const float defaultVelocity = recorderConfig.getParameter<float>(
         "motion_control", "default_velocity_mm_per_sec");
 
     imageBinarizeThreshold = recorderConfig.getParameter<int>(
@@ -386,7 +387,7 @@ ActiveAreaMask::ActiveAreaMask(
 }
 
 cv::Mat ActiveAreaMask::warpToCurrentView(
-    cv::Mat currentImage, MotionStagePosition stagePos) {
+    const cv::Mat &currentImage, MotionStagePosition stagePos) const {
     // Add contribution of non-zero stage position to the transformation matrix
     double xOffset =
         (stageAndPixelToPhysical.w_X1toX * stagePos.xPosMm +
@@ -416,9 +417,9 @@ void motionStagePositionLogger(
     std::shared_ptr<TrackingControlState> trackingControlState,
     std::shared_ptr<SaveDirectory> saveDirectory,
     std::shared_ptr<ProgramState> programState) {
-    int positionLoggingFreq = recorderConfig.getParameter<int>(
+    const int positionLoggingFreq = recorderConfig.getParameter<int>(
         "motion_control", "position_logging_frequency_hz");
-    int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
+    const int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
 
     std::ofstream logFile;
     bool wasRecordingLastIter = false;
@@ -486,10 +487,10 @@ void motionStagePositionLogger(
 }
 
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    cv::Mat behaviorImage,
+    const cv::Mat &behaviorImage,
     MotionStagePosition stagePosition,
-    cv::Mat &activeAreaMaskCurrView,
-    CalibrationParams &behaviorCamCalibrationParams,
+    const cv::Mat &activeAreaMaskCurrView,
+    const CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig) {
     bool isFound = false;
     double physicalPosXMm = 0;

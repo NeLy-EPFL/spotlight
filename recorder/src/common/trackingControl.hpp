@@ -34,8 +34,8 @@ class ActiveAreaMask {
         const std::string &arenaSpecDir,
         double boundaryMarginMm,
         LinearMapper2x2to2 &stageAndPixelToPhysical);
-    cv::Mat
-    warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos);
+    cv::Mat warpToCurrentView(
+        const cv::Mat &currentImage, MotionStagePosition stagePos) const;
 
   private:
     cv::Mat transformMatrixAtZeroStagePos_;
@@ -63,7 +63,7 @@ void trackingController(
     ActiveAreaMask &activeAreaMask,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
-    CalibrationParams &behaviorCamCalibrationParams,
+    const CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<ProgramState> programState);
 
 // Position logging thread
@@ -89,10 +89,10 @@ void stopMotionControlRequestHandler(
 
 // High-level helper functions
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    cv::Mat behaviorImage,
+    const cv::Mat &behaviorImage,
     MotionStagePosition stagePosition,
-    cv::Mat &activeAreaMaskCurrView,
-    CalibrationParams &behaviorCamCalibrationParams,
+    const cv::Mat &activeAreaMaskCurrView,
+    const CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig);
 
 #endif // TRACKING_CONTROL_HPP

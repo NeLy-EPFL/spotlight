@@ -21,15 +21,16 @@ namespace fs = std::filesystem;
 
 uint64_t getCurrentTimeMicroseconds();
 
-void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage);
-void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage);
+void reorientBehaviorImage(const cv::Mat &sourceImage, cv::Mat &targetImage);
+void reorientMuscleImage(const cv::Mat &sourceImage, cv::Mat &targetImage);
 cv::Mat
 makePseudoBGRImageFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
 std::string
 makeMetadataStringFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
 
 std::string getSerialPortName(
-    std::string deviceDescription, std::string deviceManufacturer);
+    const std::string &deviceDescription,
+    const std::string &deviceManufacturer);
 
 int calculateBehaviorCameraPreviewWidth(
     int behaviorCameraPreviewHeight,
@@ -43,7 +44,7 @@ size_t getMyThreadIdHash();
 std::string expandPath(const std::string &path);
 
 void convert16BitTo8Bit(
-    cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
+    const cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
 
 int calculateMuscleShutterOpenTime(
     int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs);
@@ -59,8 +60,8 @@ void writeExperimentParameters(
 
 class SaveDirectory {
   public:
-    SaveDirectory(std::string directory);
-    void setDirectory(std::string directory);
+    SaveDirectory(const std::string &directory);
+    void setDirectory(const std::string &directory);
     std::filesystem::path getDirectory();
     void initialize();
 
@@ -73,7 +74,7 @@ class LatestFrame {
   public:
     LatestFrame();
     FrameData getLatestFrameData();
-    void setLatestFrameData(FrameData frameData);
+    void setLatestFrameData(const FrameData &frameData);
 
   private:
     FrameData latestFrameData_;
