@@ -99,6 +99,7 @@ private slots:
     void updateBehaviorImageDisplay();
     void updateMuscleImageDisplay();
     void browseDirectory();
+    void incrementDirectory();
 
 private:
     std::shared_ptr<ProgramState> programState_;
@@ -182,4 +183,6 @@ cv::Mat addCornerMarker(cv::Mat image,
 
 int parseProtocolString(const std::string &protocolTextFieldString,
                         std::vector<ProtocolStep> &steps);
+
+std::string incrementDirectoryName(const std::string &path);
 #endif // GUI_HPP

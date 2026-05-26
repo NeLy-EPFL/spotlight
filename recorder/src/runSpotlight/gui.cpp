@@ -1,5 +1,8 @@
 #include "gui.hpp"
 
+#include <sstream>
+#include <iomanip>
+
 namespace
 {
     QImage cvMatToQImage(const cv::Mat &mat)
@@ -20,6 +23,34 @@ namespace
                       QImage::Format_RGB888)
             .copy();
     }
+}
+
+std::string incrementDirectoryName(const std::string &path)
+{
+    size_t end = path.size();
+    while (end > 0 && path[end - 1] == '/')
+    {
+        --end;
+    }
+    size_t start = end;
+    while (start > 0 &&
+           std::isdigit(static_cast<unsigned char>(path[start - 1])))
+    {
+        --start;
+    }
+
+    if (start == end)
+        return path.substr(0, end) + "_001/";
+
+    std::string numStr = path.substr(start, end - start);
+    int num = std::stoi(numStr) + 1;
+    int width = static_cast<int>(numStr.size());
+
+    std::ostringstream oss;
+    oss << path.substr(0, start)
+        << std::setfill('0') << std::setw(width) << num
+        << "/";
+    return oss.str();
 }
 
 MotionControlWidget::MotionControlWidget(
@@ -326,16 +357,22 @@ MainGUIWindow::MainGUIWindow(
             { spdlog::debug("saveDirectory changed to {}", text.toStdString());
                 saveDirectory->setDirectory(text.toStdString()); });
     QPushButton *browseButton = new QPushButton("Browse", this);
+    QPushButton *incrementButton = new QPushButton("Increment", this);
 
     QHBoxLayout *directoryLayout = new QHBoxLayout();
     directoryLayout->addWidget(new QLabel("Save Directory"));
     directoryLayout->addWidget(directoryLineEdit_);
     directoryLayout->addWidget(browseButton);
+    directoryLayout->addWidget(incrementButton);
 
     connect(browseButton,
             &QPushButton::clicked,
             this,
             &MainGUIWindow::browseDirectory);
+    connect(incrementButton,
+            &QPushButton::clicked,
+            this,
+            &MainGUIWindow::incrementDirectory);
 
     // Optional features checkboxes: tracking and muscle imaging
     QHBoxLayout *optionalFeaturesLayout = new QHBoxLayout();
@@ -527,6 +564,44 @@ void MainGUIWindow::startRecording()
         return;
     }
 
+    // Warn if the save directory already exists and is non-empty
+    std::filesystem::path saveDir = saveDirectory_->getDirectory();
+    while (std::filesystem::is_directory(saveDir) &&
+           !std::filesystem::is_empty(saveDir))
+    {
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("Directory not empty");
+        msgBox.setText(
+            QString("The save directory already exists and is non-empty:\n%1\n\n"
+                    "Overwrite its contents?")
+                .arg(QString::fromStdString(saveDir.string())));
+        msgBox.setIcon(QMessageBox::Warning);
+        QPushButton *autoIncrementButton =
+            msgBox.addButton("Auto increment", QMessageBox::ActionRole);
+        QPushButton *overwriteButton =
+            msgBox.addButton("Overwrite", QMessageBox::ActionRole);
+        QPushButton *cancelButton =
+            msgBox.addButton("Cancel", QMessageBox::ActionRole);
+        msgBox.setEscapeButton(cancelButton);
+        msgBox.exec();
+        if (msgBox.clickedButton() == overwriteButton)
+        {
+            std::filesystem::remove_all(saveDir);
+            break;
+        }
+        else if (msgBox.clickedButton() == autoIncrementButton)
+        {
+            std::string incremented =
+                incrementDirectoryName(saveDir.string());
+            directoryLineEdit_->setText(QString::fromStdString(incremented));
+            saveDir = saveDirectory_->getDirectory();
+        }
+        else
+        {
+            return;
+        }
+    }
+
     // Toggle GUI buttons
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
@@ -692,6 +767,13 @@ void MainGUIWindow::browseDirectory()
     {
         spdlog::error("Directory is an empty string; failed to open.");
     }
+}
+
+void MainGUIWindow::incrementDirectory()
+{
+    std::string current = saveDirectory_->getDirectory().string();
+    std::string incremented = incrementDirectoryName(current);
+    directoryLineEdit_->setText(QString::fromStdString(incremented));
 }
 
 cv::Mat addCornerMarker(cv::Mat image,
