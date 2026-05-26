@@ -2,8 +2,11 @@
 
 namespace PCOSharedMemory {
 
-void setupFrameData(const std::string &shmFrameDataName, const size_t frameBufferSize,
-                    uint8_t *&frameDataPtr, bool createNew) {
+void setupFrameData(
+    const std::string &shmFrameDataName,
+    const size_t frameBufferSize,
+    uint8_t *&frameDataPtr,
+    bool createNew) {
     int shmFileDesc = -1;
 
     if (createNew) {
@@ -27,8 +30,8 @@ void setupFrameData(const std::string &shmFrameDataName, const size_t frameBuffe
         shmFileDesc = shm_open(shmFrameDataName.c_str(), O_RDWR, 0666);
     }
 
-    frameDataPtr = (uint8_t *)mmap(nullptr, frameBufferSize, PROT_READ | PROT_WRITE, MAP_SHARED,
-                                   shmFileDesc, 0);
+    frameDataPtr = (uint8_t *)mmap(
+        nullptr, frameBufferSize, PROT_READ | PROT_WRITE, MAP_SHARED, shmFileDesc, 0);
     if (frameDataPtr == MAP_FAILED) {
         std::string errorMessage =
             "Failed to map shared memory for frame data: " + std::string(strerror(errno));
@@ -38,8 +41,8 @@ void setupFrameData(const std::string &shmFrameDataName, const size_t frameBuffe
     close(shmFileDesc);
 }
 
-void setupShutterOpenTime(const std::string &shmShutterOpenTimeName,
-                          unsigned int *&shutterOpenTimePtr, bool createNew) {
+void setupShutterOpenTime(
+    const std::string &shmShutterOpenTimeName, unsigned int *&shutterOpenTimePtr, bool createNew) {
     int shmFileDesc = -1;
     size_t shutterOpenTimeSize = sizeof(unsigned int);
 
@@ -62,8 +65,8 @@ void setupShutterOpenTime(const std::string &shmShutterOpenTimeName,
         shmFileDesc = shm_open(shmShutterOpenTimeName.c_str(), O_RDWR, 0666);
     }
 
-    shutterOpenTimePtr = (unsigned int *)mmap(0, shutterOpenTimeSize, PROT_READ | PROT_WRITE,
-                                              MAP_SHARED, shmFileDesc, 0);
+    shutterOpenTimePtr = (unsigned int *)mmap(
+        0, shutterOpenTimeSize, PROT_READ | PROT_WRITE, MAP_SHARED, shmFileDesc, 0);
     if (shutterOpenTimePtr == MAP_FAILED) {
         std::string errorMessage =
             "Failed to map shared memory for shutter-open time: " + std::string(strerror(errno));
@@ -73,8 +76,8 @@ void setupShutterOpenTime(const std::string &shmShutterOpenTimeName,
     close(shmFileDesc);
 }
 
-void setupFrameMetadata(const std::string &shmFrameMetadataName, FrameMetadata *&frameMetadataPtr,
-                        bool createNew) {
+void setupFrameMetadata(
+    const std::string &shmFrameMetadataName, FrameMetadata *&frameMetadataPtr, bool createNew) {
     int shmFileDesc = -1;
 
     if (createNew) {
@@ -95,8 +98,8 @@ void setupFrameMetadata(const std::string &shmFrameMetadataName, FrameMetadata *
         shmFileDesc = shm_open(shmFrameMetadataName.c_str(), O_RDWR, 0666);
     }
 
-    frameMetadataPtr = (FrameMetadata *)mmap(0, sizeof(FrameMetadata), PROT_READ | PROT_WRITE,
-                                             MAP_SHARED, shmFileDesc, 0);
+    frameMetadataPtr = (FrameMetadata *)mmap(
+        0, sizeof(FrameMetadata), PROT_READ | PROT_WRITE, MAP_SHARED, shmFileDesc, 0);
     if (frameMetadataPtr == MAP_FAILED) {
         std::string errorMessage =
             "Failed to map shared memory for frame metadata: " + std::string(strerror(errno));
@@ -127,8 +130,8 @@ void setupMutex(const std::string &shmMutexName, pthread_mutex_t *&mutexPtr, boo
         shmFileDesc = shm_open(shmMutexName.c_str(), O_RDWR, 0666);
     }
 
-    mutexPtr = (pthread_mutex_t *)mmap(0, sizeof(pthread_mutex_t), PROT_READ | PROT_WRITE | O_TRUNC,
-                                       MAP_SHARED, shmFileDesc, 0);
+    mutexPtr = (pthread_mutex_t *)mmap(
+        0, sizeof(pthread_mutex_t), PROT_READ | PROT_WRITE | O_TRUNC, MAP_SHARED, shmFileDesc, 0);
     if (mutexPtr == MAP_FAILED) {
         std::string errorMessage =
             "Failed to map shared memory for mutex: " + std::string(strerror(errno));
@@ -144,8 +147,8 @@ void setupMutex(const std::string &shmMutexName, pthread_mutex_t *&mutexPtr, boo
     pthread_mutex_init(mutexPtr, &attr);
 }
 
-void setupConditionVariable(const std::string &shmCondVarName, pthread_cond_t *&condVarPtr,
-                            bool createNew) {
+void setupConditionVariable(
+    const std::string &shmCondVarName, pthread_cond_t *&condVarPtr, bool createNew) {
     int shmFileDesc = -1;
 
     if (createNew) {
@@ -166,8 +169,8 @@ void setupConditionVariable(const std::string &shmCondVarName, pthread_cond_t *&
         shmFileDesc = shm_open(shmCondVarName.c_str(), O_RDWR, 0666);
     }
 
-    condVarPtr = (pthread_cond_t *)mmap(0, sizeof(pthread_cond_t), PROT_READ | PROT_WRITE,
-                                        MAP_SHARED, shmFileDesc, 0);
+    condVarPtr = (pthread_cond_t *)mmap(
+        0, sizeof(pthread_cond_t), PROT_READ | PROT_WRITE, MAP_SHARED, shmFileDesc, 0);
     if (condVarPtr == MAP_FAILED) {
         std::string errorMessage =
             "Failed to map shared memory for frame count: " + std::string(strerror(errno));

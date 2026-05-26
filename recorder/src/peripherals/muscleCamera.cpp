@@ -26,10 +26,16 @@ std::string logLevelToStr(spdlog::level::level_enum logLevel) {
 }
 } // namespace
 
-MuscleCamera::MuscleCamera(int imageWidth, int imageHeight, int xOffset, int yOffset,
-                           double rollingShutterLineTimeUs, double sensorReadoutTimeUs,
-                           const RecorderConfig &recorderConfig, std::string profileDir,
-                           spdlog::level::level_enum logLevel)
+MuscleCamera::MuscleCamera(
+    int imageWidth,
+    int imageHeight,
+    int xOffset,
+    int yOffset,
+    double rollingShutterLineTimeUs,
+    double sensorReadoutTimeUs,
+    const RecorderConfig &recorderConfig,
+    std::string profileDir,
+    spdlog::level::level_enum logLevel)
     : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1), y1_(yOffset + imageHeight),
       rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
       sensorReadoutTimeUs_(sensorReadoutTimeUs), imageWidth_(imageWidth), imageHeight_(imageHeight),
@@ -54,12 +60,24 @@ MuscleCamera::MuscleCamera(int imageWidth, int imageHeight, int xOffset, int yOf
         std::filesystem::path serverPath =
             std::filesystem::canonical("/proc/self/exe").parent_path() / "pco-camera-server";
 
-        execl(serverPath.c_str(), "pco-camera-server", "--profile-dir", profileDir.c_str(),
-              "--x-min", std::to_string(x0_).c_str(), "--x-max", std::to_string(x1_).c_str(),
-              "--y-min", std::to_string(y0_).c_str(), "--y-max", std::to_string(y1_).c_str(),
-              "--delay",
-              "0", // sync delay is implemented in Arduino code, not here!
-              "--verbosity", logLevelToStr(logLevel).c_str(), (char *)nullptr);
+        execl(
+            serverPath.c_str(),
+            "pco-camera-server",
+            "--profile-dir",
+            profileDir.c_str(),
+            "--x-min",
+            std::to_string(x0_).c_str(),
+            "--x-max",
+            std::to_string(x1_).c_str(),
+            "--y-min",
+            std::to_string(y0_).c_str(),
+            "--y-max",
+            std::to_string(y1_).c_str(),
+            "--delay",
+            "0", // sync delay is implemented in Arduino code, not here!
+            "--verbosity",
+            logLevelToStr(logLevel).c_str(),
+            (char *)nullptr);
 
         // If execl returns, it must have failed
         std::string errorMessage = "Failed to execute PCO camera server at " + serverPath.string() +
@@ -83,15 +101,15 @@ MuscleCamera::MuscleCamera(int imageWidth, int imageHeight, int xOffset, int yOf
         size_t frameBufferSize = imageWidth * imageHeight * 2; // CV_16UC1
         std::string shmFrameDataName =
             recorderConfig.getParameter<std::string>("muscle_camera", "shared_frame_data_name");
-        PCOSharedMemory::setupFrameData(shmFrameDataName, frameBufferSize, frameDataPtr_,
-                                        createNew);
+        PCOSharedMemory::setupFrameData(
+            shmFrameDataName, frameBufferSize, frameDataPtr_, createNew);
 
         spdlog::info("Muscle camera API: Setting up shared memory for shutter-open "
                      "time");
         std::string shmShutterOpenTimeName = recorderConfig.getParameter<std::string>(
             "muscle_camera", "shared_shutter_open_time_name");
-        PCOSharedMemory::setupShutterOpenTime(shmShutterOpenTimeName, shutterOpenTimePtr_,
-                                              createNew);
+        PCOSharedMemory::setupShutterOpenTime(
+            shmShutterOpenTimeName, shutterOpenTimePtr_, createNew);
 
         spdlog::info("Muscle camera API: Setting up shared memory for frame metadata");
         std::string shmFrameMetadataName =
@@ -118,10 +136,11 @@ MuscleCamera::~MuscleCamera() {
         waitpid(pcoCameraServerPID_, nullptr, 0);
         spdlog::info("PCO camera server process terminated.");
     } else {
-        spdlog::error("Invalid process ID (PID) for PCO camera server: {}. "
-                      "PCO camera server process not started or already stopped. "
-                      "This should never happen.",
-                      pcoCameraServerPID_);
+        spdlog::error(
+            "Invalid process ID (PID) for PCO camera server: {}. "
+            "PCO camera server process not started or already stopped. "
+            "This should never happen.",
+            pcoCameraServerPID_);
     }
 }
 
@@ -163,11 +182,13 @@ bool MuscleCamera::isROIValid() {
     if (x0_ < 1 || x1_ > fullFrameWidth || y0_ < 1 || y1_ > fullFrameHeight || x0_ >= x1_ ||
         y0_ >= y1_ || imageWidth_ % 32 != 0 || imageHeight_ % 8 != 0 || imageWidth_ < 64 ||
         imageHeight_ < 16) {
-        spdlog::critical("Invalid ROI for muscle camera. The following conditions must be "
-                         "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
-                         "minimum size of the ROI is 64x16 pixels. The width must be a "
-                         "multiple of 32 and the height must be a multiple of 8.",
-                         imageWidth_, imageHeight_);
+        spdlog::critical(
+            "Invalid ROI for muscle camera. The following conditions must be "
+            "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
+            "minimum size of the ROI is 64x16 pixels. The width must be a "
+            "multiple of 32 and the height must be a multiple of 8.",
+            imageWidth_,
+            imageHeight_);
         return false;
     }
 
@@ -198,23 +219,25 @@ int roundToNearestValidMuscleCamVertical(int value) {
     return value - remainder + (remainder < 4 ? 0 : 8);
 }
 
-bool DualRecordingConfig::computeParameters(int muscleImageHeight,
-                                            double muscleCameraLineScanTimeUs,
-                                            int muscleCameraReadoutTimeUs) {
+bool DualRecordingConfig::computeParameters(
+    int muscleImageHeight, double muscleCameraLineScanTimeUs, int muscleCameraReadoutTimeUs) {
     int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
     double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
     int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
     if (rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ > muscleIntervalUs) {
-        spdlog::critical("Computed muscle camera parameters are invalid: "
-                         "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
-                         "must be less than or equal to muscleIntervalUs. "
-                         "rollingTimeUs = {}, "
-                         "muscleCameraReadoutTimeUs = {}, "
-                         "muscleLightOnTimeUs = {}, "
-                         "muscleIntervalUs = {}",
-                         rollingTimeUs, muscleCameraReadoutTimeUs, muscleLightOnTimeUs_,
-                         muscleIntervalUs);
+        spdlog::critical(
+            "Computed muscle camera parameters are invalid: "
+            "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
+            "must be less than or equal to muscleIntervalUs. "
+            "rollingTimeUs = {}, "
+            "muscleCameraReadoutTimeUs = {}, "
+            "muscleLightOnTimeUs = {}, "
+            "muscleIntervalUs = {}",
+            rollingTimeUs,
+            muscleCameraReadoutTimeUs,
+            muscleLightOnTimeUs_,
+            muscleIntervalUs);
         return false; // Invalid configuration
     }
     muscleShutterOpenTimeUs_ = rollingTimeUs + muscleLightOnTimeUs_;

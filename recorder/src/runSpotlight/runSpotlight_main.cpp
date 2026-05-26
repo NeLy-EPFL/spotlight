@@ -97,10 +97,10 @@ int runSpotlightMain(int argc, char **argv) {
     spdlog::info("runSpotlight main loading recorder configuration from {}", configPath.string());
     RecorderConfig recorderConfig(configPath);
     if (!recorderConfig.isDefined) {
-        std::string errorMessage =
-            fmt::format("Failed to load recorder configuration. Cannot start recording. "
-                        "Expected valid recorder configuration file at {}",
-                        configPath.c_str());
+        std::string errorMessage = fmt::format(
+            "Failed to load recorder configuration. Cannot start recording. "
+            "Expected valid recorder configuration file at {}",
+            configPath.c_str());
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     }
@@ -118,8 +118,10 @@ int runSpotlightMain(int argc, char **argv) {
             "User accepted the configuration dialog. Setting params: "
             "recordBoth: {}, behavior FPS: {}, "
             "sync ratio: {}, muscle light-on time: {} us",
-            dualRecordingConfig->isRecordingBoth(), dualRecordingConfig->getBehaviorCameraFPS(),
-            dualRecordingConfig->getSyncRatio(), dualRecordingConfig->getMuscleLightOnTimeUs());
+            dualRecordingConfig->isRecordingBoth(),
+            dualRecordingConfig->getBehaviorCameraFPS(),
+            dualRecordingConfig->getSyncRatio(),
+            dualRecordingConfig->getMuscleLightOnTimeUs());
     } else {
         spdlog::info("User cancelled the configuration dialog. Exiting.");
         return 0;
@@ -135,15 +137,15 @@ int runSpotlightMain(int argc, char **argv) {
     // registration scan (`fit-arena-registration` output).
     std::filesystem::path calibrationParamsFilePath =
         arenaDir / "model" / "calibration_result.yaml";
-    spdlog::info("Loading spatial calibration parameters from {}",
-                 calibrationParamsFilePath.string());
+    spdlog::info(
+        "Loading spatial calibration parameters from {}", calibrationParamsFilePath.string());
     CalibrationParams behaviorCamCalibrationParams(calibrationParamsFilePath.string());
     if (!behaviorCamCalibrationParams.isDefined) {
-        std::string errorMessage =
-            fmt::format("Spatial calibration data not found or malformed. This is required "
-                        "for tracking and recording. Expected valid calibration file at {} "
-                        "(produced by `fit-arena-registration -a <arena_dir>`).",
-                        calibrationParamsFilePath.string());
+        std::string errorMessage = fmt::format(
+            "Spatial calibration data not found or malformed. This is required "
+            "for tracking and recording. Expected valid calibration file at {} "
+            "(produced by `fit-arena-registration -a <arena_dir>`).",
+            calibrationParamsFilePath.string());
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     }
@@ -156,8 +158,8 @@ int runSpotlightMain(int argc, char **argv) {
 
     // Load the active-area mask for closed-loop tracking.
     double boundaryMarginMm = recorderConfig.getParameter<double>("tracking", "boundary_margin_mm");
-    ActiveAreaMask activeAreaMask(arenaDir.string(), boundaryMarginMm,
-                                  behaviorCamCalibrationParams.stageAndPixelToPhysical);
+    ActiveAreaMask activeAreaMask(
+        arenaDir.string(), boundaryMarginMm, behaviorCamCalibrationParams.stageAndPixelToPhysical);
     spdlog::info("Loaded active area mask from {}", arenaDir.string());
 
     // Compute the stage range covering the arena, for the motion-stage
@@ -199,9 +201,15 @@ int runSpotlightMain(int argc, char **argv) {
         stageMinYMm = std::min(stageMinYMm, sy);
         stageMaxYMm = std::max(stageMaxYMm, sy);
     }
-    spdlog::info("Stage range covering arena {}x{} mm: X=[{:.3f}, {:.3f}], "
-                 "Y=[{:.3f}, {:.3f}] mm",
-                 arenaSizeXMm, arenaSizeYMm, stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm);
+    spdlog::info(
+        "Stage range covering arena {}x{} mm: X=[{:.3f}, {:.3f}], "
+        "Y=[{:.3f}, {:.3f}] mm",
+        arenaSizeXMm,
+        arenaSizeYMm,
+        stageMinXMm,
+        stageMaxXMm,
+        stageMinYMm,
+        stageMaxYMm);
 
     // Clip computed limits to [0, physical_range_limit_mm] and register them
     // as software motion stage limits so setTargetMotionStagePosition() clamps.
@@ -210,9 +218,13 @@ int runSpotlightMain(int argc, char **argv) {
     auto clipToPhysicalRange = [physicalRangeLimitMm](double val, const char *name) -> double {
         double clipped = std::clamp(val, 0.0, physicalRangeLimitMm);
         if (clipped != val) {
-            spdlog::warn("Software stage limit {} ({:.3f} mm) falls outside physical "
-                         "range [0, {:.3f}] mm; clamping to {:.3f} mm.",
-                         name, val, physicalRangeLimitMm, clipped);
+            spdlog::warn(
+                "Software stage limit {} ({:.3f} mm) falls outside physical "
+                "range [0, {:.3f}] mm; clamping to {:.3f} mm.",
+                name,
+                val,
+                physicalRangeLimitMm,
+                clipped);
         }
         return clipped;
     };
@@ -231,20 +243,32 @@ int runSpotlightMain(int argc, char **argv) {
     // Start tracking & motion control threads
     std::shared_ptr<TrackingControlState> trackingControlState =
         std::make_shared<TrackingControlState>();
-    std::thread motionControlIOThread(motionControlRequestHandler, recorderConfig,
-                                      trackingControlState, programState);
-    std::thread motionStagePositionLoggerThread(motionStagePositionLogger, recorderConfig,
-                                                trackingControlState, saveDirectory, programState);
+    std::thread motionControlIOThread(
+        motionControlRequestHandler, recorderConfig, trackingControlState, programState);
+    std::thread motionStagePositionLoggerThread(
+        motionStagePositionLogger,
+        recorderConfig,
+        trackingControlState,
+        saveDirectory,
+        programState);
     std::thread trackingControllerThread(
-        trackingController, recorderConfig, std::ref(activeAreaMask), behaviorRecordingState,
-        trackingControlState, std::ref(behaviorCamCalibrationParams), programState);
+        trackingController,
+        recorderConfig,
+        std::ref(activeAreaMask),
+        behaviorRecordingState,
+        trackingControlState,
+        std::ref(behaviorCamCalibrationParams),
+        programState);
 
     // Start behavior image acquirer
     std::shared_ptr<ProgrammedStop> programmedRecordingStop = std::make_shared<ProgrammedStop>();
 
-    std::thread behaviorImageAcquirerThread(behaviorImageAcquirer, recorderConfig,
-                                            behaviorRecordingState, programState,
-                                            programmedRecordingStop);
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
+        recorderConfig,
+        behaviorRecordingState,
+        programState,
+        programmedRecordingStop);
     spdlog::info("Behavior camera acquisition thread started");
 
     // Start behavior image savers
@@ -252,21 +276,39 @@ int runSpotlightMain(int argc, char **argv) {
     int numBehaviorImageSaverThreads =
         recorderConfig.getParameter<int>("behavior_camera", "num_image_saving_threads");
     for (int i = 0; i < numBehaviorImageSaverThreads; i++) {
-        behaviorImageSaverThreads.push_back(std::thread(behaviorImageSaver, recorderConfig,
-                                                        behaviorRecordingState, saveDirectory,
-                                                        programState));
+        behaviorImageSaverThreads.push_back(std::thread(
+            behaviorImageSaver,
+            recorderConfig,
+            behaviorRecordingState,
+            saveDirectory,
+            programState));
     }
     spdlog::info("Behavior camera saver threads started");
 
     // Start muscle image acquirer
-    spdlog::info("Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
-                 "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
-                 muscleROI.x0, muscleROI.x1, muscleROI.y0, muscleROI.y1, muscleROI.xOffset,
-                 muscleROI.yOffset, muscleROI.imageWidth, muscleROI.imageHeight);
+    spdlog::info(
+        "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
+        "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
+        muscleROI.x0,
+        muscleROI.x1,
+        muscleROI.y0,
+        muscleROI.y1,
+        muscleROI.xOffset,
+        muscleROI.yOffset,
+        muscleROI.imageWidth,
+        muscleROI.imageHeight);
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquirer, muscleROI.imageWidth, muscleROI.imageHeight, muscleROI.xOffset,
-        muscleROI.yOffset, recorderConfig, profileDir, spdlog::get_level(), muscleRecordingState,
-        programState, programmedRecordingStop);
+        muscleImageAcquirer,
+        muscleROI.imageWidth,
+        muscleROI.imageHeight,
+        muscleROI.xOffset,
+        muscleROI.yOffset,
+        recorderConfig,
+        profileDir,
+        spdlog::get_level(),
+        muscleRecordingState,
+        programState,
+        programmedRecordingStop);
     spdlog::info("Muscle camera acquisition thread started");
     size_t retryCount = 0;
     while (!muscleRecordingState->muscleCamera) {
@@ -287,7 +329,11 @@ int runSpotlightMain(int argc, char **argv) {
         recorderConfig.getParameter<int>("muscle_camera", "num_image_saving_threads");
     for (int i = 0; i < numMuscleImageSaverThreads; i++) {
         muscleImageSaverThreads.push_back(std::thread(
-            muscleImageSaver, recorderConfig, muscleRecordingState, saveDirectory, programState,
+            muscleImageSaver,
+            recorderConfig,
+            muscleRecordingState,
+            saveDirectory,
+            programState,
             5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
     }
     spdlog::info("Muscle camera saver threads started");
@@ -298,10 +344,22 @@ int runSpotlightMain(int argc, char **argv) {
 
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(
-        recorderConfig, dualRecordingConfig, behaviorRecordingState, muscleRecordingState,
-        trackingControlState, std::ref(behaviorCamCalibrationParams),
-        std::ref(muscleCamCalibrationParams), saveDirectory, arduinoCommunication, programState,
-        programmedRecordingStop, activeAreaMask, stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm,
+        recorderConfig,
+        dualRecordingConfig,
+        behaviorRecordingState,
+        muscleRecordingState,
+        trackingControlState,
+        std::ref(behaviorCamCalibrationParams),
+        std::ref(muscleCamCalibrationParams),
+        saveDirectory,
+        arduinoCommunication,
+        programState,
+        programmedRecordingStop,
+        activeAreaMask,
+        stageMinXMm,
+        stageMaxXMm,
+        stageMinYMm,
+        stageMaxYMm,
         nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();

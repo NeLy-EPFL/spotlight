@@ -1,7 +1,11 @@
 #include "behaviorCamera.hpp"
 
-BehaviorCamera::BehaviorCamera(unsigned int imageWidth, unsigned int imageHeight,
-                               unsigned int xOffset, unsigned int yOffset, std::string ioLine)
+BehaviorCamera::BehaviorCamera(
+    unsigned int imageWidth,
+    unsigned int imageHeight,
+    unsigned int xOffset,
+    unsigned int yOffset,
+    std::string ioLine)
     : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset), yOffset_(yOffset),
       ioLine_(ioLine) {
     using Euresys::DeviceModule;
@@ -21,13 +25,21 @@ BehaviorCamera::BehaviorCamera(unsigned int imageWidth, unsigned int imageHeight
     std::string deviceID = frameGrabberInfo.deviceID;
     std::string deviceVendorName = frameGrabberInfo.deviceVendorName;
     std::string deviceModelName = frameGrabberInfo.deviceModelName;
-    spdlog::info("Camera configured - interface ID: {}, device ID: {}, "
-                 "device vendor: {}, device model: {}",
-                 interfaceID, deviceID, deviceVendorName, deviceModelName);
+    spdlog::info(
+        "Camera configured - interface ID: {}, device ID: {}, "
+        "device vendor: {}, device model: {}",
+        interfaceID,
+        deviceID,
+        deviceVendorName,
+        deviceModelName);
 
-    spdlog::info("Setting sensor ROI - width: {}, height: {}, "
-                 "xOffset: {}, yOffset: {}",
-                 imageWidth, imageHeight, xOffset, yOffset);
+    spdlog::info(
+        "Setting sensor ROI - width: {}, height: {}, "
+        "xOffset: {}, yOffset: {}",
+        imageWidth,
+        imageHeight,
+        xOffset,
+        yOffset);
     // Set offset to 0 first - if the new image size is larger than the current
     // one, setting the new image size directly may fail if newSize + currOffset
     // exceeds the current image size.
@@ -140,8 +152,8 @@ int roundToNearestValidBehaviorCamDimension(int value) {
     return value - remainder + (remainder < 32 ? 0 : 64);
 }
 
-std::tuple<int, int> getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth,
-                                        int fullFrameHeight) {
+std::tuple<int, int>
+getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight) {
     int xOffset = roundToNearestValidBehaviorCamDimension((fullFrameWidth - imageWidth) / 2);
     int yOffset = roundToNearestValidBehaviorCamDimension((fullFrameHeight - imageHeight) / 2);
     return std::make_tuple(xOffset, yOffset);

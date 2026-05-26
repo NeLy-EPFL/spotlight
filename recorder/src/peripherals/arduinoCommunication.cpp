@@ -1,10 +1,13 @@
 #include "arduinoCommunication.hpp"
 
 namespace {
-void arduinoCommThreadFunc(const std::string &portName, int baudRate,
-                           std::atomic<bool> &stopCommunication, std::mutex &mutex,
-                           std::condition_variable &cv,
-                           std::queue<std::string> &arduinoMessagesQueue) {
+void arduinoCommThreadFunc(
+    const std::string &portName,
+    int baudRate,
+    std::atomic<bool> &stopCommunication,
+    std::mutex &mutex,
+    std::condition_variable &cv,
+    std::queue<std::string> &arduinoMessagesQueue) {
     QSerialPort serialPort = QSerialPort();
     serialPort.setPortName(portName.c_str());
     serialPort.setBaudRate(baudRate);
@@ -71,9 +74,14 @@ void arduinoCommThreadFunc(const std::string &portName, int baudRate,
 } // namespace
 
 ArduinoCommunication::ArduinoCommunication(const std::string &portName, int baudRate) {
-    arduinoCommThread_ =
-        std::thread(arduinoCommThreadFunc, portName, baudRate, std::ref(stopCommunication_),
-                    std::ref(mutex_), std::ref(cv_), std::ref(arduinoMessagesQueue_));
+    arduinoCommThread_ = std::thread(
+        arduinoCommThreadFunc,
+        portName,
+        baudRate,
+        std::ref(stopCommunication_),
+        std::ref(mutex_),
+        std::ref(cv_),
+        std::ref(arduinoMessagesQueue_));
 }
 
 ArduinoCommunication::~ArduinoCommunication() { arduinoCommThread_.join(); }
@@ -170,9 +178,8 @@ std::string findArduinoPortName(RecorderConfig &recorderConfig) {
     return "/dev/" + portName;
 }
 
-std::unique_ptr<ArduinoCommunication>
-initializeTriggeringWithDefaultParams(RecorderConfig &recorderConfig, int muscleNumLinesScanned,
-                                      int syncRatio) {
+std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
+    RecorderConfig &recorderConfig, int muscleNumLinesScanned, int syncRatio) {
     spdlog::info("Starting Arduino communication");
     std::string arduinoPortName = findArduinoPortName(recorderConfig);
     std::unique_ptr<ArduinoCommunication> arduinoCommunication =
@@ -192,9 +199,10 @@ initializeTriggeringWithDefaultParams(RecorderConfig &recorderConfig, int muscle
     arduinoCommunication->setSyncRatio(syncRatio);
     spdlog::info("Setting behavior exposure time via Arduino to {} us", behaviorExposureTimeUs);
     arduinoCommunication->setBehaviorExposureTime(behaviorExposureTimeUs);
-    spdlog::info("Setting muscle exposure time (light-on time) via Arduino to "
-                 "{} us",
-                 muscleLightOnTimeUs);
+    spdlog::info(
+        "Setting muscle exposure time (light-on time) via Arduino to "
+        "{} us",
+        muscleLightOnTimeUs);
     arduinoCommunication->setMuscleLightOnTime(muscleLightOnTimeUs);
     spdlog::info("Arduino parameters set");
 

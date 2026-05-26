@@ -18,8 +18,12 @@
 
 class BehaviorCamera {
   public:
-    BehaviorCamera(unsigned int imageWidth, unsigned int imageHeight, unsigned int xOffset,
-                   unsigned int yOffset, std::string ioLine);
+    BehaviorCamera(
+        unsigned int imageWidth,
+        unsigned int imageHeight,
+        unsigned int xOffset,
+        unsigned int yOffset,
+        std::string ioLine);
     ~BehaviorCamera();
     void start(size_t bufferSize = 40);
     void stop();
@@ -47,7 +51,7 @@ class BehaviorCamera {
 
 int roundToNearestValidBehaviorCamDimension(int value);
 
-std::tuple<int, int> getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth,
-                                        int fullFrameHeight);
+std::tuple<int, int>
+getCenteredOffsets(int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);
 
 #endif // BEHAVIOR_CAMERA_HPP

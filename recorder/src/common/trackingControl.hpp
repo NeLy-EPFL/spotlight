@@ -30,8 +30,10 @@ class ActiveAreaMask {
     double arenaHeightMm;
     LinearMapper2x2to2 &stageAndPixelToPhysical;
 
-    ActiveAreaMask(const std::string &arenaSpecDir, double boundaryMarginMm,
-                   LinearMapper2x2to2 &stageAndPixelToPhysical);
+    ActiveAreaMask(
+        const std::string &arenaSpecDir,
+        double boundaryMarginMm,
+        LinearMapper2x2to2 &stageAndPixelToPhysical);
     cv::Mat warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos);
 
   private:
@@ -49,22 +51,26 @@ struct TrackingControlState {
 };
 
 // Hardware controller thread
-void motionControlRequestHandler(const RecorderConfig &recorderConfig,
-                                 std::shared_ptr<TrackingControlState> trackingControlState,
-                                 std::shared_ptr<ProgramState> programState);
+void motionControlRequestHandler(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    std::shared_ptr<ProgramState> programState);
 
 // Tracking thread
-void trackingController(const RecorderConfig &recorderConfig, ActiveAreaMask &activeAreaMask,
-                        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                        std::shared_ptr<TrackingControlState> trackingControlState,
-                        CalibrationParams &behaviorCamCalibrationParams,
-                        std::shared_ptr<ProgramState> programState);
+void trackingController(
+    const RecorderConfig &recorderConfig,
+    ActiveAreaMask &activeAreaMask,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams,
+    std::shared_ptr<ProgramState> programState);
 
 // Position logging thread
-void motionStagePositionLogger(const RecorderConfig &recorderConfig,
-                               std::shared_ptr<TrackingControlState> trackingControlState,
-                               std::shared_ptr<SaveDirectory> saveDirectory,
-                               std::shared_ptr<ProgramState> programState);
+void motionStagePositionLogger(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState);
 
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
@@ -79,7 +85,10 @@ void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState)
 
 // High-level helper functions
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    cv::Mat behaviorImage, MotionStagePosition stagePosition, cv::Mat &activeAreaMaskCurrView,
-    CalibrationParams &behaviorCamCalibrationParams, const RecorderConfig &recorderConfig);
+    cv::Mat behaviorImage,
+    MotionStagePosition stagePosition,
+    cv::Mat &activeAreaMaskCurrView,
+    CalibrationParams &behaviorCamCalibrationParams,
+    const RecorderConfig &recorderConfig);
 
 #endif // TRACKING_CONTROL_HPP

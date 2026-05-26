@@ -94,8 +94,8 @@ std::string readDataMatrix(const cv::Mat &gray8u) {
 
     const std::vector<int> shrinkFactors = {2, 1, 4};
     const int perAttemptTimeoutMs = 1000;
-    const std::vector<std::pair<const char *, const cv::Mat *>> inputs = {{"otsu", &binary},
-                                                                          {"raw", &gray8u}};
+    const std::vector<std::pair<const char *, const cv::Mat *>> inputs = {
+        {"otsu", &binary}, {"raw", &gray8u}};
     for (const auto &[label, img] : inputs) {
         for (int shrink : shrinkFactors) {
             spdlog::debug("dmtx attempt: input={}, shrink={}", label, shrink);
@@ -136,8 +136,8 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
 
     // Load recorder config
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
-    spdlog::info("arenaRegistrationScan loading recorder configuration from {}",
-                 configPath.string());
+    spdlog::info(
+        "arenaRegistrationScan loading recorder configuration from {}", configPath.string());
     RecorderConfig recorderConfig(configPath);
 
     // Set up shared state and start behavior camera acquisition thread
@@ -147,8 +147,12 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
     behaviorRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
 
     spdlog::info("Starting behavior camera acquisition thread");
-    std::thread behaviorThread(behaviorImageAcquirer, recorderConfig, behaviorRecordingState,
-                               programState, programmedStop);
+    std::thread behaviorThread(
+        behaviorImageAcquirer,
+        recorderConfig,
+        behaviorRecordingState,
+        programState,
+        programmedStop);
 
     // Wait for camera ready
     size_t retryCount = 0;
@@ -217,8 +221,14 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
         cv::line(display, cv::Point(cx, 0), cv::Point(cx, display.rows - 1), red, 1);
         cv::line(display, cv::Point(0, cy), cv::Point(display.cols - 1, cy), red, 1);
 
-        cv::putText(display, "Center camera on data matrix, then press ENTER", cv::Point(24, 66),
-                    cv::FONT_HERSHEY_SIMPLEX, 1.5, red, 3);
+        cv::putText(
+            display,
+            "Center camera on data matrix, then press ENTER",
+            cv::Point(24, 66),
+            cv::FONT_HERSHEY_SIMPLEX,
+            1.5,
+            red,
+            3);
 
         // Downsample before imshow so the display pipeline isn't saturated by
         // full-resolution frames at the loop rate (caused a session lockup).
@@ -262,8 +272,8 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
     YAML::Node metadata = YAML::LoadFile(metadataPath.string());
     std::string expectedChecksum = metadata["checksum"].as<std::string>();
     if (dmContent != expectedChecksum) {
-        spdlog::error("Checksum mismatch: data matrix='{}', expected='{}'", dmContent,
-                      expectedChecksum);
+        spdlog::error(
+            "Checksum mismatch: data matrix='{}', expected='{}'", dmContent, expectedChecksum);
         shutdown();
         throw std::runtime_error("Data matrix checksum mismatch");
     }
@@ -274,8 +284,10 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
     // -------------------------------------------------------------------
     double currentX = motionControl.getPosition(X_AXIS);
     double currentY = motionControl.getPosition(Y_AXIS);
-    spdlog::info("Current stage position when centered on data matrix: ({:.4f}, {:.4f})", currentX,
-                 currentY);
+    spdlog::info(
+        "Current stage position when centered on data matrix: ({:.4f}, {:.4f})",
+        currentX,
+        currentY);
 
     auto dmCenterVec = metadata["datamatrix_pos"]["center"].as<std::vector<double>>();
     double dmCenterX = dmCenterVec[0];
@@ -322,9 +334,14 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
         int cx = display.cols / 2, cy = display.rows / 2;
         cv::line(display, {cx, 0}, {cx, display.rows - 1}, red, 1);
         cv::line(display, {0, cy}, {display.cols - 1, cy}, red, 1);
-        cv::putText(display,
-                    fmt::format("{} AprilTag #{}", shutter ? "Capturing" : "Moving to", tagId),
-                    {24, 66}, cv::FONT_HERSHEY_SIMPLEX, 1.5, red, 3);
+        cv::putText(
+            display,
+            fmt::format("{} AprilTag #{}", shutter ? "Capturing" : "Moving to", tagId),
+            {24, 66},
+            cv::FONT_HERSHEY_SIMPLEX,
+            1.5,
+            red,
+            3);
         if (shutter)
             cv::circle(display, {display.cols - 40, 40}, 20, red, -1);
         cv::Mat displaySmall;
@@ -338,16 +355,23 @@ void runArenaRegistrationScan(std::filesystem::path profileDir, std::filesystem:
         double targetX = xSign * tagCenter[0] + offsetX;
         double targetY = ySign * tagCenter[1] + offsetY;
 
-        spdlog::info("AprilTag {}: arena ({:.4f}, {:.4f}) -> stage ({:.4f}, {:.4f})", tagId,
-                     tagCenter[0], tagCenter[1], targetX, targetY);
+        spdlog::info(
+            "AprilTag {}: arena ({:.4f}, {:.4f}) -> stage ({:.4f}, {:.4f})",
+            tagId,
+            tagCenter[0],
+            tagCenter[1],
+            targetX,
+            targetY);
 
         auto safeMoveAbsolute = [&](MotionAxis axis, const char *axisName, double target) {
             try {
                 motionControl.moveAbsolute(axis, target, false, motionVelocity);
             } catch (const zaber::motion::exceptions::BadDataException &) {
-                spdlog::error("Arena placed outside physical range of motion of linear "
-                              "stages. Axis: {}, target: {:.4f} mm",
-                              axisName, target);
+                spdlog::error(
+                    "Arena placed outside physical range of motion of linear "
+                    "stages. Axis: {}, target: {:.4f} mm",
+                    axisName,
+                    target);
                 shutdown();
                 throw std::runtime_error("Target stage position out of physical range");
             }

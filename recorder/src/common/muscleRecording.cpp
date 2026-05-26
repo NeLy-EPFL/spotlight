@@ -39,21 +39,23 @@ MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath) {
     try {
         node = YAML::LoadFile(roiFilePath.string());
     } catch (const YAML::Exception &e) {
-        throw std::runtime_error(fmt::format("Failed to load muscle camera ROI from {}: {}",
-                                             roiFilePath.string(), e.what()));
+        throw std::runtime_error(fmt::format(
+            "Failed to load muscle camera ROI from {}: {}", roiFilePath.string(), e.what()));
     }
 
     auto readInt = [&](const char *key) {
         if (!node[key]) {
-            throw std::runtime_error(fmt::format("Muscle camera ROI file {} is missing key '{}'",
-                                                 roiFilePath.string(), key));
+            throw std::runtime_error(fmt::format(
+                "Muscle camera ROI file {} is missing key '{}'", roiFilePath.string(), key));
         }
         try {
             return node[key].as<int>();
         } catch (const YAML::Exception &e) {
-            throw std::runtime_error(
-                fmt::format("Muscle camera ROI key '{}' in {} is not an int: {}", key,
-                            roiFilePath.string(), e.what()));
+            throw std::runtime_error(fmt::format(
+                "Muscle camera ROI key '{}' in {} is not an int: {}",
+                key,
+                roiFilePath.string(),
+                e.what()));
         }
     };
 
@@ -65,18 +67,29 @@ MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath) {
     int imageHeight = readInt("imageHeight");
     MuscleCameraROI roi(x0, x1, y0, y1);
 
-    spdlog::info("Muscle camera ROI loaded from file: x0={}, x1={}, y0={}, y1={}; "
-                 "imageWidth={}, imageHeight={}",
-                 x0, x1, y0, y1, imageWidth, imageHeight);
+    spdlog::info(
+        "Muscle camera ROI loaded from file: x0={}, x1={}, y0={}, y1={}; "
+        "imageWidth={}, imageHeight={}",
+        x0,
+        x1,
+        y0,
+        y1,
+        imageWidth,
+        imageHeight);
     return roi;
 }
 
-void muscleImageAcquirer(unsigned int imageWidth, unsigned int imageHeight, unsigned int xOffset,
-                         unsigned int yOffset, const RecorderConfig &recorderConfig,
-                         std::string profileDir, spdlog::level::level_enum logLevel,
-                         std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-                         std::shared_ptr<ProgramState> programState,
-                         std::shared_ptr<ProgrammedStop> programmedRecordingStop) {
+void muscleImageAcquirer(
+    unsigned int imageWidth,
+    unsigned int imageHeight,
+    unsigned int xOffset,
+    unsigned int yOffset,
+    const RecorderConfig &recorderConfig,
+    std::string profileDir,
+    spdlog::level::level_enum logLevel,
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
+    std::shared_ptr<ProgramState> programState,
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop) {
     spdlog::info("Muscle image acquirer thread started");
 
     // Create muscle camera
@@ -85,8 +98,15 @@ void muscleImageAcquirer(unsigned int imageWidth, unsigned int imageHeight, unsi
     double sensorReadoutTimeUs =
         recorderConfig.getParameter<double>("muscle_camera", "sensor_readout_time_us");
     muscleRecordingState->muscleCamera = std::make_shared<MuscleCamera>(
-        imageWidth, imageHeight, xOffset, yOffset, rollingShutterLineTimeUs, sensorReadoutTimeUs,
-        recorderConfig, profileDir, logLevel);
+        imageWidth,
+        imageHeight,
+        xOffset,
+        yOffset,
+        rollingShutterLineTimeUs,
+        sensorReadoutTimeUs,
+        recorderConfig,
+        profileDir,
+        logLevel);
 
     spdlog::info("Muscle camera configured. Entering frame grabbing loop...");
     long int currentFrameId = 0;
@@ -131,10 +151,12 @@ void muscleImageAcquirer(unsigned int imageWidth, unsigned int imageHeight, unsi
     }
 }
 
-void muscleImageSaver(const RecorderConfig &recorderConfig,
-                      std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-                      std::shared_ptr<SaveDirectory> saveDirectory,
-                      std::shared_ptr<ProgramState> programState, int tiffCompressionMethod) {
+void muscleImageSaver(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState,
+    int tiffCompressionMethod) {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
     ss << myThreadId;
@@ -204,16 +226,20 @@ void muscleImageSaver(const RecorderConfig &recorderConfig,
         // Profiling and logging to monitor performance
         walltime = getCurrentTimeMicroseconds() - startTime;
         if (frameCount % performanceLoggingInterval) {
-            spdlog::info("Muscle image saver thread (thread ID {}) reporting: "
-                         "{} frames in queue; "
-                         "it took {} us to save a single frame",
-                         threadIdString, queueLength, walltime);
+            spdlog::info(
+                "Muscle image saver thread (thread ID {}) reporting: "
+                "{} frames in queue; "
+                "it took {} us to save a single frame",
+                threadIdString,
+                queueLength,
+                walltime);
         }
     }
 }
 
-void stopMuscleImageSaver(std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-                          std::shared_ptr<ProgramState> programState) {
+void stopMuscleImageSaver(
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
+    std::shared_ptr<ProgramState> programState) {
     if (!programState->toQuit.load()) {
         spdlog::critical("stopMuscleImageSaver() called but toQuit is "
                          "not set to true. This shouldn't happen.");

@@ -38,16 +38,12 @@ class CalibrationParams {
     LinearMapper2x2to2 &stageAndPhysicalToPixel;
     LinearMapper2x2to2 &physicalAndPixelToStage;
 
-    std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(double stagePosX, double stagePosY,
-                                                                int pixelPosRow,
-                                                                int pixelPosCol) const;
-    std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(double stagePosX, double stagePosY,
-                                                          double physicalPosX,
-                                                          double physicalPosY) const;
-    std::tuple<double, double> physicalPosAndPixelPosToStagePos(double physicalPosX,
-                                                                double physicalPosY,
-                                                                int pixelPosRow,
-                                                                int pixelPosCol) const;
+    std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(
+        double stagePosX, double stagePosY, int pixelPosRow, int pixelPosCol) const;
+    std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(
+        double stagePosX, double stagePosY, double physicalPosX, double physicalPosY) const;
+    std::tuple<double, double> physicalPosAndPixelPosToStagePos(
+        double physicalPosX, double physicalPosY, int pixelPosRow, int pixelPosCol) const;
 
     void saveToFile(const std::string &yamlPath);
 

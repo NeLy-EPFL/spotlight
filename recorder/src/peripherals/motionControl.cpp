@@ -35,17 +35,22 @@ MotionControl::MotionControl(const RecorderConfig &recorderConfig) {
     std::vector<zmASCII::Device> deviceList = connection_.detectDevices();
 
     if (deviceList.size() != 1) {
-        spdlog::critical("Expected 1 Zaber device, but found {}. Note that multiple stages "
-                         "controlled by the same controller constitute a single device.",
-                         deviceList.size());
+        spdlog::critical(
+            "Expected 1 Zaber device, but found {}. Note that multiple stages "
+            "controlled by the same controller constitute a single device.",
+            deviceList.size());
         throw std::runtime_error("Unexpected number of Zaber devices");
     }
 
     zmASCII::Device device = deviceList[0];
     int numAxis = device.getAxisCount();
-    spdlog::info("One Zaber device found. Device ID: {}; name: {}; axis count: {}; "
-                 "serial no.: {}",
-                 device.getDeviceId(), device.getName(), numAxis, device.getSerialNumber());
+    spdlog::info(
+        "One Zaber device found. Device ID: {}; name: {}; axis count: {}; "
+        "serial no.: {}",
+        device.getDeviceId(),
+        device.getName(),
+        numAxis,
+        device.getSerialNumber());
 
     // Configure axes
     if (numAxis != 2) {
@@ -64,12 +69,17 @@ MotionControl::MotionControl(const RecorderConfig &recorderConfig) {
     for (int i = 0; i < numAxis; i++) {
         zmASCII::Axis axis = device.getAxis(i + 1);
         unsigned int serialNumber = axis.getPeripheralSerialNumber();
-        spdlog::info("Axis {}: peripheral ID: {}; name: {}, serial no.: {}", i + 1,
-                     axis.getPeripheralId(), axis.getPeripheralName(), serialNumber);
+        spdlog::info(
+            "Axis {}: peripheral ID: {}; name: {}, serial no.: {}",
+            i + 1,
+            axis.getPeripheralId(),
+            axis.getPeripheralName(),
+            serialNumber);
         if (serialNumberToAxisLookup_.find(serialNumber) == serialNumberToAxisLookup_.end()) {
-            spdlog::critical("Motion stage serial number {} not mapped to any physically "
-                             "meaningful axis (ie. X or Y). Check config file.",
-                             serialNumber);
+            spdlog::critical(
+                "Motion stage serial number {} not mapped to any physically "
+                "meaningful axis (ie. X or Y). Check config file.",
+                serialNumber);
             throw std::runtime_error("Unknown serial number");
         } else {
             axisPtrLookup_[serialNumberToAxisLookup_.at(serialNumber)] =
@@ -77,8 +87,10 @@ MotionControl::MotionControl(const RecorderConfig &recorderConfig) {
         }
     }
     if (axisPtrLookup_[X_AXIS] == nullptr || axisPtrLookup_[Y_AXIS] == nullptr) {
-        spdlog::critical("Failed to configure all axes. X axis OK? {}; Y axis OK? {}",
-                         axisPtrLookup_[X_AXIS] != nullptr, axisPtrLookup_[Y_AXIS] != nullptr);
+        spdlog::critical(
+            "Failed to configure all axes. X axis OK? {}; Y axis OK? {}",
+            axisPtrLookup_[X_AXIS] != nullptr,
+            axisPtrLookup_[Y_AXIS] != nullptr);
         throw std::runtime_error("Failed to configure all axes");
     }
     spdlog::info("Motion stages assigned successfully");
@@ -96,14 +108,14 @@ MotionControl::~MotionControl() {
 }
 
 void MotionControl::moveAbsolute(MotionAxis axis, double position, bool wait, double velocity) {
-    axisPtrLookup_[axis]->moveAbsolute(position, lengthUnitEnum_, wait, velocity,
-                                       velocityUnitEnum_);
+    axisPtrLookup_[axis]->moveAbsolute(
+        position, lengthUnitEnum_, wait, velocity, velocityUnitEnum_);
 }
 
-void MotionControl::moveRelative(MotionAxis axis, double relativePosition, bool wait,
-                                 double velocity) {
-    axisPtrLookup_[axis]->moveRelative(relativePosition, lengthUnitEnum_, wait, velocity,
-                                       velocityUnitEnum_);
+void MotionControl::moveRelative(
+    MotionAxis axis, double relativePosition, bool wait, double velocity) {
+    axisPtrLookup_[axis]->moveRelative(
+        relativePosition, lengthUnitEnum_, wait, velocity, velocityUnitEnum_);
 }
 
 void MotionControl::home(MotionAxis axis, bool wait) { axisPtrLookup_[axis]->home(wait); }

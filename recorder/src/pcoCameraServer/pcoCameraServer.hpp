@@ -23,11 +23,10 @@
 // <variant>, which camera.h, cameraexception.h, and sc2_defs.h all depend on.
 // Disable clang-format, which sorts includes alphabetically 
 #include "stdafx.h"
-// clang-format on
-
 #include "camera.h"
 #include "cameraexception.h"
 #include "sc2_defs.h"
+// clang-format on
 
 #include "../common/recorderConfig.hpp"
 #include "sharedMemoryUtils.hpp"
@@ -51,17 +50,32 @@ CLIOptions parseCLI(int argc, char **argv);
 
 void signalHandler(int signal);
 
-void setupPCOCamera(pco::Camera &camera, unsigned int defaultShutterOpenTimeUs, unsigned int x0,
-                    unsigned int x1, unsigned int y0, unsigned int y1, unsigned int delayUs,
-                    unsigned int fullFrameWidth, unsigned int fullFrameHeight);
+void setupPCOCamera(
+    pco::Camera &camera,
+    unsigned int defaultShutterOpenTimeUs,
+    unsigned int x0,
+    unsigned int x1,
+    unsigned int y0,
+    unsigned int y1,
+    unsigned int delayUs,
+    unsigned int fullFrameWidth,
+    unsigned int fullFrameHeight);
 
-void serveFrames(const std::string &shmFrameDataName, const size_t frameBufferSize,
-                 const std::string &shmShutterOpenTimeName, const std::string &shmFrameMetadataName,
-                 const std::string &shmMutexName, const std::string &shmCondVarName,
-                 const unsigned int defaultShutterOpenTimeUs, const unsigned int x0,
-                 const unsigned int x1, const unsigned int y0, const unsigned int y1,
-                 const unsigned int delayUs, const unsigned int fullFrameWidth,
-                 const unsigned int fullFrameHeight);
+void serveFrames(
+    const std::string &shmFrameDataName,
+    const size_t frameBufferSize,
+    const std::string &shmShutterOpenTimeName,
+    const std::string &shmFrameMetadataName,
+    const std::string &shmMutexName,
+    const std::string &shmCondVarName,
+    const unsigned int defaultShutterOpenTimeUs,
+    const unsigned int x0,
+    const unsigned int x1,
+    const unsigned int y0,
+    const unsigned int y1,
+    const unsigned int delayUs,
+    const unsigned int fullFrameWidth,
+    const unsigned int fullFrameHeight);
 } // namespace PCOCameraServer
 
 #endif // PCO_CAMERA_SERVER_HPP

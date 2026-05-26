@@ -20,8 +20,8 @@ class DualRecordingConfig {
   public:
     DualRecordingConfig()
         : recordBoth_(false), behaviorCameraFPS_(0), syncRatio_(1), muscleLightOnTimeUs_(0) {}
-    DualRecordingConfig(int behaviorCameraFPS, int syncRatio, int muscleLightOnTimeUs,
-                        bool recordBoth = true)
+    DualRecordingConfig(
+        int behaviorCameraFPS, int syncRatio, int muscleLightOnTimeUs, bool recordBoth = true)
         : recordBoth_(recordBoth), behaviorCameraFPS_(behaviorCameraFPS), syncRatio_(syncRatio),
           muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
 
@@ -35,8 +35,8 @@ class DualRecordingConfig {
     void setSyncRatio(int ratio) { syncRatio_ = ratio; }
     void setMuscleLightOnTimeUs(int lightOnTimeUs) { muscleLightOnTimeUs_ = lightOnTimeUs; }
 
-    bool computeParameters(int muscleImageHeight, double muscleCameraLineScanTimeUs,
-                           int muscleCameraReadoutTimeUs);
+    bool computeParameters(
+        int muscleImageHeight, double muscleCameraLineScanTimeUs, int muscleCameraReadoutTimeUs);
     void saveToFile(const std::string &yamlPath);
 
   private:
@@ -54,10 +54,16 @@ class DualRecordingConfig {
 
 class MuscleCamera {
   public:
-    MuscleCamera(int imageWidth, int imageHeight, int xOffset, int yOffset,
-                 double rollingShutterLineTimeUs, double sensorReadoutTimeUs,
-                 const RecorderConfig &recorderConfig, std::string profileDir,
-                 spdlog::level::level_enum logLevel);
+    MuscleCamera(
+        int imageWidth,
+        int imageHeight,
+        int xOffset,
+        int yOffset,
+        double rollingShutterLineTimeUs,
+        double sensorReadoutTimeUs,
+        const RecorderConfig &recorderConfig,
+        std::string profileDir,
+        spdlog::level::level_enum logLevel);
     ~MuscleCamera();
     FrameData waitForOneFrame();
     void setLightOnTime(unsigned int lightOnTimeMicrosecs);

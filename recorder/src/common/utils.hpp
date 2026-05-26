@@ -28,8 +28,8 @@ std::string makeMetadataStringFromThreeFrames(const GroupOfThreeFrames &groupOfT
 
 std::string getSerialPortName(std::string deviceDescription, std::string deviceManufacturer);
 
-int calculateBehaviorCameraPreviewWidth(int behaviorCameraPreviewHeight, int motionStageXRange,
-                                        int motionStageYRange);
+int calculateBehaviorCameraPreviewWidth(
+    int behaviorCameraPreviewHeight, int motionStageXRange, int motionStageYRange);
 
 fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder);
 
@@ -39,13 +39,17 @@ std::string expandPath(const std::string &path);
 
 void convert16BitTo8Bit(cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
 
-int calculateMuscleShutterOpenTime(int numLinesScanned, float rollingShutterLineTimeUs,
-                                   int exposureTimeUs);
+int calculateMuscleShutterOpenTime(
+    int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs);
 
-void writeExperimentParameters(const std::filesystem::path &outputPath, int behavior_fps,
-                               bool muscle_imaging_enabled, int muscle_sync_ratio,
-                               float behavior_exposure_time_ms, float muscle_exposure_time_ms,
-                               const std::string &experiment_protocol);
+void writeExperimentParameters(
+    const std::filesystem::path &outputPath,
+    int behavior_fps,
+    bool muscle_imaging_enabled,
+    int muscle_sync_ratio,
+    float behavior_exposure_time_ms,
+    float muscle_exposure_time_ms,
+    const std::string &experiment_protocol);
 
 class SaveDirectory {
   public:

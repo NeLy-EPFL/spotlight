@@ -40,11 +40,14 @@ std::string incrementDirectoryName(const std::string &path) {
     return oss.str();
 }
 
-MotionControlWidget::MotionControlWidget(const RecorderConfig &recorderConfig,
-                                         std::shared_ptr<TrackingControlState> trackingControlState,
-                                         double minXAbsoluteMm, double maxXAbsoluteMm,
-                                         double minYAbsoluteMm, double maxYAbsoluteMm,
-                                         QWidget *parent)
+MotionControlWidget::MotionControlWidget(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    double minXAbsoluteMm,
+    double maxXAbsoluteMm,
+    double minYAbsoluteMm,
+    double maxYAbsoluteMm,
+    QWidget *parent)
     : QWidget(parent), trackingControlState_(trackingControlState) {
     // Stage bounds are now derived externally (in runSpotlight_main) from
     // the arena dimensions and the fitted calibration model, instead of
@@ -62,7 +65,8 @@ MotionControlWidget::MotionControlWidget(const RecorderConfig &recorderConfig,
     connect(&timer_, &QTimer::timeout, this, QOverload<>::of(&MotionControlWidget::update));
     timer_.start(1000 / guiMotionStagePreviewUpdateFreq); // in ms
     int guiMotionStagePreviewWidth = calculateBehaviorCameraPreviewWidth(
-        guiMotionStagePreviewHeight, maxXAbsoluteMm_ - minXAbsoluteMm_,
+        guiMotionStagePreviewHeight,
+        maxXAbsoluteMm_ - minXAbsoluteMm_,
         maxYAbsoluteMm_ - minYAbsoluteMm_);
     setFixedSize(guiMotionStagePreviewWidth, guiMotionStagePreviewHeight);
 }
@@ -97,8 +101,8 @@ void MotionControlWidget::paintEvent(QPaintEvent *event) {
     painter.setPen(Qt::red);
     painter.setBrush(Qt::red);
     int dotDiameter = 10;
-    painter.drawEllipse(pixelX - dotDiameter / 2, pixelY - dotDiameter / 2, dotDiameter,
-                        dotDiameter);
+    painter.drawEllipse(
+        pixelX - dotDiameter / 2, pixelY - dotDiameter / 2, dotDiameter, dotDiameter);
 
     // Draw coordinate labels
     painter.setPen(Qt::black);
@@ -106,10 +110,12 @@ void MotionControlWidget::paintEvent(QPaintEvent *event) {
     int precision = 2;
     int textPositionX = 10;
     int textPositionY = 20;
-    painter.drawText(textPositionX, textPositionY,
-                     QString("(%1, %2) mm")
-                         .arg(physicalX, minFieldWidth, 'f', precision)
-                         .arg(physicalY, minFieldWidth, 'f', precision));
+    painter.drawText(
+        textPositionX,
+        textPositionY,
+        QString("(%1, %2) mm")
+            .arg(physicalX, minFieldWidth, 'f', precision)
+            .arg(physicalY, minFieldWidth, 'f', precision));
 }
 
 void MotionControlWidget::mousePressEvent(QMouseEvent *event) {
@@ -139,19 +145,24 @@ float MotionControlWidget::mapToStageY(int y) const {
     return y / static_cast<float>(height()) * (maxYAbsoluteMm_ - minYAbsoluteMm_) + minYAbsoluteMm_;
 }
 
-MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
-                             std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-                             std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                             std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-                             std::shared_ptr<TrackingControlState> trackingControlState,
-                             CalibrationParams &behaviorCamCalibrationParams,
-                             CalibrationParams &muscleCamCalibrationParams,
-                             std::shared_ptr<SaveDirectory> saveDirectory,
-                             std::shared_ptr<ArduinoCommunication> arduinoCommunication,
-                             std::shared_ptr<ProgramState> programState,
-                             std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-                             ActiveAreaMask &activeAreaMask, double stageMinXMm, double stageMaxXMm,
-                             double stageMinYMm, double stageMaxYMm, QWidget *parent)
+MainGUIWindow::MainGUIWindow(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams,
+    CalibrationParams &muscleCamCalibrationParams,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ArduinoCommunication> arduinoCommunication,
+    std::shared_ptr<ProgramState> programState,
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+    ActiveAreaMask &activeAreaMask,
+    double stageMinXMm,
+    double stageMaxXMm,
+    double stageMinYMm,
+    double stageMaxYMm,
+    QWidget *parent)
     : QWidget(parent), recorderConfig_(recorderConfig),
       behaviorRecordingState_(behaviorRecordingState), muscleRecordingState_(muscleRecordingState),
       trackingControlState_(trackingControlState),
@@ -191,7 +202,8 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
         }
     }
     dualRecordingConfigForStreaming_->computeParameters(
-        muscleRecordingState_->muscleCamera->getNumLinesScanned(), rollingShutterLineTimeUs,
+        muscleRecordingState_->muscleCamera->getNumLinesScanned(),
+        rollingShutterLineTimeUs,
         muscleCamReadoutTimeUs);
 
     // Behavior FPS widget
@@ -237,10 +249,13 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
     int behaviorCameraDefaultExposureTimeUs =
         recorderConfig.getParameter<int>("behavior_camera", "default_exposure_time_us");
     behaviorExposureTimeSpinBox_->setValue(behaviorCameraDefaultExposureTimeUs / 1000.0);
-    connect(behaviorExposureTimeSpinBox_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, [this, arduinoCommunication](double value) {
-                arduinoCommunication->setBehaviorExposureTime(value * 1000);
-            });
+    connect(
+        behaviorExposureTimeSpinBox_,
+        QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+        this,
+        [this, arduinoCommunication](double value) {
+            arduinoCommunication->setBehaviorExposureTime(value * 1000);
+        });
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(new QLabel("Behavior exposure time (ms)"));
     behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox_);
@@ -255,10 +270,13 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
         muscleLightOnTimeSpinBox_->setValue(dualRecordingConfig->getMuscleLightOnTimeUs() / 1000.0);
         muscleLightOnTimeSpinBox_->setEnabled(false);
     }
-    connect(muscleLightOnTimeSpinBox_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-            [this, arduinoCommunication](double value) {
-                arduinoCommunication->setMuscleLightOnTime(value * 1000);
-            });
+    connect(
+        muscleLightOnTimeSpinBox_,
+        QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+        this,
+        [this, arduinoCommunication](double value) {
+            arduinoCommunication->setMuscleLightOnTime(value * 1000);
+        });
     QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
     muscleLightOnTimeLayout->addWidget(new QLabel("Muscle exposure (light-on) time (ms)"));
     muscleLightOnTimeLayout->addWidget(muscleLightOnTimeSpinBox_);
@@ -274,11 +292,14 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
     // Save directory widget
     directoryLineEdit_ = new QLineEdit(this);
     directoryLineEdit_->setText(saveDirectory->getDirectory().c_str());
-    connect(directoryLineEdit_, &QLineEdit::textChanged, this,
-            [this, saveDirectory](const QString &text) {
-                spdlog::debug("saveDirectory changed to {}", text.toStdString());
-                saveDirectory->setDirectory(text.toStdString());
-            });
+    connect(
+        directoryLineEdit_,
+        &QLineEdit::textChanged,
+        this,
+        [this, saveDirectory](const QString &text) {
+            spdlog::debug("saveDirectory changed to {}", text.toStdString());
+            saveDirectory->setDirectory(text.toStdString());
+        });
     QPushButton *browseButton = new QPushButton("Browse", this);
     QPushButton *incrementButton = new QPushButton("Increment", this);
 
@@ -298,36 +319,43 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
     // Check box to enable/disable tracking
     trackingEnabledCheckBox_ = new QCheckBox("Enable tracking", this);
     trackingEnabledCheckBox_->setChecked(true);
-    connect(trackingEnabledCheckBox_, &QCheckBox::checkStateChanged, this,
-            [this, trackingControlState](int state) {
-                if (state == Qt::Checked) {
-                    trackingControlState->trackingOn.store(true);
-                } else {
-                    trackingControlState->trackingOn.store(false);
-                }
-            });
+    connect(
+        trackingEnabledCheckBox_,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this, trackingControlState](int state) {
+            if (state == Qt::Checked) {
+                trackingControlState->trackingOn.store(true);
+            } else {
+                trackingControlState->trackingOn.store(false);
+            }
+        });
     optionalFeaturesLayout->addWidget(trackingEnabledCheckBox_);
 
     // Check box to enable/disable muscle imaging
     muscleImagingCheckBox_ = new QCheckBox("Enable muscle imaging", this);
     muscleImagingCheckBox_->setChecked(false);
-    connect(muscleImagingCheckBox_, &QCheckBox::checkStateChanged, this,
-            [this, arduinoCommunication](int state) {
-                if (state == Qt::Checked) {
-                    spdlog::info("Enabling muscle imaging, "
-                                 "setting sync ratio to {}",
-                                 streamingSyncRatio_);
-                    muscleImagingEnabled_ = true;
-                    arduinoCommunication->setSyncRatio(streamingSyncRatio_);
-                    arduinoCommunication->setMuscleCamTriggerDelay(
-                        dualRecordingConfigForStreaming_->getMuscleCamTriggerDelayUs());
-                } else {
-                    spdlog::info("Disabling muscle imaging, "
-                                 "setting sync ratio to INT_MAX");
-                    muscleImagingEnabled_ = false;
-                    arduinoCommunication->setSyncRatio(INT_MAX);
-                }
-            });
+    connect(
+        muscleImagingCheckBox_,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this, arduinoCommunication](int state) {
+            if (state == Qt::Checked) {
+                spdlog::info(
+                    "Enabling muscle imaging, "
+                    "setting sync ratio to {}",
+                    streamingSyncRatio_);
+                muscleImagingEnabled_ = true;
+                arduinoCommunication->setSyncRatio(streamingSyncRatio_);
+                arduinoCommunication->setMuscleCamTriggerDelay(
+                    dualRecordingConfigForStreaming_->getMuscleCamTriggerDelayUs());
+            } else {
+                spdlog::info("Disabling muscle imaging, "
+                             "setting sync ratio to INT_MAX");
+                muscleImagingEnabled_ = false;
+                arduinoCommunication->setSyncRatio(INT_MAX);
+            }
+        });
     if (!dualRecordingConfig->isRecordingBoth()) {
         muscleImagingCheckBox_->setEnabled(false);
     }
@@ -342,8 +370,8 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
         recorderConfig.getParameter<int>("gui", "behavior_camera_preview_width");
     int behaviorCameraPreviewHeight =
         recorderConfig.getParameter<int>("gui", "behavior_camera_preview_height");
-    behaviorImageDisplayLabel_->setFixedSize(behaviorCameraPreviewWidth,
-                                             behaviorCameraPreviewHeight);
+    behaviorImageDisplayLabel_->setFixedSize(
+        behaviorCameraPreviewWidth, behaviorCameraPreviewHeight);
     liveImageDisplayLayout->addWidget(behaviorImageDisplayLabel_);
     // Add timer to for behavior display updates
     imageDisplayTimer_ = new QTimer(this);
@@ -360,16 +388,21 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
     liveImageDisplayLayout->addWidget(muscleImageDisplayLabel_);
     // Add timer for muscle display updates
     QTimer *muscleImageDisplayTimer = new QTimer(this);
-    connect(muscleImageDisplayTimer, &QTimer::timeout, this,
-            &MainGUIWindow::updateMuscleImageDisplay);
+    connect(
+        muscleImageDisplayTimer, &QTimer::timeout, this, &MainGUIWindow::updateMuscleImageDisplay);
     float muscleStreamingFPS = static_cast<float>(streamingBehaviorFPS_) / streamingSyncRatio_;
     spdlog::info("Muscle streaming FPS: {}", muscleStreamingFPS);
     muscleImageDisplayTimer->start(1000 / muscleStreamingFPS);
 
     // Motion stage state display
-    motionControlWidget_ =
-        new MotionControlWidget(recorderConfig, trackingControlState, stageMinXMm_, stageMaxXMm_,
-                                stageMinYMm_, stageMaxYMm_, this);
+    motionControlWidget_ = new MotionControlWidget(
+        recorderConfig,
+        trackingControlState,
+        stageMinXMm_,
+        stageMaxXMm_,
+        stageMinYMm_,
+        stageMaxYMm_,
+        this);
 
     // Record and stop buttons
     recordButton_ = new QPushButton("Record", this);
@@ -390,8 +423,8 @@ MainGUIWindow::MainGUIWindow(const RecorderConfig &recorderConfig,
             programmedRecordingStop->numBehaviorFramesExpected = -1;
             programmedRecordingStop->numMuscleFramesExpected = -1;
             programmedRecordingStop->hasEndedFlagForGUI.store(false); // toggle off
-            QMessageBox::information(this, "Recording stopped",
-                                     "End of protocol reached. Recording stopped.");
+            QMessageBox::information(
+                this, "Recording stopped", "End of protocol reached. Recording stopped.");
         }
     });
     programmedStopCheckTimer->start(500); // Check every 0.5 second
@@ -431,9 +464,11 @@ void MainGUIWindow::startRecording() {
         !behaviorRecordingState_->behaviorCamera->isReady()) {
         spdlog::error("Behavior camera not ready. Cannot start recording.");
         // Make a pop-up error window
-        QMessageBox::critical(this, "Error",
-                              "Behavior camera not ready yet. Please wait 10 seconds. If the "
-                              "error persists, something has gone wrong. Check logs for info.");
+        QMessageBox::critical(
+            this,
+            "Error",
+            "Behavior camera not ready yet. Please wait 10 seconds. If the "
+            "error persists, something has gone wrong. Check logs for info.");
         return;
     }
 
@@ -488,9 +523,10 @@ void MainGUIWindow::startRecording() {
         programmedRecordingStop_->numBehaviorFramesExpected = protocolSteps.back().frameCount;
         programmedRecordingStop_->numMuscleFramesExpected =
             protocolSteps.back().frameCount / syncRatioSpinBox_->value();
-        spdlog::info("Setting expected number of steps to {} (behavior) and {} (muscle)",
-                     programmedRecordingStop_->numBehaviorFramesExpected,
-                     programmedRecordingStop_->numMuscleFramesExpected);
+        spdlog::info(
+            "Setting expected number of steps to {} (behavior) and {} (muscle)",
+            programmedRecordingStop_->numBehaviorFramesExpected,
+            programmedRecordingStop_->numMuscleFramesExpected);
     }
 
     // Initialize save directory
@@ -499,11 +535,14 @@ void MainGUIWindow::startRecording() {
     // Save metadata: experiment parameters
     std::filesystem::path experimentParametersFilePath =
         saveDirectory_->getDirectory() / "metadata/experiment_parameters.yaml";
-    writeExperimentParameters(experimentParametersFilePath, behaviorFPSSpinBox_->value(),
-                              muscleImagingCheckBox_->isChecked(), syncRatioSpinBox_->value(),
-                              behaviorExposureTimeSpinBox_->value(),
-                              muscleLightOnTimeSpinBox_->value(),
-                              experimentProtocol_->toPlainText().toStdString());
+    writeExperimentParameters(
+        experimentParametersFilePath,
+        behaviorFPSSpinBox_->value(),
+        muscleImagingCheckBox_->isChecked(),
+        syncRatioSpinBox_->value(),
+        behaviorExposureTimeSpinBox_->value(),
+        muscleLightOnTimeSpinBox_->value(),
+        experimentProtocol_->toPlainText().toStdString());
     spdlog::info("Saved experiment parameters to '{}'", experimentParametersFilePath.string());
 
     // Save metadata: recording config
@@ -516,14 +555,14 @@ void MainGUIWindow::startRecording() {
     std::filesystem::path behaviorCalibrationFilePath =
         saveDirectory_->getDirectory() / "metadata/calibration_parameters_behavior.yaml";
     behaviorCamCalibrationParams_.saveToFile(behaviorCalibrationFilePath);
-    spdlog::info("Saved behavior calibration parameters to '{}'",
-                 behaviorCalibrationFilePath.string());
+    spdlog::info(
+        "Saved behavior calibration parameters to '{}'", behaviorCalibrationFilePath.string());
     if (muscleCamCalibrationParams_.isDefined) {
         std::filesystem::path muscleCalibrationFilePath =
             saveDirectory_->getDirectory() / "metadata/calibration_parameters_muscle.yaml";
         muscleCamCalibrationParams_.saveToFile(muscleCalibrationFilePath);
-        spdlog::info("Saved muscle calibration parameters to '{}'",
-                     muscleCalibrationFilePath.string());
+        spdlog::info(
+            "Saved muscle calibration parameters to '{}'", muscleCalibrationFilePath.string());
     } else {
         spdlog::warn("Muscle camera calibration parameters not defined. Not saving.");
     }
@@ -533,8 +572,8 @@ void MainGUIWindow::startRecording() {
         std::filesystem::path behaviorCalibrationFilePath =
             saveDirectory_->getDirectory() / "metadata/dual_recording_timing.yaml";
         dualRecordingConfigForSaving_->saveToFile(behaviorCalibrationFilePath);
-        spdlog::info("Saved dual recording timing parameters to '{}'",
-                     behaviorCalibrationFilePath.string());
+        spdlog::info(
+            "Saved dual recording timing parameters to '{}'", behaviorCalibrationFilePath.string());
     }
 
     // Send triggering parameters to Arduino and start recording
@@ -583,7 +622,9 @@ void MainGUIWindow::closeEvent(QCloseEvent *event) {
 void MainGUIWindow::browseDirectory() {
     std::string currentDirectory = saveDirectory_->getDirectory();
     QString dir = QFileDialog::getExistingDirectory(
-        this, "Open Directory", QString::fromStdString(currentDirectory),
+        this,
+        "Open Directory",
+        QString::fromStdString(currentDirectory),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!dir.isEmpty()) {
         directoryLineEdit_->setText(dir);
@@ -601,9 +642,12 @@ void MainGUIWindow::incrementDirectory() {
     directoryLineEdit_->setText(QString::fromStdString(incremented));
 }
 
-cv::Mat addCornerMarker(cv::Mat image, double arenaSizeXMm, double arenaSizeYMm,
-                        MotionStagePosition stagePosition,
-                        CalibrationParams &behaviorCamCalibrationParams) {
+cv::Mat addCornerMarker(
+    cv::Mat image,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
+    MotionStagePosition stagePosition,
+    CalibrationParams &behaviorCamCalibrationParams) {
     cv::Mat imageForDisplay = image.clone();
     assert(imageForDisplay.size() == image.size());
 
@@ -617,12 +661,16 @@ cv::Mat addCornerMarker(cv::Mat image, double arenaSizeXMm, double arenaSizeYMm,
             behaviorCamCalibrationParams.stagePosAndPhysicalPosToPixelPos(
                 stagePosition.xPosMm, stagePosition.yPosMm, x, y);
         pixelPoints.emplace_back(pixelCol, pixelRow);
-        cv::circle(imageForDisplay, cv::Point(pixelCol, pixelRow), 5, cv::Scalar(255, 255, 255),
-                   -1);
+        cv::circle(
+            imageForDisplay, cv::Point(pixelCol, pixelRow), 5, cv::Scalar(255, 255, 255), -1);
     }
     for (size_t i = 0; i < pixelPoints.size(); ++i) {
-        cv::line(imageForDisplay, pixelPoints[i], pixelPoints[(i + 1) % pixelPoints.size()],
-                 cv::Scalar(255, 0, 0), 2);
+        cv::line(
+            imageForDisplay,
+            pixelPoints[i],
+            pixelPoints[(i + 1) % pixelPoints.size()],
+            cv::Scalar(255, 0, 0),
+            2);
     }
 
     return imageForDisplay;
@@ -660,9 +708,12 @@ void MainGUIWindow::updateBehaviorImageDisplay() {
     tintedRed.copyTo(channels[2], outsideArena); // red channel (BGR)
     cv::merge(channels, bgrImage);
 
-    cv::Mat imageForDisplay =
-        addCornerMarker(bgrImage, activeAreaMask_.arenaWidthMm, activeAreaMask_.arenaHeightMm,
-                        myStagePosition, behaviorCamCalibrationParams_);
+    cv::Mat imageForDisplay = addCornerMarker(
+        bgrImage,
+        activeAreaMask_.arenaWidthMm,
+        activeAreaMask_.arenaHeightMm,
+        myStagePosition,
+        behaviorCamCalibrationParams_);
 
     QImage qImage = cvMatToQImage(imageForDisplay);
     QPixmap pixmap = QPixmap::fromImage(qImage).scaled(
@@ -681,8 +732,8 @@ void MainGUIWindow::updateMuscleImageDisplay() {
         return;
     }
     cv::Mat processedFrame;
-    convert16BitTo8Bit(latestFrame, processedFrame, muscleImage16To8BitScale_,
-                       muscleImage16To8BitOffset_);
+    convert16BitTo8Bit(
+        latestFrame, processedFrame, muscleImage16To8BitScale_, muscleImage16To8BitOffset_);
     reorientMuscleImage(processedFrame, processedFrame);
     QImage qImage = cvMatToQImage(processedFrame);
     QPixmap pixmap = QPixmap::fromImage(qImage).scaled(
@@ -691,8 +742,10 @@ void MainGUIWindow::updateMuscleImageDisplay() {
 }
 
 DualRecordingConfigWindow::DualRecordingConfigWindow(
-    const RecorderConfig &recorderConfig, std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-    const MuscleCameraROI &muscleCameraROI, QWidget *parent)
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+    const MuscleCameraROI &muscleCameraROI,
+    QWidget *parent)
     : QDialog(parent), dualRecordingConfigForSaving_(dualRecordingConfig),
       recorderConfig_(recorderConfig), muscleCameraROI_(muscleCameraROI) {
     setWindowTitle("Dual recording configuration");
@@ -705,8 +758,11 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
         new QLabel("<i>If you wish to record behavior only</i>, click the button below.");
     labelNoMuscle->setWordWrap(true);
     withoutMuscleButton_ = new QPushButton("Record behavior only", this);
-    connect(withoutMuscleButton_, &QPushButton::clicked, this,
-            &DualRecordingConfigWindow::onButtonClicked);
+    connect(
+        withoutMuscleButton_,
+        &QPushButton::clicked,
+        this,
+        &DualRecordingConfigWindow::onButtonClicked);
     mainLayout_->addWidget(labelTitle);
     mainLayout_->addWidget(labelNoMuscle);
     mainLayout_->addWidget(withoutMuscleButton_);
@@ -755,8 +811,11 @@ DualRecordingConfigWindow::DualRecordingConfigWindow(
     mainLayout_->addLayout(muscleLightOnTimeLayout);
 
     withMuscleButton_ = new QPushButton("Record behavior and muscle", this);
-    connect(withMuscleButton_, &QPushButton::clicked, this,
-            &DualRecordingConfigWindow::onButtonClicked);
+    connect(
+        withMuscleButton_,
+        &QPushButton::clicked,
+        this,
+        &DualRecordingConfigWindow::onButtonClicked);
     mainLayout_->addWidget(withMuscleButton_);
 }
 
@@ -781,26 +840,29 @@ void DualRecordingConfigWindow::onButtonClicked() {
         muscleImageHeight, muscleCameraLineScanTimeUs, muscleCameraReadoutTimeUs);
 
     if (!isValid) {
-        QMessageBox::critical(this, "Error",
-                              "Invalid configuration for recording both behavior and muscle. "
-                              "Please check the parameters and try again. "
-                              "In particular, check if the muscle recording interval "
-                              "(i.e. 1 / muscleFPS) is greater than the minimum. See "
-                              "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
+        QMessageBox::critical(
+            this,
+            "Error",
+            "Invalid configuration for recording both behavior and muscle. "
+            "Please check the parameters and try again. "
+            "In particular, check if the muscle recording interval "
+            "(i.e. 1 / muscleFPS) is greater than the minimum. See "
+            "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
     } else {
-        spdlog::info("Behavior-muscle corecording config set: "
-                     "recordBoth={}, behaviorCameraFPS={}, syncRatio={}, "
-                     "muscleLightOnTimeUs={}",
-                     dualRecordingConfigForSaving_->isRecordingBoth(),
-                     dualRecordingConfigForSaving_->getBehaviorCameraFPS(),
-                     dualRecordingConfigForSaving_->getSyncRatio(),
-                     dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
+        spdlog::info(
+            "Behavior-muscle corecording config set: "
+            "recordBoth={}, behaviorCameraFPS={}, syncRatio={}, "
+            "muscleLightOnTimeUs={}",
+            dualRecordingConfigForSaving_->isRecordingBoth(),
+            dualRecordingConfigForSaving_->getBehaviorCameraFPS(),
+            dualRecordingConfigForSaving_->getSyncRatio(),
+            dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
         accept(); // close the dialog
     }
 }
 
-int parseProtocolString(const std::string &protocolTextFieldString,
-                        std::vector<ProtocolStep> &protocolSteps)
+int parseProtocolString(
+    const std::string &protocolTextFieldString, std::vector<ProtocolStep> &protocolSteps)
 /**
  * This for now is very repetative, but it's intended we can rewrite this
  * function based on nicer GUI widgets.

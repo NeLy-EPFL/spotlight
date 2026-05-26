@@ -41,9 +41,10 @@ double softwareYMinMm = -std::numeric_limits<double>::infinity();
 double softwareYMaxMm = std::numeric_limits<double>::infinity();
 } // namespace
 
-void motionControlRequestHandler(const RecorderConfig &recorderConfig,
-                                 std::shared_ptr<TrackingControlState> trackingControlState,
-                                 std::shared_ptr<ProgramState> programState) {
+void motionControlRequestHandler(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    std::shared_ptr<ProgramState> programState) {
     MotionControl motionControl(recorderConfig);
 
     // Query the stages' soft travel limits once at init so that we can
@@ -53,9 +54,13 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
     double xMaxMm = motionControl.getMaxPosition(X_AXIS);
     double yMinMm = motionControl.getMinPosition(Y_AXIS);
     double yMaxMm = motionControl.getMaxPosition(Y_AXIS);
-    spdlog::info("Motion stage travel limits: X=[{:.3f}, {:.3f}] mm, "
-                 "Y=[{:.3f}, {:.3f}] mm",
-                 xMinMm, xMaxMm, yMinMm, yMaxMm);
+    spdlog::info(
+        "Motion stage travel limits: X=[{:.3f}, {:.3f}] mm, "
+        "Y=[{:.3f}, {:.3f}] mm",
+        xMinMm,
+        xMaxMm,
+        yMinMm,
+        yMaxMm);
 
     trackingControlState->motionControlHandlerReady.store(true);
 
@@ -83,8 +88,8 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
 
         MotionStageResponse myResponse;
         if (myRequest.requestType == GET_CURRENT_POSITION) {
-            MotionStagePosition currentPosition = {motionControl.getPosition(X_AXIS),
-                                                   motionControl.getPosition(Y_AXIS), ABSOLUTE};
+            MotionStagePosition currentPosition = {
+                motionControl.getPosition(X_AXIS), motionControl.getPosition(Y_AXIS), ABSOLUTE};
             myResponse.position = currentPosition;
         } else if (myRequest.requestType == SET_TARGET_POSITION) {
             bool waitForCompletion = false;
@@ -92,11 +97,18 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
                 double targetX = std::clamp(myRequest.position.xPosMm, xMinMm, xMaxMm);
                 double targetY = std::clamp(myRequest.position.yPosMm, yMinMm, yMaxMm);
                 if (targetX != myRequest.position.xPosMm || targetY != myRequest.position.yPosMm) {
-                    spdlog::warn("Target stage position ({:.3f}, {:.3f}) mm clamped "
-                                 "to ({:.3f}, {:.3f}) mm to stay within travel "
-                                 "limits X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
-                                 myRequest.position.xPosMm, myRequest.position.yPosMm, targetX,
-                                 targetY, xMinMm, xMaxMm, yMinMm, yMaxMm);
+                    spdlog::warn(
+                        "Target stage position ({:.3f}, {:.3f}) mm clamped "
+                        "to ({:.3f}, {:.3f}) mm to stay within travel "
+                        "limits X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
+                        myRequest.position.xPosMm,
+                        myRequest.position.yPosMm,
+                        targetX,
+                        targetY,
+                        xMinMm,
+                        xMaxMm,
+                        yMinMm,
+                        yMaxMm);
                 }
                 motionControl.moveAbsolute(X_AXIS, targetX, waitForCompletion, myRequest.velocity);
                 motionControl.moveAbsolute(Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
@@ -125,9 +137,10 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
             motionControl.home(Y_AXIS, waitForCompletion);
             myResponse.setSuccess = true;
         } else {
-            spdlog::critical("Motion stage request handler thread received unknown "
-                             "request type: {}",
-                             static_cast<int>(myRequest.requestType));
+            spdlog::critical(
+                "Motion stage request handler thread received unknown "
+                "request type: {}",
+                static_cast<int>(myRequest.requestType));
             throw std::runtime_error("Motion stage request handler thread received unknown "
                                      "request type.");
         }
@@ -142,11 +155,13 @@ void motionControlRequestHandler(const RecorderConfig &recorderConfig,
     spdlog::info("Motion stage request handler thread stopped.");
 }
 
-void trackingController(const RecorderConfig &recorderConfig, ActiveAreaMask &activeAreaMask,
-                        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                        std::shared_ptr<TrackingControlState> trackingControlState,
-                        CalibrationParams &behaviorCamCalibrationParams,
-                        std::shared_ptr<ProgramState> programState) {
+void trackingController(
+    const RecorderConfig &recorderConfig,
+    ActiveAreaMask &activeAreaMask,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    CalibrationParams &behaviorCamCalibrationParams,
+    std::shared_ptr<ProgramState> programState) {
     size_t retryCount = 0;
     while (!trackingControlState->motionControlHandlerReady.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -194,15 +209,20 @@ void trackingController(const RecorderConfig &recorderConfig, ActiveAreaMask &ac
             if (behaviorRecordingState->behaviorCamera &&
                 behaviorRecordingState->behaviorCamera->isReady()) {
                 std::tie(isFound, physicalPosX, physicalPosY) = calculateFlyPositionAbsoluteMm(
-                    myBehaviorImage, myMotionStagePosition, activeAreaMaskCurrView,
-                    behaviorCamCalibrationParams, recorderConfig);
+                    myBehaviorImage,
+                    myMotionStagePosition,
+                    activeAreaMaskCurrView,
+                    behaviorCamCalibrationParams,
+                    recorderConfig);
             }
 
             if (isFound) {
                 auto [currentPhysicalPosX, currentPhysicalPosY] =
                     behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
-                        myMotionStagePosition.xPosMm, myMotionStagePosition.yPosMm,
-                        myBehaviorImage.rows / 2, myBehaviorImage.cols / 2);
+                        myMotionStagePosition.xPosMm,
+                        myMotionStagePosition.yPosMm,
+                        myBehaviorImage.rows / 2,
+                        myBehaviorImage.cols / 2);
 
                 double distanceToTarget = calculateDistance(
                     physicalPosX, physicalPosY, currentPhysicalPosX, currentPhysicalPosY);
@@ -237,17 +257,20 @@ void trackingController(const RecorderConfig &recorderConfig, ActiveAreaMask &ac
         } else {
             // spdlog::debug("Tracking controller is overriding tracking.");
             MotionStagePosition currentPos = getCurrentMotionStagePosition();
-            double distanceToTarget = calculateDistance(trackingControlState->overridingPosX.load(),
-                                                        trackingControlState->overridingPosY.load(),
-                                                        currentPos.xPosMm, currentPos.yPosMm);
+            double distanceToTarget = calculateDistance(
+                trackingControlState->overridingPosX.load(),
+                trackingControlState->overridingPosY.load(),
+                currentPos.xPosMm,
+                currentPos.yPosMm);
 
             if (distanceToTarget < trackingDistanceThresholdMm && checkIfMotionStageIdle()) {
                 trackingControlState->shouldOverrideTracking.store(false);
                 continue;
             } else {
-                MotionStagePosition targetPos = {trackingControlState->overridingPosX.load(),
-                                                 trackingControlState->overridingPosY.load(),
-                                                 ABSOLUTE};
+                MotionStagePosition targetPos = {
+                    trackingControlState->overridingPosX.load(),
+                    trackingControlState->overridingPosY.load(),
+                    ABSOLUTE};
                 setTargetMotionStagePosition(targetPos, defaultVelocity);
             }
         }
@@ -257,17 +280,22 @@ void trackingController(const RecorderConfig &recorderConfig, ActiveAreaMask &ac
         if (timeToSleepMicrosecs > 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(timeToSleepMicrosecs));
         } else {
-            spdlog::warn("Tracking controller thread is running behind. "
-                         "I'm updating stage position at {} Hz, so I have only {} us) "
-                         "to complete each update. It took {} us this cycle. If this "
-                         "only happens sporadically, it's harmless.",
-                         trackingUpdateFrequency, updateIntervalMicrosecs, elapsedTime);
+            spdlog::warn(
+                "Tracking controller thread is running behind. "
+                "I'm updating stage position at {} Hz, so I have only {} us) "
+                "to complete each update. It took {} us this cycle. If this "
+                "only happens sporadically, it's harmless.",
+                trackingUpdateFrequency,
+                updateIntervalMicrosecs,
+                elapsedTime);
         }
     }
 }
 
-ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir, double boundaryMarginMm,
-                               LinearMapper2x2to2 &stageAndPixelToPhysical)
+ActiveAreaMask::ActiveAreaMask(
+    const std::string &arenaSpecDir,
+    double boundaryMarginMm,
+    LinearMapper2x2to2 &stageAndPixelToPhysical)
     : stageAndPixelToPhysical(stageAndPixelToPhysical) {
     // Load arena metadata
     fs::path metadataPath = fs::path(arenaSpecDir) / "metadata.yaml";
@@ -295,15 +323,20 @@ ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir, double boundaryM
     // Shrink active area mask by boundary margin
     int boundaryMarginPixels = static_cast<int>(boundaryMarginMm / resolutionMmPerPixel);
     cv::Mat erosionKernel = cv::getStructuringElement(
-        cv::MORPH_ELLIPSE, cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
+        cv::MORPH_ELLIPSE,
+        cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
         cv::Point(boundaryMarginPixels, boundaryMarginPixels));
-    cv::erode(fullArenaMask, fullArenaMask, erosionKernel, cv::Point(-1, -1), // anchor (default)
-              1, // iterations (default)
-              // Set border value to 0 so that the erosion treats arena walls as
-              // out-of-arena boundaries, so the edges are shrunk even if there
-              // is no black pixels along the edges.
-              cv::BORDER_CONSTANT, // borderType
-              cv::Scalar(0));      // borderValue
+    cv::erode(
+        fullArenaMask,
+        fullArenaMask,
+        erosionKernel,
+        cv::Point(-1, -1), // anchor (default)
+        1,                 // iterations (default)
+        // Set border value to 0 so that the erosion treats arena walls as
+        // out-of-arena boundaries, so the edges are shrunk even if there
+        // is no black pixels along the edges.
+        cv::BORDER_CONSTANT, // borderType
+        cv::Scalar(0));      // borderValue
 
     // Build the affine matrix that maps a camera pixel (col, row) to the
     // corresponding arena-mask pixel (col, row) when stage is at zero.
@@ -312,33 +345,45 @@ ActiveAreaMask::ActiveAreaMask(const std::string &arenaSpecDir, double boundaryM
     //   mask_row = M[1,0]*cam_col + M[1,1]*cam_row + M[1,2]
     // which is exactly (stageAndPixelToPhysical(stage=0, pixel) / R).
     transformMatrixAtZeroStagePos_ =
-        (cv::Mat_<double>(2, 3) << stageAndPixelToPhysical.w_X2toX, stageAndPixelToPhysical.w_Y2toX,
-         stageAndPixelToPhysical.biasX, stageAndPixelToPhysical.w_X2toY,
-         stageAndPixelToPhysical.w_Y2toY, stageAndPixelToPhysical.biasY);
+        (cv::Mat_<double>(2, 3) << stageAndPixelToPhysical.w_X2toX,
+         stageAndPixelToPhysical.w_Y2toX,
+         stageAndPixelToPhysical.biasX,
+         stageAndPixelToPhysical.w_X2toY,
+         stageAndPixelToPhysical.w_Y2toY,
+         stageAndPixelToPhysical.biasY);
     transformMatrixAtZeroStagePos_ /= resolutionMmPerPixel;
 }
 
 cv::Mat ActiveAreaMask::warpToCurrentView(cv::Mat currentImage, MotionStagePosition stagePos) {
     // Add contribution of non-zero stage position to the transformation matrix
-    double xOffset = (stageAndPixelToPhysical.w_X1toX * stagePos.xPosMm +
-                      stageAndPixelToPhysical.w_Y1toX * stagePos.yPosMm);
-    double yOffset = (stageAndPixelToPhysical.w_X1toY * stagePos.xPosMm +
-                      stageAndPixelToPhysical.w_Y1toY * stagePos.yPosMm);
+    double xOffset =
+        (stageAndPixelToPhysical.w_X1toX * stagePos.xPosMm +
+         stageAndPixelToPhysical.w_Y1toX * stagePos.yPosMm);
+    double yOffset =
+        (stageAndPixelToPhysical.w_X1toY * stagePos.xPosMm +
+         stageAndPixelToPhysical.w_Y1toY * stagePos.yPosMm);
     cv::Mat transformMatrix = transformMatrixAtZeroStagePos_.clone();
     transformMatrix.at<double>(0, 2) += xOffset / resolutionMmPerPixel;
     transformMatrix.at<double>(1, 2) += yOffset / resolutionMmPerPixel;
 
     // Apply affine transform
     cv::Mat warpedMask;
-    cv::warpAffine(fullArenaMask, warpedMask, transformMatrix, currentImage.size(),
-                   cv::WARP_INVERSE_MAP | cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
+    cv::warpAffine(
+        fullArenaMask,
+        warpedMask,
+        transformMatrix,
+        currentImage.size(),
+        cv::WARP_INVERSE_MAP | cv::INTER_NEAREST,
+        cv::BORDER_CONSTANT,
+        cv::Scalar(0));
     return warpedMask;
 }
 
-void motionStagePositionLogger(const RecorderConfig &recorderConfig,
-                               std::shared_ptr<TrackingControlState> trackingControlState,
-                               std::shared_ptr<SaveDirectory> saveDirectory,
-                               std::shared_ptr<ProgramState> programState) {
+void motionStagePositionLogger(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState) {
     int positionLoggingFreq =
         recorderConfig.getParameter<int>("motion_control", "position_logging_frequency_hz");
     int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
@@ -364,9 +409,10 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
                 // This is the start of a new recording. We need to initalize
                 // the log file.
                 logFile = initializeMotionStageLogFile(saveDirectory->getDirectory());
-                spdlog::info("Stage position log file initialized under {}. "
-                             "Stage position logging starts now.",
-                             saveDirectory->getDirectory().c_str());
+                spdlog::info(
+                    "Stage position log file initialized under {}. "
+                    "Stage position logging starts now.",
+                    saveDirectory->getDirectory().c_str());
             }
 
             logFile << startTime << "," << currentPosition.xPosMm << "," << currentPosition.yPosMm
@@ -390,19 +436,25 @@ void motionStagePositionLogger(const RecorderConfig &recorderConfig,
         if (timeToSleepMicrosecs > 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(timeToSleepMicrosecs));
         } else {
-            spdlog::warn("Motion stage position logging thread is running behind. "
-                         "I'm updating stage position at {} Hz, so I have only {} us) "
-                         "to complete each update. It took {} us this cycle. If this "
-                         "only happens sporadically, it's harmless.",
-                         positionLoggingFreq, loggingIntervalMicrosecs, elapsedTime);
+            spdlog::warn(
+                "Motion stage position logging thread is running behind. "
+                "I'm updating stage position at {} Hz, so I have only {} us) "
+                "to complete each update. It took {} us this cycle. If this "
+                "only happens sporadically, it's harmless.",
+                positionLoggingFreq,
+                loggingIntervalMicrosecs,
+                elapsedTime);
         }
     }
     spdlog::info("Motion stage position logging thread stopped.");
 }
 
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    cv::Mat behaviorImage, MotionStagePosition stagePosition, cv::Mat &activeAreaMaskCurrView,
-    CalibrationParams &behaviorCamCalibrationParams, const RecorderConfig &recorderConfig) {
+    cv::Mat behaviorImage,
+    MotionStagePosition stagePosition,
+    cv::Mat &activeAreaMaskCurrView,
+    CalibrationParams &behaviorCamCalibrationParams,
+    const RecorderConfig &recorderConfig) {
     bool isFound = false;
     double physicalPosXMm = 0;
     double physicalPosYMm = 0;
@@ -522,11 +574,18 @@ void setTargetMotionStagePosition(MotionStagePosition targetPosition, float velo
         double clampedX = std::clamp(targetPosition.xPosMm, softwareXMinMm, softwareXMaxMm);
         double clampedY = std::clamp(targetPosition.yPosMm, softwareYMinMm, softwareYMaxMm);
         if (clampedX != targetPosition.xPosMm || clampedY != targetPosition.yPosMm) {
-            spdlog::warn("Target stage position ({:.3f}, {:.3f}) mm clamped to "
-                         "({:.3f}, {:.3f}) mm by software motion stage limits "
-                         "X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
-                         targetPosition.xPosMm, targetPosition.yPosMm, clampedX, clampedY,
-                         softwareXMinMm, softwareXMaxMm, softwareYMinMm, softwareYMaxMm);
+            spdlog::warn(
+                "Target stage position ({:.3f}, {:.3f}) mm clamped to "
+                "({:.3f}, {:.3f}) mm by software motion stage limits "
+                "X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
+                targetPosition.xPosMm,
+                targetPosition.yPosMm,
+                clampedX,
+                clampedY,
+                softwareXMinMm,
+                softwareXMaxMm,
+                softwareYMinMm,
+                softwareYMaxMm);
         }
         targetPosition.xPosMm = clampedX;
         targetPosition.yPosMm = clampedY;
@@ -668,9 +727,13 @@ void setMotionStageLimits(double xMinMm, double xMaxMm, double yMinMm, double yM
     softwareXMaxMm = xMaxMm;
     softwareYMinMm = yMinMm;
     softwareYMaxMm = yMaxMm;
-    spdlog::info("Software motion stage limits set: X=[{:.3f}, {:.3f}], "
-                 "Y=[{:.3f}, {:.3f}] mm",
-                 xMinMm, xMaxMm, yMinMm, yMaxMm);
+    spdlog::info(
+        "Software motion stage limits set: X=[{:.3f}, {:.3f}], "
+        "Y=[{:.3f}, {:.3f}] mm",
+        xMinMm,
+        xMaxMm,
+        yMinMm,
+        yMaxMm);
 }
 
 void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState) {

@@ -68,9 +68,12 @@ void drawMuscleImageROI(cv::Mat &image) {
     // Draw ROI rectangle
     auto [displayX0, displayY0] = cameraSensorToDisplayCoords(roi.x0, roi.y0);
     auto [displayX1, displayY1] = cameraSensorToDisplayCoords(roi.x1, roi.y1);
-    cv::rectangle(image, cv::Point(displayX0, displayY0), cv::Point(displayX1, displayY1),
-                  blueColor,
-                  2); // thickness
+    cv::rectangle(
+        image,
+        cv::Point(displayX0, displayY0),
+        cv::Point(displayX1, displayY1),
+        blueColor,
+        2); // thickness
 }
 
 void onMouse(int event, int x, int y, int flags, void *userdata) {
@@ -80,10 +83,14 @@ void onMouse(int event, int x, int y, int flags, void *userdata) {
 
         // Convert display coordinates to camera sensor coordinates
         auto [sensorX, sensorY] = displayToCameraSensorCoords(x, y);
-        spdlog::info("Muscle camera center point set at (x={}, y={}) on "
-                     "the displayed image, which translates to (x={}, y={}) "
-                     "on the camera sensor.",
-                     x, y, sensorX, sensorY);
+        spdlog::info(
+            "Muscle camera center point set at (x={}, y={}) on "
+            "the displayed image, which translates to (x={}, y={}) "
+            "on the camera sensor.",
+            x,
+            y,
+            sensorX,
+            sensorY);
     }
 }
 
@@ -139,18 +146,27 @@ void alignCamera(std::filesystem::path profileDir) {
     // Set up cameras acquisition threads
     spdlog::info("Starting behavior camera acquisition thread");
     behaviorRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
-    std::thread behaviorImageAcquirerThread(behaviorImageAcquirer, recorderConfig,
-                                            behaviorRecordingState, programState,
-                                            programmedRecordingStop);
+    std::thread behaviorImageAcquirerThread(
+        behaviorImageAcquirer,
+        recorderConfig,
+        behaviorRecordingState,
+        programState,
+        programmedRecordingStop);
     spdlog::info("Behavior camera acquisition thread started");
 
     spdlog::info("Setting up muscle camera acquisition thread");
     muscleRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
     std::thread muscleImageAcquirerThread(
-        muscleImageAcquirer, fullMuscleImageWidth, fullMuscleImageHeight,
+        muscleImageAcquirer,
+        fullMuscleImageWidth,
+        fullMuscleImageHeight,
         0, // xOffset
         0, // yOffset
-        recorderConfig, profileDir, spdlog::get_level(), muscleRecordingState, programState,
+        recorderConfig,
+        profileDir,
+        spdlog::get_level(),
+        muscleRecordingState,
+        programState,
         programmedRecordingStop);
     spdlog::info("Muscle camera acquisition thread started");
 
@@ -165,9 +181,10 @@ void alignCamera(std::filesystem::path profileDir) {
         }
     }
     int muscleNumLinesScanned = muscleRecordingState->muscleCamera->getNumLinesScanned();
-    arduinoCommunication =
-        initializeTriggeringWithDefaultParams(recorderConfig, muscleNumLinesScanned,
-                                              1); // sync ratio
+    arduinoCommunication = initializeTriggeringWithDefaultParams(
+        recorderConfig,
+        muscleNumLinesScanned,
+        1); // sync ratio
 
     // Set up display windows
     setupDisplayWindows(recorderConfig);
@@ -202,15 +219,17 @@ void alignCamera(std::filesystem::path profileDir) {
 
         // Resize images for display
         cv::Size targetSize;
-        targetSize = cv::Size(behaviorImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
-                              behaviorImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
+        targetSize = cv::Size(
+            behaviorImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
+            behaviorImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
         cv::resize(behaviorImage, behaviorImageDisplay, targetSize);
         reorientBehaviorImage(behaviorImageDisplay, behaviorImageDisplay);
 
-        convert16BitTo8Bit(muscleImage, muscleImage, muscleImage16To8BitScale,
-                           muscleImage16To8BitOffset);
-        targetSize = cv::Size(muscleImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
-                              muscleImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
+        convert16BitTo8Bit(
+            muscleImage, muscleImage, muscleImage16To8BitScale, muscleImage16To8BitOffset);
+        targetSize = cv::Size(
+            muscleImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
+            muscleImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);
         cv::resize(muscleImage, muscleImageDisplay, targetSize);
         reorientMuscleImage(muscleImageDisplay, muscleImageDisplay);
         cv::cvtColor(muscleImageDisplay, muscleImageDisplay, cv::COLOR_GRAY2BGR);
@@ -234,8 +253,10 @@ void alignCamera(std::filesystem::path profileDir) {
                 continue;
             }
 
-            spdlog::info("User selected muscle camera center point at (x={}, y={})",
-                         userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+            spdlog::info(
+                "User selected muscle camera center point at (x={}, y={})",
+                userSelectedCenterXDisplay,
+                userSelectedCenterYDisplay);
             MuscleCameraROI roi =
                 getROIFromDisplayCenter(userSelectedCenterXDisplay, userSelectedCenterYDisplay);
             if (roi.x0 <= 0 || roi.y0 <= 0 || roi.x1 > fullMuscleImageWidth ||
@@ -245,8 +266,13 @@ void alignCamera(std::filesystem::path profileDir) {
             }
 
             std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
-            spdlog::info("Saving muscle camera ROI (x0={}, x1={}, y0={}, y1={}) to {}", roi.x0,
-                         roi.x1, roi.y0, roi.y1, roiFilePath.string());
+            spdlog::info(
+                "Saving muscle camera ROI (x0={}, x1={}, y0={}, y1={}) to {}",
+                roi.x0,
+                roi.x1,
+                roi.y0,
+                roi.y1,
+                roiFilePath.string());
             roi.toFile(roiFilePath);
 
             break;

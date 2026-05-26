@@ -19,8 +19,8 @@ LinearMapper2x2to2::LinearMapper2x2to2(const YAML::Node &calibrationNode) {
     biasY = yNode["bias"].as<double>();
 }
 
-std::tuple<double, double> LinearMapper2x2to2::map(double x1, double y1, double x2,
-                                                   double y2) const {
+std::tuple<double, double>
+LinearMapper2x2to2::map(double x1, double y1, double x2, double y2) const {
     return {
         w_X1toX * x1 + w_Y1toX * y1 + w_X2toX * x2 + w_Y2toX * y2 + biasX,
         w_X1toY * x1 + w_Y1toY * y1 + w_X2toY * x2 + w_Y2toY * y2 + biasY,
@@ -107,9 +107,8 @@ CalibrationParams::CalibrationParams(const std::string &calibrationFilePath)
     physicalAndPixelToStage_.biasY = (e * bX - a * bY) / det;
 }
 
-std::tuple<double, double>
-CalibrationParams::stagePosAndPixelPosToPhysicalPos(double stagePosX, double stagePosY,
-                                                    int pixelPosRow, int pixelPosCol) const {
+std::tuple<double, double> CalibrationParams::stagePosAndPixelPosToPhysicalPos(
+    double stagePosX, double stagePosY, int pixelPosRow, int pixelPosCol) const {
     if (!isDefined) {
         throw std::runtime_error("Calibration data not loaded");
     }
@@ -126,9 +125,8 @@ std::tuple<int, int> CalibrationParams::stagePosAndPhysicalPosToPixelPos(
     return {static_cast<int>(std::round(row)), static_cast<int>(std::round(col))};
 }
 
-std::tuple<double, double>
-CalibrationParams::physicalPosAndPixelPosToStagePos(double physicalPosX, double physicalPosY,
-                                                    int pixelPosRow, int pixelPosCol) const {
+std::tuple<double, double> CalibrationParams::physicalPosAndPixelPosToStagePos(
+    double physicalPosX, double physicalPosY, int pixelPosRow, int pixelPosCol) const {
     if (!isDefined) {
         throw std::runtime_error("Calibration data not loaded");
     }

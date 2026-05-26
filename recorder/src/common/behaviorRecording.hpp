@@ -28,15 +28,18 @@ struct BehaviorRecordingState {
 BehaviorCameraROI getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig);
 
 // Function declarations
-void behaviorImageAcquirer(const RecorderConfig &recorderConfig,
-                           std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                           std::shared_ptr<ProgramState> programState,
-                           std::shared_ptr<ProgrammedStop> programmedRecordingStop);
-void behaviorImageSaver(const RecorderConfig &recorderConfig,
-                        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                        std::shared_ptr<SaveDirectory> saveDirectory,
-                        std::shared_ptr<ProgramState> programState);
-void stopBehaviorImageSaver(std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                            std::shared_ptr<ProgramState> programState);
+void behaviorImageAcquirer(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<ProgramState> programState,
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop);
+void behaviorImageSaver(
+    const RecorderConfig &recorderConfig,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<SaveDirectory> saveDirectory,
+    std::shared_ptr<ProgramState> programState);
+void stopBehaviorImageSaver(
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<ProgramState> programState);
 
 #endif // BEHAVIOR_RECORDING_HPP

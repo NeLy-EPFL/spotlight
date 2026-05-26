@@ -29,8 +29,8 @@ TEST(TestRoundingToMultiplesOf64, RoundToMultiplesOf64RoundUp) {
 
 TEST(TestGetCenteredOffsets, GetCenteredOffsets) {
     unsigned int xOffset, yOffset;
-    std::tie(xOffset, yOffset) = getCenteredOffsets(640, 512, BEHAVIOR_CAMERA_FULL_FRAME_WIDTH,
-                                                    BEHAVIOR_CAMERA_FULL_FRAME_HEIGHT);
+    std::tie(xOffset, yOffset) = getCenteredOffsets(
+        640, 512, BEHAVIOR_CAMERA_FULL_FRAME_WIDTH, BEHAVIOR_CAMERA_FULL_FRAME_HEIGHT);
     ASSERT_EQ(xOffset, 960);
     ASSERT_EQ(yOffset, 768);
 }
@@ -43,8 +43,13 @@ TEST(TestBehaviorCamera, ConfigureBehaviorCamera) {
 
     std::atomic<bool> testCameraReadyFlag(false);
 
-    BehaviorCamera behaviorCamera(imageWidth, imageHeight, xOffset, yOffset,
-                                  BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE, testCameraReadyFlag);
+    BehaviorCamera behaviorCamera(
+        imageWidth,
+        imageHeight,
+        xOffset,
+        yOffset,
+        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE,
+        testCameraReadyFlag);
 }
 
 TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
@@ -69,8 +74,13 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
 
     std::atomic<bool> testCameraReadyFlag(false);
 
-    BehaviorCamera behaviorCamera(imageWidth, imageHeight, xOffset, yOffset,
-                                  BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE, testCameraReadyFlag);
+    BehaviorCamera behaviorCamera(
+        imageWidth,
+        imageHeight,
+        xOffset,
+        yOffset,
+        BEHAVIOR_CAMERA_FRAME_GRABBER_TRIGGER_LINE,
+        testCameraReadyFlag);
 
     behaviorCamera.start();
 
@@ -81,8 +91,8 @@ TEST(TestBehaviorCamera, BehaviorCameraAcquisition)
         FrameData frameData = behaviorCamera.waitForOneFrame();
         double blockingEndTimeMicroseconds = getCurrentTimeMicroseconds();
         frameDataVector.push_back(frameData);
-        blockingTimesMicroseconds.push_back(blockingEndTimeMicroseconds -
-                                            blockingStartTimeMicroseconds);
+        blockingTimesMicroseconds.push_back(
+            blockingEndTimeMicroseconds - blockingStartTimeMicroseconds);
     }
     uint64_t acquisitionEndTime = getCurrentTimeMicroseconds();
 

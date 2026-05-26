@@ -39,10 +39,14 @@ bool quitProgram();
 
 class MotionControlWidget : public QWidget {
   public:
-    MotionControlWidget(const RecorderConfig &recorderConfig,
-                        std::shared_ptr<TrackingControlState> trackingControlState,
-                        double minXAbsoluteMm, double maxXAbsoluteMm, double minYAbsoluteMm,
-                        double maxYAbsoluteMm, QWidget *parent = nullptr);
+    MotionControlWidget(
+        const RecorderConfig &recorderConfig,
+        std::shared_ptr<TrackingControlState> trackingControlState,
+        double minXAbsoluteMm,
+        double maxXAbsoluteMm,
+        double minYAbsoluteMm,
+        double maxYAbsoluteMm,
+        QWidget *parent = nullptr);
     ~MotionControlWidget();
 
   protected:
@@ -68,19 +72,24 @@ class MainGUIWindow : public QWidget {
     Q_OBJECT
 
   public:
-    explicit MainGUIWindow(const RecorderConfig &recorderConfig,
-                           std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-                           std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-                           std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-                           std::shared_ptr<TrackingControlState> trackingControlState,
-                           CalibrationParams &behaviorCamCalibrationParams,
-                           CalibrationParams &muscleCamCalibrationParams,
-                           std::shared_ptr<SaveDirectory> saveDirectory,
-                           std::shared_ptr<ArduinoCommunication> arduinoCommunication,
-                           std::shared_ptr<ProgramState> programState,
-                           std::shared_ptr<ProgrammedStop> programmedRecordingStop,
-                           ActiveAreaMask &activeAreaMask, double stageMinXMm, double stageMaxXMm,
-                           double stageMinYMm, double stageMaxYMm, QWidget *parent = nullptr);
+    explicit MainGUIWindow(
+        const RecorderConfig &recorderConfig,
+        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+        std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+        std::shared_ptr<MuscleRecordingState> muscleRecordingState,
+        std::shared_ptr<TrackingControlState> trackingControlState,
+        CalibrationParams &behaviorCamCalibrationParams,
+        CalibrationParams &muscleCamCalibrationParams,
+        std::shared_ptr<SaveDirectory> saveDirectory,
+        std::shared_ptr<ArduinoCommunication> arduinoCommunication,
+        std::shared_ptr<ProgramState> programState,
+        std::shared_ptr<ProgrammedStop> programmedRecordingStop,
+        ActiveAreaMask &activeAreaMask,
+        double stageMinXMm,
+        double stageMaxXMm,
+        double stageMinYMm,
+        double stageMaxYMm,
+        QWidget *parent = nullptr);
 
   private slots:
     void startRecording();
@@ -136,10 +145,11 @@ class MainGUIWindow : public QWidget {
 class DualRecordingConfigWindow : public QDialog {
     Q_OBJECT
   public:
-    explicit DualRecordingConfigWindow(const RecorderConfig &recorderConfig,
-                                       std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-                                       const MuscleCameraROI &muscleCameraROI,
-                                       QWidget *parent = nullptr);
+    explicit DualRecordingConfigWindow(
+        const RecorderConfig &recorderConfig,
+        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
+        const MuscleCameraROI &muscleCameraROI,
+        QWidget *parent = nullptr);
     ~DualRecordingConfigWindow();
 
   private slots:
@@ -162,12 +172,15 @@ class DualRecordingConfigWindow : public QDialog {
 };
 
 // Helpers
-cv::Mat addCornerMarker(cv::Mat image, double arenaSizeXMm, double arenaSizeYMm,
-                        MotionStagePosition stagePosition,
-                        CalibrationParams &behaviorCamCalibrationParams);
+cv::Mat addCornerMarker(
+    cv::Mat image,
+    double arenaSizeXMm,
+    double arenaSizeYMm,
+    MotionStagePosition stagePosition,
+    CalibrationParams &behaviorCamCalibrationParams);
 
-int parseProtocolString(const std::string &protocolTextFieldString,
-                        std::vector<ProtocolStep> &steps);
+int parseProtocolString(
+    const std::string &protocolTextFieldString, std::vector<ProtocolStep> &steps);
 
 std::string incrementDirectoryName(const std::string &path);
 #endif // GUI_HPP
