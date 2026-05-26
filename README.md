@@ -1,9 +1,5 @@
 > [!NOTE]
-> **Index of Spotlight-related repositories:**
-> 
-> - [spotlight-hardware](https://github.com/NeLy-EPFL/spotlight-hardware): CAD files for the hardware design (optics, mechanics, electronics)
-> - [spotlight-control](https://github.com/NeLy-EPFL/spotlight-control): recording software written in C++, and Arduino code for the controller
-> - [spotlight-tools](https://github.com/NeLy-EPFL/spotlight-tools): offline tools - arena registration, postprocessing, visualisation
+> **Index of Spotlight-related repositories:** see [go.epfl.ch/spotlight-poseforge](http://go.epfl.ch/spotlight-poseforge#code).
 
 # spotlight-control
 
