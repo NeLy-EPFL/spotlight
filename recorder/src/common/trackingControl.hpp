@@ -60,6 +60,10 @@ void motionStagePositionLogger(
 MotionStagePosition getCurrentMotionStagePosition();
 void setTargetMotionStagePosition(MotionStagePosition targetPosition,
                                   float velocity);
+void setMotionStageLimits(double xMinMm,
+                          double xMaxMm,
+                          double yMinMm,
+                          double yMaxMm);
 void waitUntilMotionStageIdleSync();
 void waitUntilMotionStageIdleAsync();
 bool checkIfMotionStageIdle();
@@ -73,6 +77,5 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat &activeAreaMaskCurrView,
     CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig);
-
 
 #endif // TRACKING_CONTROL_HPP

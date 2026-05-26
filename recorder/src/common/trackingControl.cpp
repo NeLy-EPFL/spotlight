@@ -44,6 +44,11 @@ namespace
     }
 
     int imageBinarizeThreshold;
+
+    double softwareXMinMm = -std::numeric_limits<double>::infinity();
+    double softwareXMaxMm = std::numeric_limits<double>::infinity();
+    double softwareYMinMm = -std::numeric_limits<double>::infinity();
+    double softwareYMaxMm = std::numeric_limits<double>::infinity();
 }
 
 void motionControlRequestHandler(
@@ -681,6 +686,28 @@ MotionStagePosition getCurrentMotionStagePosition()
 void setTargetMotionStagePosition(MotionStagePosition targetPosition,
                                   float velocity)
 {
+    if (targetPosition.positionType == ABSOLUTE)
+    {
+        double clampedX = std::clamp(
+            targetPosition.xPosMm, softwareXMinMm, softwareXMaxMm);
+        double clampedY = std::clamp(
+            targetPosition.yPosMm, softwareYMinMm, softwareYMaxMm);
+        if (clampedX != targetPosition.xPosMm ||
+            clampedY != targetPosition.yPosMm)
+        {
+            spdlog::warn(
+                "Target stage position ({:.3f}, {:.3f}) mm clamped to "
+                "({:.3f}, {:.3f}) mm by software motion stage limits "
+                "X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
+                targetPosition.xPosMm, targetPosition.yPosMm,
+                clampedX, clampedY,
+                softwareXMinMm, softwareXMaxMm,
+                softwareYMinMm, softwareYMaxMm);
+        }
+        targetPosition.xPosMm = clampedX;
+        targetPosition.yPosMm = clampedY;
+    }
+
     size_t myThreadIdHash = getMyThreadIdHash();
 
     // Push request
@@ -821,6 +848,19 @@ void startHomingMotionStage()
         spdlog::critical("Failed to start homing motion stage.");
         throw std::runtime_error("Failed to start homing motion stage.");
     }
+}
+
+void setMotionStageLimits(double xMinMm, double xMaxMm,
+                         double yMinMm, double yMaxMm)
+{
+    softwareXMinMm = xMinMm;
+    softwareXMaxMm = xMaxMm;
+    softwareYMinMm = yMinMm;
+    softwareYMaxMm = yMaxMm;
+    spdlog::info(
+        "Software motion stage limits set: X=[{:.3f}, {:.3f}], "
+        "Y=[{:.3f}, {:.3f}] mm",
+        xMinMm, xMaxMm, yMinMm, yMaxMm);
 }
 
 void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState)

@@ -235,6 +235,29 @@ int runSpotlightMain(int argc, char **argv)
         arenaSizeXMm, arenaSizeYMm,
         stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm);
 
+    // Clip computed limits to [0, physical_range_limit_mm] and register them
+    // as software motion stage limits so setTargetMotionStagePosition() clamps.
+    double physicalRangeLimitMm = recorderConfig.getParameter<double>(
+        "motion_control", "physical_range_limit_mm");
+    auto clipToPhysicalRange =
+        [physicalRangeLimitMm](double val, const char *name) -> double
+    {
+        double clipped = std::clamp(val, 0.0, physicalRangeLimitMm);
+        if (clipped != val)
+        {
+            spdlog::warn(
+                "Software stage limit {} ({:.3f} mm) falls outside physical "
+                "range [0, {:.3f}] mm; clamping to {:.3f} mm.",
+                name, val, physicalRangeLimitMm, clipped);
+        }
+        return clipped;
+    };
+    stageMinXMm = clipToPhysicalRange(stageMinXMm, "stageMinX");
+    stageMaxXMm = clipToPhysicalRange(stageMaxXMm, "stageMaxX");
+    stageMinYMm = clipToPhysicalRange(stageMinYMm, "stageMinY");
+    stageMaxYMm = clipToPhysicalRange(stageMaxYMm, "stageMaxY");
+    setMotionStageLimits(stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm);
+
     // Initialize behavior and muscle imaging states
     behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
     behaviorRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();

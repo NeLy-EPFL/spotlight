@@ -46,6 +46,7 @@ motion_control:
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
   apriltag_mapping_settling_frames: 5
+  physical_range_limit_mm: 151.5
 
 tracking:
   update_frequency_hz: 30
