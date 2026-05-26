@@ -484,15 +484,15 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") {
+            // clang-format off
             std::cout
                 << "Usage: " << argv[0]
                 << " -p PROFILE_DIR -a ARENA_DIR [OPTIONS]\n"
                 << "  -p, --profile-dir PATH  Profile directory\n"
-                << "  -a, --arena PATH        Arena directory (containing "
-                   "metadata.yaml)\n"
+                << "  -a, --arena PATH        Arena directory (containing metadata.yaml)\n"
                 << "  -v, --verbose           Debug-level logging\n"
-                << "  --verbosity LEVEL       "
-                   "trace/debug/info/warn/error/critical/off\n";
+                << "  --verbosity LEVEL       trace/debug/info/warn/error/critical/off\n";
+            // clang-format on
             return 0;
         } else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc)
             profileDirStr = argv[++i];

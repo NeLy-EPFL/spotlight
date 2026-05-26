@@ -2,29 +2,21 @@
 
 namespace PCOCameraServer {
 void printHelp(const char *programName) {
+    // clang-format off
     std::cout
         << "Usage: " << programName << " [OPTIONS]\n"
         << "Options:\n"
         << "  -h,  --help              Display this help message\n"
-        << "  -p,  --profile-dir PATH  Path to profile directory (default: "
-           "~/Spotlight/default/)\n"
-        << "  -x0, --x-min X_MIN       x_min coordinate of the region of "
-           "interest (default: 1)\n"
-        << "  -x1, --x-max X_MAX       x_max coordinate of the region of "
-           "interest (default: 1)\n"
-        << "  -y0, --y-min Y_MIN       y_min coordinate of the region of "
-           "interest (default: 2048)\n"
-        << "  -y1, --y-max Y_MAX       y_max coordinate of the region of "
-           "interest (default: 2048)\n"
-        << "  -d,  --delay DELAY       Delay of shutter-open after trigger in "
-           "microseconds "
-           "(default: 0)\n"
+        << "  -p,  --profile-dir PATH  Path to profile directory (default: ~/Spotlight/default/)\n"
+        << "  -x0, --x-min X_MIN       x_min coordinate of the region of interest (default: 1)\n"
+        << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
+        << "  -y0, --y-min Y_MIN       y_min coordinate of the region of interest (default: 2048)\n"
+        << "  -y1, --y-max Y_MAX       y_max coordinate of the region of interest (default: 2048)\n"
+        << "  -d,  --delay DELAY       Delay of shutter-open after trigger in microseconds (default: 0)\n"
         << "  -v,  --verbose           Enable verbose output (debug level)\n"
-        << "  --verbosity LEVEL        Set verbosity level (trace, debug, "
-           "info, "
-           "warn, error, "
-           "critical, off)\n"
+        << "  --verbosity LEVEL        Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
         << std::endl;
+    // clang-format on
 }
 
 spdlog::level::level_enum parseLogLevel(const std::string &level) {
