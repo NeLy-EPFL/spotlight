@@ -31,54 +31,44 @@ void arduinoCommThreadFunc(
     while (true) {
         std::string message;
         {
-            std::string message;
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                cv.wait(lock, [&] {
-                    return !arduinoMessagesQueue.empty() || stopCommunication;
-                });
-                if (stopCommunication) {
-                    break;
-                }
-                message = arduinoMessagesQueue.front();
-                arduinoMessagesQueue.pop();
-            }
-
-            // Try sending the message if fails twice in a row reconnect to the
-            // serial port
-            int consecutiveFailedWrites = 0;
-            int maxConsecutiveFailedWrites = 2;
-            while (true) {
-                serialPort.write(message.c_str());
-                if (!serialPort.waitForBytesWritten(1000)) {
-                    spdlog::error(
-                        "Failed to write message: {} to serial port", message);
-                    consecutiveFailedWrites++;
-                    if (consecutiveFailedWrites >= maxConsecutiveFailedWrites) {
-                        spdlog::error("Max consecutive failed writes reached. "
-                                      "Reconnecting...");
-                        serialPort.close();
-                        if (!serialPort.open(QIODevice::ReadWrite)) {
-                            spdlog::error(
-                                "Failed to reopen serial port. Stopping "
-                                "Arduino communication thread.");
-                            break;
-                        }
-                        consecutiveFailedWrites = 0;
-                        spdlog::info(
-                            "Successfully reconnected to serial port.");
-                    }
-                    continue;
-                }
-                consecutiveFailedWrites = 0;
+            std::unique_lock<std::mutex> lock(mutex);
+            cv.wait(lock, [&] {
+                return !arduinoMessagesQueue.empty() || stopCommunication;
+            });
+            if (stopCommunication) {
                 break;
             }
             message = arduinoMessagesQueue.front();
             arduinoMessagesQueue.pop();
         }
-        serialPort.write(message.c_str());
-        if (!serialPort.waitForBytesWritten(1000)) {
-            spdlog::error("Failed to write message to serial port");
+
+        // Try sending the message if fails twice in a row reconnect to the
+        // serial port
+        int consecutiveFailedWrites = 0;
+        int maxConsecutiveFailedWrites = 2;
+        while (true) {
+            serialPort.write(message.c_str());
+            if (!serialPort.waitForBytesWritten(1000)) {
+                spdlog::error(
+                    "Failed to write message: {} to serial port", message);
+                consecutiveFailedWrites++;
+                if (consecutiveFailedWrites >= maxConsecutiveFailedWrites) {
+                    spdlog::error("Max consecutive failed writes reached. "
+                                  "Reconnecting...");
+                    serialPort.close();
+                    if (!serialPort.open(QIODevice::ReadWrite)) {
+                        spdlog::error(
+                            "Failed to reopen serial port. Stopping Arduino "
+                            "communication thread.");
+                        break;
+                    }
+                    consecutiveFailedWrites = 0;
+                    spdlog::info("Successfully reconnected to serial port.");
+                }
+                continue;
+            }
+            consecutiveFailedWrites = 0;
+            break;
         }
 
         // Check if there's any data to read from the Arduino
