@@ -4,18 +4,8 @@
 #include <vector>
 
 #include "experimentProtocol.hpp"
-
-// Pin assignments
-const int BEHAVIOR_CAM_PIN = 2;
-const int IR_LIGHT_PIN = 3;
-const int MUSCLE_CAM_PIN = 4;
-const int BLUE_LIGHT_PIN = 5;
-const int OPTO_CH2_PIN = 6;
-const int OPTO_CH3_PIN = 7;
-const int GREEN_LIGHT_PIN = 8;
-const int STATUS_LED_RED_PIN = 10;
-const int STATUS_LED_GREEN_PIN = 11;
-const int STATUS_LED_BLUE_PIN = 12;
+#include "pinAssignment.hpp"
+#include "util.hpp"
 
 const int MAX_PROGRAM_STEPS = 1024;
 const int INCOMING_MESSAGE_BUFFER_SIZE = 16384;
@@ -53,16 +43,9 @@ volatile bool muscleCamTriggerState = false;
 char incomingMessageBuffer[INCOMING_MESSAGE_BUFFER_SIZE];
 int incomingMessageBufferIdx = 0;
 
-enum Color {
-    RED,
-    GREEN,
-    BLUE,
-    MAGENTA,
-    CYAN,
-    YELLOW,
-    WHITE,
-    OFF,
-};
+// ---------------------------------------------------------------------------
+// Low-level trigger helpers
+// ---------------------------------------------------------------------------
 
 void behaviorTriggerOn() {
     digitalWrite(BEHAVIOR_CAM_PIN, HIGH);
@@ -89,6 +72,196 @@ void muscleCamTriggerOn() {
 void muscleCamTriggerOff() {
     digitalWrite(MUSCLE_CAM_PIN, LOW);
 }
+
+// ---------------------------------------------------------------------------
+// Command handlers (one per command)
+// Each receives the argument portion of the message (everything after the
+// command prefix and its trailing space).
+// ---------------------------------------------------------------------------
+
+void handleSetBehaviorExposureTime(const char *arg) {
+    unsigned int expTime = atoi(arg);
+    if (expTime > 0) {
+        behaviorCamExposureTime = expTime;
+        Serial.print("Behavior camera exposure time set to: ");
+        Serial.println(behaviorCamExposureTime);
+        Serial.flush();
+        // litStatusLED(GREEN);
+    } else {
+        Serial.println(
+            "Invalid exposure time for behavior camera: " + String(expTime));
+        Serial.flush();
+        litStatusLED(RED);
+    }
+}
+
+void handleSetMuscleLightOnTime(const char *arg) {
+    unsigned int lightOnTime = atoi(arg);
+    if (lightOnTime > 0) {
+        muscleCamExposureTime = lightOnTime;
+        Serial.print("Muscle camera exposure time set to: ");
+        Serial.println(muscleCamExposureTime);
+        Serial.flush();
+        // litStatusLED(GREEN);
+    } else {
+        Serial.print("Invalid exposure time for muscle camera: ");
+        Serial.println(lightOnTime);
+        Serial.flush();
+        litStatusLED(RED);
+    }
+}
+
+void handleSetBehaviorFps(const char *arg) {
+    unsigned int fps = atoi(arg);
+    if (fps == 0) {
+        behaviorCamPeriod = UINT_MAX;
+        litStatusLED(WHITE);
+    } else {
+        behaviorCamPeriod = 1000000 / fps;
+    }
+    Serial.print("Behavior camera FPS set to: ");
+    Serial.println(fps);
+    Serial.flush();
+    litStatusLED(GREEN);
+}
+
+void handleSetSyncRatio(const char *arg) {
+    unsigned int ratio = atoi(arg);
+    if (ratio > 0) {
+        syncRatioK = ratio;
+        Serial.print("Sync ratio set to: ");
+        Serial.println(syncRatioK);
+        Serial.flush();
+        litStatusLED(GREEN);
+    } else {
+        Serial.print("Invalid sync ratio: ");
+        Serial.println(ratio);
+        Serial.flush();
+        litStatusLED(RED);
+    }
+}
+
+void handleSetMuscleCamTriggerDelay(const char *arg) {
+    unsigned int delayRequested = atoi(arg);
+    muscleCamTriggerDelayUs = delayRequested;
+    Serial.print("Muscle cam trigger delay set to: ");
+    Serial.println(muscleCamTriggerDelayUs);
+    Serial.flush();
+    litStatusLED(GREEN);
+}
+
+void handleStartRecording(const char *arg) {
+    int numStepsParsed = parseProtocolSequence(arg, protocolSteps);
+    if (numStepsParsed == 0) {
+        Serial.println("Received empty protocol; will record openly.");
+        Serial.flush();
+        litStatusLED(BLUE);
+    } else if (numStepsParsed > 0) {
+        Serial.print("Protocol sequence parsed successfully with ");
+        Serial.print(numStepsParsed);
+        Serial.println(" steps.");
+        Serial.flush();
+        litStatusLED(MAGENTA);
+    } else {
+        Serial.println("Failed to parse protocol sequence.");
+        Serial.flush();
+        litStatusLED(RED);
+        return;
+    }
+    if (numStepsParsed > MAX_PROGRAM_STEPS) {
+        Serial.print("Protocol sequence too long: ");
+        Serial.print(numStepsParsed);
+        Serial.print(" steps, max is ");
+        Serial.println(MAX_PROGRAM_STEPS);
+        Serial.flush();
+        litStatusLED(RED);
+        return;
+    }
+
+    behaviorTriggerCounter = 0;
+    lastBehaviorTriggerTime = 0;
+    lastMuscleLightTriggerTime = 0;
+    lastMuscleCamTriggerTime = 0;
+    behaviorTriggerState = false;
+    muscleLightTriggerState = false;
+    muscleCamTriggerState = false;
+    Serial.println("Pausing to let frame buffer clear...");
+    Serial.flush();
+    behaviorTriggerOff();
+    muscleLightTriggerOff();
+    muscleCamTriggerOff();
+    delayMicroseconds(FRAME_BUFFER_FLUSH_TIME_US);
+    Serial.println("Recording started.");
+    Serial.flush();
+}
+
+void handleStopRecording() {
+    protocolSteps.clear();
+    behaviorTriggerCounter = 0;
+    Serial.println("Recording stopped.");
+    Serial.flush();
+}
+
+// ---------------------------------------------------------------------------
+// Command dispatch
+// ---------------------------------------------------------------------------
+
+void parseIncomingCommand(const char *message) {
+    if (strncmp(
+            message,
+            CMDSTR_SET_BEHAVIOR_EXPOSURE_TIME,
+            CMDLEN_SET_BEHAVIOR_EXPOSURE_TIME) == 0)
+        handleSetBehaviorExposureTime(
+            message + CMDLEN_SET_BEHAVIOR_EXPOSURE_TIME + 1);
+    else if (
+        strncmp(
+            message,
+            CMDSTR_SET_MUSCLE_LIGHT_ON_TIME,
+            CMDLEN_SET_MUSCLE_LIGHT_ON_TIME) == 0)
+        handleSetMuscleLightOnTime(
+            message + CMDLEN_SET_MUSCLE_LIGHT_ON_TIME + 1);
+    else if (
+        strncmp(message, CMDSTR_SET_BEHAVIOR_FPS, CMDLEN_SET_BEHAVIOR_FPS) == 0)
+        handleSetBehaviorFps(message + CMDLEN_SET_BEHAVIOR_FPS + 1);
+    else if (
+        strncmp(message, CMDSTR_SET_SYNC_RATIO, CMDLEN_SET_SYNC_RATIO) == 0)
+        handleSetSyncRatio(message + CMDLEN_SET_SYNC_RATIO + 1);
+    else if (
+        strncmp(
+            message,
+            CMDSTR_SET_MUSCLE_CAM_TRIGGER_DELAY,
+            CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY) == 0)
+        handleSetMuscleCamTriggerDelay(
+            message + CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY + 1);
+    else if (
+        strncmp(message, CMDSTR_START_RECORDING, CMDLEN_START_RECORDING) == 0)
+        handleStartRecording(message + CMDLEN_START_RECORDING + 1);
+    else if (
+        strncmp(message, CMDSTR_STOP_RECORDING, CMDLEN_STOP_RECORDING) == 0)
+        handleStopRecording();
+    else {
+        Serial.print("Arduino received the following command: '");
+        Serial.print(message);
+        Serial.println("' by serial comm.");
+        Serial.flush();
+        litStatusLED(RED);
+    }
+}
+
+void filterAndProcessIncomingMessage(const char *message) {
+    if (message[0] == '>') {
+        parseIncomingCommand(message);
+    } else {
+        Serial.print("Arduino received the following message: '");
+        Serial.print(message);
+        Serial.println("' by serial comm.");
+        Serial.flush();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Arduino entry points
+// ---------------------------------------------------------------------------
 
 void setup() {
     // Initialize serial communication
@@ -123,17 +296,12 @@ void setup() {
 void loop() {
     while (Serial.available() > 0) {
         char c = Serial.read();
-
-        // Handle end of command (newline)
-        if (c == '\n') {
-            incomingMessageBuffer[incomingMessageBufferIdx] =
-                '\0'; // Null-terminate the string
+        if (updateCommandBuffer(
+                c,
+                incomingMessageBuffer,
+                incomingMessageBufferIdx,
+                INCOMING_MESSAGE_BUFFER_SIZE)) {
             filterAndProcessIncomingMessage(incomingMessageBuffer);
-            incomingMessageBufferIdx = 0; // Reset buffer index
-        }
-        // Add character to buffer if there's space
-        else if (incomingMessageBufferIdx < INCOMING_MESSAGE_BUFFER_SIZE - 1) {
-            incomingMessageBuffer[incomingMessageBufferIdx++] = c;
         }
     }
 
@@ -244,214 +412,5 @@ void loop() {
         } else {
             break;
         }
-    }
-}
-
-void filterAndProcessIncomingMessage(const char *message) {
-    if (message[0] == '>') {
-        parseIncomingCommand(message);
-    } else {
-        Serial.print("Arduino received the following message: '");
-        Serial.print(message);
-        Serial.println("' by serial comm.");
-        Serial.flush();
-    }
-}
-
-void parseIncomingCommand(const char *message) {
-    if (strncmp(
-            message,
-            CMDSTR_SET_BEHAVIOR_EXPOSURE_TIME,
-            CMDLEN_SET_BEHAVIOR_EXPOSURE_TIME) == 0) {
-        // Handle command: SET_BEHAVIOR_EXPOSURE_TIME
-        const char *expTimeStart =
-            message + CMDLEN_SET_BEHAVIOR_EXPOSURE_TIME + 1;
-        unsigned int expTime = atoi(expTimeStart);
-        if (expTime > 0) {
-            behaviorCamExposureTime = expTime;
-            Serial.print("Behavior camera exposure time set to: ");
-            Serial.println(behaviorCamExposureTime);
-            Serial.flush();
-            // litStatusLED(GREEN);
-        } else {
-            Serial.println(
-                "Invalid exposure time for behavior camera: " +
-                String(expTime));
-            Serial.flush();
-            litStatusLED(RED);
-        }
-    } else if (
-        strncmp(
-            message,
-            CMDSTR_SET_MUSCLE_LIGHT_ON_TIME,
-            CMDLEN_SET_MUSCLE_LIGHT_ON_TIME) == 0) {
-        // Handle command: SET_MUSCLE_LIGHT_ON_TIME
-        const char *lightOnTimeStart =
-            message + CMDLEN_SET_MUSCLE_LIGHT_ON_TIME + 1;
-        unsigned int lightOnTime = atoi(lightOnTimeStart);
-        if (lightOnTime > 0) {
-            muscleCamExposureTime = lightOnTime;
-            Serial.print("Muscle camera exposure time set to: ");
-            Serial.println(muscleCamExposureTime);
-            Serial.flush();
-            // litStatusLED(GREEN);
-        } else {
-            Serial.print("Invalid exposure time for muscle camera: ");
-            Serial.println(lightOnTime);
-            Serial.flush();
-            litStatusLED(RED);
-        }
-    } else if (
-        strncmp(message, CMDSTR_SET_BEHAVIOR_FPS, CMDLEN_SET_BEHAVIOR_FPS) ==
-        0) {
-        // Handle command: SET_BEHAVIOR_FPS
-        const char *fpsStart = message + CMDLEN_SET_BEHAVIOR_FPS + 1;
-        unsigned int fps = atoi(fpsStart);
-        if (fps == 0) {
-            behaviorCamPeriod = UINT_MAX;
-            litStatusLED(WHITE);
-        } else {
-            behaviorCamPeriod = 1000000 / fps;
-        }
-        Serial.print("Behavior camera FPS set to: ");
-        Serial.println(fps);
-        Serial.flush();
-        litStatusLED(GREEN);
-    } else if (
-        strncmp(message, CMDSTR_SET_SYNC_RATIO, CMDLEN_SET_SYNC_RATIO) == 0) {
-        // Handle command: SET_SYNC_RATIO
-        const char *ratioStart = message + CMDLEN_SET_SYNC_RATIO + 1;
-        unsigned int ratio = atoi(ratioStart);
-        if (ratio > 0) {
-            syncRatioK = ratio;
-            Serial.print("Sync ratio set to: ");
-            Serial.println(syncRatioK);
-            Serial.flush();
-            litStatusLED(GREEN);
-        } else {
-            Serial.print("Invalid sync ratio: ");
-            Serial.println(ratio);
-            Serial.flush();
-            litStatusLED(RED);
-        }
-    } else if (
-        strncmp(
-            message,
-            CMDSTR_SET_MUSCLE_CAM_TRIGGER_DELAY,
-            CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY) == 0) {
-        // Handle command: SET_MUSCLE_CAM_TRIGGER_DELAY
-        const char *delayStart =
-            message + CMDLEN_SET_MUSCLE_CAM_TRIGGER_DELAY + 1;
-        unsigned int muscleCamTriggerDelayUsRequested = atoi(delayStart);
-        muscleCamTriggerDelayUs = muscleCamTriggerDelayUsRequested;
-        Serial.print("Muscle cam trigger delay set to: ");
-        Serial.println(muscleCamTriggerDelayUs);
-        Serial.flush();
-        litStatusLED(GREEN);
-    } else if (
-        strncmp(message, CMDSTR_START_RECORDING, CMDLEN_START_RECORDING) == 0) {
-        // Handle command: START_RECORDING
-        const char *protocolStart = message + CMDLEN_START_RECORDING + 1;
-        int numStepsParsed =
-            parseProtocolSequence(protocolStart, protocolSteps);
-        if (numStepsParsed == 0) {
-            Serial.println("Received empty protocol; will record openly.");
-            Serial.flush();
-            litStatusLED(BLUE);
-        } else if (numStepsParsed > 0) {
-            Serial.print("Protocol sequence parsed successfully with ");
-            Serial.print(numStepsParsed);
-            Serial.println(" steps.");
-            Serial.flush();
-            litStatusLED(MAGENTA);
-        } else {
-            Serial.println("Failed to parse protocol sequence.");
-            Serial.flush();
-            litStatusLED(RED);
-            return;
-        }
-        if (numStepsParsed > MAX_PROGRAM_STEPS) {
-            Serial.print("Protocol sequence too long: ");
-            Serial.print(numStepsParsed);
-            Serial.print(" steps, max is ");
-            Serial.println(MAX_PROGRAM_STEPS);
-            Serial.flush();
-            litStatusLED(RED);
-            return;
-        }
-
-        behaviorTriggerCounter = 0;
-        lastBehaviorTriggerTime = 0;
-        lastMuscleLightTriggerTime = 0;
-        lastMuscleCamTriggerTime = 0;
-        behaviorTriggerState = false;
-        muscleLightTriggerState = false;
-        muscleCamTriggerState = false;
-        Serial.println("Pausing to let frame buffer clear...");
-        Serial.flush();
-        behaviorTriggerOff();
-        muscleLightTriggerOff();
-        muscleCamTriggerOff();
-        delayMicroseconds(FRAME_BUFFER_FLUSH_TIME_US);
-        Serial.println("Recording started.");
-        Serial.flush();
-    } else if (
-        strncmp(message, CMDSTR_STOP_RECORDING, CMDLEN_STOP_RECORDING) == 0) {
-        // Handle command: STOP_RECORDING
-        protocolSteps.clear();
-        behaviorTriggerCounter = 0;
-        Serial.println("Recording stopped.");
-        Serial.flush();
-    } else {
-        Serial.print("Arduino received the following command: '");
-        Serial.print(message);
-        Serial.println("' by serial comm.");
-        Serial.flush();
-        litStatusLED(RED);
-    }
-}
-
-void litStatusLED(Color color) {
-    switch (color) {
-    case RED:
-        analogWrite(STATUS_LED_RED_PIN, 255);
-        analogWrite(STATUS_LED_GREEN_PIN, 0);
-        analogWrite(STATUS_LED_BLUE_PIN, 0);
-        break;
-    case GREEN:
-        analogWrite(STATUS_LED_RED_PIN, 0);
-        analogWrite(STATUS_LED_GREEN_PIN, 255);
-        analogWrite(STATUS_LED_BLUE_PIN, 0);
-        break;
-    case BLUE:
-        analogWrite(STATUS_LED_RED_PIN, 0);
-        analogWrite(STATUS_LED_GREEN_PIN, 0);
-        analogWrite(STATUS_LED_BLUE_PIN, 255);
-        break;
-    case MAGENTA:
-        analogWrite(STATUS_LED_RED_PIN, 128);
-        analogWrite(STATUS_LED_GREEN_PIN, 0);
-        analogWrite(STATUS_LED_BLUE_PIN, 128);
-        break;
-    case CYAN:
-        analogWrite(STATUS_LED_RED_PIN, 0);
-        analogWrite(STATUS_LED_GREEN_PIN, 128);
-        analogWrite(STATUS_LED_BLUE_PIN, 128);
-        break;
-    case YELLOW:
-        analogWrite(STATUS_LED_RED_PIN, 128);
-        analogWrite(STATUS_LED_GREEN_PIN, 128);
-        analogWrite(STATUS_LED_BLUE_PIN, 0);
-        break;
-    case WHITE:
-        analogWrite(STATUS_LED_RED_PIN, 85);
-        analogWrite(STATUS_LED_GREEN_PIN, 85);
-        analogWrite(STATUS_LED_BLUE_PIN, 85);
-        break;
-    case OFF:
-        analogWrite(STATUS_LED_RED_PIN, 0);
-        analogWrite(STATUS_LED_GREEN_PIN, 0);
-        analogWrite(STATUS_LED_BLUE_PIN, 0);
-        break;
     }
 }
