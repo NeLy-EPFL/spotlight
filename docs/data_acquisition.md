@@ -8,9 +8,9 @@ The cameras acquire frames in the following manner:
 
 There are two data acquisition modes, dictated by triggering modalities of the muscle camera:
 
-## Frame-by-frame mode
+## Triggered mode
 
-**Frame-by-frame mode:** The recorder instructs the trigger microcontroller to send trigger signals to the behavior camera's frame grabber and the muscle camera at specified frame rates. The microcontroller does so accordingly.
+**Triggered mode:** The recorder instructs the trigger microcontroller to send trigger signals to the behavior camera's frame grabber and the muscle camera at specified frame rates. The microcontroller does so accordingly.
 
 The disadvantage of this mode is that the muscle camera ignores any trigger signal marking the start of a new frame cycle _unless_ the previous frame cycle is completed (i.e., the last line of pixels has completed exposure and subsequent data readout). By this time, the first line has already been idle for a period equal to `rollingTime`. This limits the frame rate to `1 / (2 * rollingTime + effectiveExposureTime + readoutTime)`.
 
