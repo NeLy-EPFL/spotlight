@@ -1,4 +1,4 @@
-#include "trigger_firmware/display.h"
+#include "trigger_firmware/status_display.h"
 
 #include <cstdio>
 #include <cstring>
