@@ -30,9 +30,9 @@ void reportCheck(bool ok, const char *expr, const char *file, int line) {
 
 namespace {
 
-/** A SetParams instance with values that satisfy every field constraint. */
-SetParams validParams() {
-    SetParams p;
+/** A TriggerParams instance with values that satisfy every field constraint. */
+TriggerParams validParams() {
+    TriggerParams p;
     p.pcoCamContinuous = true;
     p.behExpTime = 1000;
     p.muscEffExpTime = 2000;
@@ -49,24 +49,29 @@ SetParams validParams() {
 
 void testOperationStepValidity() {
     // ON/OFF act on channel 2 or 3.
-    CHECK(OperationStep(30, 2, OpType::ON).isValid);
-    CHECK(OperationStep(0, 3, OpType::OFF).isValid);
-    CHECK(!OperationStep(30, 1, OpType::ON).isValid);   // channel 1 reserved
-    CHECK(!OperationStep(30, 4, OpType::ON).isValid);   // out of range
-    CHECK(!OperationStep(30, -1, OpType::OFF).isValid); // -1 only for STOP
+    CHECK(OperationStep(30, OptoChannel::CH2, OpType::ON).isValid);
+    CHECK(OperationStep(0, OptoChannel::CH3, OpType::OFF).isValid);
+    CHECK(!OperationStep(30, static_cast<OptoChannel>(1), OpType::ON)
+               .isValid); // channel 1 reserved
+    CHECK(!OperationStep(30, static_cast<OptoChannel>(4), OpType::ON)
+               .isValid); // out of range
+    CHECK(!OperationStep(30, OptoChannel::ALL, OpType::OFF)
+               .isValid); // ALL only for STOP
 
-    // STOP is global: channel -1 and frameIdx a multiple of 3.
-    CHECK(OperationStep(90, -1, OpType::STOP).isValid);
-    CHECK(OperationStep(0, -1, OpType::STOP).isValid);
-    CHECK(!OperationStep(91, -1, OpType::STOP).isValid); // not a multiple of 3
-    CHECK(!OperationStep(90, 2, OpType::STOP).isValid);  // channel must be -1
+    // STOP is global: channel ALL and frameIdx a multiple of 3.
+    CHECK(OperationStep(90, OptoChannel::ALL, OpType::STOP).isValid);
+    CHECK(OperationStep(0, OptoChannel::ALL, OpType::STOP).isValid);
+    CHECK(!OperationStep(91, OptoChannel::ALL, OpType::STOP)
+               .isValid); // not a multiple of 3
+    CHECK(!OperationStep(90, OptoChannel::CH2, OpType::STOP)
+               .isValid); // channel must be ALL
 
     // A default-constructed step is invalid (built from no fields).
     CHECK(!OperationStep().isValid);
 }
 
 void testOperationStepJsonRoundTrip() {
-    OperationStep step(30, 2, OpType::ON);
+    OperationStep step(30, OptoChannel::CH2, OpType::ON);
     CHECK(step.isValid);
 
     JsonDocument doc;
@@ -102,35 +107,35 @@ void testMakeLog() {
     CHECK(cmd.logMsg == "hello world");
 }
 
-void testMakeSetValid() {
+void testMakeRunValid() {
     Recording rec;
     rec.isRecording = true;
-    rec.opSequence.push_back(OperationStep(30, 2, OpType::ON));
-    rec.opSequence.push_back(OperationStep(60, 3, OpType::OFF));
-    rec.opSequence.push_back(OperationStep(90, -1, OpType::STOP));
+    rec.opSequence.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
+    rec.opSequence.push_back(OperationStep(60, OptoChannel::CH3, OpType::OFF));
+    rec.opSequence.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
 
-    Command cmd = Command::makeSetCommand(validParams(), rec);
+    Command cmd = Command::makeRunCommand(validParams(), rec);
     CHECK(cmd.isValid);
-    CHECK(cmd.cmdType == CmdType::SET);
+    CHECK(cmd.cmdType == CmdType::RUN);
     CHECK(cmd.recording.opSequence.size() == 3);
 }
 
-void testMakeSetRejectsInvalidStep() {
+void testMakeRunRejectsInvalidStep() {
     Recording rec;
     rec.isRecording = true;
-    rec.opSequence.push_back(OperationStep(30, 2, OpType::ON));
+    rec.opSequence.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
     rec.opSequence.push_back(
-        OperationStep(91, -1, OpType::STOP)); // bad frameIdx
+        OperationStep(91, OptoChannel::ALL, OpType::STOP)); // bad frameIdx
 
-    Command cmd = Command::makeSetCommand(validParams(), rec);
+    Command cmd = Command::makeRunCommand(validParams(), rec);
     CHECK(!cmd.isValid);
 }
 
-void testMakeSetEmptySequence() {
+void testMakeRunEmptySequence() {
     // An open recording carries an empty opSequence and is still valid.
     Recording rec;
     rec.isRecording = true;
-    Command cmd = Command::makeSetCommand(validParams(), rec);
+    Command cmd = Command::makeRunCommand(validParams(), rec);
     CHECK(cmd.isValid);
     CHECK(cmd.recording.opSequence.empty());
 }
@@ -139,19 +144,19 @@ void testMakeSetEmptySequence() {
 /* Serialization round trips                                                  */
 /* -------------------------------------------------------------------------- */
 
-void testSetRoundTrip() {
+void testRunRoundTrip() {
     Recording rec;
     rec.isRecording = true;
-    rec.opSequence.push_back(OperationStep(30, 2, OpType::ON));
-    rec.opSequence.push_back(OperationStep(90, -1, OpType::STOP));
+    rec.opSequence.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
+    rec.opSequence.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
 
-    Command original = Command::makeSetCommand(validParams(), rec);
+    Command original = Command::makeRunCommand(validParams(), rec);
     std::string json = original.toString();
     CHECK(!json.empty());
 
     Command parsed = Command::parse(json);
     CHECK(parsed.isValid);
-    CHECK(parsed.cmdType == CmdType::SET);
+    CHECK(parsed.cmdType == CmdType::RUN);
 
     CHECK(parsed.params.pcoCamContinuous == original.params.pcoCamContinuous);
     CHECK(parsed.params.behExpTime == original.params.behExpTime);
@@ -163,7 +168,7 @@ void testSetRoundTrip() {
 
     CHECK(parsed.recording.isRecording == original.recording.isRecording);
     CHECK(parsed.recording.opSequence.size() == 2);
-    CHECK(parsed.recording.opSequence[0].channel == 2);
+    CHECK(parsed.recording.opSequence[0].channel == OptoChannel::CH2);
     CHECK(parsed.recording.opSequence[0].op == OpType::ON);
     CHECK(parsed.recording.opSequence[1].frameIdx == 90);
     CHECK(parsed.recording.opSequence[1].op == OpType::STOP);
@@ -205,16 +210,16 @@ void testParseLogMissingMsg() {
     CHECK(!cmd.isValid);
 }
 
-void testParseSetMissingParams() {
+void testParseRunMissingParams() {
     Command cmd = Command::parse(
-        R"({"cmdTyp":"SET","recording":{"isRecording":false,"opSequence":[]}})");
+        R"({"cmdTyp":"RUN","recording":{"isRecording":false,"opSequence":[]}})");
     CHECK(!cmd.isValid);
 }
 
-void testParseSetRejectsZeroFrameRate() {
+void testParseRunRejectsZeroFrameRate() {
     // behFrameRate must be strictly positive.
     std::string json =
-        R"({"cmdTyp":"SET","params":{"pcoCamContinuous":false,"behExpTime":0,)"
+        R"({"cmdTyp":"RUN","params":{"pcoCamContinuous":false,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":0,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},)"
         R"("recording":{"isRecording":false,"opSequence":[]}})";
@@ -222,10 +227,10 @@ void testParseSetRejectsZeroFrameRate() {
     CHECK(!cmd.isValid);
 }
 
-void testParseSetRejectsBadStep() {
+void testParseRunRejectsBadStep() {
     // A STOP step with a frameIdx that is not a multiple of 3 is invalid.
     std::string json =
-        R"({"cmdTyp":"SET","params":{"pcoCamContinuous":false,"behExpTime":0,)"
+        R"({"cmdTyp":"RUN","params":{"pcoCamContinuous":false,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},)"
         R"("recording":{"isRecording":true,"opSequence":)"
@@ -234,10 +239,10 @@ void testParseSetRejectsBadStep() {
     CHECK(!cmd.isValid);
 }
 
-void testParseSetMissingOpSequence() {
+void testParseRunMissingOpSequence() {
     // opSequence is required even though it may be empty.
     std::string json =
-        R"({"cmdTyp":"SET","params":{"pcoCamContinuous":false,"behExpTime":0,)"
+        R"({"cmdTyp":"RUN","params":{"pcoCamContinuous":false,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},)"
         R"("recording":{"isRecording":false}})";
@@ -252,19 +257,19 @@ int main() {
     testOperationStepJsonRoundTrip();
     testOperationStepParseRejectsBadOp();
     testMakeLog();
-    testMakeSetValid();
-    testMakeSetRejectsInvalidStep();
-    testMakeSetEmptySequence();
-    testSetRoundTrip();
+    testMakeRunValid();
+    testMakeRunRejectsInvalidStep();
+    testMakeRunEmptySequence();
+    testRunRoundTrip();
     testLogRoundTrip();
     testParseMalformedJson();
     testParseUnknownCmdType();
     testParsePauseIsRejected();
     testParseLogMissingMsg();
-    testParseSetMissingParams();
-    testParseSetRejectsZeroFrameRate();
-    testParseSetRejectsBadStep();
-    testParseSetMissingOpSequence();
+    testParseRunMissingParams();
+    testParseRunRejectsZeroFrameRate();
+    testParseRunRejectsBadStep();
+    testParseRunMissingOpSequence();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

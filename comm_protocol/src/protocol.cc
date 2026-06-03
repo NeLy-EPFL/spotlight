@@ -5,7 +5,7 @@
 
 namespace {
 
-constexpr char kCmdTypSet[] = "SET";
+constexpr char kCmdTypRun[] = "RUN";
 constexpr char kCmdTypLog[] = "LOG";
 
 constexpr char kOpOn[] = "ON";
@@ -47,29 +47,29 @@ bool stringToOpType(const char *s, OpType &out) {
  *   - STOP is global, so its channel is -1, and its frameIdx must be a multiple
  *     of 3 (a hardware constraint enforced on both serialization and parsing).
  */
-bool opStepIsValid(unsigned long frameIdx, int channel, OpType op) {
+bool opStepIsValid(unsigned long frameIdx, OptoChannel channel, OpType op) {
     switch (op) {
     case OpType::ON:
     case OpType::OFF:
-        return channel == 2 || channel == 3;
+        return channel == OptoChannel::CH2 || channel == OptoChannel::CH3;
     case OpType::STOP:
-        return channel == -1 && (frameIdx % 3 == 0);
+        return channel == OptoChannel::ALL && (frameIdx % 3 == 0);
     }
     return false;
 }
 
 /** Read a required non-negative integer field. */
-bool getUint(JsonObjectConst obj, const char *key, unsigned long &out) {
+bool getUint(JsonObjectConst obj, const char *key, unsigned int &out) {
     JsonVariantConst v = obj[key];
-    if (!v.is<unsigned long>()) {
+    if (!v.is<unsigned int>()) {
         return false;
     }
-    out = v.as<unsigned long>();
+    out = v.as<unsigned int>();
     return true;
 }
 
 /** Read a required strictly-positive integer field. */
-bool getPositiveUint(JsonObjectConst obj, const char *key, unsigned long &out) {
+bool getPositiveUint(JsonObjectConst obj, const char *key, unsigned int &out) {
     return getUint(obj, key, out) && out >= 1;
 }
 
@@ -89,7 +89,8 @@ bool getBool(JsonObjectConst obj, const char *key, bool &out) {
 /* OperationStep                                                              */
 /* -------------------------------------------------------------------------- */
 
-OperationStep::OperationStep(unsigned long frameIdx, int channel, OpType op)
+OperationStep::OperationStep(
+    unsigned long frameIdx, OptoChannel channel, OpType op)
     : frameIdx(frameIdx), channel(channel), op(op),
       isValid(opStepIsValid(frameIdx, channel, op)) {}
 
@@ -107,13 +108,13 @@ OperationStep::OperationStep(JsonObjectConst obj) {
     }
 
     frameIdx = frameVar.as<unsigned long>();
-    channel = channelVar.as<int>();
+    channel = static_cast<OptoChannel>(channelVar.as<int>());
     isValid = opStepIsValid(frameIdx, channel, op);
 }
 
 void OperationStep::toJson(JsonObject obj) const {
     obj["frameIdx"] = frameIdx;
-    obj["channel"] = channel;
+    obj["channel"] = static_cast<int>(channel);
     obj["op"] = opTypeToString(op);
 }
 
@@ -121,10 +122,10 @@ void OperationStep::toJson(JsonObject obj) const {
 /* Command builders                                                           */
 /* -------------------------------------------------------------------------- */
 
-Command
-Command::makeSetCommand(const SetParams &params, const Recording &recording) {
+Command Command::makeRunCommand(
+    const TriggerParams &params, const Recording &recording) {
     Command cmd;
-    cmd.cmdType = CmdType::SET;
+    cmd.cmdType = CmdType::RUN;
     cmd.params = params;
     cmd.recording = recording;
     cmd.isValid = true;
@@ -174,7 +175,7 @@ Command Command::parse(const std::string &jsonStr) {
         return cmd;
     }
 
-    if (std::strcmp(cmdTyp, kCmdTypSet) != 0) {
+    if (std::strcmp(cmdTyp, kCmdTypRun) != 0) {
         return cmd; // unknown cmdTyp
     }
 
@@ -183,7 +184,7 @@ Command Command::parse(const std::string &jsonStr) {
         return cmd;
     }
 
-    SetParams params;
+    TriggerParams params;
     bool paramsOk =
         getBool(paramsObj, "pcoCamContinuous", params.pcoCamContinuous) &&
         getUint(paramsObj, "behExpTime", params.behExpTime) &&
@@ -219,7 +220,7 @@ Command Command::parse(const std::string &jsonStr) {
         recording.opSequence.push_back(step);
     }
 
-    cmd.cmdType = CmdType::SET;
+    cmd.cmdType = CmdType::RUN;
     cmd.params = params;
     cmd.recording = std::move(recording);
     cmd.isValid = true;
@@ -242,8 +243,8 @@ std::string Command::toString() const {
         doc["cmdTyp"] = kCmdTypLog;
         doc["msg"] = logMsg;
         break;
-    case CmdType::SET: {
-        doc["cmdTyp"] = kCmdTypSet;
+    case CmdType::RUN: {
+        doc["cmdTyp"] = kCmdTypRun;
 
         JsonObject paramsObj = doc["params"].to<JsonObject>();
         paramsObj["pcoCamContinuous"] = params.pcoCamContinuous;
