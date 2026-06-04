@@ -12,13 +12,14 @@
  * single compact JSON object terminated by a newline. This class reassembles
  * those newline-delimited lines from the raw byte stream; it does not interpret
  * them. The controller passes the returned line to Command::parse() to decode
- * the actual SET/LOG command.
+ * the actual command (STREAM, START_RECORDING, STOP_RECORDING, or LOG).
  *
  * Usage: call begin() once during setup(), then call update() at the top of
  * every controller cycle. update() drains whatever bytes have arrived and, when
- * a complete line has been received, returns it. Because a line may span several
- * cycles (or several lines may be buffered at once), update() returns at most
- * one message per call and keeps any partial/trailing bytes for the next call.
+ * a complete line has been received, returns it. Because a line may span
+ * several cycles (or several lines may be buffered at once), update() returns
+ * at most one message per call and keeps any partial/trailing bytes for the
+ * next call.
  */
 class SerialIO {
   public:

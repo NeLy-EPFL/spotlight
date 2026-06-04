@@ -15,7 +15,6 @@
  *
  *     v0.1.0 b260601-1430
  *     Status         x
- *     PCO cam mode   x
  *     Beh FPS        x
  *     B-M ratio      x:1
  *     Beh exp time   x us
@@ -31,28 +30,27 @@
  *     - "SCHEDULED RECORDING" after every command where recording/isRecording
  *       is true and recording/opSequence is nonempty
  *     - "ERROR" if the controller is in an error state
- *   - For "PCO cam mode": "CONT" (continuous) or "TRIG" (triggered)
- *   - For "Beh FPS": the behFrameRate parameter of the most recent SET
+ *   - For "Beh FPS": the behFrameRate parameter of the most recent RUN
  *     command
- *   - For "B-M ratio": the behMuscSyncRatio parameter of the most recent SET
+ *   - For "B-M ratio": the behMuscSyncRatio parameter of the most recent RUN
  *     command, followed by ":1"
- *   - For "Beh exp time": the behExpTime parameter of the most recent SET
+ *   - For "Beh exp time": the behExpTime parameter of the most recent RUN
  *     command, followed by " us"
  *   - For "Musc exp time": the muscEffExpTime parameter of the most recent
- *     SET command, followed by " us"
+ *     RUN command, followed by " us"
  *
  * Version line: "v<version> b<YYMMDD>-<HHmm>", where <version> is
  * config::firmwareVersion and the build code is the compiler host's LOCAL
  * date/time (from __DATE__/__TIME__), e.g. "v0.1.0 b260601-1430". This line is
  * fixed at startup and never changes at runtime.
  *
- * Special case: Before the first SET command is received, "Status" should show
+ * Special case: Before the first RUN command is received, "Status" should show
  * "INITIALIZING" and the other fields should be empty (no units or "x").
  *
  * Usage: call begin() once during setup(), then use the per-line setters to
  * update individual values and call render() to push the cached state to the
  * panel. The setters only touch an in-memory cache, so several of them can be
- * batched (e.g. on a SET command) before a single render().
+ * batched (e.g. on a RUN command) before a single render().
  */
 class StatusDisplay {
   public:
@@ -78,7 +76,6 @@ class StatusDisplay {
     // Per-line value setters. Each only updates the cached text for its line;
     // call render() afterwards to push the changes to the panel.
     void setStatus(Status status);
-    void setPcoCamContinuous(bool continuous);
     void setBehFrameRate(unsigned long fps);
     void setBehMuscSyncRatio(unsigned long ratio);
     void setBehExpTime(unsigned long us);
@@ -92,7 +89,6 @@ class StatusDisplay {
     enum Line {
         versionLine,
         statusLine,
-        pcoCamModeLine,
         behFrameRateLine,
         behMuscRatioLine,
         behExpTimeLine,
@@ -106,10 +102,11 @@ class StatusDisplay {
     static constexpr uint8_t i2cAddress = 0x3C; // Midas MDOB128064WV-YBI
     static constexpr uint8_t charWidth = 6;     // default GFX font at size 1
     static constexpr uint8_t charHeight = 8;    // default GFX font at size 1
-    // Seven rows of the 6x8 default font must fit in the 64 px panel, so the
-    // row pitch is tightened to 9 px (7 * 9 + 1 px top margin = 64).
-    static constexpr uint8_t rowHeight = 9;
-    static constexpr uint8_t topMargin = 1;
+    // Six rows of the 6x8 default font fit in the 64 px panel with room to
+    // spare, so the row pitch is relaxed to 10 px (2 px top margin + 6 * 10 =
+    // 62, leaving the 8 px font a 2 px gap between rows).
+    static constexpr uint8_t rowHeight = 10;
+    static constexpr uint8_t topMargin = 2;
     static constexpr size_t valueBufferSize = 24;
 
     // Fixed labels, indexed by Line.

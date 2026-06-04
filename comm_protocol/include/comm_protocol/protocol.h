@@ -1,7 +1,7 @@
 #pragma once
 
+#include <deque>
 #include <string>
-#include <vector>
 
 #include <ArduinoJson.h>
 
@@ -11,10 +11,14 @@
  * docs/comm_protocol.md.
  *
  * Every message is a single compact JSON object discriminated by a top-level
- * "cmdTyp" field, which is one of the fixed literals "RUN" or "LOG":
+ * "cmdType" field, which is one of the fixed literals "STREAM",
+ * "START_RECORDING", "STOP_RECORDING", or "LOG":
  *
- *   RUN   - reconfigure the controller; carries "params" and "recording".
- *   LOG   - carries a free-form "msg" string to be echoed by the controller.
+ *   STREAM          - live preview; carries "params".
+ *   START_RECORDING - begin recording; carries "recParams", "revertToParams",
+ *                     and an "opSequence" array (possibly empty).
+ *   STOP_RECORDING  - end an open recording; carries no payload.
+ *   LOG             - carries a free-form "msg" string to be echoed.
  *
  * The classes below parse and serialize these messages. They are meant to
  * compile and run unchanged on both a desktop computer and the ESP32:
@@ -26,7 +30,9 @@
 
 /** The command kinds carried over the serial link. */
 enum class CmdType {
-    RUN,
+    STREAM,
+    START_RECORDING,
+    STOP_RECORDING,
     LOG,
 };
 
@@ -37,6 +43,11 @@ enum class OpType {
     STOP,
 };
 
+/**
+ * Optogenetics channel. CH2 and CH3 are the controllable channels (channel 1
+ * is reserved for the IR LED). ALL (-1) denotes a global operation and is used
+ * with STOP, which reverts the controller to streaming.
+ */
 enum class OptoChannel {
     ALL = -1,
     CH2 = 2,
@@ -44,11 +55,11 @@ enum class OptoChannel {
 };
 
 /**
- * One entry of a RUN command's "recording/opSequence" list: after the
+ * One entry of a START_RECORDING command's "opSequence" list: after the
  * `frameIdx`-th behavior frame, apply operation `op` on optogenetics `channel`.
  *
- *   - frameIdx: non-negative frame index must be a multiple of 3 for STOP ops
- *   - channel: CCS channel; 2 or 3 when op is ON/OFF, -1 when op is STOP
+ *   - frameIdx: non-negative behavior-frame index
+ *   - channel: CH2 or CH3 when op is ON/OFF; ALL (-1) when op is STOP
  *   - op: ON, OFF, or STOP
  *
  * `isValid` is false when the step was built from fields that violate the rules
@@ -71,44 +82,57 @@ class OperationStep {
     void toJson(JsonObject obj) const;
 };
 
-/** Decoded "params" object of a RUN command (controller configuration). */
+/**
+ * Decoded "params" object (controller configuration). The same shape is used
+ * for STREAM's "params" and START_RECORDING's "recParams"/"revertToParams".
+ */
 struct TriggerParams {
-    bool pcoCamContinuous = false;       // PCO muscle cam continuous mode
     unsigned int behExpTime = 0;        // behavior cam exposure time (us)
     unsigned int muscEffExpTime = 0;    // muscle cam effective exposure (us)
-    unsigned int behFrameRate = 0;      // behavior cam frame rate (fps), > 0
-    unsigned int behMuscSyncRatio = 0;  // beh frames per muscle frame, > 0
+    unsigned int behFrameRate = 1;      // behavior cam frame rate (fps), > 0
+    unsigned int behMuscSyncRatio = 1;  // beh frames per muscle frame, > 0
     unsigned int pcoCamRollingTime = 0; // PCO sensor rolling time (us)
     unsigned int pcoCamReadoutTime = 0; // PCO total readout time (us)
-};
-
-/** Decoded "recording" object of a RUN command. */
-struct Recording {
-    bool isRecording = false;              // saving frames vs. live preview
-    std::vector<OperationStep> opSequence; // empty => open recording
 };
 
 /**
  * A full protocol message.
  *
- * Build one with makeRunCommand()/makeLogCommand() and serialize with
- * toString(); decode an incoming line with parse(). `isValid` is false when a
- * message could not be parsed or is malformed, in which case the decoded fields
- * are meaningless.
+ * Build one with the make*Command() factories and serialize with toString();
+ * decode an incoming line with parse(). `isValid` is false when a message could
+ * not be parsed or is malformed, in which case the decoded fields are
+ * meaningless. Which fields are meaningful depends on `cmdType`:
+ *
+ *   STREAM          -> params
+ *   START_RECORDING -> recParams, revertToParams, opSequence
+ *   STOP_RECORDING  -> (none)
+ *   LOG             -> logMsg
  */
 class Command {
   public:
-    CmdType cmdType = CmdType::RUN;
-    TriggerParams params;    // meaningful when cmdType == CmdType::RUN
-    Recording recording; // meaningful when cmdType == CmdType::RUN
-    std::string logMsg;  // meaningful when cmdType == CmdType::LOG
+    CmdType cmdType = CmdType::STREAM;
+
+    TriggerParams params;         // STREAM
+    TriggerParams recParams;      // START_RECORDING: params while recording
+    TriggerParams revertToParams; // START_RECORDING: params after recording
+    std::deque<OperationStep> opSequence; // START_RECORDING: empty => open
+    std::string logMsg;                   // LOG
+
     bool isValid = false;
 
     Command() = default;
 
-    /** Build a RUN command (validates every opSequence step). */
-    static Command
-    makeRunCommand(const TriggerParams &params, const Recording &recording);
+    /** Build a STREAM command. */
+    static Command makeStreamCommand(const TriggerParams &params);
+
+    /** Build a START_RECORDING command (validates every opSequence step). */
+    static Command makeStartRecordingCommand(
+        const TriggerParams &recParams,
+        const TriggerParams &revertToParams,
+        const std::deque<OperationStep> &opSequence);
+
+    /** Build a STOP_RECORDING command. */
+    static Command makeStopRecordingCommand();
 
     /** Build a LOG command carrying a free-form message. */
     static Command makeLogCommand(const std::string &message);
@@ -119,3 +143,16 @@ class Command {
     /** Serialize to a compact JSON string (empty string if !isValid). */
     std::string toString() const;
 };
+
+/**
+ * Time to wait after receiving a START_RECORDING command before the trigger
+ * logic starts. This allows pending frames in the camera buffers to be flushed
+ * out, so the recorded session doesn't start with frames acquired using stale
+ * parameters.
+ *
+ * On the recorder side, the program should ignore frames received **during a
+ * fraction (e.g., 0.8x) of this time** after sending the command. If the ignore
+ * period is too long, the first few frames of the recording will be incorrectly
+ * dropped.
+ */
+inline constexpr unsigned long camFlushTimeUs = 100000;

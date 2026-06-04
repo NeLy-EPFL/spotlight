@@ -18,7 +18,7 @@ endif()
 
 if(COMM_PROTOCOL_STANDALONE)
     project("CommProtocol"
-        VERSION 0.3.0
+        VERSION 0.4.0
         DESCRIPTION "JSON serial protocol shared by the recorder and firmware"
         LANGUAGES CXX)
 

@@ -10,7 +10,6 @@
 const char *const StatusDisplay::labels_[StatusDisplay::numLines] = {
     "", // version line: full-width, no label
     "Status",
-    "PCO cam mode",
     "Beh FPS",
     "B-M ratio",
     "Beh exp time",
@@ -52,7 +51,7 @@ const char *statusText(StatusDisplay::Status status) {
 
 StatusDisplay::StatusDisplay()
     : display_(screenWidth, screenHeight, &Wire, resetPin) {
-    // Start in the pre-SET special case: status "INITIALIZING", others blank.
+    // Start in the pre-RUN special case: status "INITIALIZING", others blank.
     for (uint8_t i = 0; i < numLines; ++i) {
         values_[i][0] = '\0';
     }
@@ -64,10 +63,20 @@ StatusDisplay::StatusDisplay()
     const char *const date = __DATE__;
     const char *const time = __TIME__;
     const char dayTens = date[4] == ' ' ? '0' : date[4];
-    std::snprintf(values_[versionLine], valueBufferSize,
-                  "v%s b%c%c%02d%c%c-%c%c%c%c", config::firmwareVersion,
-                  date[9], date[10], monthNumber(date), dayTens, date[5],
-                  time[0], time[1], time[3], time[4]);
+    std::snprintf(
+        values_[versionLine],
+        valueBufferSize,
+        "v%s b%c%c%02d%c%c-%c%c%c%c",
+        config::firmwareVersion,
+        date[9],
+        date[10],
+        monthNumber(date),
+        dayTens,
+        date[5],
+        time[0],
+        time[1],
+        time[3],
+        time[4]);
 
     setStatus(Status::initializing);
 }
@@ -85,10 +94,6 @@ bool StatusDisplay::begin() {
 
 void StatusDisplay::setStatus(Status status) {
     setValue(statusLine, statusText(status));
-}
-
-void StatusDisplay::setPcoCamContinuous(bool continuous) {
-    setValue(pcoCamModeLine, continuous ? "CONT" : "TRIG");
 }
 
 void StatusDisplay::setBehFrameRate(unsigned long fps) {
@@ -142,10 +147,9 @@ void StatusDisplay::drawRow(uint8_t index) {
     if (len == 0) {
         return;
     }
-    const int16_t valueX =
-        screenWidth - static_cast<int16_t>(len) * charWidth;
-    display_.fillRect(valueX, y, screenWidth - valueX, charHeight,
-                      SSD1306_BLACK);
+    const int16_t valueX = screenWidth - static_cast<int16_t>(len) * charWidth;
+    display_.fillRect(
+        valueX, y, screenWidth - valueX, charHeight, SSD1306_BLACK);
     display_.setCursor(valueX, y);
     display_.print(value);
 }

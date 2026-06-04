@@ -23,7 +23,7 @@ This codebase is entirely implemented in C++. A set of tools for calibration, po
 Documentation is available in the `docs/` folder:
 
 - [Hardware](docs/hardware.md): hardware to be controlled by this controller.
-- [Data acquisition workflow](docs/data_acquisition.md): how the cameras and lights are controlled and synchronized, including two acquisition modes.
+- [Data acquisition workflow](docs/data_acquisition.md): how the cameras and lights are controlled and synchronized using continuous acquisition.
 - [Recorder-microcontroller communication protocol](docs/comm_protocol.md): JSON protocol for communication between the recorder and the triggering microcontroller.
 
 

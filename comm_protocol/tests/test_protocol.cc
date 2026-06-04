@@ -33,7 +33,6 @@ namespace {
 /** A TriggerParams instance with values that satisfy every field constraint. */
 TriggerParams validParams() {
     TriggerParams p;
-    p.pcoCamContinuous = true;
     p.behExpTime = 1000;
     p.muscEffExpTime = 2000;
     p.behFrameRate = 100;   // must be >= 1
@@ -43,26 +42,36 @@ TriggerParams validParams() {
     return p;
 }
 
+/** True if two TriggerParams have identical fields. */
+bool paramsEqual(const TriggerParams &a, const TriggerParams &b) {
+    return a.behExpTime == b.behExpTime &&
+           a.muscEffExpTime == b.muscEffExpTime &&
+           a.behFrameRate == b.behFrameRate &&
+           a.behMuscSyncRatio == b.behMuscSyncRatio &&
+           a.pcoCamRollingTime == b.pcoCamRollingTime &&
+           a.pcoCamReadoutTime == b.pcoCamReadoutTime;
+}
+
 /* -------------------------------------------------------------------------- */
 /* OperationStep                                                              */
 /* -------------------------------------------------------------------------- */
 
 void testOperationStepValidity() {
-    // ON/OFF act on channel 2 or 3.
+    // ON/OFF act on channel CH2 or CH3.
     CHECK(OperationStep(30, OptoChannel::CH2, OpType::ON).isValid);
     CHECK(OperationStep(0, OptoChannel::CH3, OpType::OFF).isValid);
     CHECK(!OperationStep(30, static_cast<OptoChannel>(1), OpType::ON)
-               .isValid); // channel 1 reserved
+               .isValid); // channel 1 reserved for IR LED
     CHECK(!OperationStep(30, static_cast<OptoChannel>(4), OpType::ON)
                .isValid); // out of range
     CHECK(!OperationStep(30, OptoChannel::ALL, OpType::OFF)
                .isValid); // ALL only for STOP
 
-    // STOP is global: channel ALL and frameIdx a multiple of 3.
+    // STOP is global: channel ALL (-1). Any non-negative frameIdx is allowed.
     CHECK(OperationStep(90, OptoChannel::ALL, OpType::STOP).isValid);
     CHECK(OperationStep(0, OptoChannel::ALL, OpType::STOP).isValid);
-    CHECK(!OperationStep(91, OptoChannel::ALL, OpType::STOP)
-               .isValid); // not a multiple of 3
+    CHECK(OperationStep(91, OptoChannel::ALL, OpType::STOP)
+              .isValid); // frameIdx need not be a multiple of anything
     CHECK(!OperationStep(90, OptoChannel::CH2, OpType::STOP)
                .isValid); // channel must be ALL
 
@@ -100,6 +109,19 @@ void testOperationStepParseRejectsBadOp() {
 /* Command builders                                                           */
 /* -------------------------------------------------------------------------- */
 
+void testMakeStream() {
+    Command cmd = Command::makeStreamCommand(validParams());
+    CHECK(cmd.isValid);
+    CHECK(cmd.cmdType == CmdType::STREAM);
+    CHECK(paramsEqual(cmd.params, validParams()));
+}
+
+void testMakeStopRecording() {
+    Command cmd = Command::makeStopRecordingCommand();
+    CHECK(cmd.isValid);
+    CHECK(cmd.cmdType == CmdType::STOP_RECORDING);
+}
+
 void testMakeLog() {
     Command cmd = Command::makeLogCommand("hello world");
     CHECK(cmd.isValid);
@@ -107,71 +129,90 @@ void testMakeLog() {
     CHECK(cmd.logMsg == "hello world");
 }
 
-void testMakeRunValid() {
-    Recording rec;
-    rec.isRecording = true;
-    rec.opSequence.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
-    rec.opSequence.push_back(OperationStep(60, OptoChannel::CH3, OpType::OFF));
-    rec.opSequence.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
+void testMakeStartRecordingValid() {
+    std::deque<OperationStep> seq;
+    seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
+    seq.push_back(OperationStep(60, OptoChannel::CH3, OpType::OFF));
+    seq.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
 
-    Command cmd = Command::makeRunCommand(validParams(), rec);
+    Command cmd =
+        Command::makeStartRecordingCommand(validParams(), validParams(), seq);
     CHECK(cmd.isValid);
-    CHECK(cmd.cmdType == CmdType::RUN);
-    CHECK(cmd.recording.opSequence.size() == 3);
+    CHECK(cmd.cmdType == CmdType::START_RECORDING);
+    CHECK(cmd.opSequence.size() == 3);
 }
 
-void testMakeRunRejectsInvalidStep() {
-    Recording rec;
-    rec.isRecording = true;
-    rec.opSequence.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
-    rec.opSequence.push_back(
-        OperationStep(91, OptoChannel::ALL, OpType::STOP)); // bad frameIdx
+void testMakeStartRecordingRejectsInvalidStep() {
+    std::deque<OperationStep> seq;
+    seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
+    seq.push_back(
+        OperationStep(60, OptoChannel::ALL, OpType::ON)); // ALL invalid for ON
 
-    Command cmd = Command::makeRunCommand(validParams(), rec);
+    Command cmd =
+        Command::makeStartRecordingCommand(validParams(), validParams(), seq);
     CHECK(!cmd.isValid);
 }
 
-void testMakeRunEmptySequence() {
+void testMakeStartRecordingEmptySequence() {
     // An open recording carries an empty opSequence and is still valid.
-    Recording rec;
-    rec.isRecording = true;
-    Command cmd = Command::makeRunCommand(validParams(), rec);
+    Command cmd =
+        Command::makeStartRecordingCommand(validParams(), validParams(), {});
     CHECK(cmd.isValid);
-    CHECK(cmd.recording.opSequence.empty());
+    CHECK(cmd.opSequence.empty());
 }
 
 /* -------------------------------------------------------------------------- */
 /* Serialization round trips                                                  */
 /* -------------------------------------------------------------------------- */
 
-void testRunRoundTrip() {
-    Recording rec;
-    rec.isRecording = true;
-    rec.opSequence.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
-    rec.opSequence.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
-
-    Command original = Command::makeRunCommand(validParams(), rec);
+void testStreamRoundTrip() {
+    Command original = Command::makeStreamCommand(validParams());
     std::string json = original.toString();
     CHECK(!json.empty());
 
     Command parsed = Command::parse(json);
     CHECK(parsed.isValid);
-    CHECK(parsed.cmdType == CmdType::RUN);
+    CHECK(parsed.cmdType == CmdType::STREAM);
+    CHECK(paramsEqual(parsed.params, original.params));
+}
 
-    CHECK(parsed.params.pcoCamContinuous == original.params.pcoCamContinuous);
-    CHECK(parsed.params.behExpTime == original.params.behExpTime);
-    CHECK(parsed.params.muscEffExpTime == original.params.muscEffExpTime);
-    CHECK(parsed.params.behFrameRate == original.params.behFrameRate);
-    CHECK(parsed.params.behMuscSyncRatio == original.params.behMuscSyncRatio);
-    CHECK(parsed.params.pcoCamRollingTime == original.params.pcoCamRollingTime);
-    CHECK(parsed.params.pcoCamReadoutTime == original.params.pcoCamReadoutTime);
+void testStartRecordingRoundTrip() {
+    TriggerParams rec = validParams();
+    TriggerParams revert = validParams();
+    revert.behFrameRate = 50; // distinguish the two param blocks
 
-    CHECK(parsed.recording.isRecording == original.recording.isRecording);
-    CHECK(parsed.recording.opSequence.size() == 2);
-    CHECK(parsed.recording.opSequence[0].channel == OptoChannel::CH2);
-    CHECK(parsed.recording.opSequence[0].op == OpType::ON);
-    CHECK(parsed.recording.opSequence[1].frameIdx == 90);
-    CHECK(parsed.recording.opSequence[1].op == OpType::STOP);
+    std::deque<OperationStep> seq;
+    seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
+    seq.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
+
+    Command original = Command::makeStartRecordingCommand(rec, revert, seq);
+    std::string json = original.toString();
+    CHECK(!json.empty());
+
+    Command parsed = Command::parse(json);
+    CHECK(parsed.isValid);
+    CHECK(parsed.cmdType == CmdType::START_RECORDING);
+    CHECK(paramsEqual(parsed.recParams, rec));
+    CHECK(paramsEqual(parsed.revertToParams, revert));
+    CHECK(parsed.recParams.behFrameRate != parsed.revertToParams.behFrameRate);
+
+    CHECK(parsed.opSequence.size() == 2);
+    CHECK(parsed.opSequence[0].frameIdx == 30);
+    CHECK(parsed.opSequence[0].channel == OptoChannel::CH2);
+    CHECK(parsed.opSequence[0].op == OpType::ON);
+    CHECK(parsed.opSequence[1].frameIdx == 90);
+    CHECK(parsed.opSequence[1].channel == OptoChannel::ALL);
+    CHECK(parsed.opSequence[1].op == OpType::STOP);
+}
+
+void testStopRecordingRoundTrip() {
+    Command original = Command::makeStopRecordingCommand();
+    std::string json = original.toString();
+    CHECK(!json.empty());
+
+    Command parsed = Command::parse(json);
+    CHECK(parsed.isValid);
+    CHECK(parsed.cmdType == CmdType::STOP_RECORDING);
 }
 
 void testLogRoundTrip() {
@@ -195,59 +236,96 @@ void testParseMalformedJson() {
 }
 
 void testParseUnknownCmdType() {
-    Command cmd = Command::parse(R"({"cmdTyp":"NOPE"})");
+    Command cmd = Command::parse(R"({"cmdType":"NOPE"})");
     CHECK(!cmd.isValid);
 }
 
-void testParsePauseIsRejected() {
-    // PAUSE was removed from the protocol: it must no longer parse.
-    Command cmd = Command::parse(R"({"cmdTyp":"PAUSE"})");
+void testParseLegacyRunIsRejected() {
+    // RUN was replaced by STREAM/START_RECORDING: it must no longer parse.
+    Command cmd = Command::parse(R"({"cmdType":"RUN"})");
+    CHECK(!cmd.isValid);
+}
+
+void testParseMisspelledKeyIsRejected() {
+    // The discriminator key is "cmdType", not the old "cmdTyp".
+    Command cmd = Command::parse(R"({"cmdTyp":"LOG","msg":"x"})");
     CHECK(!cmd.isValid);
 }
 
 void testParseLogMissingMsg() {
-    Command cmd = Command::parse(R"({"cmdTyp":"LOG"})");
+    Command cmd = Command::parse(R"({"cmdType":"LOG"})");
     CHECK(!cmd.isValid);
 }
 
-void testParseRunMissingParams() {
-    Command cmd = Command::parse(
-        R"({"cmdTyp":"RUN","recording":{"isRecording":false,"opSequence":[]}})");
+void testParseStreamMissingParams() {
+    Command cmd = Command::parse(R"({"cmdType":"STREAM"})");
     CHECK(!cmd.isValid);
 }
 
-void testParseRunRejectsZeroFrameRate() {
+void testParseStreamRejectsZeroFrameRate() {
     // behFrameRate must be strictly positive.
     std::string json =
-        R"({"cmdTyp":"RUN","params":{"pcoCamContinuous":false,"behExpTime":0,)"
+        R"({"cmdType":"STREAM","params":{"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":0,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},)"
-        R"("recording":{"isRecording":false,"opSequence":[]}})";
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
     Command cmd = Command::parse(json);
     CHECK(!cmd.isValid);
 }
 
-void testParseRunRejectsBadStep() {
-    // A STOP step with a frameIdx that is not a multiple of 3 is invalid.
+void testParseStreamRejectsMissingField() {
+    // pcoCamReadoutTime is absent.
     std::string json =
-        R"({"cmdTyp":"RUN","params":{"pcoCamContinuous":false,"behExpTime":0,)"
+        R"({"cmdType":"STREAM","params":{"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},)"
-        R"("recording":{"isRecording":true,"opSequence":)"
-        R"([{"frameIdx":91,"channel":-1,"op":"STOP"}]}})";
+        R"("pcoCamRollingTime":0}})";
     Command cmd = Command::parse(json);
     CHECK(!cmd.isValid);
 }
 
-void testParseRunMissingOpSequence() {
+void testParseStartRecordingMissingRevertParams() {
+    std::string json =
+        R"({"cmdType":"START_RECORDING","recParams":{"behExpTime":0,)"
+        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},"opSequence":[]})";
+    Command cmd = Command::parse(json);
+    CHECK(!cmd.isValid);
+}
+
+void testParseStartRecordingMissingOpSequence() {
     // opSequence is required even though it may be empty.
-    std::string json =
-        R"({"cmdTyp":"RUN","params":{"pcoCamContinuous":false,"behExpTime":0,)"
-        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},)"
-        R"("recording":{"isRecording":false}})";
+    std::string params =
+        R"({"behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
+        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,"pcoCamReadoutTime":0})";
+    std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
+                       R"(,"revertToParams":)" + params + "}";
     Command cmd = Command::parse(json);
     CHECK(!cmd.isValid);
+}
+
+void testParseStartRecordingRejectsBadStep() {
+    // A STOP step on a specific channel (rather than ALL) is invalid.
+    std::string params =
+        R"({"behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
+        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,"pcoCamReadoutTime":0})";
+    std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
+                       R"(,"revertToParams":)" + params +
+                       R"(,"opSequence":[{"frameIdx":90,"channel":2,)"
+                       R"("op":"STOP"}]})";
+    Command cmd = Command::parse(json);
+    CHECK(!cmd.isValid);
+}
+
+void testParseStartRecordingAcceptsEmptyOpSequence() {
+    std::string params =
+        R"({"behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
+        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,"pcoCamReadoutTime":0})";
+    std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
+                       R"(,"revertToParams":)" + params +
+                       R"(,"opSequence":[]})";
+    Command cmd = Command::parse(json);
+    CHECK(cmd.isValid);
+    CHECK(cmd.cmdType == CmdType::START_RECORDING);
+    CHECK(cmd.opSequence.empty());
 }
 
 } // namespace
@@ -256,20 +334,28 @@ int main() {
     testOperationStepValidity();
     testOperationStepJsonRoundTrip();
     testOperationStepParseRejectsBadOp();
+    testMakeStream();
+    testMakeStopRecording();
     testMakeLog();
-    testMakeRunValid();
-    testMakeRunRejectsInvalidStep();
-    testMakeRunEmptySequence();
-    testRunRoundTrip();
+    testMakeStartRecordingValid();
+    testMakeStartRecordingRejectsInvalidStep();
+    testMakeStartRecordingEmptySequence();
+    testStreamRoundTrip();
+    testStartRecordingRoundTrip();
+    testStopRecordingRoundTrip();
     testLogRoundTrip();
     testParseMalformedJson();
     testParseUnknownCmdType();
-    testParsePauseIsRejected();
+    testParseLegacyRunIsRejected();
+    testParseMisspelledKeyIsRejected();
     testParseLogMissingMsg();
-    testParseRunMissingParams();
-    testParseRunRejectsZeroFrameRate();
-    testParseRunRejectsBadStep();
-    testParseRunMissingOpSequence();
+    testParseStreamMissingParams();
+    testParseStreamRejectsZeroFrameRate();
+    testParseStreamRejectsMissingField();
+    testParseStartRecordingMissingRevertParams();
+    testParseStartRecordingMissingOpSequence();
+    testParseStartRecordingRejectsBadStep();
+    testParseStartRecordingAcceptsEmptyOpSequence();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -6,17 +6,17 @@ The cameras acquire frames in the following manner:
 - The IR LED is on only when the behavior camera is exposing; the blue LED is on only when the muscle camera is exposing.
 - An important nuance: the behavior camera has a global shutter, but the muscle camera has a rolling shutter. The amount of time it takes for the muscle camera to "roll its shutter" is generally longer than the frame interval of the behavior camera (hence the >1 sync ratio). To achieve an _effective_ global shutter for the muscle synchronized to the behavior camera, the blue LED is turned on only during the common time of the rolling shutter (i.e., period of time when all lines of pixels are scanning). In other words, the blue LED is used as the "shutter" instead of the actual camera shutter. The exposure time of the muscle camera is therefore `rollingTime + effectiveExposureTime`, where `rollingTime = lineTime * numLines`.
 
-There are two data acquisition modes, dictated by triggering modalities of the muscle camera:
+The muscle camera always runs in **continuous mode** (defined below). To motivate why, it is useful to first consider the alternative _triggered_ modality and its limitation.
 
-## Triggered mode
+## Motivation: the limitation of triggered acquisition
 
-**Triggered mode:** The recorder instructs the trigger microcontroller to send trigger signals to the behavior camera's frame grabber and the muscle camera at specified frame rates. The microcontroller does so accordingly.
+In a triggered modality, the recorder would instruct the trigger microcontroller to send trigger signals to the behavior camera's frame grabber and the muscle camera at specified frame rates, and the microcontroller would do so accordingly.
 
-The disadvantage of this mode is that the muscle camera ignores any trigger signal marking the start of a new frame cycle _unless_ the previous frame cycle is completed (i.e., the last line of pixels has completed exposure and subsequent data readout). By this time, the first line has already been idle for a period equal to `rollingTime`. This limits the frame rate to `1 / (2 * rollingTime + effectiveExposureTime + readoutTime)`.
+The disadvantage of this approach is that the muscle camera ignores any trigger signal marking the start of a new frame cycle _unless_ the previous frame cycle is completed (i.e., the last line of pixels has completed exposure and subsequent data readout). By this time, the first line has already been idle for a period equal to `rollingTime`. This limits the frame rate to `1 / (2 * rollingTime + effectiveExposureTime + readoutTime)`.
 
 ## Continuous mode
 
-This mode improves the frame rate limit by instructing the muscle camera to _continuously_ roll its shutter: as soon as the first line finishes exposure and data readout, its exposure starts for the next cycle. There is no idle time at all.
+To improve the frame rate limit, we always operate the muscle camera in continuous mode: it _continuously_ rolls its shutter, so that as soon as the first line finishes exposure and data readout, its exposure starts for the next cycle. There is no idle time at all.
 
 The disadvantage of this mode is that we cannot trigger the muscle camera externally via TTL; the camera runs its own thing in open loop. This poses two challenges:
 
