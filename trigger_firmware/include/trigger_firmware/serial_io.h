@@ -5,6 +5,10 @@
 
 #include "trigger_firmware/config.h"
 
+// Arduino input/output stream base class. Forward-declared (instead of pulling
+// in <Arduino.h> here) because the header only needs the reference type.
+class Stream;
+
 /**
  * Line-framing layer over the USB serial port.
  *
@@ -20,10 +24,21 @@
  * several cycles (or several lines may be buffered at once), update() returns
  * at most one message per call and keeps any partial/trailing bytes for the
  * next call.
+ *
+ * The input stream defaults to the global `Serial` (the USB CDC port used in
+ * production). A different Stream can be injected via the constructor so the
+ * framing logic can be unit-tested against an in-memory stream without using
+ * the real serial port -- which on-device is busy carrying the test results
+ * (see test/test_serial_io/).
  */
 class SerialIO {
   public:
-    /** Open the USB serial port at config::serialBaudRate. */
+    /** Read from the global `Serial` (the production USB CDC port). */
+    SerialIO();
+    /** Read from an injected stream; used by the unit tests. */
+    explicit SerialIO(Stream &stream);
+
+    /** Open the underlying USB serial port at config::serialBaudRate. */
     void begin();
 
     /**
@@ -37,6 +52,7 @@ class SerialIO {
     std::optional<std::string> update();
 
   private:
+    Stream &stream_;
     char buffer_[config::incomingCmdBufferSize];
     int bufferIdx_ = 0;
     // Set once the current line overruns buffer_; the rest of the line (up to

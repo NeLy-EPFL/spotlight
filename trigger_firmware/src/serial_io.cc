@@ -4,13 +4,19 @@
 
 #include "trigger_firmware/config.h"
 
+SerialIO::SerialIO() : SerialIO(Serial) {}
+
+SerialIO::SerialIO(Stream &stream) : stream_(stream) {}
+
 void SerialIO::begin() {
+    // begin() always opens the production USB CDC port. A SerialIO built around
+    // an injected (test) stream does not need it and never calls begin().
     Serial.begin(config::serialBaudRate);
 }
 
 std::optional<std::string> SerialIO::update() {
-    while (Serial.available() > 0) {
-        char c = Serial.read();
+    while (stream_.available() > 0) {
+        char c = stream_.read();
 
         // Tolerate CR (e.g. a "\r\n" host); treat LF as the line terminator.
         if (c == '\r') {

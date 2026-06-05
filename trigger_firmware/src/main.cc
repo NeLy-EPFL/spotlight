@@ -1,3 +1,8 @@
+// Excluded from on-device unit-test builds (pio test): PlatformIO defines
+// PIO_UNIT_TESTING then, and each test program under test/ provides its own
+// setup()/loop(). Compiling this file too would give two definitions of each.
+#ifndef PIO_UNIT_TESTING
+
 #include <Arduino.h>
 
 #include "trigger_firmware/trigger_controller.h"
@@ -24,3 +29,5 @@ void setup() {
 void loop() {
     controller().update();
 }
+
+#endif // PIO_UNIT_TESTING
