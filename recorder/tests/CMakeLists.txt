@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.10)
-project(SpotlightControlTest CXX)
+cmake_minimum_required(VERSION 3.20)
+project(SpotlightRecorderTest CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
@@ -24,73 +24,60 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort)
 # Set up include directories for eGrabber and required compile options
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
 include_directories(${EGRABBER_INCLUDE_DIR})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g -std=c++17")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g")
 
-# Find common source files
-file(GLOB COMMON_SOURCES
-    "../src/utils.*"
-    "../src/dataTypes.hpp"
-    "../src/constants.hpp")
-message(DEBUG "Source files added: ${SOURCES}")
+# Recorder public headers, included project-rooted as
+#   #include "recorder/common/utils.h"
+set(RECORDER_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+
+# Source files shared across the test executables.
+set(COMMON_SOURCES
+    ../src/common/utils.cc)
 
 # Add executables
 # The `add_test(NAME ... COMMAND ...)` line registers the tests with CTest
 # Example test
-add_executable(testHelloWorld "testHelloWorld.cpp")
-target_include_directories(testHelloWorld PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testHelloWorld Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(testHelloWorld ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testHelloWorld ${OpenCV_LIBS})
-target_link_libraries(testHelloWorld spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testHelloWorld COMMAND testHelloWorld)
+add_executable(test_hello_world "test_hello_world.cc")
+target_include_directories(test_hello_world PRIVATE ${GTEST_INCLUDE_DIR})
+target_link_libraries(test_hello_world Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(test_hello_world ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(test_hello_world ${OpenCV_LIBS})
+target_link_libraries(test_hello_world spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME test_hello_world COMMAND test_hello_world)
 
-# Test bahavior camera
-file(GLOB BEHAVIOR_CAMERA_SOURCES "../src/peripherals/behaviorCamera.*")
-add_executable(testBehaviorCamera
+# Test behavior camera
+add_executable(test_behavior_camera
     ${COMMON_SOURCES}
-    ${BEHAVIOR_CAMERA_SOURCES}
-    "testBehaviorCamera.cpp")
-target_include_directories(testBehaviorCamera PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testBehaviorCamera Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(testBehaviorCamera ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testBehaviorCamera ${OpenCV_LIBS})
-target_link_libraries(testBehaviorCamera spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testBehaviorCamera COMMAND behaviorCameraTest)
+    ../src/peripherals/behavior_camera.cc
+    "test_behavior_camera.cc")
+target_include_directories(test_behavior_camera PRIVATE ${RECORDER_INCLUDE_DIR} ${GTEST_INCLUDE_DIR})
+target_link_libraries(test_behavior_camera Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(test_behavior_camera ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(test_behavior_camera ${OpenCV_LIBS})
+target_link_libraries(test_behavior_camera spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME test_behavior_camera COMMAND test_behavior_camera)
 
 # Test translation stages
-file(GLOB MOTION_CONTROL_SOURCES "../src/peripherals/motionControl.*")
-add_executable(testMotionControl
+add_executable(test_motion_control
     ${COMMON_SOURCES}
-    ${MOTION_CONTROL_SOURCES}
-    "testMotionControl.cpp")
-target_include_directories(testMotionControl PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testMotionControl Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(testMotionControl ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testMotionControl ${ZABER_MOTION_LIB})
-target_link_libraries(testMotionControl ${OpenCV_LIBS})
-target_link_libraries(testMotionControl spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testMotionControl COMMAND testMotionControl)
+    ../src/peripherals/motion_control.cc
+    "test_motion_control.cc")
+target_include_directories(test_motion_control PRIVATE ${RECORDER_INCLUDE_DIR} ${GTEST_INCLUDE_DIR})
+target_link_libraries(test_motion_control Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(test_motion_control ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(test_motion_control ${ZABER_MOTION_LIB})
+target_link_libraries(test_motion_control ${OpenCV_LIBS})
+target_link_libraries(test_motion_control spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME test_motion_control COMMAND test_motion_control)
 
-# Test camera acquisition config
-file(GLOB MOTION_CONTROL_SOURCES "../src/arduinoMessageProtocol.*")
-add_executable(testArduinoMessageProtocol
+# Test the recorder-microcontroller message protocol
+add_executable(test_arduino_message_protocol
     ${COMMON_SOURCES}
-    ${MOTION_CONTROL_SOURCES}
-    "testArduinoMessageProtocol.cpp")
-target_include_directories(testArduinoMessageProtocol PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testArduinoMessageProtocol Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(testArduinoMessageProtocol ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testArduinoMessageProtocol ${OpenCV_LIBS})
-target_link_libraries(testArduinoMessageProtocol spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testArduinoMessageProtocol COMMAND testArduinoMessageProtocol)
-
-# Test parameter loading
-file(GLOB PARAMETERS_SOURCES "../src/parameters.*")
-add_executable(testParameters
-    ${COMMON_SOURCES}
-    ${MOTION_CONTROL_SOURCES}
-    "testParameters.cpp")
-target_include_directories(testParameters PRIVATE ${GTEST_INCLUDE_DIR})
-target_link_libraries(testParameters ${GTEST_LIB} ${GTEST_MAIN_LIB})
-target_link_libraries(testParameters spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-add_test(NAME testParameters COMMAND testParameters)
+    ../src/peripherals/arduino_communication.cc
+    "test_arduino_message_protocol.cc")
+target_include_directories(test_arduino_message_protocol PRIVATE ${RECORDER_INCLUDE_DIR} ${GTEST_INCLUDE_DIR})
+target_link_libraries(test_arduino_message_protocol Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(test_arduino_message_protocol ${GTEST_LIB} ${GTEST_MAIN_LIB})
+target_link_libraries(test_arduino_message_protocol ${OpenCV_LIBS})
+target_link_libraries(test_arduino_message_protocol spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+add_test(NAME test_arduino_message_protocol COMMAND test_arduino_message_protocol)
