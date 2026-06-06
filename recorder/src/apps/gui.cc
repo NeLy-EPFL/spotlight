@@ -399,9 +399,9 @@ MainGUIWindow::MainGUIWindow(
         &QCheckBox::checkStateChanged,
         this,
         [this](int state) {
-            // Muscle imaging on/off is expressed by the muscle effective
-            // exposure: a non-zero value pulses the blue excitation LED, zero
-            // keeps it off (buildStreamingParams() reads muscleImagingEnabled_).
+            // Muscle imaging on/off is expressed by enableMuscle: when off the
+            // controller free-runs the behavior camera with the blue excitation
+            // LED disabled (buildStreamingParams() reads muscleImagingEnabled_).
             if (state == Qt::Checked) {
                 spdlog::info("Enabling muscle imaging");
                 muscleImagingEnabled_ = true;
@@ -532,8 +532,9 @@ MainGUIWindow::MainGUIWindow(
     }
 
     // Start in streaming mode: live preview only, not saving. Muscle imaging is
-    // off by default (excitation light off, i.e. muscEffExpTime == 0). The
-    // controller is configured with a single STREAM command.
+    // off by default (enableMuscle = false: behavior camera free-runs, blue
+    // excitation LED off). The controller is configured with a single STREAM
+    // command.
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
     muscleImagingCheckBox_->setEnabled(true);
@@ -726,15 +727,16 @@ void MainGUIWindow::endRecording(bool reachedProgrammedEnd) {
 
 TriggerParams MainGUIWindow::buildStreamingParams() const {
     TriggerParams params;
+    // Muscle imaging off => the controller free-runs the behavior camera and
+    // never pulses the blue excitation LED (enableMuscle in the protocol). The
+    // muscle-only fields below are still sent but ignored in that case.
+    params.enableMuscle = muscleImagingEnabled_;
     params.behFrameRate = streamingBehaviorFPS_;
     params.behMuscSyncRatio = streamingSyncRatio_;
     params.behExpTime = static_cast<unsigned int>(
         behaviorExposureTimeSpinBox_->value() * 1000);
-    // Muscle imaging off => no excitation pulse (muscEffExpTime == 0).
     params.muscEffExpTime =
-        muscleImagingEnabled_
-            ? static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000)
-            : 0;
+        static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000);
     params.pcoCamRollingTime = pcoCamRollingTimeUs_;
     params.pcoCamReadoutTime = pcoCamReadoutTimeUs_;
     return params;
@@ -742,15 +744,16 @@ TriggerParams MainGUIWindow::buildStreamingParams() const {
 
 TriggerParams MainGUIWindow::buildRecordingParams() const {
     TriggerParams params;
+    // The muscle camera is recorded (and the blue excitation light pulsed) only
+    // when the dual-recording config has both cameras enabled; otherwise the
+    // controller free-runs the behavior camera (enableMuscle = false).
+    params.enableMuscle = dualRecordingConfigForSaving_->isRecordingBoth();
     params.behFrameRate = behaviorFPSSpinBox_->value();
     params.behMuscSyncRatio = dualRecordingConfigForSaving_->getSyncRatio();
     params.behExpTime = static_cast<unsigned int>(
         behaviorExposureTimeSpinBox_->value() * 1000);
-    // The blue excitation light is used only when recording muscle frames.
     params.muscEffExpTime =
-        dualRecordingConfigForSaving_->isRecordingBoth()
-            ? static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000)
-            : 0;
+        static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000);
     params.pcoCamRollingTime = pcoCamRollingTimeUs_;
     params.pcoCamReadoutTime = pcoCamReadoutTimeUs_;
     return params;

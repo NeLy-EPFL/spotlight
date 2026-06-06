@@ -24,3 +24,9 @@ The disadvantage of this mode is that we cannot trigger the muscle camera extern
     - To mitigate this, we configure the muscle camera to produce a status signal that is OFF during the common time of all frames, and ON otherwise. When this signal switches to OFF from ON, the microcontroller triggers a frame for the behavior camera, and switches the lights on for the desired exposure time. Then, the microcontroller runs `syncRatio - 1` frame cycles for the behavior camera using its own clock, and then waits for the next signal from the muscle camera.
 2. We can't set the muscle camera's frame rate independently of its exposure time, since the frame rate is always `1 / (rollingTime + exposureTime + readoutTime)`.
     - To mitigate this, we set the muscle camera's exposure time to `effectiveExposureTime + bufferTime`, where `bufferTime` is determined so that `1 / (rollingTime + effectiveExposureTime + bufferTime + readoutTime)` is our desired frame rate for the muscle camera.
+
+## Behavior-only acquisition
+
+Muscle imaging is optional. When it is disabled (the `enableMuscle` flag of the trigger parameters is `false`; see the [communication protocol](comm_protocol.md)), the triggering controller does not synchronize to the muscle camera at all: it ignores the muscle camera's common-time signal and triggers the behavior camera on its own clock at the requested `behFrameRate`. In this mode the blue excitation LED is never pulsed, and the muscle-related parameters (`muscEffExpTime`, `behMuscSyncRatio`, `pcoCamRollingTime`, `pcoCamReadoutTime`) are unused.
+
+This mode is also what the recorder uses whenever it needs the behavior camera running without excitation light (for example, during camera alignment and the calibration scans). It supersedes the earlier approach of setting the muscle effective exposure time to 0, which switched off the excitation LED but still slaved the behavior camera to the free-running muscle camera.

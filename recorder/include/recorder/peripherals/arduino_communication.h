@@ -41,9 +41,10 @@ class ArduinoCommunication {
     // valid while an open recording is in progress.
     void stopRecording();
 
-    // Re-stream the most recently streamed params with the muscle effective
-    // exposure forced to 0. This switches the blue excitation light off while
-    // keeping the controller in a valid streaming state (the new protocol has
+    // Re-stream the most recently streamed params with the muscle camera
+    // disabled (enableMuscle = false). This switches the blue excitation light
+    // off and lets the behavior camera free-run on the controller's own clock,
+    // while keeping the controller in a valid streaming state (the protocol has
     // no "stop triggering" command).
     void stopExcitation();
 

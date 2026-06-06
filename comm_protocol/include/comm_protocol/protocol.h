@@ -87,6 +87,13 @@ class OperationStep {
  * for STREAM's "params" and START_RECORDING's "recParams"/"revertToParams".
  */
 struct TriggerParams {
+    // When true, the controller locks behavior acquisition to the free-running
+    // muscle (PCO) camera's common-time signal and pulses the blue excitation
+    // LED. When false, the muscle camera is ignored entirely: the controller
+    // free-runs the behavior camera on its own clock at behFrameRate, never
+    // pulses the blue LED, and the muscle-only fields below (muscEffExpTime,
+    // behMuscSyncRatio, pcoCamRollingTime, pcoCamReadoutTime) are unused.
+    bool enableMuscle = true;
     unsigned int behExpTime = 0;        // behavior cam exposure time (us)
     unsigned int muscEffExpTime = 0;    // muscle cam effective exposure (us)
     unsigned int behFrameRate = 1;      // behavior cam frame rate (fps), > 0

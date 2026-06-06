@@ -20,7 +20,10 @@
  * camera-buffer flush on START_RECORDING, so the timing loop runs at full
  * speed.
  *
- * Acquisition model (see docs/data_acquisition.md): the muscle camera free-runs
+ * Acquisition model (see docs/data_acquisition.md): the operating mode is
+ * selected per parameter set by TriggerParams::enableMuscle.
+ *
+ * When enableMuscle is true (muscle-synced mode), the muscle camera free-runs
  * in continuous mode and exposes a status signal that is LOW during the common
  * time of every muscle frame. The controller waits for the onset of each common
  * time (DeviceIO::isMuscCommonTime() becoming true) and, on that edge, fires
@@ -29,6 +32,13 @@
  * own clock at behFrameRate before waiting for the next common-time onset. The
  * muscle camera is never triggered over TTL (it is open-loop), so the muscle
  * trigger pin stays idle.
+ *
+ * When enableMuscle is false (free-running mode), the muscle camera is ignored
+ * entirely: the controller triggers the behavior camera on its own clock at
+ * behFrameRate, never reads the muscle common-time signal, and never pulses the
+ * blue excitation LED. The muscle-only parameters (muscEffExpTime,
+ * behMuscSyncRatio, pcoCamRollingTime, pcoCamReadoutTime) are unused. This is
+ * the mode for behavior-only acquisition.
  *
  * Commands (see docs/comm_protocol.md): STREAM and START_RECORDING reconfigure
  * the timing parameters; START_RECORDING additionally carries an opSequence
@@ -71,7 +81,16 @@ class TriggerController {
     void handleLog(const Command &cmd);
 
     // --- Timing engine ----------------------------------------------------
+    // Dispatch one timing step to the active mode's path (selected by the most
+    // recently applied params' enableMuscle flag).
     void runTriggers(unsigned long nowUs);
+    // Muscle-synced mode (enableMuscle == true): lock each behavior sync group
+    // to the muscle camera's common-time onset and pulse the blue LED.
+    void runMuscleSyncedTriggers(unsigned long nowUs);
+    // Free-running mode (enableMuscle == false): trigger the behavior camera on
+    // the controller's own clock at behFrameRate, with no muscle sync, no blue
+    // LED, and no overrun detection.
+    void runFreeRunningTriggers(unsigned long nowUs);
     void processOpSequence();
     void revertToStreaming();
     void resetTiming();
@@ -107,6 +126,7 @@ class TriggerController {
     // Effective parameters and the timing values derived from them.
     TriggerParams params_;
     TriggerParams revertToParams_;
+    bool muscleEnabled_ = true;           // params_.enableMuscle (active mode)
     unsigned long behPeriodUs_ = 1000000; // behavior frame period (us)
     unsigned int syncRatio_ = 1;          // behavior frames per muscle frame
     unsigned int behExpUs_ = 0;           // behavior exposure (us)
@@ -120,6 +140,7 @@ class TriggerController {
     bool prevCommonTime_ = false;    // previous isMuscCommonTime() reading
     unsigned long groupStartUs_ = 0; // micros() at the current group's onset
     unsigned int frameInGroup_ = 0;  // next behavior frame index in the group
+    unsigned long nextBehFrameUs_ = 0; // free-running mode: next frame due time
     bool behFrameActive_ = false;    // behavior shutter currently open
     unsigned long behFrameStartUs_ = 0;
     bool muscLEDActive_ = false; // blue excitation LED currently on

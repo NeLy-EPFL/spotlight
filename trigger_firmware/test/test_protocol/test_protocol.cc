@@ -27,6 +27,7 @@ constexpr unsigned long kTestHostConnectDelayMs = 20000;
 // TriggerParams whose fields satisfy every protocol constraint.
 TriggerParams validParams() {
     TriggerParams p;
+    p.enableMuscle = false; // non-default, so round-trips must carry it
     p.behExpTime = 1000;
     p.muscEffExpTime = 2000;
     p.behFrameRate = 100;
@@ -48,6 +49,7 @@ test(protocol_streamRoundTrip) {
     Command parsed = Command::parse(json);
     assertTrue(parsed.isValid);
     assertEqual((int)parsed.cmdType, (int)CmdType::STREAM);
+    assertEqual(parsed.params.enableMuscle, validParams().enableMuscle);
     assertEqual(parsed.params.behFrameRate, validParams().behFrameRate);
     assertEqual(parsed.params.behExpTime, validParams().behExpTime);
 }
@@ -56,6 +58,7 @@ test(protocol_startRecordingRoundTrip) {
     TriggerParams rec = validParams();
     TriggerParams revert = validParams();
     revert.behFrameRate = 50;
+    revert.enableMuscle = true; // rec/revert may carry different modes
 
     std::deque<OperationStep> seq;
     seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
@@ -70,6 +73,8 @@ test(protocol_startRecordingRoundTrip) {
     Command parsed = Command::parse(json);
     assertTrue(parsed.isValid);
     assertEqual((int)parsed.cmdType, (int)CmdType::START_RECORDING);
+    assertEqual(parsed.recParams.enableMuscle, rec.enableMuscle);
+    assertEqual(parsed.revertToParams.enableMuscle, revert.enableMuscle);
     assertEqual(parsed.recParams.behFrameRate, rec.behFrameRate);
     assertEqual(parsed.revertToParams.behFrameRate, revert.behFrameRate);
     assertEqual(parsed.opSequence.size(), (size_t)2);

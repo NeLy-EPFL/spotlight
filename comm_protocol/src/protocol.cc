@@ -58,6 +58,16 @@ bool opStepIsValid(OptoChannel channel, OpType op) {
     return false;
 }
 
+/** Read a required boolean field. */
+bool getBool(JsonObjectConst obj, const char *key, bool &out) {
+    JsonVariantConst v = obj[key];
+    if (!v.is<bool>()) {
+        return false;
+    }
+    out = v.as<bool>();
+    return true;
+}
+
 /** Read a required non-negative integer field. */
 bool getUint(JsonObjectConst obj, const char *key, unsigned int &out) {
     JsonVariantConst v = obj[key];
@@ -79,7 +89,8 @@ bool parseParams(JsonObjectConst obj, TriggerParams &out) {
     if (obj.isNull()) {
         return false;
     }
-    return getUint(obj, "behExpTime", out.behExpTime) &&
+    return getBool(obj, "enableMuscle", out.enableMuscle) &&
+           getUint(obj, "behExpTime", out.behExpTime) &&
            getUint(obj, "muscEffExpTime", out.muscEffExpTime) &&
            getPositiveUint(obj, "behFrameRate", out.behFrameRate) &&
            getPositiveUint(obj, "behMuscSyncRatio", out.behMuscSyncRatio) &&
@@ -89,6 +100,7 @@ bool parseParams(JsonObjectConst obj, TriggerParams &out) {
 
 /** Write a "params"-shaped object from `params` into `obj`. */
 void writeParams(JsonObject obj, const TriggerParams &params) {
+    obj["enableMuscle"] = params.enableMuscle;
     obj["behExpTime"] = params.behExpTime;
     obj["muscEffExpTime"] = params.muscEffExpTime;
     obj["behFrameRate"] = params.behFrameRate;

@@ -17,6 +17,7 @@ namespace {
 /** A TriggerParams instance with values that satisfy every field constraint. */
 TriggerParams validParams() {
     TriggerParams p;
+    p.enableMuscle = false; // non-default, so round-trips must carry it
     p.behExpTime = 1000;
     p.muscEffExpTime = 2000;
     p.behFrameRate = 100;   // must be >= 1
@@ -28,6 +29,7 @@ TriggerParams validParams() {
 
 /** Field-by-field comparison of two TriggerParams, with per-field diagnostics. */
 void expectParamsEqual(const TriggerParams &a, const TriggerParams &b) {
+    EXPECT_EQ(a.enableMuscle, b.enableMuscle);
     EXPECT_EQ(a.behExpTime, b.behExpTime);
     EXPECT_EQ(a.muscEffExpTime, b.muscEffExpTime);
     EXPECT_EQ(a.behFrameRate, b.behFrameRate);
@@ -163,7 +165,8 @@ TEST(RoundTrip, Stream) {
 TEST(RoundTrip, StartRecording) {
     TriggerParams rec = validParams();
     TriggerParams revert = validParams();
-    revert.behFrameRate = 50; // distinguish the two param blocks
+    revert.behFrameRate = 50;     // distinguish the two param blocks
+    revert.enableMuscle = true;   // rec/revert may carry different modes
 
     std::deque<OperationStep> seq;
     seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
@@ -179,6 +182,7 @@ TEST(RoundTrip, StartRecording) {
     expectParamsEqual(parsed.recParams, rec);
     expectParamsEqual(parsed.revertToParams, revert);
     EXPECT_NE(parsed.recParams.behFrameRate, parsed.revertToParams.behFrameRate);
+    EXPECT_NE(parsed.recParams.enableMuscle, parsed.revertToParams.enableMuscle);
 
     ASSERT_EQ(parsed.opSequence.size(), 2u);
     EXPECT_EQ(parsed.opSequence[0].frameIdx, 30u);
@@ -249,7 +253,7 @@ TEST(Parse, StreamMissingParams) {
 TEST(Parse, StreamRejectsZeroFrameRate) {
     // behFrameRate must be strictly positive.
     std::string json =
-        R"({"cmdType":"STREAM","params":{"behExpTime":0,)"
+        R"({"cmdType":"STREAM","params":{"enableMuscle":true,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":0,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
     Command cmd = Command::parse(json);
@@ -259,18 +263,52 @@ TEST(Parse, StreamRejectsZeroFrameRate) {
 TEST(Parse, StreamRejectsMissingField) {
     // pcoCamReadoutTime is absent.
     std::string json =
-        R"({"cmdType":"STREAM","params":{"behExpTime":0,)"
+        R"({"cmdType":"STREAM","params":{"enableMuscle":true,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0}})";
     Command cmd = Command::parse(json);
     EXPECT_FALSE(cmd.isValid);
 }
 
+TEST(Parse, StreamRejectsMissingEnableMuscle) {
+    // enableMuscle is a required field of every params block.
+    std::string json =
+        R"({"cmdType":"STREAM","params":{"behExpTime":0,)"
+        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+    Command cmd = Command::parse(json);
+    EXPECT_FALSE(cmd.isValid);
+}
+
+TEST(Parse, StreamRejectsNonBoolEnableMuscle) {
+    // enableMuscle must be a JSON boolean, not a number or string.
+    std::string json =
+        R"({"cmdType":"STREAM","params":{"enableMuscle":"yes","behExpTime":0,)"
+        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+    Command cmd = Command::parse(json);
+    EXPECT_FALSE(cmd.isValid);
+}
+
+TEST(Parse, StreamAcceptsMuscleDisabled) {
+    // A behavior-only params block (enableMuscle false) parses fine; the
+    // muscle-only fields are still present but unused by the controller.
+    std::string json =
+        R"({"cmdType":"STREAM","params":{"enableMuscle":false,"behExpTime":0,)"
+        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+    Command cmd = Command::parse(json);
+    ASSERT_TRUE(cmd.isValid);
+    EXPECT_EQ(cmd.cmdType, CmdType::STREAM);
+    EXPECT_FALSE(cmd.params.enableMuscle);
+}
+
 TEST(Parse, StartRecordingMissingRevertParams) {
     std::string json =
-        R"({"cmdType":"START_RECORDING","recParams":{"behExpTime":0,)"
-        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0},"opSequence":[]})";
+        R"({"cmdType":"START_RECORDING","recParams":{"enableMuscle":true,)"
+        R"("behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
+        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
+        R"("pcoCamReadoutTime":0},"opSequence":[]})";
     Command cmd = Command::parse(json);
     EXPECT_FALSE(cmd.isValid);
 }
@@ -278,8 +316,9 @@ TEST(Parse, StartRecordingMissingRevertParams) {
 TEST(Parse, StartRecordingMissingOpSequence) {
     // opSequence is required even though it may be empty.
     std::string params =
-        R"({"behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
-        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,"pcoCamReadoutTime":0})";
+        R"({"enableMuscle":true,"behExpTime":0,"muscEffExpTime":0,)"
+        R"("behFrameRate":100,"behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
+        R"("pcoCamReadoutTime":0})";
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params + "}";
     Command cmd = Command::parse(json);
@@ -289,8 +328,9 @@ TEST(Parse, StartRecordingMissingOpSequence) {
 TEST(Parse, StartRecordingRejectsBadStep) {
     // A STOP step on a specific channel (rather than ALL) is invalid.
     std::string params =
-        R"({"behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
-        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,"pcoCamReadoutTime":0})";
+        R"({"enableMuscle":true,"behExpTime":0,"muscEffExpTime":0,)"
+        R"("behFrameRate":100,"behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
+        R"("pcoCamReadoutTime":0})";
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params +
                        R"(,"opSequence":[{"frameIdx":90,"channel":2,)"
@@ -301,8 +341,9 @@ TEST(Parse, StartRecordingRejectsBadStep) {
 
 TEST(Parse, StartRecordingAcceptsEmptyOpSequence) {
     std::string params =
-        R"({"behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
-        R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,"pcoCamReadoutTime":0})";
+        R"({"enableMuscle":true,"behExpTime":0,"muscEffExpTime":0,)"
+        R"("behFrameRate":100,"behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
+        R"("pcoCamReadoutTime":0})";
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params +
                        R"(,"opSequence":[]})";

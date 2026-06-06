@@ -155,7 +155,9 @@ void ArduinoCommunication::stopExcitation() {
         std::lock_guard<std::mutex> lock(mutex_);
         params = lastStreamParams_;
     }
-    params.muscEffExpTime = 0; // blue excitation LED never fires
+    // Disable the muscle camera entirely: the controller free-runs the behavior
+    // camera on its own clock and never pulses the blue excitation LED.
+    params.enableMuscle = false;
     stream(params);
 }
 
@@ -175,9 +177,12 @@ TriggerParams makeDefaultStreamParams(
     params.behExpTime = recorderConfig.getParameter<int>(
         "behavior_camera", "default_exposure_time_us");
     params.behMuscSyncRatio = syncRatio >= 1 ? syncRatio : 1;
+    // enableMuscle selects the controller's mode; when false the muscle-only
+    // fields below are sent but ignored (the behavior camera free-runs).
+    params.enableMuscle = muscleImagingOn;
     int muscleLightOnTimeUs = recorderConfig.getParameter<int>(
         "muscle_camera", "default_light_on_time_us");
-    params.muscEffExpTime = muscleImagingOn ? muscleLightOnTimeUs : 0;
+    params.muscEffExpTime = muscleLightOnTimeUs;
     double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
     double sensorReadoutTimeUs = recorderConfig.getParameter<double>(
@@ -219,9 +224,10 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
         recorderConfig, muscleNumLinesScanned, syncRatio,
         /*muscleImagingOn=*/true);
     spdlog::info(
-        "Streaming default trigger params: behFrameRate={}, behExpTime={} us, "
-        "behMuscSyncRatio={}, muscEffExpTime={} us, pcoCamRollingTime={} us, "
-        "pcoCamReadoutTime={} us",
+        "Streaming default trigger params: enableMuscle={}, behFrameRate={}, "
+        "behExpTime={} us, behMuscSyncRatio={}, muscEffExpTime={} us, "
+        "pcoCamRollingTime={} us, pcoCamReadoutTime={} us",
+        params.enableMuscle,
         params.behFrameRate,
         params.behExpTime,
         params.behMuscSyncRatio,

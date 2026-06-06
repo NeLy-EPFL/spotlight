@@ -8,17 +8,25 @@ There are four types of commands: `STREAM`, `START_RECORDING`, `STOP_RECORDING`,
 {
     "cmdType": "STREAM",  // fixed literal string
     "params": {
+        "enableMuscle": ..., // boolean; false => behavior-only (see below)
         "behExpTime": ...,  // non-negative integer
-        "muscEffExpTime": ...,  // non-negative integer
+        "muscEffExpTime": ...,  // non-negative integer (muscle-only)
         "behFrameRate": ...,  // positive integer
-        "behMuscSyncRatio": ...,  // positive integer
-        "pcoCamRollingTime": ...,  // non-negative integer
-        "pcoCamReadoutTime": ...  // non-negative integer
+        "behMuscSyncRatio": ...,  // positive integer (muscle-only)
+        "pcoCamRollingTime": ...,  // non-negative integer (muscle-only)
+        "pcoCamReadoutTime": ...  // non-negative integer (muscle-only)
     }
 }
 ```
 
 Upon a `STREAM` command, the triggering controller changes its state based on information in `params`. The images acquired by the cameras are streamed to the recorder GUI for a live preview in the GUI. There is no special action to be taken by the triggering controller other than sending trigger signals.
+
+The `enableMuscle` flag selects the controller's acquisition mode (see [data acquisition](data_acquisition.md)):
+
+- When **`true`** (muscle-synced mode), the controller synchronizes behavior acquisition to the free-running muscle (PCO) camera: it locks each group of `behMuscSyncRatio` behavior frames to the muscle camera's common-time signal and pulses the blue excitation LED for `muscEffExpTime`.
+- When **`false`** (free-running mode), the muscle camera is ignored entirely. The controller triggers the behavior camera on its own clock at `behFrameRate`, never pulses the blue excitation LED, and ignores the muscle-only fields (`muscEffExpTime`, `behMuscSyncRatio`, `pcoCamRollingTime`, `pcoCamReadoutTime`). This is the mode for behavior-only acquisition. It replaces the former convention of disabling muscle imaging by setting `muscEffExpTime` to 0, which kept the behavior camera locked to the (still free-running) muscle camera.
+
+The muscle-only fields must still be present and well-formed even when `enableMuscle` is `false`; they are simply unused.
 
 
 ## `START_RECORDING`
@@ -26,8 +34,8 @@ Upon a `STREAM` command, the triggering controller changes its state based on in
 ```json
 {
     "cmdType": "START_RECORDING",
-    "recParams": {...},  // same as params in STREAM
-    "revertToParams": {...},  // same as params in STREAM
+    "recParams": {...},  // same as params in STREAM (carries enableMuscle)
+    "revertToParams": {...},  // same as params in STREAM (carries enableMuscle)
     "opSequence": [  // list of variable length (empty list allowed)
         {
             "frameIdx": ...,  // non-negative integer
@@ -40,6 +48,8 @@ Upon a `STREAM` command, the triggering controller changes its state based on in
 ```
 
 Upon a `START_RECORDING` command, the triggering controller changes its settings based on information in `recParams` and starts recording. When recording finishes, the triggering controller changes its settings to `revertToParams`.
+
+Because `recParams` and `revertToParams` each have the same shape as a `STREAM` `params` object, each carries its own `enableMuscle` flag. The two may differ: for example, a recording can image muscle (`recParams.enableMuscle = true`) and then revert to a behavior-only live preview (`revertToParams.enableMuscle = false`).
 
 If `opSequence` is empty, the recording is _open_: it keeps going on until the user stops it in the GUI, at which point the recorder sends a `STOP_RECORDING` command to the triggering controller. Aside from a different set of timing parameters, the behavior of the triggering controller is the same as `STREAM`.
 

@@ -140,6 +140,14 @@ void TriggerController::handleLog(const Command &cmd) {
 /* -------------------------------------------------------------------------- */
 
 void TriggerController::runTriggers(unsigned long nowUs) {
+    if (muscleEnabled_) {
+        runMuscleSyncedTriggers(nowUs);
+    } else {
+        runFreeRunningTriggers(nowUs);
+    }
+}
+
+void TriggerController::runMuscleSyncedTriggers(unsigned long nowUs) {
     // Detect the onset of the muscle camera's common time (signal LOW). Each
     // onset starts a new sync group whose first behavior frame is locked to it.
     bool common = device_.isMuscCommonTime();
@@ -201,6 +209,34 @@ void TriggerController::runTriggers(unsigned long nowUs) {
     }
 }
 
+void TriggerController::runFreeRunningTriggers(unsigned long nowUs) {
+    // Free-running mode: the muscle camera is ignored, so there is no
+    // common-time signal, no sync group, and no blue excitation LED. Behavior
+    // frames are scheduled purely on the controller's own clock at behPeriodUs_.
+
+    // Start the next behavior frame once it is due. nextBehFrameUs_ holds the
+    // scheduled micros() time of the next frame and is advanced by one period as
+    // each frame starts; the signed-difference test is wraparound-safe.
+    if (!behFrameActive_ &&
+        static_cast<long>(nowUs - nextBehFrameUs_) >= 0) {
+        device_.startBehCamTrigger();
+        device_.turnOnBehLED();
+        behFrameActive_ = true;
+        behFrameStartUs_ = nowUs;
+        nextBehFrameUs_ += behPeriodUs_;
+        ++behFrameCount_;
+    }
+
+    // Close the behavior shutter (and IR LED) after the exposure time. behExpUs_
+    // is guaranteed shorter than behPeriodUs_, so the frame always closes before
+    // the next one is due.
+    if (behFrameActive_ && (nowUs - behFrameStartUs_) >= behExpUs_) {
+        device_.stopBehCamTrigger();
+        device_.turnOffBehLED();
+        behFrameActive_ = false;
+    }
+}
+
 void TriggerController::processOpSequence() {
     while (!opSequence_.empty()) {
         const OperationStep &step = opSequence_.front();
@@ -244,6 +280,8 @@ void TriggerController::resetTiming() {
     prevCommonTime_ = device_.isMuscCommonTime();
     frameInGroup_ = 0;
     groupStartUs_ = micros();
+    // Free-running mode: schedule the first behavior frame immediately.
+    nextBehFrameUs_ = groupStartUs_;
     behFrameActive_ = false;
     muscLEDActive_ = false;
     behFrameCount_ = 0;
@@ -256,6 +294,7 @@ void TriggerController::resetTiming() {
 
 void TriggerController::applyParams(const TriggerParams &params) {
     params_ = params;
+    muscleEnabled_ = params_.enableMuscle;           // selects the timing path
     behPeriodUs_ = 1000000UL / params_.behFrameRate; // behFrameRate >= 1
     syncRatio_ = params_.behMuscSyncRatio;           // >= 1
     behExpUs_ = params_.behExpTime;
@@ -265,11 +304,18 @@ void TriggerController::applyParams(const TriggerParams &params) {
 bool TriggerController::checkParamsTiming(const TriggerParams &params) const {
     // behFrameRate and behMuscSyncRatio are guaranteed >= 1 by the protocol.
     unsigned long behPeriodUs = 1000000UL / params.behFrameRate;
+    if (params.behExpTime >= behPeriodUs) {
+        return false;
+    }
+    // In free-running mode the muscle camera is unused, so only the behavior
+    // timing is constrained.
+    if (!params.enableMuscle) {
+        return true;
+    }
     // One muscle frame spans a whole sync group of behavior frames.
     unsigned long muscPeriodUs =
         behPeriodUs * static_cast<unsigned long>(params.behMuscSyncRatio);
-    return params.behExpTime < behPeriodUs &&
-           params.muscEffExpTime < muscPeriodUs;
+    return params.muscEffExpTime < muscPeriodUs;
 }
 
 /* -------------------------------------------------------------------------- */
