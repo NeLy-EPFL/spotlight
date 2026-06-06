@@ -89,7 +89,6 @@ set(COMMON_SOURCES
 set(PERIPHERAL_SOURCES
     src/peripherals/arduino_communication.cc
     src/peripherals/behavior_camera.cc
-    src/peripherals/experiment_protocol.cc
     src/peripherals/motion_control.cc
     src/peripherals/muscle_camera.cc)
 
@@ -139,7 +138,6 @@ add_executable(align-cameras
     src/peripherals/behavior_camera.cc
     src/peripherals/muscle_camera.cc
     src/peripherals/arduino_communication.cc
-    src/peripherals/experiment_protocol.cc
     src/common/behavior_recording.cc
     src/common/muscle_recording.cc
     src/common/recorder_config.cc
@@ -163,7 +161,6 @@ add_executable(run-arena-registration-scan
     src/peripherals/behavior_camera.cc
     src/peripherals/motion_control.cc
     src/peripherals/arduino_communication.cc
-    src/peripherals/experiment_protocol.cc
     src/common/cli.cc
     src/common/recorder_config.cc
     src/common/behavior_recording.cc

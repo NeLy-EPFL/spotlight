@@ -48,7 +48,9 @@ void quitProgram() {
     if (programState)
         programState->toQuit.store(true);
     if (arduinoCommunication) {
-        arduinoCommunication->setBehaviorRecordingFPS(0);
+        // The new protocol has no "stop triggering" command; switch the blue
+        // excitation light off, then close the link.
+        arduinoCommunication->stopExcitation();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         arduinoCommunication->stopCommunication();
     }
@@ -196,7 +198,9 @@ void runArenaRegistrationScan(
         }
         if (behaviorThread.joinable())
             behaviorThread.join();
-        arduinoCommunication->setBehaviorRecordingFPS(0);
+        // The new protocol has no "stop triggering" command; switch the blue
+        // excitation light off, then close the link.
+        arduinoCommunication->stopExcitation();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         arduinoCommunication->stopCommunication();
     };

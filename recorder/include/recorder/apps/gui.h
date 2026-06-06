@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -31,7 +32,8 @@
 #include "recorder/common/tracking_control.h"
 #include "recorder/common/utils.h"
 #include "recorder/peripherals/arduino_communication.h"
-#include "recorder/peripherals/experiment_protocol.h"
+
+#include <comm_protocol/protocol.h>
 
 // Forward declaration from main.hpp
 bool quitProgram();
@@ -99,6 +101,15 @@ class MainGUIWindow : public QWidget {
     void incrementDirectory();
 
   private:
+    // Assemble the STREAM / START_RECORDING params from the current widget
+    // values and the cached PCO timing.
+    TriggerParams buildStreamingParams() const;
+    TriggerParams buildRecordingParams() const;
+    // Shared by the Stop button (manual) and the programmed-stop timer.
+    // reachedProgrammedEnd is true when a scheduled recording ran to its end
+    // (the controller has already reverted on its own).
+    void endRecording(bool reachedProgrammedEnd);
+
     std::shared_ptr<ProgramState> programState_;
     QSpinBox *behaviorFPSSpinBox_;
     QSpinBox *syncRatioSpinBox_;
@@ -134,8 +145,16 @@ class MainGUIWindow : public QWidget {
     int muscleImage16To8BitScale_ = 1;
     int muscleImage16To8BitOffset_ = 0;
     int streamingBehaviorFPS_ = 0;
-    int streamingSyncRatio_ = INT_MAX;
+    int streamingSyncRatio_ = 1;
     bool muscleImagingEnabled_ = false;
+
+    // PCO sensor timing sent to the controller so it can derive the muscle
+    // trigger delay (rolling time = scanned lines * line time).
+    unsigned int pcoCamRollingTimeUs_ = 0;
+    unsigned int pcoCamReadoutTimeUs_ = 0;
+    // True while the in-progress recording is a scheduled one (non-empty
+    // opSequence). Controls how the recording is ended (see endRecording()).
+    bool currentRecordingIsScheduled_ = false;
 
   protected:
     void closeEvent(QCloseEvent *event) override;
@@ -180,6 +199,6 @@ cv::Mat addCornerMarker(
 
 int parseProtocolString(
     const std::string &protocolTextFieldString,
-    std::vector<ProtocolStep> &steps);
+    std::deque<OperationStep> &opSequence);
 
 std::string incrementDirectoryName(const std::string &path);

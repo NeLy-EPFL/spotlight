@@ -118,72 +118,45 @@ ArduinoCommunication::~ArduinoCommunication() {
     arduinoCommThread_.join();
 }
 
-void ArduinoCommunication::setBehaviorRecordingFPS(int fps) {
-    std::string message = ">SET_BEHAVIOR_FPS " + std::to_string(fps) + "\n";
+void ArduinoCommunication::enqueueMessage(const std::string &message) {
+    // The controller frames commands by newline (see trigger_firmware
+    // SerialIO), so every JSON command is terminated with one.
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
+        arduinoMessagesQueue_.push(message + "\n");
     }
     cv_.notify_one();
 }
 
-void ArduinoCommunication::setSyncRatio(int syncRatio) {
-    std::string message = ">SET_SYNC_RATIO " + std::to_string(syncRatio) + "\n";
+void ArduinoCommunication::stream(const TriggerParams &params) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
+        lastStreamParams_ = params;
     }
-    cv_.notify_one();
-}
-
-void ArduinoCommunication::setBehaviorExposureTime(int exposureTimeUs) {
-    std::string message =
-        ">SET_BEHAVIOR_EXPOSURE_TIME " + std::to_string(exposureTimeUs) + "\n";
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
-    }
-    cv_.notify_one();
-}
-
-void ArduinoCommunication::setMuscleCamTriggerDelay(int delayUs) {
-    std::string message =
-        ">SET_MUSCLE_CAM_TRIGGER_DELAY " + std::to_string(delayUs) + "\n";
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
-    }
-    cv_.notify_one();
-}
-
-void ArduinoCommunication::setMuscleLightOnTime(int lightOnTimeUs) {
-    std::string message =
-        ">SET_MUSCLE_LIGHT_ON_TIME " + std::to_string(lightOnTimeUs) + "\n";
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
-    }
-    cv_.notify_one();
+    enqueueMessage(Command::makeStreamCommand(params).toString());
 }
 
 void ArduinoCommunication::startRecording(
-    std::vector<ProtocolStep> protocolSteps) {
-    std::string protocolString = generateProtocolString(protocolSteps);
-    std::string message = ">START_RECORDING " + protocolString + "\n";
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
-    }
-    cv_.notify_one();
+    const TriggerParams &recParams,
+    const TriggerParams &revertToParams,
+    const std::deque<OperationStep> &opSequence) {
+    enqueueMessage(
+        Command::makeStartRecordingCommand(recParams, revertToParams, opSequence)
+            .toString());
 }
 
 void ArduinoCommunication::stopRecording() {
-    std::string message = ">STOP_RECORDING\n";
+    enqueueMessage(Command::makeStopRecordingCommand().toString());
+}
+
+void ArduinoCommunication::stopExcitation() {
+    TriggerParams params;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        arduinoMessagesQueue_.push(message);
+        params = lastStreamParams_;
     }
-    cv_.notify_one();
+    params.muscEffExpTime = 0; // blue excitation LED never fires
+    stream(params);
 }
 
 void ArduinoCommunication::stopCommunication() {
@@ -191,18 +164,28 @@ void ArduinoCommunication::stopCommunication() {
     cv_.notify_one();
 }
 
-std::string generateProtocolString(std::vector<ProtocolStep> protocolSteps) {
-    std::string protocolString;
-    if (protocolSteps.empty()) {
-        protocolString = ";";
-    } else {
-        for (const auto &step : protocolSteps) {
-            protocolString += step.toString() + ";";
-        }
-        // Remove last tangling semicolon
-        protocolString.pop_back();
-    }
-    return protocolString;
+TriggerParams makeDefaultStreamParams(
+    RecorderConfig &recorderConfig,
+    int muscleNumLinesScanned,
+    int syncRatio,
+    bool muscleImagingOn) {
+    TriggerParams params;
+    params.behFrameRate = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    params.behExpTime = recorderConfig.getParameter<int>(
+        "behavior_camera", "default_exposure_time_us");
+    params.behMuscSyncRatio = syncRatio >= 1 ? syncRatio : 1;
+    int muscleLightOnTimeUs = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_light_on_time_us");
+    params.muscEffExpTime = muscleImagingOn ? muscleLightOnTimeUs : 0;
+    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "rolling_shutter_line_time_us");
+    double sensorReadoutTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "sensor_readout_time_us");
+    params.pcoCamRollingTime =
+        static_cast<unsigned int>(muscleNumLinesScanned * rollingShutterLineTimeUs);
+    params.pcoCamReadoutTime = static_cast<unsigned int>(sensorReadoutTimeUs);
+    return params;
 }
 
 std::string findArduinoPortName(RecorderConfig &recorderConfig) {
@@ -232,28 +215,20 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     std::unique_ptr<ArduinoCommunication> arduinoCommunication =
         std::make_unique<ArduinoCommunication>(arduinoPortName);
     spdlog::info("Arduino communication started");
-    int behaviorFrameRate = recorderConfig.getParameter<int>(
-        "behavior_camera", "streaming_frame_rate");
-    int behaviorExposureTimeUs = recorderConfig.getParameter<int>(
-        "behavior_camera", "default_exposure_time_us");
-    int muscleLightOnTimeUs = recorderConfig.getParameter<int>(
-        "muscle_camera", "default_light_on_time_us");
-    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
-        "muscle_camera", "rolling_shutter_line_time_us");
+    TriggerParams params = makeDefaultStreamParams(
+        recorderConfig, muscleNumLinesScanned, syncRatio,
+        /*muscleImagingOn=*/true);
     spdlog::info(
-        "Setting behavior recording FPS via Arduino to {}", behaviorFrameRate);
-    arduinoCommunication->setBehaviorRecordingFPS(behaviorFrameRate);
-    spdlog::info("Setting sync ratio via Arduino to {}", syncRatio);
-    arduinoCommunication->setSyncRatio(syncRatio);
-    spdlog::info(
-        "Setting behavior exposure time via Arduino to {} us",
-        behaviorExposureTimeUs);
-    arduinoCommunication->setBehaviorExposureTime(behaviorExposureTimeUs);
-    spdlog::info(
-        "Setting muscle exposure time (light-on time) via Arduino to "
-        "{} us",
-        muscleLightOnTimeUs);
-    arduinoCommunication->setMuscleLightOnTime(muscleLightOnTimeUs);
+        "Streaming default trigger params: behFrameRate={}, behExpTime={} us, "
+        "behMuscSyncRatio={}, muscEffExpTime={} us, pcoCamRollingTime={} us, "
+        "pcoCamReadoutTime={} us",
+        params.behFrameRate,
+        params.behExpTime,
+        params.behMuscSyncRatio,
+        params.muscEffExpTime,
+        params.pcoCamRollingTime,
+        params.pcoCamReadoutTime);
+    arduinoCommunication->stream(params);
     spdlog::info("Arduino parameters set");
 
     return arduinoCommunication;

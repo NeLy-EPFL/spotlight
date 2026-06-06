@@ -21,6 +21,10 @@ struct GroupOfThreeFrames {
     FrameData frame0;
     FrameData frame1;
     FrameData frame2;
+    // Number of frames actually acquired (1, 2, or 3). A recording whose total
+    // behavior-frame count is not a multiple of three ends on a partial group:
+    // the unused trailing channels are saved black and not logged in the CSV.
+    int numValidFrames = 3;
 };
 
 struct SerialPortInfo {

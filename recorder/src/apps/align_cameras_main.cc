@@ -346,10 +346,10 @@ void alignCamera(std::filesystem::path profileDir) {
     muscleImageAcquirerThread.join();
     spdlog::info("Behavior camera acquisition thread stopped");
 
-    // Stop triggering
-    spdlog::info("Stopping triggering via Arduino");
-    arduinoCommunication->setBehaviorRecordingFPS(0);
-    // arduinoCommunication->setSyncRatio(INT_MAX);
+    // Stop triggering. The new protocol has no "stop triggering" command, so
+    // switch the blue excitation light off, then close the link.
+    spdlog::info("Switching off excitation and closing Arduino link");
+    arduinoCommunication->stopExcitation();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     arduinoCommunication->stopCommunication();
 }

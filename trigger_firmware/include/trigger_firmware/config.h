@@ -14,12 +14,12 @@ inline constexpr int incomingCmdBufferSize = 16384;
 // Pin assignments
 inline constexpr int onOffSwitchPin = 8;
 
-inline constexpr int behCamPin = 9;
+inline constexpr int behCamPin = 10;
 inline constexpr int irLEDPin = 5;
 
-inline constexpr int muscCamTriggerPin = 10;
-inline constexpr int muscCamStatusPin = 11;
-inline constexpr int blueLEDPin = 12;
+inline constexpr int muscCamTriggerPin = 11;
+inline constexpr int muscCamStatusPin = 12;
+inline constexpr int blueLEDPin = 13;
 
 inline constexpr int optoCh2Pin = 6;
 inline constexpr int optoCh3Pin = 7;

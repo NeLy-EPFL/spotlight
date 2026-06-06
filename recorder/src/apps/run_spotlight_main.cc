@@ -66,7 +66,7 @@ bool quitProgram()
 
     // Stop muscle excitation
     spdlog::info("Switching off muscle excitation light.");
-    arduinoCommunication->setSyncRatio(INT_MAX);
+    arduinoCommunication->stopExcitation();
 
     std::exit(0);
 }

@@ -234,6 +234,14 @@ MainGUIWindow::MainGUIWindow(
         rollingShutterLineTimeUs,
         muscleCamReadoutTimeUs);
 
+    // Cache the PCO sensor timing sent in every STREAM / START_RECORDING. The
+    // controller derives the muscle trigger delay from these (the rolling time
+    // is the time to scan all lines of the muscle ROI).
+    pcoCamRollingTimeUs_ = static_cast<unsigned int>(
+        muscleRecordingState_->muscleCamera->getNumLinesScanned() *
+        rollingShutterLineTimeUs);
+    pcoCamReadoutTimeUs_ = static_cast<unsigned int>(muscleCamReadoutTimeUs);
+
     // Behavior FPS widget
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
@@ -286,8 +294,12 @@ MainGUIWindow::MainGUIWindow(
         behaviorExposureTimeSpinBox_,
         QOverload<double>::of(&QDoubleSpinBox::valueChanged),
         this,
-        [this, arduinoCommunication](double value) {
-            arduinoCommunication->setBehaviorExposureTime(value * 1000);
+        [this](double) {
+            // Only adjust live (streaming) params; sending a STREAM mid-recording
+            // would revert the controller and abort the recording.
+            if (!programState_->isRecording.load()) {
+                arduinoCommunication_->stream(buildStreamingParams());
+            }
         });
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
@@ -310,8 +322,10 @@ MainGUIWindow::MainGUIWindow(
         muscleLightOnTimeSpinBox_,
         QOverload<double>::of(&QDoubleSpinBox::valueChanged),
         this,
-        [this, arduinoCommunication](double value) {
-            arduinoCommunication->setMuscleLightOnTime(value * 1000);
+        [this](double) {
+            if (!programState_->isRecording.load()) {
+                arduinoCommunication_->stream(buildStreamingParams());
+            }
         });
     QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
     muscleLightOnTimeLayout->addWidget(
@@ -384,22 +398,19 @@ MainGUIWindow::MainGUIWindow(
         muscleImagingCheckBox_,
         &QCheckBox::checkStateChanged,
         this,
-        [this, arduinoCommunication](int state) {
+        [this](int state) {
+            // Muscle imaging on/off is expressed by the muscle effective
+            // exposure: a non-zero value pulses the blue excitation LED, zero
+            // keeps it off (buildStreamingParams() reads muscleImagingEnabled_).
             if (state == Qt::Checked) {
-                spdlog::info(
-                    "Enabling muscle imaging, "
-                    "setting sync ratio to {}",
-                    streamingSyncRatio_);
+                spdlog::info("Enabling muscle imaging");
                 muscleImagingEnabled_ = true;
-                arduinoCommunication->setSyncRatio(streamingSyncRatio_);
-                arduinoCommunication->setMuscleCamTriggerDelay(
-                    dualRecordingConfigForStreaming_
-                        ->getMuscleCamTriggerDelayUs());
             } else {
-                spdlog::info("Disabling muscle imaging, "
-                             "setting sync ratio to INT_MAX");
+                spdlog::info("Disabling muscle imaging");
                 muscleImagingEnabled_ = false;
-                arduinoCommunication->setSyncRatio(INT_MAX);
+            }
+            if (!programState_->isRecording.load()) {
+                arduinoCommunication_->stream(buildStreamingParams());
             }
         });
     if (!dualRecordingConfig->isRecordingBoth()) {
@@ -486,7 +497,7 @@ MainGUIWindow::MainGUIWindow(
         [this, programmedRecordingStop]() {
             if (programmedRecordingStop->hasEndedFlagForGUI.load()) {
                 spdlog::info("Protocol stop reached. Stopping recording.");
-                stopRecording();
+                endRecording(/*reachedProgrammedEnd=*/true);
                 programmedRecordingStop->numBehaviorFramesExpected = -1;
                 programmedRecordingStop->numMuscleFramesExpected = -1;
                 programmedRecordingStop->hasEndedFlagForGUI.store(
@@ -513,19 +524,21 @@ MainGUIWindow::MainGUIWindow(
     layout->addLayout(recordStopButtonsLayout);
     setLayout(layout);
 
-    // Initially set excitation light on time to correct value
+    // Wait for the muscle camera before the first STREAM (its rolling/readout
+    // timing feeds the trigger params).
     while (!muscleRecordingState->muscleCamera) {
         spdlog::info("Waiting for muscle camera to be ready...");
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    arduinoCommunication->setMuscleLightOnTime(
-        dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
 
-    // Muscle imaging disabled by default
-    arduinoCommunication_->setSyncRatio(INT_MAX);
-
-    // Initialy stream images only, don't save
-    stopRecording();
+    // Start in streaming mode: live preview only, not saving. Muscle imaging is
+    // off by default (excitation light off, i.e. muscEffExpTime == 0). The
+    // controller is configured with a single STREAM command.
+    recordButton_->setEnabled(true);
+    stopButton_->setEnabled(false);
+    muscleImagingCheckBox_->setEnabled(true);
+    programState_->isRecording.store(false);
+    arduinoCommunication->stream(buildStreamingParams());
 }
 
 void MainGUIWindow::startRecording() {
@@ -580,10 +593,10 @@ void MainGUIWindow::startRecording() {
     muscleImagingCheckBox_->setEnabled(false);
 
     // Parse and set experiment protocol
-    std::vector<ProtocolStep> protocolSteps;
+    std::deque<OperationStep> opSequence;
     int numStepsParsed = parseProtocolString(
-        experimentProtocol_->toPlainText().toStdString(), protocolSteps);
-    spdlog::info("Parsed {} protocol steps", protocolSteps.size());
+        experimentProtocol_->toPlainText().toStdString(), opSequence);
+    spdlog::info("Parsed {} protocol steps", opSequence.size());
     if (numStepsParsed < 0) {
         std::string errorMessage = "Invalid experiment protocol string";
         spdlog::error(errorMessage);
@@ -595,17 +608,18 @@ void MainGUIWindow::startRecording() {
         programmedRecordingStop_->numMuscleFramesExpected = -1;
     } else {
         spdlog::info(
-            "GUI starting recording with {} protocol steps",
-            protocolSteps.size());
+            "GUI starting recording with {} protocol steps", opSequence.size());
         programmedRecordingStop_->numBehaviorFramesExpected =
-            protocolSteps.back().frameCount;
+            opSequence.back().frameIdx;
         programmedRecordingStop_->numMuscleFramesExpected =
-            protocolSteps.back().frameCount / syncRatioSpinBox_->value();
+            opSequence.back().frameIdx / syncRatioSpinBox_->value();
         spdlog::info(
             "Setting expected number of steps to {} (behavior) and {} (muscle)",
             programmedRecordingStop_->numBehaviorFramesExpected,
             programmedRecordingStop_->numMuscleFramesExpected);
     }
+    // An empty opSequence is an open recording; a non-empty one is scheduled.
+    currentRecordingIsScheduled_ = numStepsParsed > 0;
 
     // Initialize save directory
     saveDirectory_->initialize();
@@ -664,40 +678,82 @@ void MainGUIWindow::startRecording() {
             behaviorCalibrationFilePath.string());
     }
 
-    // Send triggering parameters to Arduino and start recording
-    arduinoCommunication_->setBehaviorRecordingFPS(
-        behaviorFPSSpinBox_->value());
-    arduinoCommunication_->setSyncRatio(
-        dualRecordingConfigForSaving_->getSyncRatio());
-    arduinoCommunication_->setMuscleCamTriggerDelay(
-        dualRecordingConfigForSaving_->getMuscleCamTriggerDelayUs());
-    arduinoCommunication_->startRecording(protocolSteps);
+    // Send triggering parameters and start recording. The controller reverts to
+    // the streaming (revert-to) params when the recording ends.
+    TriggerParams recParams = buildRecordingParams();
+    TriggerParams revertToParams = buildStreamingParams();
+    arduinoCommunication_->startRecording(recParams, revertToParams, opSequence);
 
-    // Arduino will pause 100ms before starting triggering. This is to leave
-    // some time to currently dangling, unprocessed time to pass through the
-    // image saver thread. This way, when the image acquirer thread receives
-    // any new frame, we know that they are part of the recording (ie. the
-    // first frame that arrives shnum_image_saving_thredsntrast, any frame that
-    // arrives after 80ms is considered part of the recording.
-    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    // The controller waits camFlushTimeUs after START_RECORDING before it starts
+    // triggering, so that frames acquired with the previous (streaming) params
+    // drain out of the camera buffers. Ignore frames for a fraction of that
+    // window on this side too, so the recording does not begin with stale frames
+    // (see camFlushTimeUs in comm_protocol/protocol.h).
+    std::this_thread::sleep_for(
+        std::chrono::microseconds(camFlushTimeUs * 8 / 10));
     programState_->isRecording.store(true);
 }
 
 void MainGUIWindow::stopRecording() {
+    // Slot for the Stop button: a user-initiated stop.
+    endRecording(/*reachedProgrammedEnd=*/false);
+}
+
+void MainGUIWindow::endRecording(bool reachedProgrammedEnd) {
     recordButton_->setEnabled(true);
     stopButton_->setEnabled(false);
     muscleImagingCheckBox_->setEnabled(true);
 
-    arduinoCommunication_->stopRecording();
-    programState_->isRecording.store(false);
-    arduinoCommunication_->setBehaviorRecordingFPS(streamingBehaviorFPS_);
-    if (muscleImagingEnabled_) {
-        arduinoCommunication_->setSyncRatio(streamingSyncRatio_);
-        arduinoCommunication_->setMuscleCamTriggerDelay(
-            dualRecordingConfigForStreaming_->getMuscleCamTriggerDelayUs());
+    if (reachedProgrammedEnd) {
+        // A scheduled recording reached its end: the controller already reverted
+        // to the streaming params via its opSequence STOP step, so there is
+        // nothing to send (a STOP_RECORDING here would fault the controller).
+    } else if (currentRecordingIsScheduled_) {
+        // Manual early abort of a scheduled recording. STOP_RECORDING is only
+        // valid for an open recording, so revert by re-streaming instead.
+        arduinoCommunication_->stream(buildStreamingParams());
     } else {
-        arduinoCommunication_->setSyncRatio(INT_MAX);
+        // Open recording: STOP_RECORDING reverts the controller to streaming
+        // (using the revert-to params sent with START_RECORDING).
+        arduinoCommunication_->stopRecording();
     }
+
+    // Stop queuing frames. The acquirer threads flush any partial behavior
+    // group and discard subsequent frames (see behaviorImageAcquirer).
+    programState_->isRecording.store(false);
+    currentRecordingIsScheduled_ = false;
+}
+
+TriggerParams MainGUIWindow::buildStreamingParams() const {
+    TriggerParams params;
+    params.behFrameRate = streamingBehaviorFPS_;
+    params.behMuscSyncRatio = streamingSyncRatio_;
+    params.behExpTime = static_cast<unsigned int>(
+        behaviorExposureTimeSpinBox_->value() * 1000);
+    // Muscle imaging off => no excitation pulse (muscEffExpTime == 0).
+    params.muscEffExpTime =
+        muscleImagingEnabled_
+            ? static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000)
+            : 0;
+    params.pcoCamRollingTime = pcoCamRollingTimeUs_;
+    params.pcoCamReadoutTime = pcoCamReadoutTimeUs_;
+    return params;
+}
+
+TriggerParams MainGUIWindow::buildRecordingParams() const {
+    TriggerParams params;
+    params.behFrameRate = behaviorFPSSpinBox_->value();
+    params.behMuscSyncRatio = dualRecordingConfigForSaving_->getSyncRatio();
+    params.behExpTime = static_cast<unsigned int>(
+        behaviorExposureTimeSpinBox_->value() * 1000);
+    // The blue excitation light is used only when recording muscle frames.
+    params.muscEffExpTime =
+        dualRecordingConfigForSaving_->isRecordingBoth()
+            ? static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000)
+            : 0;
+    params.pcoCamRollingTime = pcoCamRollingTimeUs_;
+    params.pcoCamReadoutTime = pcoCamReadoutTimeUs_;
+    return params;
 }
 
 void MainGUIWindow::closeEvent(QCloseEvent *event) {
@@ -981,21 +1037,77 @@ void DualRecordingConfigWindow::onButtonClicked() {
 
 int parseProtocolString(
     const std::string &protocolTextFieldString,
-    std::vector<ProtocolStep> &protocolSteps)
+    std::deque<OperationStep> &opSequence)
 /**
- * This for now is very repetative, but it's intended we can rewrite this
- * function based on nicer GUI widgets.
- * (Though for now it's just doing parseProtocolSequence, only to be later
- * formatted into the exact same strings)
+ * Parse the experiment-protocol text field into an opSequence. The text is a
+ * ";"-separated list of steps, each "frameIdx/channel/op":
+ *   - "<n>/ch2/on", "<n>/ch3/off": toggle an optogenetics channel
+ *   - "<n>/x/stop": end the recording and revert to streaming
+ * A single ";" denotes an empty (open) recording. Returns the number of steps,
+ * or -1 on a malformed string.
  */
 {
-    int numStepsParsed =
-        parseProtocolSequence(protocolTextFieldString, protocolSteps);
-    if (numStepsParsed < 0) {
+    opSequence.clear();
+
+    auto reportError = []() {
         std::string errorMessage = "Invalid experiment protocol";
         spdlog::error(errorMessage);
         QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
         return -1;
+    };
+
+    if (protocolTextFieldString == ";") {
+        return 0;
     }
+
+    std::istringstream stream(protocolTextFieldString);
+    std::string token;
+    int numStepsParsed = 0;
+    while (std::getline(stream, token, ';')) {
+        if (token.empty()) {
+            return reportError();
+        }
+
+        std::istringstream tokenStream(token);
+        std::string frameStr, channelStr, opStr;
+        if (!std::getline(tokenStream, frameStr, '/') ||
+            !std::getline(tokenStream, channelStr, '/') ||
+            !std::getline(tokenStream, opStr, '/')) {
+            return reportError();
+        }
+
+        unsigned long frameIdx = 0;
+        OptoChannel channel = OptoChannel::ALL;
+        OpType op = OpType::STOP;
+        try {
+            frameIdx = std::stoul(frameStr);
+            if (channelStr == "x" && opStr == "stop") {
+                channel = OptoChannel::ALL;
+                op = OpType::STOP;
+            } else if (channelStr.rfind("ch", 0) == 0) {
+                channel =
+                    static_cast<OptoChannel>(std::stoi(channelStr.substr(2)));
+                if (opStr == "on") {
+                    op = OpType::ON;
+                } else if (opStr == "off") {
+                    op = OpType::OFF;
+                } else {
+                    return reportError();
+                }
+            } else {
+                return reportError();
+            }
+        } catch (const std::exception &) {
+            return reportError();
+        }
+
+        OperationStep step(frameIdx, channel, op);
+        if (!step.isValid) {
+            return reportError();
+        }
+        opSequence.push_back(step);
+        ++numStepsParsed;
+    }
+
     return numStepsParsed;
 }

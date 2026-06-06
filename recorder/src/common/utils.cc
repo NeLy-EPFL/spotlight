@@ -8,10 +8,17 @@ uint64_t getCurrentTimeMicroseconds() {
 
 cv::Mat makePseudoBGRImageFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames) {
+    // frame0 is always valid (a group is only ever flushed with >= 1 frame).
+    // For a partial final group the missing channels are filled with black.
+    const cv::Mat &referenceImage = groupOfThreeFrames.frame0.image;
+    cv::Mat blackImage =
+        cv::Mat::zeros(referenceImage.size(), referenceImage.type());
     std::vector<cv::Mat> channels = {
         groupOfThreeFrames.frame0.image,
-        groupOfThreeFrames.frame1.image,
-        groupOfThreeFrames.frame2.image};
+        groupOfThreeFrames.numValidFrames > 1 ? groupOfThreeFrames.frame1.image
+                                              : blackImage,
+        groupOfThreeFrames.numValidFrames > 2 ? groupOfThreeFrames.frame2.image
+                                              : blackImage};
     cv::Mat pseudoBGRImage;
     cv::merge(channels, pseudoBGRImage);
     reorientBehaviorImage(pseudoBGRImage, pseudoBGRImage);
@@ -30,15 +37,18 @@ void reorientMuscleImage(const cv::Mat &sourceImage, cv::Mat &targetImage) {
 std::string makeMetadataStringFromThreeFrames(
     const GroupOfThreeFrames &groupOfThreeFrames) {
     std::string metadataString = "frame_id,acquired_time_us,received_time_us\n";
-    for (const FrameData &frameData :
-         {groupOfThreeFrames.frame0,
-          groupOfThreeFrames.frame1,
-          groupOfThreeFrames.frame2}) {
+    const FrameData frames[3] = {
+        groupOfThreeFrames.frame0,
+        groupOfThreeFrames.frame1,
+        groupOfThreeFrames.frame2};
+    // Only log frames that were actually acquired: a partial final group leaves
+    // its remaining (black) channels unlogged.
+    for (int i = 0; i < groupOfThreeFrames.numValidFrames; ++i) {
         metadataString += fmt::format(
             "{},{},{}\n",
-            frameData.frameId,
-            frameData.acquisitionTime,
-            frameData.receivedTime);
+            frames[i].frameId,
+            frames[i].acquisitionTime,
+            frames[i].receivedTime);
     }
     return metadataString;
 }

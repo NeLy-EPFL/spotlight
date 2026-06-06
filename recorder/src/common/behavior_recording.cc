@@ -27,7 +27,7 @@ void behaviorImageAcquirer(
     size_t frameDataBufferIndex = 0;
     long int currentFrameId = 0;
 
-    bool isFristFrameRecorded = true;
+    bool wasRecording = false;
 
     while (!programState->toQuit.load()) {
         // Acquire image data
@@ -49,13 +49,13 @@ void behaviorImageAcquirer(
         behaviorRecordingState->latestFrameHolder->setLatestFrameData(
             frameData);
 
-        if (programState->isRecording.load()) {
-            if (isFristFrameRecorded) {
-                // Reset these to 0 in preparation for the upcoming recording
-                // session
+        bool isRecording = programState->isRecording.load();
+
+        if (isRecording) {
+            if (!wasRecording) {
+                // Start of a new recording session: reset the counters.
                 frameDataBufferIndex = 0;
                 currentFrameId = 0;
-                isFristFrameRecorded = false; // toggle off
             }
 
             frameData.frameId = currentFrameId;
@@ -63,9 +63,12 @@ void behaviorImageAcquirer(
             frameDataBuffer[frameDataBufferIndex++] = frameData;
 
             if (frameDataBufferIndex == 3) {
-                // Add to queue
+                // Add a full group of three frames to the queue.
                 GroupOfThreeFrames groupOfThreeFrames = {
-                    frameDataBuffer[0], frameDataBuffer[1], frameDataBuffer[2]};
+                    frameDataBuffer[0],
+                    frameDataBuffer[1],
+                    frameDataBuffer[2],
+                    3};
                 {
                     std::lock_guard<std::mutex> lock(
                         behaviorRecordingState->behaviorImageQueueMutex);
@@ -89,10 +92,36 @@ void behaviorImageAcquirer(
 
             currentFrameId++;
         } else {
-            // Reset these to 0 in preparation for the next recording session
+            if (wasRecording && frameDataBufferIndex > 0) {
+                // The recording just stopped on a partial group of one or two
+                // frames. Flush it: the missing channels are saved black and
+                // are not logged in the CSV metadata (see
+                // makePseudoBGRImageFromThreeFrames and
+                // makeMetadataStringFromThreeFrames).
+                GroupOfThreeFrames partialGroup;
+                partialGroup.frame0 = frameDataBuffer[0];
+                if (frameDataBufferIndex > 1) {
+                    partialGroup.frame1 = frameDataBuffer[1];
+                }
+                partialGroup.numValidFrames =
+                    static_cast<int>(frameDataBufferIndex);
+                {
+                    std::lock_guard<std::mutex> lock(
+                        behaviorRecordingState->behaviorImageQueueMutex);
+                    behaviorRecordingState->behaviorImageQueue.push(
+                        partialGroup);
+                }
+                behaviorRecordingState->behaviorImageQueueCondVar.notify_one();
+            }
+
+            // Not recording: any newly arrived frame is discarded (it is only
+            // used for the live preview above). Reset the counters for the next
+            // recording session.
             frameDataBufferIndex = 0;
             currentFrameId = 0;
         }
+
+        wasRecording = isRecording;
     }
 
     // Stop behavior camera acquisition
