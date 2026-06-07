@@ -10,11 +10,16 @@ DeviceIO &DeviceIO::getInstance() {
 
 DeviceIO::DeviceIO() {
     // Configure every owned pin before reset() drives it. The muscle camera
-    // status line is the only input (its level reports the common time).
+    // status line is the only input (its level reports the common time). It is
+    // read with an internal pull-down so that when the PCO Status Expos output
+    // is undriven (camera off/booting, output disabled, or cable unplugged) the
+    // line reads LOW ("no common time"): the controller simply waits rather than
+    // seeing spurious onsets. The PCO output is push-pull 3.3 V LVTTL when
+    // active, so the weak pull-down does not fight it.
     pinMode(config::behCamPin, OUTPUT);
     pinMode(config::irLEDPin, OUTPUT);
     pinMode(config::muscCamTriggerPin, OUTPUT);
-    pinMode(config::muscCamStatusPin, INPUT);
+    pinMode(config::muscCamStatusPin, INPUT_PULLDOWN);
     pinMode(config::blueLEDPin, OUTPUT);
     pinMode(config::optoCh2Pin, OUTPUT);
     pinMode(config::optoCh3Pin, OUTPUT);

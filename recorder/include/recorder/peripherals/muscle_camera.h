@@ -106,7 +106,6 @@ class MuscleCamera {
     pthread_cond_t *condVarPtr_;
     const RecorderConfig &recorderConfig_;
     unsigned int lastFrameCount_;
-    bool isReady_ = false;
 
     bool isROIValid();
 };

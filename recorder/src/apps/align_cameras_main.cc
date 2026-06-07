@@ -32,13 +32,14 @@ std::tuple<int, int> cameraSensorToDisplayCoords(int sensorX, int sensorY) {
 MuscleCameraROI
 getROIFromDisplayCenter(int xCenterDisplay, int yCenterDisplay) {
     auto [muscleCameraCenterXSensor, muscleCameraCenterYSensor] =
-        displayToCameraSensorCoords(
-            userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+        displayToCameraSensorCoords(xCenterDisplay, yCenterDisplay);
     int xOffset = muscleCameraCenterXSensor - (muscleImageROIWidth / 2);
     int yOffset = muscleCameraCenterYSensor - (muscleImageROIHeight / 2);
+    // PCO ROI quantization: x offsets must be multiples of 32, y offsets
+    // multiples of 8.
     int x0 = roundToNearestValidMuscleCamHorizontal(xOffset) + 1;
     int x1 = (x0 - 1) + muscleImageROIWidth;
-    int y0 = roundToNearestValidMuscleCamHorizontal(yOffset) + 1;
+    int y0 = roundToNearestValidMuscleCamVertical(yOffset) + 1;
     int y1 = (y0 - 1) + muscleImageROIHeight;
 
     MuscleCameraROI roi(x0, x1, y0, y1);

@@ -496,6 +496,74 @@ MainGUIWindow::MainGUIWindow(
     arduinoCommunication->stream(buildStreamingParams());
 }
 
+bool MainGUIWindow::validateAndPrepareRecording(
+    std::deque<OperationStep> &opSequence,
+    int &muscleNominalExposureUs,
+    int &muscleBufferTimeUs) {
+    muscleNominalExposureUs = 0;
+    muscleBufferTimeUs = 0;
+
+    // Parse the experiment protocol into an opSequence and record the
+    // programmed-stop frame counts. A malformed string aborts the recording.
+    int numStepsParsed = parseProtocolString(
+        experimentProtocol_->toPlainText().toStdString(), opSequence);
+    spdlog::info("Parsed {} protocol steps", opSequence.size());
+    if (numStepsParsed < 0) {
+        std::string errorMessage = "Invalid experiment protocol string";
+        spdlog::error(errorMessage);
+        QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
+        return false;
+    } else if (numStepsParsed == 0) {
+        spdlog::info("GUI starting recording without any protocol steps");
+        programmedRecordingStop_->numBehaviorFramesExpected = -1;
+        programmedRecordingStop_->numMuscleFramesExpected = -1;
+    } else {
+        spdlog::info(
+            "GUI starting recording with {} protocol steps", opSequence.size());
+        programmedRecordingStop_->numBehaviorFramesExpected =
+            opSequence.back().frameIdx;
+        programmedRecordingStop_->numMuscleFramesExpected =
+            opSequence.back().frameIdx / syncRatioSpinBox_->value();
+        spdlog::info(
+            "Setting expected number of steps to {} (behavior) and {} (muscle)",
+            programmedRecordingStop_->numBehaviorFramesExpected,
+            programmedRecordingStop_->numMuscleFramesExpected);
+    }
+    // An empty opSequence is an open recording; a non-empty one is scheduled.
+    currentRecordingIsScheduled_ = numStepsParsed > 0;
+
+    // When imaging muscle, derive and validate the continuous-mode muscle
+    // trigger timing from the current recording parameters.
+    if (muscleImagingCheckBox_->isChecked()) {
+        MuscleTriggerTiming muscleTriggerTiming(
+            behaviorFPSSpinBox_->value(),
+            syncRatioSpinBox_->value(),
+            static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000));
+        double rollingShutterLineTimeUs = recorderConfig_.getParameter<double>(
+            "muscle_camera", "rolling_shutter_line_time_us");
+        int muscleCamReadoutTimeUs = recorderConfig_.getParameter<double>(
+            "muscle_camera", "sensor_readout_time_us");
+        if (!muscleTriggerTiming.computeParameters(
+                muscleRecordingState_->muscleCamera->getNumLinesScanned(),
+                rollingShutterLineTimeUs,
+                muscleCamReadoutTimeUs)) {
+            QMessageBox::critical(
+                this,
+                "Error",
+                "Invalid muscle recording configuration. In particular, check "
+                "that the muscle recording interval (1 / muscle FPS) is long "
+                "enough for the rolling shutter, light-on, and sensor readout "
+                "times. See "
+                "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
+            return false;
+        }
+        muscleNominalExposureUs = muscleTriggerTiming.getNominalExposureUs();
+        muscleBufferTimeUs = muscleTriggerTiming.getBufferTimeUs();
+    }
+
+    return true;
+}
+
 void MainGUIWindow::startRecording() {
     // Check if behavior camera has been initialized
     if (!behaviorRecordingState_->behaviorCamera ||
@@ -542,43 +610,25 @@ void MainGUIWindow::startRecording() {
         }
     }
 
-    // If muscle imaging is enabled, derive and validate the muscle trigger
-    // timing from the current recording parameters. The derived values are
-    // saved in the experiment parameters metadata below. Validate before any
-    // irreversible work (directory creation, metadata writes) so an invalid
-    // configuration leaves nothing behind.
+    // Validate the experiment protocol and (when imaging muscle) the muscle
+    // trigger timing before any side effects -- camera exposure change, button
+    // toggles, directory creation, metadata writes -- so an invalid
+    // configuration aborts cleanly and leaves nothing behind. The derived muscle
+    // timing is returned for the metadata and the exposure update below.
+    std::deque<OperationStep> opSequence;
     int muscleNominalExposureUs = 0;
     int muscleBufferTimeUs = 0;
+    if (!validateAndPrepareRecording(
+            opSequence, muscleNominalExposureUs, muscleBufferTimeUs)) {
+        return;
+    }
+
+    // Switch the free-running camera to the recording muscle frame rate before
+    // START_RECORDING, so it is already emitting common-time onsets at the
+    // recording cadence when the firmware begins locking the behavior frames to
+    // them. The controller's camFlushTimeUs delay covers the transient while the
+    // new exposure takes effect.
     if (muscleImagingCheckBox_->isChecked()) {
-        MuscleTriggerTiming muscleTriggerTiming(
-            behaviorFPSSpinBox_->value(),
-            syncRatioSpinBox_->value(),
-            static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000));
-        double rollingShutterLineTimeUs = recorderConfig_.getParameter<double>(
-            "muscle_camera", "rolling_shutter_line_time_us");
-        int muscleCamReadoutTimeUs = recorderConfig_.getParameter<double>(
-            "muscle_camera", "sensor_readout_time_us");
-        if (!muscleTriggerTiming.computeParameters(
-                muscleRecordingState_->muscleCamera->getNumLinesScanned(),
-                rollingShutterLineTimeUs,
-                muscleCamReadoutTimeUs)) {
-            QMessageBox::critical(
-                this,
-                "Error",
-                "Invalid muscle recording configuration. In particular, check "
-                "that the muscle recording interval (1 / muscle FPS) is long "
-                "enough for the rolling shutter, light-on, and sensor readout "
-                "times. See "
-                "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
-            return;
-        }
-        muscleNominalExposureUs = muscleTriggerTiming.getNominalExposureUs();
-        muscleBufferTimeUs = muscleTriggerTiming.getBufferTimeUs();
-        // Switch the free-running camera to the recording muscle frame rate
-        // before START_RECORDING, so it is already emitting common-time onsets at
-        // the recording cadence when the firmware begins locking the behavior
-        // frames to them. The controller's camFlushTimeUs delay covers the
-        // transient while the new exposure takes effect.
         muscleRecordingState_->muscleCamera->setNominalExposureUs(
             static_cast<unsigned int>(muscleNominalExposureUs));
     }
@@ -587,35 +637,6 @@ void MainGUIWindow::startRecording() {
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
     muscleImagingCheckBox_->setEnabled(false);
-
-    // Parse and set experiment protocol
-    std::deque<OperationStep> opSequence;
-    int numStepsParsed = parseProtocolString(
-        experimentProtocol_->toPlainText().toStdString(), opSequence);
-    spdlog::info("Parsed {} protocol steps", opSequence.size());
-    if (numStepsParsed < 0) {
-        std::string errorMessage = "Invalid experiment protocol string";
-        spdlog::error(errorMessage);
-        QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
-        return;
-    } else if (numStepsParsed == 0) {
-        spdlog::info("GUI starting recording without any protocol steps");
-        programmedRecordingStop_->numBehaviorFramesExpected = -1;
-        programmedRecordingStop_->numMuscleFramesExpected = -1;
-    } else {
-        spdlog::info(
-            "GUI starting recording with {} protocol steps", opSequence.size());
-        programmedRecordingStop_->numBehaviorFramesExpected =
-            opSequence.back().frameIdx;
-        programmedRecordingStop_->numMuscleFramesExpected =
-            opSequence.back().frameIdx / syncRatioSpinBox_->value();
-        spdlog::info(
-            "Setting expected number of steps to {} (behavior) and {} (muscle)",
-            programmedRecordingStop_->numBehaviorFramesExpected,
-            programmedRecordingStop_->numMuscleFramesExpected);
-    }
-    // An empty opSequence is an open recording; a non-empty one is scheduled.
-    currentRecordingIsScheduled_ = numStepsParsed > 0;
 
     // Initialize save directory
     saveDirectory_->initialize();

@@ -122,7 +122,12 @@ FrameData BehaviorCamera::waitForOneFrame() {
     FrameData frameData;
     frameData.acquisitionTime = acquisitionTime;
     frameData.receivedTime = receivedTime;
-    frameData.image = cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr);
+    // Clone: dataPtr points into the grabber buffer owned by `buffer` (a
+    // ScopedBuffer), which is requeued to the grabber when this function
+    // returns. Without a copy the returned image would alias a buffer the
+    // grabber may refill at any time.
+    frameData.image =
+        cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr).clone();
     return frameData;
 }
 

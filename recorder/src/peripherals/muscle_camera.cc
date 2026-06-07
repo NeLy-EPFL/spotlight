@@ -37,14 +37,15 @@ MuscleCamera::MuscleCamera(
     const RecorderConfig &recorderConfig,
     std::string profileDir,
     spdlog::level::level_enum logLevel)
+    // Member initializers are in declaration order (avoids -Wreorder).
     : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1),
-      y1_(yOffset + imageHeight),
+      y1_(yOffset + imageHeight), imageWidth_(imageWidth),
+      imageHeight_(imageHeight),
       rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
-      sensorReadoutTimeUs_(sensorReadoutTimeUs), imageWidth_(imageWidth),
-      imageHeight_(imageHeight), recorderConfig_(recorderConfig),
-      pcoCameraServerPID_(-1), frameDataPtr_(nullptr),
-      shutterOpenTimePtr_(nullptr), mutexPtr_(nullptr), condVarPtr_(nullptr),
-      lastFrameCount_(UINT_MAX) {
+      sensorReadoutTimeUs_(sensorReadoutTimeUs), pcoCameraServerPID_(-1),
+      frameDataPtr_(nullptr), shutterOpenTimePtr_(nullptr),
+      frameMetadataPtr_(nullptr), mutexPtr_(nullptr), condVarPtr_(nullptr),
+      recorderConfig_(recorderConfig), lastFrameCount_(UINT_MAX) {
     if (!isROIValid()) {
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
@@ -191,27 +192,36 @@ FrameData MuscleCamera::waitForOneFrame() {
         // spdlog::debug("New frame available");
         unsigned int frameCount = frameMetadataPtr_->frameCount;
         uint64_t acquisitionTime = frameMetadataPtr_->acquisitionTime;
-        cv::Mat image(imageHeight_, imageWidth_, CV_16UC1, frameDataPtr_);
-        if (image.empty()) {
-            spdlog::error("muscleCamera API got an empty image");
-        }
-        pthread_mutex_unlock(mutexPtr_);
 
         if (frameCount == lastFrameCount_) {
+            pthread_mutex_unlock(mutexPtr_);
             spdlog::warn(
                 "PCO camera API is waken up by the camera server, but no new "
                 "frame is available. This could be a spurious wakeup of the "
                 "condition variable (very rare), but more likely it indicates "
                 "a problem in shared memory or synchronization primitives.");
             continue;
-        } else {
-            lastFrameCount_ = frameCount;
-            FrameData frameData;
-            frameData.acquisitionTime = acquisitionTime;
-            frameData.receivedTime = getCurrentTimeMicroseconds();
-            frameData.image = image;
-            return frameData;
         }
+
+        // Copy the frame out of shared memory while still holding the lock. The
+        // cv::Mat below only wraps frameDataPtr_, which the camera server
+        // overwrites (memcpy) on every new frame; cloning under the lock takes a
+        // private copy before the server can begin writing the next frame, so
+        // the returned image can never be torn by a concurrent write.
+        cv::Mat image =
+            cv::Mat(imageHeight_, imageWidth_, CV_16UC1, frameDataPtr_).clone();
+        pthread_mutex_unlock(mutexPtr_);
+
+        if (image.empty()) {
+            spdlog::error("muscleCamera API got an empty image");
+        }
+
+        lastFrameCount_ = frameCount;
+        FrameData frameData;
+        frameData.acquisitionTime = acquisitionTime;
+        frameData.receivedTime = getCurrentTimeMicroseconds();
+        frameData.image = image;
+        return frameData;
     }
 }
 

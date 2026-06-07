@@ -1,6 +1,27 @@
 #include "recorder/peripherals/arduino_communication.h"
 
 namespace {
+// Read whatever bytes the controller has sent and log each complete (newline-
+// terminated) line at info level. `buffer` carries any partial trailing line
+// across calls, so a message split across reads is reassembled. Waits up to 1 ms
+// for bytes to arrive, then returns; safe to call when nothing is pending.
+void drainIncomingSerial(QSerialPort &serialPort, std::string &buffer) {
+    if (!serialPort.waitForReadyRead(1)) {
+        return;
+    }
+    QByteArray responseData = serialPort.readAll();
+    if (responseData.isEmpty()) {
+        return;
+    }
+    buffer += std::string(responseData.constData(), responseData.length());
+    size_t newlinePos;
+    while ((newlinePos = buffer.find('\n')) != std::string::npos) {
+        std::string completeLine = buffer.substr(0, newlinePos);
+        buffer.erase(0, newlinePos + 1);
+        spdlog::info("Arduino said: {}", completeLine);
+    }
+}
+
 void arduinoCommThreadFunc(
     const std::string &portName,
     int baudRate,
@@ -30,70 +51,62 @@ void arduinoCommThreadFunc(
 
     while (true) {
         std::string message;
+        bool hasMessage = false;
         {
             std::unique_lock<std::mutex> lock(mutex);
-            cv.wait(lock, [&] {
+            // Wake on a new outgoing command or on shutdown, but also time out
+            // periodically so incoming bytes are drained even while idle (the
+            // host sends nothing during steady-state streaming/recording). A
+            // notify still returns immediately, so command sending stays prompt.
+            cv.wait_for(lock, std::chrono::milliseconds(10), [&] {
                 return !arduinoMessagesQueue.empty() || stopCommunication;
             });
             if (stopCommunication) {
                 break;
             }
-            message = arduinoMessagesQueue.front();
-            arduinoMessagesQueue.pop();
+            if (!arduinoMessagesQueue.empty()) {
+                message = arduinoMessagesQueue.front();
+                arduinoMessagesQueue.pop();
+                hasMessage = true;
+            }
         }
 
-        // Try sending the message if fails twice in a row reconnect to the
-        // serial port
-        int consecutiveFailedWrites = 0;
-        int maxConsecutiveFailedWrites = 2;
-        while (true) {
-            serialPort.write(message.c_str());
-            if (!serialPort.waitForBytesWritten(1000)) {
-                spdlog::error(
-                    "Failed to write message: {} to serial port", message);
-                consecutiveFailedWrites++;
-                if (consecutiveFailedWrites >= maxConsecutiveFailedWrites) {
-                    spdlog::error("Max consecutive failed writes reached. "
-                                  "Reconnecting...");
-                    serialPort.close();
-                    if (!serialPort.open(QIODevice::ReadWrite)) {
-                        spdlog::error(
-                            "Failed to reopen serial port. Stopping Arduino "
-                            "communication thread.");
-                        break;
+        // Send the outgoing command, if any. On repeated write failures, try
+        // reconnecting to the serial port.
+        if (hasMessage) {
+            int consecutiveFailedWrites = 0;
+            int maxConsecutiveFailedWrites = 2;
+            while (true) {
+                serialPort.write(message.c_str());
+                if (!serialPort.waitForBytesWritten(1000)) {
+                    spdlog::error(
+                        "Failed to write message: {} to serial port", message);
+                    consecutiveFailedWrites++;
+                    if (consecutiveFailedWrites >= maxConsecutiveFailedWrites) {
+                        spdlog::error("Max consecutive failed writes reached. "
+                                      "Reconnecting...");
+                        serialPort.close();
+                        if (!serialPort.open(QIODevice::ReadWrite)) {
+                            spdlog::error(
+                                "Failed to reopen serial port. Stopping Arduino "
+                                "communication thread.");
+                            break;
+                        }
+                        consecutiveFailedWrites = 0;
+                        spdlog::info("Successfully reconnected to serial port.");
                     }
-                    consecutiveFailedWrites = 0;
-                    spdlog::info("Successfully reconnected to serial port.");
+                    continue;
                 }
-                continue;
-            }
-            consecutiveFailedWrites = 0;
-            break;
-        }
-
-        // Check if there's any data to read from the Arduino
-        if (serialPort.waitForReadyRead(1)) // Wait up to 1ms
-        {
-            QByteArray responseData = serialPort.readAll();
-            if (!responseData.isEmpty()) {
-                // Append new data to the buffer
-                incomingMessageBuffer += std::string(
-                    responseData.constData(), responseData.length());
-
-                // Process complete lines
-                size_t newlinePos;
-                while ((newlinePos = incomingMessageBuffer.find('\n')) !=
-                       std::string::npos) {
-                    // Extract the complete line
-                    std::string completeLine =
-                        incomingMessageBuffer.substr(0, newlinePos);
-                    // Remove the processed line from the buffer
-                    incomingMessageBuffer.erase(0, newlinePos + 1);
-                    // Log the complete line
-                    spdlog::info("Arduino said: {}", completeLine);
-                }
+                consecutiveFailedWrites = 0;
+                break;
             }
         }
+
+        // Drain incoming bytes every iteration -- after a send and on idle
+        // wake-ups -- so the controller's USB-CDC TX buffer never backs up. A
+        // full TX buffer can block Serial writes inside the firmware's timing
+        // loop and stall triggering, so prompt draining protects timing.
+        drainIncomingSerial(serialPort, incomingMessageBuffer);
     }
 
     if (serialPort.isOpen()) {

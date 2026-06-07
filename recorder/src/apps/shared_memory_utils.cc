@@ -170,7 +170,7 @@ void setupMutex(
     mutexPtr = (pthread_mutex_t *)mmap(
         0,
         sizeof(pthread_mutex_t),
-        PROT_READ | PROT_WRITE | O_TRUNC,
+        PROT_READ | PROT_WRITE,
         MAP_SHARED,
         shmFileDesc,
         0);

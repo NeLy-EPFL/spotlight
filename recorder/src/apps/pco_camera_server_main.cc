@@ -448,8 +448,8 @@ int main(int argc, char *argv[]) {
         spdlog::critical(
             "Invalid image dimensions. The following is required: "
             "0 < x0 < x1 <= {}; 0 < y0 < y1 <= {}.",
-            fullFrameHeight,
-            fullFrameWidth);
+            fullFrameWidth,
+            fullFrameHeight);
         return 1;
     }
 

@@ -242,7 +242,7 @@ void muscleImageSaver(
 
         // Profiling and logging to monitor performance
         walltime = getCurrentTimeMicroseconds() - startTime;
-        if (frameCount % performanceLoggingInterval) {
+        if (frameCount % performanceLoggingInterval == 0) {
             spdlog::info(
                 "Muscle image saver thread (thread ID {}) reporting: "
                 "{} frames in queue; "
@@ -251,6 +251,7 @@ void muscleImageSaver(
                 queueLength,
                 walltime);
         }
+        frameCount++;
     }
 }
 

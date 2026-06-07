@@ -249,35 +249,25 @@ void trackingController(
                     currentPhysicalPosX,
                     currentPhysicalPosY);
 
-                if (distanceToTarget < trackingDistanceThresholdMm) {
-                    // If the fly is close enough to the center of the view,
-                    // don't move. This helps avoid jittering, reduces wear on
-                    // the motors, and reduces mechanical resonance.
-                    continue;
+                // Only move the stage once the fly has drifted far enough from
+                // the center of the view. Holding still when it is already close
+                // avoids jittering, reduces wear on the motors, and reduces
+                // mechanical resonance. (Don't `continue` here: that would skip
+                // the end-of-cycle sleep below and busy-loop the thread, which
+                // also floods the motion-control request queue.)
+                if (distanceToTarget >= trackingDistanceThresholdMm) {
+                    // X stage should move in the OPPOSITE direction: the arena
+                    // is facing downward, so the +x direction of the arena is
+                    // the opposite of the +x direction of the stage.
+                    double dx = -1 * (physicalPosX - currentPhysicalPosX);
+                    double dy = physicalPosY - currentPhysicalPosY;
+                    MotionStagePosition targetMotionStagePosition = {
+                        myMotionStagePosition.xPosMm + dx,
+                        myMotionStagePosition.yPosMm + dy,
+                        ABSOLUTE};
+                    setTargetMotionStagePosition(
+                        targetMotionStagePosition, defaultVelocity);
                 }
-
-                // X stage should move in the OPPOSITE direction: the arena is
-                // facing downward, so the +x direction of the arena is the
-                // opposite of the +x direction of the stage.
-                double dx = -1 * (physicalPosX - currentPhysicalPosX);
-                double dy = physicalPosY - currentPhysicalPosY;
-                MotionStagePosition targetMotionStagePosition = {
-                    myMotionStagePosition.xPosMm + dx,
-                    myMotionStagePosition.yPosMm + dy,
-                    ABSOLUTE};
-
-                // spdlog::debug(
-                //     "Fly found at physical ({:.2}, {:.2}). "
-                //     "Current center of view is at physical ({:.2}, {:.2}). "
-                //     "dx={:.2}, dy={:.2}. ",
-                //     physicalPosX,
-                //     physicalPosY,
-                //     currentPhysicalPosX,
-                //     currentPhysicalPosY,
-                //     dx,
-                //     dy);
-                setTargetMotionStagePosition(
-                    targetMotionStagePosition, defaultVelocity);
             }
         } else {
             // spdlog::debug("Tracking controller is overriding tracking.");
@@ -290,8 +280,10 @@ void trackingController(
 
             if (distanceToTarget < trackingDistanceThresholdMm &&
                 checkIfMotionStageIdle()) {
+                // Reached the click-to-move target; hand control back to
+                // automatic tracking. (Don't `continue`: fall through to the
+                // end-of-cycle sleep below so the thread doesn't busy-loop.)
                 trackingControlState->shouldOverrideTracking.store(false);
-                continue;
             } else {
                 MotionStagePosition targetPos = {
                     trackingControlState->overridingPosX.load(),

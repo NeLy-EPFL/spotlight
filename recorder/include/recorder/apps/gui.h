@@ -113,6 +113,16 @@ class MainGUIWindow : public QWidget {
     // reachedProgrammedEnd is true when a scheduled recording ran to its end
     // (the controller has already reverted on its own).
     void endRecording(bool reachedProgrammedEnd);
+    // Pre-flight for startRecording(): parse the experiment protocol, record the
+    // programmed-stop frame counts, and (when imaging muscle) derive + validate
+    // the continuous-mode muscle timing. Returns false (after showing an error
+    // dialog) if the protocol string or the muscle timing is invalid; on success
+    // fills opSequence and the derived muscle timing (both 0 when muscle imaging
+    // is off).
+    bool validateAndPrepareRecording(
+        std::deque<OperationStep> &opSequence,
+        int &muscleNominalExposureUs,
+        int &muscleBufferTimeUs);
 
     std::shared_ptr<ProgramState> programState_;
     QSpinBox *behaviorFPSSpinBox_;
