@@ -31,7 +31,9 @@ Documentation is available in the `docs/` folder:
 
 The desktop components (`recorder` and `comm_protocol`) are built with CMake. Each component is configured into its own `build/` directory. CMake fetches the `ArduinoJson` dependency (and, for the tests, `GoogleTest`) automatically on first configuration, so an internet connection is needed then.
 
-**`comm_protocol`** (the shared protocol library and its unit tests):
+### `comm_protocol`
+
+To build the shared protocol library and its unit tests:
 
 ```sh
 cmake -S comm_protocol -B comm_protocol/build
@@ -41,7 +43,9 @@ ctest --test-dir comm_protocol/build --output-on-failure  # run the unit tests
 
 The `comm_protocol` unit tests (`comm_protocol/tests/`) are written with GoogleTest, which CMake fetches via `FetchContent` when the library is configured standalone.
 
-**`recorder`** (also builds the `comm_protocol` dependency):
+### `recorder`
+
+This also builds the `comm_protocol` dependency:
 
 ```sh
 cmake -S recorder -B recorder/build
@@ -51,7 +55,9 @@ ctest --test-dir recorder/build --output-on-failure  # run the unit tests
 
 The `recorder` unit tests (`recorder/tests/`) are written with GoogleTest and cover the hardware-independent logic (calibration, config loading, image/metadata utilities, muscle-camera ROI). They build by default when `recorder` is configured standalone (as above); set `-DRECORDER_BUILD_TESTS=ON` to opt in from the umbrella build.
 
-**`trigger_firmware`** is built and uploaded with PlatformIO:
+### `trigger_firmware`
+
+This is built and uploaded with PlatformIO:
 
 ```sh
 pio run -d trigger_firmware            # build

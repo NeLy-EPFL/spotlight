@@ -22,6 +22,14 @@ if(COMM_PROTOCOL_STANDALONE)
         DESCRIPTION "JSON serial protocol shared by the recorder and firmware"
         LANGUAGES CXX)
 
+    # Default to a Debug build when the user does not pass
+    # -DCMAKE_BUILD_TYPE=... (only meaningful for single-config generators
+    # like Makefiles/Ninja).
+    if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING
+            "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+    endif()
+
     # Emit compile_commands.json for editor IntelliSense (see
     # .vscode/c_cpp_properties.json) and enable CTest for the unit tests.
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
