@@ -383,7 +383,11 @@ void TriggerController::refreshStatus() {
         display_.setBehFrameRate(params_.behFrameRate);
         display_.setBehMuscSyncRatio(params_.behMuscSyncRatio);
         display_.setBehExpTime(params_.behExpTime);
-        display_.setMuscExpTime(params_.muscEffExpTime);
+        if (params_.enableMuscle) {
+            display_.setMuscExpTime(params_.muscEffExpTime);
+        } else {
+            display_.setMuscExpOff();
+        }
     }
     display_.render();
     statusLed_.setStatus(status);

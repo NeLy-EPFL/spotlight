@@ -74,6 +74,10 @@ void StatusDisplay::setMuscExpTime(unsigned long us) {
     std::snprintf(values_[muscExpTimeLine], valueBufferSize, "%lu us", us);
 }
 
+void StatusDisplay::setMuscExpOff() {
+    setValue(muscExpTimeLine, "OFF");
+}
+
 void StatusDisplay::render() {
     display_.clearDisplay();
     for (uint8_t i = 0; i < numLines; ++i) {

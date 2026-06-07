@@ -35,7 +35,8 @@
  *   - For "Beh exp": the behExpTime parameter of the most recent RUN
  *     command, followed by " us"
  *   - For "Musc exp": the muscEffExpTime parameter of the most recent
- *     RUN command, followed by " us"
+ *     RUN command, followed by " us"; or "OFF" when that command had
+ *     enableMuscle false (muscle imaging disabled)
  * The Status line should occupy the top 16 pixels (which are in yellow), and
  * the rest should occupy the bottom 48 pixels (which are in blue).
  *
@@ -75,6 +76,8 @@ class StatusDisplay {
     void setBehMuscSyncRatio(unsigned long ratio);
     void setBehExpTime(unsigned long us);
     void setMuscExpTime(unsigned long us);
+    /** Show "OFF" on the "Musc exp" line (muscle imaging disabled). */
+    void setMuscExpOff();
 
     /** Redraw the whole screen from the cached line values. */
     void render();
