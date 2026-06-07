@@ -29,7 +29,7 @@ Documentation is available in the `docs/` folder:
 
 ## Building
 
-The desktop components (`recorder` and `comm_protocol`) are built with CMake. Each component is configured into its own `build/` directory. CMake fetches the `ArduinoJson` dependency (and, for the tests, `GoogleTest`) automatically on first configuration, so an internet connection is needed then.
+The desktop components (`recorder` and `comm_protocol`) are built with CMake. Each component is configured into its own `build/` directory. CMake fetches the ArduinoJson dependency (and, for the tests, GoogleTest) automatically on first configuration, so an internet connection is needed then.
 
 ### `comm_protocol`
 
@@ -99,8 +99,11 @@ The repository root also has an umbrella `CMakeLists.txt` that configures the de
 
 - Use C++20 (highest standard supported by `arduino-esp32 3.x` by default) for `trigger_firmware` and `comm_protocol`. Use C++23 for `recorder`.
 - Use code style specified in `.clang-format`. Don't use `clang-tidy`.
-- Prefer low overhead for `trigger_firmware`.
-- Use snake case and suffices `.cc` and `.h`.
+- Use snake case for file names. Use suffices `.cc` and `.h`.
+- Prefer low overhead for `trigger_firmware` and `comm_protocol`. For `recorder`, be mindful of overhead since frame acquisition can run at up to 500 FPS. However, don't overoptimize at the cost of readability.
+- Follow best practices in using `const` and pass arguments by reference when applicable.
+- Write comments whenever the logic is unclear/untrivial. Don't hard-code "magic numbers" or "magic logics."
 - Use `#pragma once` instead of `#ifndef` guards in header files.
 - Use CMake and PlatformIO. `recorder` and `trigger_firmware` compile on their own. `comm_protocol` is a library included by both, but it can also be configured standalone to build and run its unit tests (see [Building](#building)).
 - Use only ASCII characters except in `.md` files.
+- Write _meaningful_ unit tests only. Don't write test just for the sake of it. Don't bloat the number of lines in test files just to test trivial stuff.
