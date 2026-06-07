@@ -171,7 +171,20 @@ void setupPCOCamera(
     camera.configureHWIO_1_exposureTrigger(
         true, pco::HWIO_EdgePolarity::rising_edge);
 
-    // Let SMA #4 line output indicate common time
+    // Drive SMA #4 as the muscle camera's "common time" reference for the
+    // trigger firmware. The firmware (trigger_firmware: DeviceIO::isMuscCommonTime)
+    // treats the line being HIGH as "in common time" and fires the behavior frame
+    // + blue LED on the LOW->HIGH onset, so the camera must drive the line HIGH for
+    // exactly the common-time window.
+    //
+    // - signal_type status_expos: report the exposure status on SMA #4.
+    // - timing global: for a rolling shutter, "global" is the interval when all
+    //   lines are exposed simultaneously, i.e. the common time (see
+    //   docs/data_acquisition.md). NOT all_lines, which spans the whole rolling
+    //   exposure envelope and would make the onset fire ~rollingTime too early.
+    // - polarity high_level: status_expos is asserted during the global window, so
+    //   high_level makes the line HIGH during common time (LOW otherwise), matching
+    //   the firmware's edge.
     camera.configureHWIO_4_statusExpos(
         true,
         pco::HWIO_Polarity::high_level,

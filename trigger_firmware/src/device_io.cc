@@ -83,7 +83,7 @@ void DeviceIO::stopMuscCamTrigger() {
 }
 
 bool DeviceIO::isMuscCommonTime() {
-    return digitalRead(config::muscCamStatusPin) == LOW;
+    return digitalRead(config::muscCamStatusPin) == HIGH;
 }
 
 void DeviceIO::turnOnMuscLED() {

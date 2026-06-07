@@ -21,7 +21,7 @@ To improve the frame rate limit, we always operate the muscle camera in continuo
 The disadvantage of this mode is that we cannot trigger the muscle camera externally via TTL; the camera runs its own thing in open loop. This poses two challenges:
 
 1. The triggering controller has to calibrate to the muscle camera to avoid cumulative error.
-    - To mitigate this, we configure the muscle camera to produce a status signal that is OFF during the common time of all frames, and ON otherwise. When this signal switches to OFF from ON, the microcontroller triggers a frame for the behavior camera, and switches the lights on for the desired exposure time. Then, the microcontroller runs `syncRatio - 1` frame cycles for the behavior camera using its own clock, and then waits for the next signal from the muscle camera.
+    - To mitigate this, we configure the muscle camera to produce a status signal that is ON (HIGH) during the common time of all frames, and OFF (LOW) otherwise. When this signal switches to ON from OFF, the microcontroller triggers a frame for the behavior camera, and switches the lights on for the desired exposure time. Then, the microcontroller runs `syncRatio - 1` frame cycles for the behavior camera using its own clock, and then waits for the next signal from the muscle camera.
 2. We can't set the muscle camera's frame rate independently of its exposure time, since the frame rate is always `1 / (rollingTime + exposureTime + readoutTime)`.
     - To mitigate this, we set the muscle camera's exposure time to `effectiveExposureTime + bufferTime`, where `bufferTime` is determined so that `1 / (rollingTime + effectiveExposureTime + bufferTime + readoutTime)` is our desired frame rate for the muscle camera.
 

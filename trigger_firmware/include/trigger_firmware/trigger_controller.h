@@ -24,7 +24,7 @@
  * selected per parameter set by TriggerParams::enableMuscle.
  *
  * When enableMuscle is true (muscle-synced mode), the muscle camera free-runs
- * in continuous mode and exposes a status signal that is LOW during the common
+ * in continuous mode and exposes a status signal that is HIGH during the common
  * time of every muscle frame. The controller waits for the onset of each common
  * time (DeviceIO::isMuscCommonTime() becoming true) and, on that edge, fires
  * the first behavior frame of a sync group together with the blue excitation

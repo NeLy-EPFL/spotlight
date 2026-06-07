@@ -168,7 +168,7 @@ void TriggerController::runTriggers(unsigned long nowUs) {
 }
 
 void TriggerController::runMuscleSyncedTriggers(unsigned long nowUs) {
-    // Detect the onset of the muscle camera's common time (signal LOW). Each
+    // Detect the onset of the muscle camera's common time (signal HIGH). Each
     // onset starts a new sync group whose first behavior frame is locked to it.
     bool common = device_.isMuscCommonTime();
     bool onset = common && !prevCommonTime_;
