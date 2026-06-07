@@ -38,6 +38,7 @@ add_executable(recorder_tests
     test_calibration.cc
     test_recorder_config.cc
     test_muscle_roi.cc
+    test_muscle_camera.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/utils.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/calibration.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/recorder_config.cc

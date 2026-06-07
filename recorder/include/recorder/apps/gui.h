@@ -104,6 +104,11 @@ class MainGUIWindow : public QWidget {
     // values and the cached PCO timing.
     TriggerParams buildStreamingParams() const;
     TriggerParams buildRecordingParams() const;
+    // Program the free-running (auto-sequence) muscle camera's nominal exposure
+    // so it produces muscle frames at behFrameRate / syncRatio. Called at
+    // startup, when a recording starts (recording rate), and when it ends
+    // (streaming rate).
+    void pushMuscleCameraExposure(int behFrameRate, int syncRatio);
     // Shared by the Stop button (manual) and the programmed-stop timer.
     // reachedProgrammedEnd is true when a scheduled recording ran to its end
     // (the controller has already reverted on its own).
@@ -143,6 +148,11 @@ class MainGUIWindow : public QWidget {
     int muscleImage16To8BitOffset_ = 0;
     int streamingBehaviorFPS_ = 0;
     int streamingSyncRatio_ = 1;
+    // Default behavior exposure / muscle light-on times (us), from the recorder
+    // config. Used for the streaming params the controller always runs; the
+    // spin-box values are buffered for recording only (see buildStreamingParams).
+    int defaultBehExpTimeUs_ = 0;
+    int defaultMuscLightOnTimeUs_ = 0;
     bool muscleImagingEnabled_ = false;
 
     // PCO sensor timing sent to the controller so it can derive the muscle

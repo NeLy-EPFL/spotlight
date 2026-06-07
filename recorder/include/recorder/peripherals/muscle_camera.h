@@ -15,10 +15,18 @@
 #include "recorder/common/utils.h"
 #include "recorder/apps/shared_memory_utils.h"
 
-// Derives the muscle camera's shutter-open window and the controller's
-// muscle-trigger delay from the recording parameters, and validates that the
-// requested muscle frame interval is long enough to fit the rolling shutter,
-// light-on, and sensor readout times. See docs/data_acquisition.md.
+// Derives the muscle camera's continuous-mode (auto-sequence) exposure from the
+// recording parameters and validates that the requested muscle frame interval is
+// long enough to fit the rolling shutter, light-on, and sensor readout times.
+//
+// In continuous mode the camera free-runs at 1/(nominalExposure + readout), so
+// the nominal per-line exposure programmed into the camera is set so that one
+// frame fills the desired muscle frame interval:
+//   nominalExposure = muscleInterval - readout = rollingTime + commonTime
+//   commonTime      = lightOn + bufferTime   (the SMA#4 common-time HIGH window)
+// The blue excitation LED is pulsed for lightOn within the common time, which the
+// trigger firmware locks to via the SMA#4 status line. See
+// docs/data_acquisition.md.
 class MuscleTriggerTiming {
   public:
     MuscleTriggerTiming(
@@ -27,17 +35,24 @@ class MuscleTriggerTiming {
           muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
 
     // Populates the derived getters below. Returns false if the configuration
-    // is invalid (the muscle frame interval is too short).
+    // is invalid (the muscle frame interval is too short to fit the light-on
+    // window inside the common time, i.e. the buffer time would be negative).
     bool computeParameters(
         int muscleImageHeight,
         double muscleCameraLineScanTimeUs,
         int muscleCameraReadoutTimeUs);
 
-    int getMuscleShutterOpenTimeUs() const {
-        return muscleShutterOpenTimeUs_;
+    // Nominal per-line exposure to program into the camera (us).
+    int getNominalExposureUs() const {
+        return nominalExposureUs_;
     }
-    int getMuscleCamTriggerDelayUs() const {
-        return muscleCamTriggerDelayUs_;
+    // Slack in the common-time window beyond the light-on time (us).
+    int getBufferTimeUs() const {
+        return bufferTimeUs_;
+    }
+    // Duration of the common time / SMA#4 HIGH window (us).
+    int getCommonTimeUs() const {
+        return commonTimeUs_;
     }
 
   private:
@@ -47,8 +62,9 @@ class MuscleTriggerTiming {
     int muscleLightOnTimeUs_;
 
     // Derived parameters
-    int muscleShutterOpenTimeUs_ = -1;
-    int muscleCamTriggerDelayUs_ = -1;
+    int nominalExposureUs_ = -1;
+    int bufferTimeUs_ = -1;
+    int commonTimeUs_ = -1;
 };
 
 class MuscleCamera {
@@ -65,7 +81,11 @@ class MuscleCamera {
         spdlog::level::level_enum logLevel);
     ~MuscleCamera();
     FrameData waitForOneFrame();
-    void setLightOnTime(unsigned int lightOnTimeMicrosecs);
+    // Program the camera's nominal per-line exposure (us). In continuous
+    // (auto-sequence) mode this also sets the free-run frame rate, since the
+    // camera runs at 1/(nominalExposure + readout). Derive the value with
+    // MuscleTriggerTiming::getNominalExposureUs().
+    void setNominalExposureUs(unsigned int exposureUs);
     pid_t getCameraServerPID() const;
     int getNumLinesScanned() const;
 

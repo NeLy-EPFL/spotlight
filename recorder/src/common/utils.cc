@@ -186,13 +186,6 @@ void convert16BitTo8Bit(
     sourceImage.convertTo(targetImage, CV_8U, alpha, offset);
 }
 
-int calculateMuscleShutterOpenTime(
-    int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs) {
-    int maxRollingShutterDelay =
-        static_cast<int>(numLinesScanned * rollingShutterLineTimeUs);
-    return maxRollingShutterDelay + exposureTimeUs;
-}
-
 void writeExperimentParameters(
     const std::filesystem::path &outputPath,
     int behavior_fps,
@@ -200,8 +193,8 @@ void writeExperimentParameters(
     int muscle_sync_ratio,
     float behavior_exposure_time_ms,
     float muscle_exposure_time_ms,
-    int muscle_shutter_open_time_us,
-    int muscle_cam_trigger_delay_us,
+    int muscle_nominal_exposure_us,
+    int muscle_buffer_time_us,
     const std::string &experiment_protocol) {
     YAML::Emitter out;
     out << YAML::BeginMap;
@@ -214,12 +207,12 @@ void writeExperimentParameters(
         << behavior_exposure_time_ms;
     out << YAML::Key << "muscle_exposure_time_ms" << YAML::Value
         << muscle_exposure_time_ms;
-    // Derived muscle trigger timing is only meaningful when imaging muscle.
+    // Derived continuous-mode timing is only meaningful when imaging muscle.
     if (muscle_imaging_enabled) {
-        out << YAML::Key << "muscle_shutter_open_time_us" << YAML::Value
-            << muscle_shutter_open_time_us;
-        out << YAML::Key << "muscle_cam_trigger_delay_us" << YAML::Value
-            << muscle_cam_trigger_delay_us;
+        out << YAML::Key << "muscle_nominal_exposure_us" << YAML::Value
+            << muscle_nominal_exposure_us;
+        out << YAML::Key << "muscle_buffer_time_us" << YAML::Value
+            << muscle_buffer_time_us;
     }
     out << YAML::Key << "experiment_protocol" << YAML::Value
         << experiment_protocol;

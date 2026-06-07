@@ -258,21 +258,15 @@ MainGUIWindow::MainGUIWindow(
     // Behavior exposure time widget
     behaviorExposureTimeSpinBox_ = new QDoubleSpinBox(this);
     behaviorExposureTimeSpinBox_->setRange(0.001, 1000.0);
-    int behaviorCameraDefaultExposureTimeUs = recorderConfig.getParameter<int>(
+    defaultBehExpTimeUs_ = recorderConfig.getParameter<int>(
         "behavior_camera", "default_exposure_time_us");
-    behaviorExposureTimeSpinBox_->setValue(
-        behaviorCameraDefaultExposureTimeUs / 1000.0);
-    connect(
-        behaviorExposureTimeSpinBox_,
-        QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-        this,
-        [this](double) {
-            // Only adjust live (streaming) params; sending a STREAM mid-recording
-            // would revert the controller and abort the recording.
-            if (!programState_->isRecording.load()) {
-                arduinoCommunication_->stream(buildStreamingParams());
-            }
-        });
+    behaviorExposureTimeSpinBox_->setValue(defaultBehExpTimeUs_ / 1000.0);
+    // Buffered recording parameter: applied only when a recording starts (see
+    // buildRecordingParams). During streaming the controller always runs the
+    // default behavior exposure (see buildStreamingParams), so editing this spin
+    // box has no live effect and is intentionally not re-streamed -- the
+    // controller's status display must show the actual live behavior, not the
+    // not-yet-executed recording config.
     QHBoxLayout *behaviorExposureTimeLayout = new QHBoxLayout();
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));
@@ -281,32 +275,20 @@ MainGUIWindow::MainGUIWindow(
     // Muscle exposure time widget
     muscleLightOnTimeSpinBox_ = new QDoubleSpinBox(this);
     muscleLightOnTimeSpinBox_->setRange(0.001, 1000.0);
-    int muscleCameraDefaultLightOnTimeUs = recorderConfig.getParameter<int>(
+    defaultMuscLightOnTimeUs_ = recorderConfig.getParameter<int>(
         "muscle_camera", "default_light_on_time_us");
-    muscleLightOnTimeSpinBox_->setValue(
-        muscleCameraDefaultLightOnTimeUs / 1000.0);
-    // Initialize the muscle camera's shutter-open window to match the displayed
-    // default. The window tracks this spin box from now on (see below).
-    muscleRecordingState_->muscleCamera->setLightOnTime(
-        muscleCameraDefaultLightOnTimeUs);
+    muscleLightOnTimeSpinBox_->setValue(defaultMuscLightOnTimeUs_ / 1000.0);
+    // Initialize the free-running (auto-sequence) muscle camera to the streaming
+    // muscle frame rate. In continuous mode the nominal exposure sets the frame
+    // rate; it is switched to the recording rate when a recording starts and back
+    // when it ends (see startRecording/endRecording).
+    pushMuscleCameraExposure(streamingBehaviorFPS_, streamingSyncRatio_);
     // Muscle-only parameter: disabled unless muscle imaging is enabled (the
-    // checkbox below toggles it).
+    // checkbox below toggles it). Like the behavior exposure, this is a buffered
+    // recording parameter -- applied only when a recording starts; during
+    // streaming the controller always runs the default light-on time, so editing
+    // it has no live effect and is not re-streamed.
     muscleLightOnTimeSpinBox_->setEnabled(false);
-    connect(
-        muscleLightOnTimeSpinBox_,
-        QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-        this,
-        [this](double valueMs) {
-            // Don't touch the camera or controller mid-recording: the recording
-            // params were already sent and must stay fixed.
-            if (!programState_->isRecording.load()) {
-                // Keep the camera's shutter-open window in sync with the
-                // light-on time so the muscle exposure stays correct.
-                muscleRecordingState_->muscleCamera->setLightOnTime(
-                    static_cast<unsigned int>(valueMs * 1000));
-                arduinoCommunication_->stream(buildStreamingParams());
-            }
-        });
     QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
     muscleLightOnTimeLayout->addWidget(
         new QLabel("Muscle exposure (light-on) time (ms)"));
@@ -565,8 +547,8 @@ void MainGUIWindow::startRecording() {
     // saved in the experiment parameters metadata below. Validate before any
     // irreversible work (directory creation, metadata writes) so an invalid
     // configuration leaves nothing behind.
-    int muscleShutterOpenTimeUs = 0;
-    int muscleCamTriggerDelayUs = 0;
+    int muscleNominalExposureUs = 0;
+    int muscleBufferTimeUs = 0;
     if (muscleImagingCheckBox_->isChecked()) {
         MuscleTriggerTiming muscleTriggerTiming(
             behaviorFPSSpinBox_->value(),
@@ -590,10 +572,15 @@ void MainGUIWindow::startRecording() {
                 "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
             return;
         }
-        muscleShutterOpenTimeUs =
-            muscleTriggerTiming.getMuscleShutterOpenTimeUs();
-        muscleCamTriggerDelayUs =
-            muscleTriggerTiming.getMuscleCamTriggerDelayUs();
+        muscleNominalExposureUs = muscleTriggerTiming.getNominalExposureUs();
+        muscleBufferTimeUs = muscleTriggerTiming.getBufferTimeUs();
+        // Switch the free-running camera to the recording muscle frame rate
+        // before START_RECORDING, so it is already emitting common-time onsets at
+        // the recording cadence when the firmware begins locking the behavior
+        // frames to them. The controller's camFlushTimeUs delay covers the
+        // transient while the new exposure takes effect.
+        muscleRecordingState_->muscleCamera->setNominalExposureUs(
+            static_cast<unsigned int>(muscleNominalExposureUs));
     }
 
     // Toggle GUI buttons
@@ -643,8 +630,8 @@ void MainGUIWindow::startRecording() {
         syncRatioSpinBox_->value(),
         behaviorExposureTimeSpinBox_->value(),
         muscleLightOnTimeSpinBox_->value(),
-        muscleShutterOpenTimeUs,
-        muscleCamTriggerDelayUs,
+        muscleNominalExposureUs,
+        muscleBufferTimeUs,
         experimentProtocol_->toPlainText().toStdString());
     spdlog::info(
         "Saved experiment parameters to '{}'",
@@ -718,24 +705,56 @@ void MainGUIWindow::endRecording(bool reachedProgrammedEnd) {
         arduinoCommunication_->stopRecording();
     }
 
+    // Revert the free-running muscle camera to the streaming muscle frame rate,
+    // matching the streaming params the controller was just reverted to.
+    pushMuscleCameraExposure(streamingBehaviorFPS_, streamingSyncRatio_);
+
     // Stop queuing frames. The acquirer threads flush any partial behavior
     // group and discard subsequent frames (see behaviorImageAcquirer).
     programState_->isRecording.store(false);
     currentRecordingIsScheduled_ = false;
 }
 
+void MainGUIWindow::pushMuscleCameraExposure(int behFrameRate, int syncRatio) {
+    // In continuous (auto-sequence) mode the camera free-runs at
+    // 1/(nominalExposure + readout), so the nominal per-line exposure sets the
+    // frame rate. Pick it so the camera produces muscle frames at
+    // behFrameRate / syncRatio. See docs/data_acquisition.md and
+    // MuscleTriggerTiming.
+    unsigned int muscleIntervalUs =
+        static_cast<unsigned int>(1000000.0 * syncRatio / behFrameRate);
+    int exposureUs = static_cast<int>(muscleIntervalUs) -
+                     static_cast<int>(pcoCamReadoutTimeUs_);
+    if (exposureUs <= 0) {
+        spdlog::error(
+            "Cannot set muscle camera exposure: muscle interval ({} us) is not "
+            "longer than the sensor readout time ({} us).",
+            muscleIntervalUs,
+            pcoCamReadoutTimeUs_);
+        return;
+    }
+    muscleRecordingState_->muscleCamera->setNominalExposureUs(
+        static_cast<unsigned int>(exposureUs));
+}
+
 TriggerParams MainGUIWindow::buildStreamingParams() const {
     TriggerParams params;
-    // Muscle imaging off => the controller free-runs the behavior camera and
-    // never pulses the blue excitation LED (enableMuscle in the protocol). The
-    // muscle-only fields below are still sent but ignored in that case.
+    // During streaming the controller always runs DEFAULT parameters. The
+    // recording spin boxes (behavior FPS, sync ratio, behavior exposure, muscle
+    // light-on) are buffered in the GUI and take effect only when a recording
+    // starts (see buildRecordingParams). This keeps the controller's status
+    // display showing the actual live behavior, never the not-yet-executed
+    // recording config.
+    //
+    // The one live streaming control is the muscle-imaging checkbox: it toggles
+    // whether the behavior camera is locked to the muscle camera and the blue
+    // excitation LED is pulsed (enableMuscle), for muscle preview. When false,
+    // the muscle-only fields are still sent but ignored by the controller.
     params.enableMuscle = muscleImagingEnabled_;
     params.behFrameRate = streamingBehaviorFPS_;
     params.behMuscSyncRatio = streamingSyncRatio_;
-    params.behExpTime = static_cast<unsigned int>(
-        behaviorExposureTimeSpinBox_->value() * 1000);
-    params.muscEffExpTime =
-        static_cast<unsigned int>(muscleLightOnTimeSpinBox_->value() * 1000);
+    params.behExpTime = static_cast<unsigned int>(defaultBehExpTimeUs_);
+    params.muscEffExpTime = static_cast<unsigned int>(defaultMuscLightOnTimeUs_);
     params.pcoCamRollingTime = pcoCamRollingTimeUs_;
     params.pcoCamReadoutTime = pcoCamReadoutTimeUs_;
     return params;

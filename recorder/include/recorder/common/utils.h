@@ -45,12 +45,11 @@ std::string expandPath(const std::string &path);
 void convert16BitTo8Bit(
     const cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
 
-int calculateMuscleShutterOpenTime(
-    int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs);
-
-// The muscle_shutter_open_time_us and muscle_cam_trigger_delay_us values are the
-// derived muscle trigger timing (see MuscleTriggerTiming); they are only written
-// when muscle_imaging_enabled is true.
+// The muscle_nominal_exposure_us and muscle_buffer_time_us values are the
+// derived continuous-mode (auto-sequence) timing (see MuscleTriggerTiming): the
+// nominal per-line exposure programmed into the camera, and the slack in the
+// common-time window beyond the light-on time. They are only written when
+// muscle_imaging_enabled is true.
 void writeExperimentParameters(
     const std::filesystem::path &outputPath,
     int behavior_fps,
@@ -58,8 +57,8 @@ void writeExperimentParameters(
     int muscle_sync_ratio,
     float behavior_exposure_time_ms,
     float muscle_exposure_time_ms,
-    int muscle_shutter_open_time_us,
-    int muscle_cam_trigger_delay_us,
+    int muscle_nominal_exposure_us,
+    int muscle_buffer_time_us,
     const std::string &experiment_protocol);
 
 class SaveDirectory {

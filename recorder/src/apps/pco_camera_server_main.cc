@@ -141,8 +141,21 @@ void setupPCOCamera(
     config.roi.x1 = x1;
     config.roi.y0 = y0;
     config.roi.y1 = y1;
-    config.trigger_mode = TRIGGER_MODE_EXTERNALTRIGGER;
+    // Auto-sequence ("auto trigger") = continuous rolling shutter: the camera
+    // free-runs, exposing each line back-to-back with no idle line-reset time,
+    // instead of waiting for an external TTL trigger per frame. This is required
+    // by the acquisition design (docs/data_acquisition.md): the trigger firmware
+    // does NOT trigger this camera -- it locks the behavior camera to the muscle
+    // camera's free-running common-time signal on SMA #4 (configured below). With
+    // TRIGGER_MODE_EXTERNALTRIGGER the camera would wait forever for a trigger the
+    // firmware never sends, never expose, never drive SMA #4, and the firmware
+    // would in turn wait forever for the common-time onset -- freezing both
+    // cameras. The free-run frame rate is set via the nominal exposure (see
+    // setExposureTime below and the acquisition loop's live exposure updates).
+    config.trigger_mode = TRIGGER_MODE_AUTOTRIGGER;
     config.acquire_mode = ACQUIRE_MODE_AUTO;
+    // Zero inter-frame delay keeps the rolling shutter continuous (no idle time).
+    // Any sync delay is implemented in the trigger firmware, not here.
     config.delay_time_s = delayUs / 1000000.0; // Convert to seconds
     config.noise_filter_mode = NOISE_FILTER_MODE_ON;
     // config.timestamp_mode = TIMESTAMP_MODE_ASCII;
@@ -410,15 +423,23 @@ int main(int argc, char *argv[]) {
     unsigned int roiWidth = options.x1 - options.x0 + 1;
     unsigned int roiHeight = options.y1 - options.y0 + 1;
 
-    const unsigned int defaultLightOnTimeUs =
-        recorderConfig.getParameter<unsigned int>(
-            "muscle_camera", "default_light_on_time_us");
-    const double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
-        "muscle_camera", "rolling_shutter_line_time_us");
-    const unsigned int rollingTime =
-        static_cast<unsigned int>(roiHeight * rollingShutterLineTimeUs);
-    const unsigned int defaultShutterOpenTimeUs =
-        defaultLightOnTimeUs + rollingTime;
+    // Initial nominal per-line exposure for the free-running (auto-sequence)
+    // camera. In continuous mode the exposure sets the frame rate
+    // (rate = 1/(exposure + readout)), so derive it from the default streaming
+    // muscle interval (streaming sync ratio / streaming behavior FPS):
+    //   exposure = muscleInterval - readout.
+    // The recorder GUI overwrites this live (via the shared shutter-open-time
+    // region) as soon as it knows the active streaming/recording parameters.
+    const double sensorReadoutTimeUs = recorderConfig.getParameter<double>(
+        "muscle_camera", "sensor_readout_time_us");
+    const int streamingBehFPS = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    const int streamingSyncRatio = recorderConfig.getParameter<int>(
+        "muscle_camera", "streaming_sync_ratio");
+    const unsigned int defaultMuscleIntervalUs = static_cast<unsigned int>(
+        1000000.0 * streamingSyncRatio / streamingBehFPS);
+    const unsigned int defaultShutterOpenTimeUs = defaultMuscleIntervalUs -
+        static_cast<unsigned int>(sensorReadoutTimeUs);
 
     // Validate image dimensions
     if (options.x0 == 0 || options.y0 == 0 || options.x1 > fullFrameWidth ||

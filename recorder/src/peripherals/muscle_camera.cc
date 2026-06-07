@@ -236,11 +236,13 @@ bool MuscleCamera::isROIValid() {
     return true;
 }
 
-void MuscleCamera::setLightOnTime(unsigned int lightOnTimeMicrosecs) {
+void MuscleCamera::setNominalExposureUs(unsigned int exposureUs) {
     if (shutterOpenTimePtr_ != nullptr) {
-        int shutterOnTimeUs = calculateMuscleShutterOpenTime(
-            imageHeight_, rollingShutterLineTimeUs_, lightOnTimeMicrosecs);
-        *shutterOpenTimePtr_ = shutterOnTimeUs;
+        // The PCO camera server polls this shared value in its acquisition loop
+        // and applies it as the camera's nominal per-line exposure (see
+        // serveFrames() in pco_camera_server_main.cc). In continuous mode this
+        // also sets the free-run frame rate.
+        *shutterOpenTimePtr_ = exposureUs;
     } else {
         spdlog::error(
             "Cannot set exposure time. Shared memory pointer is null.");
@@ -272,12 +274,26 @@ bool MuscleTriggerTiming::computeParameters(
     double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
     int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
-    if (2 * rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ >
-        muscleIntervalUs) {
+
+    // Continuous rolling shutter (auto-sequence): the camera free-runs at
+    // 1/(nominalExposure + readout). Set the nominal per-line exposure so one
+    // frame fills the requested muscle interval, then split it into the rolling
+    // time (line skew) and the common time (all lines exposing simultaneously).
+    // The light-on window must fit inside the common time, leaving a
+    // non-negative buffer:
+    //   nominalExposure = muscleInterval - readout = rollingTime + commonTime
+    //   commonTime      = lightOn + bufferTime
+    // Valid only if rollingTime + lightOn + readout <= muscleInterval. (Note the
+    // single rollingTime: triggered acquisition would need 2 * rollingTime, but
+    // continuous rolling has no idle line-reset time -- see
+    // docs/data_acquisition.md.)
+    nominalExposureUs_ = muscleIntervalUs - muscleCameraReadoutTimeUs;
+    commonTimeUs_ = nominalExposureUs_ - rollingTimeUs;
+    bufferTimeUs_ = commonTimeUs_ - muscleLightOnTimeUs_;
+    if (bufferTimeUs_ < 0) {
         spdlog::critical(
             "Computed muscle camera parameters are invalid: "
-            "rollingTimeUs + muscleCameraReadoutTimeUs + muscleLightOnTimeUs_ "
-            "must be less than or equal to muscleIntervalUs. "
+            "rollingTime + lightOn + readout must be <= muscleInterval. "
             "rollingTimeUs = {}, "
             "muscleCameraReadoutTimeUs = {}, "
             "muscleLightOnTimeUs = {}, "
@@ -288,10 +304,5 @@ bool MuscleTriggerTiming::computeParameters(
             muscleIntervalUs);
         return false; // Invalid configuration
     }
-    muscleShutterOpenTimeUs_ = rollingTimeUs + muscleLightOnTimeUs_;
-    muscleCamTriggerDelayUs_ = muscleIntervalUs - rollingTimeUs;
-    int minMuscleIntervalUs =
-        muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
-
-    return muscleIntervalUs >= minMuscleIntervalUs;
+    return true;
 }
