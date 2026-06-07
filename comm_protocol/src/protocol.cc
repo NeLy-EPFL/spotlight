@@ -8,6 +8,7 @@ constexpr char kCmdStream[] = "STREAM";
 constexpr char kCmdStartRecording[] = "START_RECORDING";
 constexpr char kCmdStopRecording[] = "STOP_RECORDING";
 constexpr char kCmdLog[] = "LOG";
+constexpr char kCmdReset[] = "RESET";
 
 constexpr char kOpOn[] = "ON";
 constexpr char kOpOff[] = "OFF";
@@ -190,6 +191,13 @@ Command Command::makeLogCommand(const std::string &message) {
     return cmd;
 }
 
+Command Command::makeResetCommand() {
+    Command cmd;
+    cmd.cmdType = CmdType::RESET;
+    cmd.isValid = true;
+    return cmd;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Parsing                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -221,6 +229,12 @@ Command Command::parse(const std::string &jsonStr) {
 
     if (std::strcmp(cmdType, kCmdStopRecording) == 0) {
         cmd.cmdType = CmdType::STOP_RECORDING;
+        cmd.isValid = true;
+        return cmd;
+    }
+
+    if (std::strcmp(cmdType, kCmdReset) == 0) {
+        cmd.cmdType = CmdType::RESET;
         cmd.isValid = true;
         return cmd;
     }
@@ -296,6 +310,9 @@ std::string Command::toString() const {
     case CmdType::LOG:
         doc["cmdType"] = kCmdLog;
         doc["msg"] = logMsg;
+        break;
+    case CmdType::RESET:
+        doc["cmdType"] = kCmdReset;
         break;
     }
 

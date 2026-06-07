@@ -92,6 +92,18 @@ test(protocol_logRoundTrip) {
     assertEqual(parsed.logMsg.c_str(), "a log line");
 }
 
+test(protocol_resetRoundTrip) {
+    Command original = Command::makeResetCommand();
+    assertTrue(original.isValid);
+
+    std::string json = original.toString();
+    assertMore(json.size(), (size_t)0);
+
+    Command parsed = Command::parse(json);
+    assertTrue(parsed.isValid);
+    assertEqual((int)parsed.cmdType, (int)CmdType::RESET);
+}
+
 test(protocol_parseRejectsMalformed) {
     Command cmd = Command::parse("{not valid json");
     assertFalse(cmd.isValid);

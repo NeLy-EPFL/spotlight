@@ -28,6 +28,8 @@
  *     - "SCHEDULED RECORDING" after every command where recording/isRecording
  *       is true and recording/opSequence is nonempty
  *     - "ERROR" if the controller is in an error state
+ *     - "RESETTING" briefly, after a RESET command, just before the controller
+ *       reboots (all other lines blank)
  *   - For "Beh FPS": the behFrameRate parameter of the most recent RUN
  *     command
  *   - For "Beh-mus ratio": the behMuscSyncRatio parameter of the most recent RUN
@@ -59,6 +61,7 @@ class StatusDisplay {
         openRecording,
         scheduledRecording,
         error,
+        resetting,
     };
 
     StatusDisplay();
@@ -81,6 +84,13 @@ class StatusDisplay {
     void setMuscExpTime(unsigned long us);
     /** Show "OFF" on the "Mus exp" line (muscle imaging disabled). */
     void setMuscExpOff();
+
+    /**
+     * Blank every line (the status line and all parameter lines). Only touches
+     * the in-memory cache; call render() to push the cleared state to the panel.
+     * Used on a software reset, where the status is then set to "RESETTING".
+     */
+    void clear();
 
     /** Redraw the whole screen from the cached line values. */
     void render();

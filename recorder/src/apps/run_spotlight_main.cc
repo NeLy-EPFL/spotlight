@@ -344,6 +344,12 @@ int runSpotlightMain(int argc, char **argv) {
     arduinoCommunication =
         std::make_shared<ArduinoCommunication>(arduinoPortName);
 
+    // Reboot the trigger controller into a clean, known state at startup. The
+    // comm thread waits for the reboot and reopens the port, so the GUI's first
+    // STREAM (sent when the main window is constructed below) reaches the freshly
+    // reset controller.
+    arduinoCommunication->reset();
+
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(
         recorderConfig,

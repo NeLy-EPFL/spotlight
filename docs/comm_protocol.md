@@ -1,6 +1,6 @@
 # Recorder-microcontroller communication protocol
 
-There are four types of commands: `STREAM`, `START_RECORDING`, `STOP_RECORDING`, and `LOG`. The formats of these are as follows. Commands are communicated in compact JSON form and parsed/formatted using ArduinoJson.
+There are five types of commands: `STREAM`, `START_RECORDING`, `STOP_RECORDING`, `LOG`, and `RESET`. The formats of these are as follows. Commands are communicated in compact JSON form and parsed/formatted using ArduinoJson.
 
 ## `STREAM`
 
@@ -79,3 +79,15 @@ Upon a `STOP_RECORDING` command, the triggering controller reverts to streaming 
 ```
 
 Upon a `LOG` command, the controller simply echoes the following via the serial port: `Triggering controller received log message: <msg>`.
+
+## `RESET`
+
+```json
+{
+  "cmdType": "RESET"  // fixed literal string
+}
+```
+
+Upon a `RESET` command, the triggering controller reboots itself by calling `esp_restart()` (from `esp_system.h`), which is equivalent to pressing the physical reset button on the board. Before rebooting, it shows `RESETTING` on the status display (with all other lines blanked) and the status LED. After the reboot the controller comes back up exactly as on a power-on: it re-initializes its peripherals and resumes streaming with the default parameters until the host sends its first `STREAM`.
+
+Rebooting drops the controller's USB CDC serial connection, so it briefly disconnects and re-enumerates on the host. The recorder sends `RESET` once at the start of every program (see [data acquisition](data_acquisition.md)) and waits for the controller to come back before sending any further command.

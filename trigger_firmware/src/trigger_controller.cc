@@ -4,6 +4,7 @@
 #include <string>
 
 #include <Arduino.h>
+#include <esp_system.h> // esp_restart()
 
 #include "trigger_firmware/config.h"
 
@@ -81,6 +82,9 @@ void TriggerController::handleCommand(const Command &cmd) {
     case CmdType::LOG:
         handleLog(cmd);
         break;
+    case CmdType::RESET:
+        handleReset();
+        break;
     }
 }
 
@@ -155,6 +159,25 @@ void TriggerController::handleLog(const Command &cmd) {
     Serial.println(cmd.logMsg.c_str());
 }
 
+void TriggerController::handleReset() {
+    // Software reset requested by the host: reboot the MCU so it comes back from
+    // a clean, known state, exactly as if the physical reset button were pressed.
+    // Drop every output first, then show "RESETTING" (with all parameter lines
+    // blank) on the OLED and status LED so the reset is visible. esp_restart()
+    // does not return; on the next boot begin() re-initializes everything and
+    // resumes default streaming.
+    device_.reset();
+    display_.clear();
+    display_.setStatus(StatusDisplay::Status::resetting);
+    display_.render();
+    statusLed_.setStatus(StatusDisplay::Status::resetting);
+
+    Serial.println("Triggering controller resetting (esp_restart)");
+    Serial.flush(); // let the message leave the USB TX buffer before rebooting
+
+    esp_restart();
+}
+
 /* -------------------------------------------------------------------------- */
 /* Timing engine                                                              */
 /* -------------------------------------------------------------------------- */
@@ -172,6 +195,17 @@ void TriggerController::runMuscleSyncedTriggers(unsigned long nowUs) {
     // onset starts a new sync group whose first behavior frame is locked to it.
     bool common = device_.isMuscCommonTime();
     bool onset = common && !prevCommonTime_;
+
+    // TEMP DIAGNOSTIC: report each common-time transition (up to a small budget
+    // armed in resetTiming()) so the host log can confirm the muscle status line
+    // is actually toggling and producing OFF->ON onsets. Remove once the muscle
+    // status wiring/polarity is verified.
+    if (common != prevCommonTime_ && commonTimeEdgeLogBudget_ > 0) {
+        --commonTimeEdgeLogBudget_;
+        Serial.println(common ? "DBG musc common-time edge OFF->ON (onset)"
+                              : "DBG musc common-time edge ON->OFF");
+    }
+
     prevCommonTime_ = common;
 
     // A fresh common-time onset while still mid-group means the muscle camera
@@ -298,6 +332,20 @@ void TriggerController::resetTiming() {
     // Seed the edge detector with the current level so a common time already in
     // progress does not count as a fresh onset.
     prevCommonTime_ = device_.isMuscCommonTime();
+
+    // TEMP DIAGNOSTIC: in muscle-synced mode, report the status line's initial
+    // level and arm reporting of the next handful of common-time edges so the
+    // host log shows whether the line is toggling at all. A constant-level (e.g.
+    // unconnected/floating, or wrong-polarity) line produces no OFF->ON onset, so
+    // the controller would wait here forever and the behavior camera would
+    // freeze. Remove once the muscle status wiring is verified.
+    if (muscleEnabled_) {
+        commonTimeEdgeLogBudget_ = 20;
+        Serial.print("DBG musc-sync armed; status line (pin A0) initially ");
+        Serial.println(prevCommonTime_ ? "ON (HIGH)" : "OFF (LOW)");
+    } else {
+        commonTimeEdgeLogBudget_ = 0;
+    }
     frameInGroup_ = 0;
     groupStartUs_ = micros();
     // Free-running mode: schedule the first behavior frame immediately.

@@ -29,6 +29,8 @@ const char *statusText(StatusDisplay::Status status) {
         return "SCHEDULED RECORDING";
     case StatusDisplay::Status::error:
         return "ERROR";
+    case StatusDisplay::Status::resetting:
+        return "RESETTING";
     }
     return "";
 }
@@ -37,9 +39,7 @@ const char *statusText(StatusDisplay::Status status) {
 StatusDisplay::StatusDisplay()
     : display_(screenWidth, screenHeight, &Wire, resetPin) {
     // Start in the pre-RUN special case: status "INITIALIZING", others blank.
-    for (uint8_t i = 0; i < numLines; ++i) {
-        values_[i][0] = '\0';
-    }
+    clear();
     setStatus(Status::initializing);
 }
 
@@ -80,6 +80,12 @@ void StatusDisplay::setMuscExpTime(unsigned long us) {
 
 void StatusDisplay::setMuscExpOff() {
     setValue(muscExpTimeLine, "OFF");
+}
+
+void StatusDisplay::clear() {
+    for (uint8_t i = 0; i < numLines; ++i) {
+        values_[i][0] = '\0';
+    }
 }
 
 void StatusDisplay::render() {

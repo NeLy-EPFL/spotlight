@@ -44,7 +44,9 @@
  * the timing parameters; START_RECORDING additionally carries an opSequence
  * that toggles optogenetics channels at given behavior-frame indices and
  * reverts to streaming on its STOP step. STOP_RECORDING reverts an open
- * recording. LOG is echoed back over the serial port.
+ * recording. LOG is echoed back over the serial port. RESET reboots the
+ * microcontroller (esp_restart()); the recorder sends it at the start of every
+ * program so the controller always begins from a clean, known state.
  *
  * Fault handling: a malformed command, a STOP_RECORDING received during a
  * scheduled recording, parameters whose camera exposure is not strictly shorter
@@ -85,6 +87,9 @@ class TriggerController {
     void handleStartRecording(const Command &cmd);
     void handleStopRecording();
     void handleLog(const Command &cmd);
+    // Show "RESETTING" on the status outputs, then reboot the MCU via
+    // esp_restart(); this call does not return.
+    void handleReset();
 
     // --- Timing engine ----------------------------------------------------
     // Dispatch one timing step to the active mode's path (selected by the most
@@ -147,6 +152,11 @@ class TriggerController {
     // Timing-loop state.
     bool awaitingMuscEdge_ = true;   // waiting for the next common-time onset
     bool prevCommonTime_ = false;    // previous isMuscCommonTime() reading
+    // TEMP DIAGNOSTIC: remaining number of muscle common-time edges to report
+    // over serial after each (re)configuration. Bounded so the diagnostic cannot
+    // flood the USB-CDC TX buffer and stall the timing loop. See
+    // runMuscleSyncedTriggers()/resetTiming(); remove once wiring is confirmed.
+    unsigned int commonTimeEdgeLogBudget_ = 0;
     unsigned long groupStartUs_ = 0; // micros() at the current group's onset
     unsigned int frameInGroup_ = 0;  // next behavior frame index in the group
     unsigned long nextBehFrameUs_ = 0; // free-running mode: next frame due time

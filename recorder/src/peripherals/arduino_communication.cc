@@ -22,6 +22,43 @@ void drainIncomingSerial(QSerialPort &serialPort, std::string &buffer) {
     }
 }
 
+// After a RESET command, the firmware calls esp_restart() and the controller
+// reboots, which tears down and re-creates its native USB CDC serial port. Wait
+// for it to come back, then reopen the (stable) port so that subsequent commands
+// reach the rebooted controller. Reopening relies on a stable port name -- the
+// /dev/arduino_trigger udev symlink -- surviving the re-enumeration.
+void waitForControllerReboot(
+    QSerialPort &serialPort,
+    const std::string &portName,
+    std::atomic<bool> &stopCommunication) {
+    // Time for the MCU to reboot and its USB CDC port to re-enumerate before we
+    // try to reopen it; generous so the first reopen attempt below succeeds.
+    constexpr auto rebootWait = std::chrono::milliseconds(2000);
+    constexpr auto reopenInterval = std::chrono::milliseconds(200);
+    constexpr int maxReopenAttempts = 50; // ~10 s total before giving up
+
+    spdlog::info(
+        "Trigger controller resetting (esp_restart); waiting for it to reboot "
+        "and re-enumerate on {}",
+        portName);
+    serialPort.close();
+    std::this_thread::sleep_for(rebootWait);
+
+    for (int attempt = 0; attempt < maxReopenAttempts; ++attempt) {
+        if (stopCommunication) {
+            return;
+        }
+        if (serialPort.open(QIODevice::ReadWrite)) {
+            spdlog::info("Reconnected to trigger controller after reset");
+            return;
+        }
+        std::this_thread::sleep_for(reopenInterval);
+    }
+    spdlog::error(
+        "Trigger controller did not re-enumerate within timeout after reset; "
+        "will keep retrying on the next command write");
+}
+
 void arduinoCommThreadFunc(
     const std::string &portName,
     int baudRate,
@@ -48,6 +85,12 @@ void arduinoCommThreadFunc(
     serialPort.setDataTerminalReady(true);
 
     std::string incomingMessageBuffer;
+
+    // The controller frames commands by newline; reset() enqueues the RESET
+    // command the same way, so it can be recognized here by its exact serialized
+    // form to drive the post-reboot reconnect (see waitForControllerReboot).
+    const std::string resetCommandLine =
+        Command::makeResetCommand().toString() + "\n";
 
     while (true) {
         std::string message;
@@ -99,6 +142,13 @@ void arduinoCommThreadFunc(
                 }
                 consecutiveFailedWrites = 0;
                 break;
+            }
+
+            // A RESET reboots the controller and drops the serial link; wait for
+            // it to come back and reopen the port before sending anything else.
+            if (message == resetCommandLine) {
+                waitForControllerReboot(
+                    serialPort, portName, stopCommunication);
             }
         }
 
@@ -160,6 +210,13 @@ void ArduinoCommunication::startRecording(
 
 void ArduinoCommunication::stopRecording() {
     enqueueMessage(Command::makeStopRecordingCommand().toString());
+}
+
+void ArduinoCommunication::reset() {
+    // Goes through the same FIFO queue as every other command, so any command
+    // enqueued afterwards (e.g. the initial STREAM) is sent only once the comm
+    // thread has waited out the reboot and reopened the port.
+    enqueueMessage(Command::makeResetCommand().toString());
 }
 
 void ArduinoCommunication::stopExcitation() {
@@ -233,6 +290,12 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     std::unique_ptr<ArduinoCommunication> arduinoCommunication =
         std::make_unique<ArduinoCommunication>(arduinoPortName);
     spdlog::info("Arduino communication started");
+
+    // Reboot the controller into a clean, known state before streaming. The
+    // comm thread waits for the reboot and reopens the port, so the STREAM below
+    // is delivered to the freshly reset controller.
+    arduinoCommunication->reset();
+
     TriggerParams params = makeDefaultStreamParams(
         recorderConfig, muscleNumLinesScanned, syncRatio,
         /*muscleImagingOn=*/true);

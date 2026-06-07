@@ -41,6 +41,13 @@ class ArduinoCommunication {
     // valid while an open recording is in progress.
     void stopRecording();
 
+    // Send a RESET command, rebooting the trigger controller (the firmware calls
+    // esp_restart()) so it starts from a clean, known state. The recorder issues
+    // this once at program startup. The reboot drops the controller's USB CDC
+    // link, so the communication thread waits for it to come back and reopens the
+    // serial port before sending any later command (e.g. the initial STREAM).
+    void reset();
+
     // Re-stream the most recently streamed params with the muscle camera
     // disabled (enableMuscle = false). This switches the blue excitation light
     // off and lets the behavior camera free-run on the controller's own clock,

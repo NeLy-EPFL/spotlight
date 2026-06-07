@@ -17,6 +17,7 @@
  *   - openRecording:         blue
  *   - scheduledRecording:    magenta (red + blue)
  *   - error:                 red
+ *   - resetting:             yellow (red + green)
  *
  * Yellow flags the pre-configuration "initializing" state (no RUN command
  * received yet); "paused" (triggering suspended by the operator) is the only
@@ -62,6 +63,8 @@ class StatusLed {
         return {kRed_, 0, kBlue_}; // magenta
       case StatusDisplay::Status::error:
         return {kRed_, 0, 0};
+      case StatusDisplay::Status::resetting:
+        return {kRed_, kGreen_, 0}; // yellow
       }
       return {0, 0, 0};
     }

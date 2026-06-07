@@ -115,6 +115,12 @@ TEST(CommandBuilder, MakeLog) {
     EXPECT_EQ(cmd.logMsg, "hello world");
 }
 
+TEST(CommandBuilder, MakeReset) {
+    Command cmd = Command::makeResetCommand();
+    EXPECT_TRUE(cmd.isValid);
+    EXPECT_EQ(cmd.cmdType, CmdType::RESET);
+}
+
 TEST(CommandBuilder, MakeStartRecordingValid) {
     std::deque<OperationStep> seq;
     seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
@@ -201,6 +207,16 @@ TEST(RoundTrip, StopRecording) {
     Command parsed = Command::parse(json);
     ASSERT_TRUE(parsed.isValid);
     EXPECT_EQ(parsed.cmdType, CmdType::STOP_RECORDING);
+}
+
+TEST(RoundTrip, Reset) {
+    Command original = Command::makeResetCommand();
+    std::string json = original.toString();
+    ASSERT_FALSE(json.empty());
+
+    Command parsed = Command::parse(json);
+    ASSERT_TRUE(parsed.isValid);
+    EXPECT_EQ(parsed.cmdType, CmdType::RESET);
 }
 
 TEST(RoundTrip, Log) {

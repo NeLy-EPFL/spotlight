@@ -12,13 +12,16 @@
  *
  * Every message is a single compact JSON object discriminated by a top-level
  * "cmdType" field, which is one of the fixed literals "STREAM",
- * "START_RECORDING", "STOP_RECORDING", or "LOG":
+ * "START_RECORDING", "STOP_RECORDING", "LOG", or "RESET":
  *
  *   STREAM          - live preview; carries "params".
  *   START_RECORDING - begin recording; carries "recParams", "revertToParams",
  *                     and an "opSequence" array (possibly empty).
  *   STOP_RECORDING  - end an open recording; carries no payload.
  *   LOG             - carries a free-form "msg" string to be echoed.
+ *   RESET           - reboot the controller (esp_restart() on the MCU, i.e. the
+ *                     equivalent of pressing the physical reset button); carries
+ *                     no payload.
  *
  * The classes below parse and serialize these messages. They are meant to
  * compile and run unchanged on both a desktop computer and the ESP32:
@@ -34,6 +37,7 @@ enum class CmdType {
     START_RECORDING,
     STOP_RECORDING,
     LOG,
+    RESET,
 };
 
 /** Optogenetics operation applied to a channel at a given frame. */
@@ -114,6 +118,7 @@ struct TriggerParams {
  *   START_RECORDING -> recParams, revertToParams, opSequence
  *   STOP_RECORDING  -> (none)
  *   LOG             -> logMsg
+ *   RESET           -> (none)
  */
 class Command {
   public:
@@ -143,6 +148,9 @@ class Command {
 
     /** Build a LOG command carrying a free-form message. */
     static Command makeLogCommand(const std::string &message);
+
+    /** Build a RESET command (reboots the controller; carries no payload). */
+    static Command makeResetCommand();
 
     /** Parse a single JSON message string; check isValid on the result. */
     static Command parse(const std::string &jsonStr);
