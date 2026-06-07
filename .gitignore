@@ -1,5 +1,6 @@
 .cache
-build
+build/
+bin/
 
 # Created by https://www.toptal.com/developers/gitignore/api/c++,platformio,cmake,git,vim,visualstudiocode,linux,macos,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,platformio,cmake,git,vim,visualstudiocode,linux,macos,windows

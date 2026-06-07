@@ -447,22 +447,46 @@ int main(int argc, char *argv[]) {
     const std::string shmCondVarName = recorderConfig.getParameter<std::string>(
         "muscle_camera", "shared_condition_variable_name");
 
-    PCOCameraServer::serveFrames(
-        shmFrameDataName,
-        frameBufferSize,
-        shmShutterOpenTimeName,
-        shmFrameMetadataName,
-        shmMutexName,
-        shmCondVarName,
-        defaultShutterOpenTimeUs,
-        options.x0,
-        options.x1,
-        options.y0,
-        options.y1,
-        options.delayUs,
-        fullFrameWidth,
-        fullFrameHeight);
+    // The PCO SDK keeps global state (camera scan/open handles, recorder, etc.)
+    // that must be initialized before any pco::Camera is constructed. Skipping
+    // this makes the Camera constructor's PCO_ScanCameras/PCO_OpenCameraDevice
+    // calls operate on an invalid SDK handle, which surfaces as
+    // "SDK DLL error 0xa00a3002 ... Handle is invalid." Mirror the PCO samples,
+    // which always pair PCO_InitializeLib()/PCO_CleanupLib() around camera use.
+    spdlog::info("Initializing PCO SDK library");
+    if (int err = PCO_InitializeLib(); err != PCO_NOERROR) {
+        spdlog::critical(
+            "Failed to initialize PCO SDK library (error 0x{:08x})",
+            static_cast<uint32_t>(err));
+        return 1;
+    }
 
+    try {
+        PCOCameraServer::serveFrames(
+            shmFrameDataName,
+            frameBufferSize,
+            shmShutterOpenTimeName,
+            shmFrameMetadataName,
+            shmMutexName,
+            shmCondVarName,
+            defaultShutterOpenTimeUs,
+            options.x0,
+            options.x1,
+            options.y0,
+            options.y1,
+            options.delayUs,
+            fullFrameWidth,
+            fullFrameHeight);
+    } catch (pco::CameraException &e) {
+        spdlog::critical(
+            "PCO camera server aborting due to camera error (0x{:08x}): {}",
+            static_cast<uint32_t>(e.error_code()),
+            e.what());
+        PCO_CleanupLib();
+        return 1;
+    }
+
+    PCO_CleanupLib();
     spdlog::info("PCO camera server stopping...");
     return 0;
 }

@@ -45,12 +45,25 @@ target_compile_features(comm_protocol PUBLIC cxx_std_20)
 # parent project if one already exists, otherwise fetch a matching v7 release.
 if(NOT TARGET ArduinoJson)
     include(FetchContent)
+    # EXCLUDE_FROM_ALL (a FetchContent feature added in CMake 3.28) stops
+    # ArduinoJson's own install() rules from being added to a parent project's
+    # `make install`. Without it, building under the recorder -- which points
+    # CMAKE_INSTALL_PREFIX at its source dir -- scatters ArduinoJson's headers
+    # and cmake config into the source tree. We only consume it as a header-only
+    # link dependency, so its install rules are never wanted. On older CMake we
+    # omit the keyword (it would error) and accept the default behavior.
+    set(_arduinojson_exclude "")
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+        set(_arduinojson_exclude EXCLUDE_FROM_ALL)
+    endif()
     FetchContent_Declare(
         ArduinoJson
         GIT_REPOSITORY https://github.com/bblanchon/ArduinoJson.git
         GIT_TAG v7.2.1
+        ${_arduinojson_exclude}
     )
     FetchContent_MakeAvailable(ArduinoJson)
+    unset(_arduinojson_exclude)
 endif()
 
 target_link_libraries(comm_protocol PUBLIC ArduinoJson)

@@ -22,6 +22,11 @@ if(NOT TARGET GTest::gtest_main)
     # Don't let GoogleTest override the parent project's compiler/linker flags
     # (matters on Windows/MSVC; harmless elsewhere).
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # Don't register GoogleTest's install() rules. The recorder sets
+    # CMAKE_INSTALL_PREFIX to its own source dir, so leaving these on makes
+    # `make install` scatter gtest/gmock headers + cmake config into the source
+    # tree (recorder/include, recorder/lib). We only ever link the targets.
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 endif()
 

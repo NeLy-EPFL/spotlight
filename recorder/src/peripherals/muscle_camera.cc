@@ -1,6 +1,7 @@
 #include "recorder/peripherals/muscle_camera.h"
 
 #include <filesystem>
+#include <sys/prctl.h> // prctl, PR_SET_PDEATHSIG
 
 namespace {
 std::string logLevelToStr(spdlog::level::level_enum logLevel) {
@@ -48,6 +49,11 @@ MuscleCamera::MuscleCamera(
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
 
+    // Capture our PID before forking so the child can detect (after arming its
+    // parent-death signal below) whether we already died in the race window
+    // between fork() and prctl().
+    pid_t parentPidBeforeFork = getpid();
+
     pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
 
     if (pid < 0) {
@@ -57,9 +63,26 @@ MuscleCamera::MuscleCamera(
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     } else if (pid == 0) {
-        // Child process: resolve pco-camera-server alongside the running
-        // recorder binary so we always launch the matching build, rather
-        // than whatever happens to be on $PATH.
+        // Child process.
+        //
+        // Ask the kernel to send us SIGTERM if our parent (the recorder) dies.
+        // Without this, a recorder that is SIGKILLed or crashes never runs
+        // ~MuscleCamera(), so the camera server is orphaned and keeps the PCO
+        // camera open indefinitely. The next run then fails to open the camera
+        // (it is already "attached") and the SDK reports the cryptic
+        // "Handle is invalid" (0xa00a3002). The server installs a SIGTERM
+        // handler that stops and closes the camera cleanly. PR_SET_PDEATHSIG
+        // survives the execl() below because pco-camera-server is not set-uid.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        // Close the race where the parent already died before the prctl() above
+        // took effect: in that case exit now rather than becoming an orphan.
+        if (getppid() != parentPidBeforeFork) {
+            _exit(EXIT_FAILURE);
+        }
+
+        // Resolve pco-camera-server alongside the running recorder binary so we
+        // always launch the matching build, rather than whatever happens to be
+        // on $PATH.
         std::filesystem::path serverPath =
             std::filesystem::canonical("/proc/self/exe").parent_path() /
             "pco-camera-server";
