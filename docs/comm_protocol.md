@@ -67,7 +67,7 @@ If `opSequence` is not empty, the recording is _scheduled_: it executes steps in
 }
 ```
 
-Upon a `STOP_RECORDING` command, the triggering controller reverts to streaming using `revertToParams`. This command is only valid during an _open_ recording; if it is received at any other time (for example before any `START_RECORDING`, or during a scheduled recording), the controller enters an error state, drops all outputs, and logs the fault over the serial port until the next valid `STREAM` or `START_RECORDING`.
+Upon a `STOP_RECORDING` command, the triggering controller reverts to streaming using `revertToParams`. This command is only meaningful during an _open_ recording. If it is received during a _scheduled_ recording (which instead ends through its own `opSequence` STOP step), the controller enters an error state, drops all outputs, and logs the fault over the serial port until the next valid `STREAM` or `START_RECORDING`. If it is received when there is no recording to end at all (for example before any `START_RECORDING`), the controller simply logs a warning and ignores it.
 
 ## LOG commands
 

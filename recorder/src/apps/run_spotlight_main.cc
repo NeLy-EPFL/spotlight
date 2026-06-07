@@ -308,6 +308,7 @@ int runSpotlightMain(int argc, char **argv) {
     spdlog::info(
         "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
         "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
+        roiFilePath.string(),
         muscleROI.x0,
         muscleROI.x1,
         muscleROI.y0,

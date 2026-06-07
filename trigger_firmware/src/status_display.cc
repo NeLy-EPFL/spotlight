@@ -5,30 +5,15 @@
 
 #include <Wire.h>
 
-#include "trigger_firmware/config.h"
-
 const char *const StatusDisplay::labels_[StatusDisplay::numLines] = {
-    "", // version line: full-width, no label
     "Status",
     "Beh FPS",
-    "B-M ratio",
-    "Beh exp time",
-    "Musc exp time",
+    "Beh-mus ratio",
+    "Beh exp",
+    "Musc exp",
 };
 
 namespace {
-// Convert a three-letter __DATE__ month abbreviation ("Jan".."Dec") to its
-// 1-based month number, or 0 if unrecognized.
-int monthNumber(const char *abbrev) {
-    static const char *const months = "JanFebMarAprMayJunJulAugSepOctNovDec";
-    for (int i = 0; i < 12; ++i) {
-        if (std::strncmp(abbrev, months + i * 3, 3) == 0) {
-            return i + 1;
-        }
-    }
-    return 0;
-}
-
 // Map a Status enum value to the text shown on the "Status" line.
 const char *statusText(StatusDisplay::Status status) {
     switch (status) {
@@ -55,29 +40,6 @@ StatusDisplay::StatusDisplay()
     for (uint8_t i = 0; i < numLines; ++i) {
         values_[i][0] = '\0';
     }
-
-    // The version line is fixed for the lifetime of the firmware: the manual
-    // version plus a compact build timestamp in the compiler host's LOCAL
-    // time, e.g. "v0.1.0 b260601-1430". __DATE__ is "Mmm DD YYYY" (the day is
-    // space-padded, so map a leading space to '0') and __TIME__ is "HH:MM:SS".
-    const char *const date = __DATE__;
-    const char *const time = __TIME__;
-    const char dayTens = date[4] == ' ' ? '0' : date[4];
-    std::snprintf(
-        values_[versionLine],
-        valueBufferSize,
-        "v%s b%c%c%02d%c%c-%c%c%c%c",
-        config::firmwareVersion,
-        date[9],
-        date[10],
-        monthNumber(date),
-        dayTens,
-        date[5],
-        time[0],
-        time[1],
-        time[3],
-        time[4]);
-
     setStatus(Status::initializing);
 }
 
@@ -126,30 +88,20 @@ void StatusDisplay::setValue(Line line, const char *text) {
 }
 
 void StatusDisplay::drawRow(uint8_t index) {
-    const int16_t y = topMargin + index * rowHeight;
-
-    // A row with no label (the version header) shows its value as a full-width,
-    // left-aligned line instead of the label/value column layout.
-    if (labels_[index][0] == '\0') {
-        display_.setCursor(0, y);
-        display_.print(values_[index]);
-        return;
+    // The Status line is centred in the yellow band; the remaining lines fill
+    // the blue band below, numbered from 0 by their offset past statusLine.
+    int16_t y;
+    if (index == statusLine) {
+        y = (statusBandHeight - charHeight) / 2;
+    } else {
+        y = statusBandHeight + blueTopMargin + (index - statusLine - 1) * rowHeight;
     }
 
-    // Label, left-aligned.
+    // Each line is "<label>: <value>", left-aligned. render() clears the panel
+    // before redrawing every row, so no per-row blanking is needed. Before the
+    // first RUN command the value is empty, leaving just "<label>: ".
     display_.setCursor(0, y);
     display_.print(labels_[index]);
-
-    // Value, right-aligned. Blank the value column first so a long label cannot
-    // bleed underneath it (the value always takes precedence).
-    const char *value = values_[index];
-    const size_t len = std::strlen(value);
-    if (len == 0) {
-        return;
-    }
-    const int16_t valueX = screenWidth - static_cast<int16_t>(len) * charWidth;
-    display_.fillRect(
-        valueX, y, screenWidth - valueX, charHeight, SSD1306_BLACK);
-    display_.setCursor(valueX, y);
-    display_.print(value);
+    display_.print(": ");
+    display_.print(values_[index]);
 }

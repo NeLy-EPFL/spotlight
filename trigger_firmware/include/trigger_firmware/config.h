@@ -1,12 +1,6 @@
 #pragma once
 
 namespace config {
-// Firmware version, shown (with the build timestamp) on the top row of the
-// status display as "v<version> b<YYMMDD>-<HHmm>". Bump this on each
-// meaningful firmware change so the build running on the device can be
-// identified at a glance.
-inline constexpr char firmwareVersion[] = "0.4.0";
-
 // Serial IO
 inline constexpr int serialBaudRate = 115200;
 inline constexpr int incomingCmdBufferSize = 16384;

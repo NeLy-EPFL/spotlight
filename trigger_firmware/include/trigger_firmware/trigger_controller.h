@@ -46,12 +46,14 @@
  * reverts to streaming on its STOP step. STOP_RECORDING reverts an open
  * recording. LOG is echoed back over the serial port.
  *
- * Fault handling: a malformed command, a STOP_RECORDING received outside an
- * open recording, parameters whose camera exposure is not strictly shorter than
- * the frame period, or a detected muscle-frame overrun put the controller into
- * a latched error state. While in error every output is dropped and triggering
- * is halted; the controller leaves the error state only when the next valid
- * STREAM or START_RECORDING reconfigures it.
+ * Fault handling: a malformed command, a STOP_RECORDING received during a
+ * scheduled recording, parameters whose camera exposure is not strictly shorter
+ * than the frame period, or a detected muscle-frame overrun put the controller
+ * into a latched error state. While in error every output is dropped and
+ * triggering is halted; the controller leaves the error state only when the next
+ * valid STREAM or START_RECORDING reconfigures it. A STOP_RECORDING with no open
+ * recording to end (e.g. before any START_RECORDING) is instead logged as a
+ * warning and ignored.
  */
 class TriggerController {
   public:

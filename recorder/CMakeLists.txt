@@ -6,10 +6,10 @@
 #
 # NOTE: this wires the build against the new file layout (snake_case sources
 # under src/, public headers included project-rooted from include/recorder/).
-# The program logic is still being ported from the old codebase onto
-# comm_protocol, so the targets are not expected to compile cleanly yet; the
-# target/source composition mirrors the previous build (see git history's
-# CMakeLists_old.txt) so it can be pruned during the refactor.
+# All targets now compile and link, but the program logic is still being ported
+# from the old codebase onto comm_protocol, so runtime behaviour is not yet
+# validated. The target/source composition mirrors the previous build (see git
+# history's CMakeLists_old.txt) so it can be pruned during the refactor.
 
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
@@ -22,8 +22,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         LANGUAGES CXX)
 
     # Emit compile_commands.json for editor IntelliSense
-    # (see .vscode/c_cpp_properties.json).
+    # (see .vscode/c_cpp_properties.json) and enable CTest for the unit tests.
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    enable_testing()
 endif()
 
 # The recorder is built against C++23 (see README.md).
@@ -58,9 +59,13 @@ find_library(ZABER_MOTION_LIB NAMES zaber-motion REQUIRED)
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
 include_directories(${EGRABBER_INCLUDE_DIR})
 
-# PCO camera SDK (only the pco-camera-server target needs it). PCO_LINUX is not
-# defined globally on purpose: it is incompatible with the rest of the codebase,
-# so pco_camera_server.h defines it locally for the PCO headers only.
+# PCO camera SDK (only the pco-camera-server target needs it). PCO_LINUX selects
+# the Linux code paths in the PCO headers and is defined per-target (see
+# target_compile_definitions below) rather than globally: it pulls in
+# pco_linux_defs.h's Windows-type shims (WORD/DWORD/HANDLE/...), which are
+# incompatible with the rest of the codebase. It must be a non-empty value
+# because the PCO headers test it with `#elif PCO_LINUX` (an empty define
+# expands to `#elif` with no expression and fails to compile).
 set(PCO_ROOT_DIR "/opt/pco/pco.cpp")
 set(PCO_INCLUDE_DIR "${PCO_ROOT_DIR}/include")
 set(PCO_LIB_DIR "${PCO_ROOT_DIR}/lib")
@@ -102,6 +107,9 @@ add_executable(pco-camera-server
     ${PCO_CAMERA_SOURCES})
 target_include_directories(pco-camera-server PUBLIC
     ${RECORDER_INCLUDE_DIR} ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
+# Scope PCO_LINUX to this target only (see note above). This reaches the bundled
+# PCO SDK .cpp files (PCO_CAMERA_SOURCES), which do not include our headers.
+target_compile_definitions(pco-camera-server PRIVATE PCO_LINUX=1)
 target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
 target_link_libraries(pco-camera-server PUBLIC ${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
 target_link_libraries(pco-camera-server PUBLIC pthread rt dl)
@@ -119,6 +127,11 @@ add_executable(run-spotlight
     ${COMMON_SOURCES}
     src/apps/shared_memory_utils.cc
     src/apps/gui.cc
+    # gui.h declares the Q_OBJECT classes (MainGUIWindow,
+    # DualRecordingConfigWindow). It must be listed as a target source so AUTOMOC
+    # scans it and emits its meta-object code: the header lives under include/,
+    # not next to gui.cc, so AUTOMOC's same-directory header discovery misses it.
+    include/recorder/apps/gui.h
     src/apps/run_spotlight_main.cc)
 target_include_directories(run-spotlight PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(run-spotlight pthread rt dl)
@@ -173,6 +186,20 @@ target_link_libraries(run-arena-registration-scan spdlog::spdlog $<$<BOOL:${MING
 target_link_libraries(run-arena-registration-scan yaml-cpp)
 target_link_libraries(run-arena-registration-scan ${DMTX_LIB})
 target_link_libraries(run-arena-registration-scan comm_protocol)
+
+# --- Unit tests --------------------------------------------------------------
+# Desktop GoogleTest unit tests for the recorder's hardware-independent logic
+# (see tests/). Like comm_protocol's tests, they build by default only in a
+# standalone recorder configuration, so the umbrella build does not pay for them
+# unless it opts in via -DRECORDER_BUILD_TESTS=ON.
+set(RECORDER_STANDALONE OFF)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(RECORDER_STANDALONE ON)
+endif()
+option(RECORDER_BUILD_TESTS "Build recorder unit tests" ${RECORDER_STANDALONE})
+if(RECORDER_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 
 # Install compiled binaries to the bin folder.
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})

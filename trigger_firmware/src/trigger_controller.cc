@@ -27,7 +27,7 @@ void TriggerController::begin() {
     // false) is non-fatal: triggering does not depend on the display.
     display_.begin();
 
-    // Light the status LED to match the initial "INITIALIZING" state (off).
+    // Light the status LED to match the initial "INITIALIZING" state (yellow).
     statusLed_.begin();
 }
 
@@ -120,14 +120,21 @@ void TriggerController::handleStartRecording(const Command &cmd) {
 }
 
 void TriggerController::handleStopRecording() {
-    // STOP_RECORDING only ends an open recording (a scheduled recording ends
-    // via its opSequence STOP step). Anything else - including a STOP_RECORDING
-    // before any START_RECORDING - is a protocol error.
-    if (mode_ != Mode::openRecording) {
-        enterError("STOP_RECORDING received outside an open recording");
+    if (mode_ == Mode::openRecording) {
+        revertToStreaming();
         return;
     }
-    revertToStreaming();
+    // A scheduled recording ends via its opSequence STOP step, never via an
+    // external STOP_RECORDING; one arriving mid-schedule is a protocol error.
+    if (mode_ == Mode::scheduledRecording) {
+        enterError("STOP_RECORDING received during a scheduled recording");
+        return;
+    }
+    // Otherwise there is no recording to end (streaming, or before any
+    // START_RECORDING). This is harmless, so log a warning and ignore it rather
+    // than faulting.
+    Serial.println("Triggering controller warning: ignoring STOP_RECORDING "
+                   "received with no open recording");
 }
 
 void TriggerController::handleLog(const Command &cmd) {

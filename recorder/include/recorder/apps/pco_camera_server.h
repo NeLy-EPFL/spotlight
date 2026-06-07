@@ -1,7 +1,12 @@
 #pragma once
 
+// The PCO headers select their Linux code paths with `#elif PCO_LINUX`, so
+// PCO_LINUX must expand to a non-empty token (an empty define would produce
+// `#elif` with no expression). The build normally provides it per-target via
+// target_compile_definitions on pco-camera-server (needed by the bundled PCO
+// SDK .cpp files, which do not include this header); this is a fallback.
 #ifndef PCO_LINUX
-#define PCO_LINUX
+#define PCO_LINUX 1
 #endif
 
 #define WAIT_WITH_SMALL_DELAY true
