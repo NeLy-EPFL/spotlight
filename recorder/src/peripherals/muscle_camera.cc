@@ -242,11 +242,10 @@ int roundToNearestValidMuscleCamVertical(int value) {
     return value - remainder + (remainder < 4 ? 0 : 8);
 }
 
-bool DualRecordingConfig::computeParameters(
+bool MuscleTriggerTiming::computeParameters(
     int muscleImageHeight,
     double muscleCameraLineScanTimeUs,
     int muscleCameraReadoutTimeUs) {
-    int behaviorIntervalUs = 1000000 / behaviorCameraFPS_;
     double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
     int muscleIntervalUs = 1000000 / muscleCameraFPS;
     int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
@@ -271,54 +270,5 @@ bool DualRecordingConfig::computeParameters(
     int minMuscleIntervalUs =
         muscleShutterOpenTimeUs_ + muscleCameraReadoutTimeUs;
 
-    hasBeenChecked_ = true;
     return muscleIntervalUs >= minMuscleIntervalUs;
-}
-
-void DualRecordingConfig::saveToFile(const std::string &yamlPath) {
-    if (!hasBeenChecked_) {
-        spdlog::error(
-            "DualRecordingConfig::saveToFile called before parameters were "
-            "computed. Call computeParameters() first.");
-        return;
-    }
-
-    YAML::Node config;
-
-    // Save the primary configuration parameters
-    config["record_both"] = recordBoth_;
-    config["behavior_camera_fps"] = behaviorCameraFPS_;
-    config["sync_ratio"] = syncRatio_;
-    config["muscle_light_on_time_us"] = muscleLightOnTimeUs_;
-
-    // Save the computed parameters
-    config["muscle_shutter_open_time_us"] = muscleShutterOpenTimeUs_;
-    config["muscle_cam_trigger_delay_us"] = muscleCamTriggerDelayUs_;
-
-    // Create any parent directories if they don't exist
-    std::filesystem::path filePath(yamlPath);
-    if (auto dir = filePath.parent_path(); !dir.empty()) {
-        std::filesystem::create_directories(dir);
-    }
-
-    // Write to file
-    try {
-        YAML::Emitter out;
-        out << config;
-
-        std::ofstream fout(yamlPath);
-        if (!fout.is_open()) {
-            spdlog::error("Failed to open file for writing: {}", yamlPath);
-            return;
-        }
-
-        fout << out.c_str();
-        fout.close();
-
-        spdlog::info(
-            "Dual recording timing configuration saved to {}", yamlPath);
-    } catch (const std::exception &e) {
-        spdlog::error(
-            "Error saving timing configuration to {}: {}", yamlPath, e.what());
-    }
 }

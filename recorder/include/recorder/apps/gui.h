@@ -75,7 +75,6 @@ class MainGUIWindow : public QWidget {
   public:
     explicit MainGUIWindow(
         const RecorderConfig &recorderConfig,
-        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
         std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
         std::shared_ptr<MuscleRecordingState> muscleRecordingState,
         std::shared_ptr<TrackingControlState> trackingControlState,
@@ -135,8 +134,6 @@ class MainGUIWindow : public QWidget {
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;
     std::shared_ptr<ProgrammedStop> programmedRecordingStop_;
-    std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
-    std::unique_ptr<DualRecordingConfig> dualRecordingConfigForStreaming_;
     double stageMinXMm_;
     double stageMaxXMm_;
     double stageMinYMm_;
@@ -158,35 +155,6 @@ class MainGUIWindow : public QWidget {
 
   protected:
     void closeEvent(QCloseEvent *event) override;
-};
-
-class DualRecordingConfigWindow : public QDialog {
-    Q_OBJECT
-  public:
-    explicit DualRecordingConfigWindow(
-        const RecorderConfig &recorderConfig,
-        std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-        const MuscleCameraROI &muscleCameraROI,
-        QWidget *parent = nullptr);
-    ~DualRecordingConfigWindow();
-
-  private slots:
-    void onButtonClicked();
-
-  private:
-    QVBoxLayout *mainLayout_;
-    QSpinBox *behaviorCameraFPSSpinBox_;
-    QSpinBox *syncRatioSpinBox_;
-    QDoubleSpinBox *muscleLightOnTimeSpinBox_;
-    QPushButton *withMuscleButton_;
-    QPushButton *withoutMuscleButton_;
-
-    int desiredWidth_ = 400;
-    int desiredHeight_ = 350;
-
-    const RecorderConfig &recorderConfig_;
-    const MuscleCameraROI &muscleCameraROI_;
-    std::shared_ptr<DualRecordingConfig> dualRecordingConfigForSaving_;
 };
 
 // Helpers

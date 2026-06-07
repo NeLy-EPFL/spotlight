@@ -5,6 +5,12 @@ namespace config {
 inline constexpr int serialBaudRate = 115200;
 inline constexpr int incomingCmdBufferSize = 16384;
 
+// Default streaming parameters. The controller applies these at startup so it
+// streams immediately, before the first STREAM command arrives from the host.
+inline constexpr bool defaultEnableMuscle = false;
+inline constexpr unsigned int defaultBehFrameRate = 25;   // fps
+inline constexpr unsigned int defaultBehExpTime = 1000;   // us
+
 // Pin assignments
 inline constexpr int onOffSwitchPin = 8;
 

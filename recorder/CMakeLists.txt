@@ -60,12 +60,25 @@ set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
 include_directories(${EGRABBER_INCLUDE_DIR})
 
 # PCO camera SDK (only the pco-camera-server target needs it). PCO_LINUX selects
-# the Linux code paths in the PCO headers and is defined per-target (see
-# target_compile_definitions below) rather than globally: it pulls in
-# pco_linux_defs.h's Windows-type shims (WORD/DWORD/HANDLE/...), which are
-# incompatible with the rest of the codebase. It must be a non-empty value
-# because the PCO headers test it with `#elif PCO_LINUX` (an empty define
-# expands to `#elif` with no expression and fails to compile).
+# the PCO headers' Linux code paths and is scoped to the pco-camera-server target
+# (see target_compile_definitions below) rather than defined globally. Two notes:
+#   - It must expand to a non-empty token: some PCO headers test it with
+#     `#elif PCO_LINUX` (e.g. etc_xcite_defs.h, etc_xcite_export.h), so an empty
+#     define would expand to bare `#elif` with no expression and fail to compile.
+#     The build passes PCO_LINUX=1.
+#   - Selecting the Linux path makes pco_linux_defs.h inject Windows-compat
+#     typedefs and macros (BOOL/BYTE/WORD/DWORD/HANDLE/..., FALSE/TRUE/MAKEWORD/
+#     far/MAX_PATH/...) into the global namespace of every translation unit that
+#     pulls in a PCO header. (This is the header's `#elif defined(PCO_LINUX)`
+#     branch; the `_WIN32` `#include <windows.h>` branch is never taken on Linux,
+#     and with neither defined the header hits its `#error`. The shims have no
+#     include guard either.) These names do not actually clash with the
+#     Qt/OpenCV/Euresys headers used elsewhere -- combining them in one TU still
+#     compiles -- so this is not a hard incompatibility. Keeping PCO_LINUX (and
+#     the SDK it pulls in) on its own target confines that global pollution and
+#     the PCO link/runtime dependencies to one binary, which is also why
+#     muscle-camera acquisition runs as a separate shared-memory server instead
+#     of linking into run-spotlight.
 set(PCO_ROOT_DIR "/opt/pco/pco.cpp")
 set(PCO_INCLUDE_DIR "${PCO_ROOT_DIR}/include")
 set(PCO_LIB_DIR "${PCO_ROOT_DIR}/lib")
@@ -127,10 +140,10 @@ add_executable(run-spotlight
     ${COMMON_SOURCES}
     src/apps/shared_memory_utils.cc
     src/apps/gui.cc
-    # gui.h declares the Q_OBJECT classes (MainGUIWindow,
-    # DualRecordingConfigWindow). It must be listed as a target source so AUTOMOC
-    # scans it and emits its meta-object code: the header lives under include/,
-    # not next to gui.cc, so AUTOMOC's same-directory header discovery misses it.
+    # gui.h declares the Q_OBJECT class MainGUIWindow. It must be listed as a
+    # target source so AUTOMOC scans it and emits its meta-object code: the
+    # header lives under include/, not next to gui.cc, so AUTOMOC's
+    # same-directory header discovery misses it.
     include/recorder/apps/gui.h
     src/apps/run_spotlight_main.cc)
 target_include_directories(run-spotlight PRIVATE ${RECORDER_INCLUDE_DIR})

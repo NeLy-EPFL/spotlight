@@ -15,62 +15,38 @@
 #include "recorder/common/utils.h"
 #include "recorder/apps/shared_memory_utils.h"
 
-class DualRecordingConfig {
+// Derives the muscle camera's shutter-open window and the controller's
+// muscle-trigger delay from the recording parameters, and validates that the
+// requested muscle frame interval is long enough to fit the rolling shutter,
+// light-on, and sensor readout times. See docs/data_acquisition.md.
+class MuscleTriggerTiming {
   public:
-    DualRecordingConfig()
-        : recordBoth_(false), behaviorCameraFPS_(0), syncRatio_(1),
-          muscleLightOnTimeUs_(0) {}
-    DualRecordingConfig(
-        int behaviorCameraFPS,
-        int syncRatio,
-        int muscleLightOnTimeUs,
-        bool recordBoth = true)
-        : recordBoth_(recordBoth), behaviorCameraFPS_(behaviorCameraFPS),
-          syncRatio_(syncRatio), muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
+    MuscleTriggerTiming(
+        int behaviorCameraFPS, int syncRatio, int muscleLightOnTimeUs)
+        : behaviorCameraFPS_(behaviorCameraFPS), syncRatio_(syncRatio),
+          muscleLightOnTimeUs_(muscleLightOnTimeUs) {}
 
-    bool isRecordingBoth() const {
-        return recordBoth_;
-    }
-    int getBehaviorCameraFPS() const {
-        return behaviorCameraFPS_;
-    }
-    int getSyncRatio() const {
-        return syncRatio_;
-    }
-    int getMuscleLightOnTimeUs() const {
-        return muscleLightOnTimeUs_;
-    }
-    int getMuscleCamTriggerDelayUs() const {
-        return muscleCamTriggerDelayUs_;
-    }
-    void setRecordBoth(bool recordBoth) {
-        recordBoth_ = recordBoth;
-    }
-    void setBehaviorCameraFPS(int fps) {
-        behaviorCameraFPS_ = fps;
-    }
-    void setSyncRatio(int ratio) {
-        syncRatio_ = ratio;
-    }
-    void setMuscleLightOnTimeUs(int lightOnTimeUs) {
-        muscleLightOnTimeUs_ = lightOnTimeUs;
-    }
-
+    // Populates the derived getters below. Returns false if the configuration
+    // is invalid (the muscle frame interval is too short).
     bool computeParameters(
         int muscleImageHeight,
         double muscleCameraLineScanTimeUs,
         int muscleCameraReadoutTimeUs);
-    void saveToFile(const std::string &yamlPath);
+
+    int getMuscleShutterOpenTimeUs() const {
+        return muscleShutterOpenTimeUs_;
+    }
+    int getMuscleCamTriggerDelayUs() const {
+        return muscleCamTriggerDelayUs_;
+    }
 
   private:
     // User input parameters
-    bool recordBoth_;
     int behaviorCameraFPS_;
     int syncRatio_;
     int muscleLightOnTimeUs_;
 
     // Derived parameters
-    bool hasBeenChecked_ = false;
     int muscleShutterOpenTimeUs_ = -1;
     int muscleCamTriggerDelayUs_ = -1;
 };

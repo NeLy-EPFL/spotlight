@@ -169,7 +169,6 @@ float MotionControlWidget::mapToStageY(int y) const {
 
 MainGUIWindow::MainGUIWindow(
     const RecorderConfig &recorderConfig,
-    std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
@@ -194,7 +193,6 @@ MainGUIWindow::MainGUIWindow(
       saveDirectory_(saveDirectory),
       arduinoCommunication_(arduinoCommunication), programState_(programState),
       programmedRecordingStop_(programmedRecordingStop),
-      dualRecordingConfigForSaving_(dualRecordingConfig),
       activeAreaMask_(activeAreaMask), stageMinXMm_(stageMinXMm),
       stageMaxXMm_(stageMaxXMm), stageMinYMm_(stageMinYMm),
       stageMaxYMm_(stageMaxYMm) {
@@ -216,23 +214,9 @@ MainGUIWindow::MainGUIWindow(
     // Load streaming sync ratio
     streamingSyncRatio_ = recorderConfig.getParameter<int>(
         "muscle_camera", "streaming_sync_ratio");
-    dualRecordingConfigForStreaming_ = std::make_unique<DualRecordingConfig>(
-        streamingBehaviorFPS_,
-        streamingSyncRatio_,
-        dualRecordingConfig->getMuscleLightOnTimeUs());
-    size_t retryCount = 0;
-    while (muscleRecordingState_->muscleCamera == nullptr) {
-        // Wait for the muscle camera to be initialized
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        retryCount++;
-        if (retryCount % 10 == 0) {
-            spdlog::warn("Muscle camera is not initialized.");
-        }
-    }
-    dualRecordingConfigForStreaming_->computeParameters(
-        muscleRecordingState_->muscleCamera->getNumLinesScanned(),
-        rollingShutterLineTimeUs,
-        muscleCamReadoutTimeUs);
+
+    // The muscle camera is started (and waited for) in run_spotlight_main before
+    // this window is constructed, so it is ready by now.
 
     // Cache the PCO sensor timing sent in every STREAM / START_RECORDING. The
     // controller derives the muscle trigger delay from these (the rolling time
@@ -249,19 +233,9 @@ MainGUIWindow::MainGUIWindow(
         recorderConfig.getParameter<int>(
             "behavior_camera", "default_recording_fps");
     behaviorFPSSpinBox_->setValue(behaviorCameraDefaultRecordingFrameRate);
-    if (dualRecordingConfig->isRecordingBoth()) {
-        // If dual recording is enabled, set the value from the config
-        // and disable the spin box to prevent changes.
-        spdlog::debug(
-            "Setting behavior FPS to {}",
-            dualRecordingConfig->getBehaviorCameraFPS());
-        behaviorFPSSpinBox_->setValue(
-            dualRecordingConfig->getBehaviorCameraFPS());
-        behaviorFPSSpinBox_->setEnabled(false);
-    }
     // Don't connect to ArduinoCommunication! This value is only used during
-    // recording. When streaming, the sync ratio is always 1 and this field is
-    // ignored.
+    // recording. When streaming, the behavior frame rate comes from
+    // behavior_camera/streaming_frame_rate and this field is ignored.
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
     behaviorFPSLayout->addWidget(behaviorFPSSpinBox_);
@@ -272,13 +246,11 @@ MainGUIWindow::MainGUIWindow(
     int syncRatio = recorderConfig.getParameter<int>(
         "muscle_camera", "default_recording_sync_ratio");
     syncRatioSpinBox_->setValue(syncRatio);
-    if (dualRecordingConfig->isRecordingBoth()) {
-        syncRatioSpinBox_->setValue(dualRecordingConfig->getSyncRatio());
-        syncRatioSpinBox_->setEnabled(false);
-    }
-    // Don't connect to ArduinoCommunication! This value is only used during
-    // recording. When streaming, the sync ratio is always 1 and this field is
-    // ignored.
+    // Muscle-only parameter: disabled unless muscle imaging is enabled (the
+    // checkbox below toggles it). Don't connect to ArduinoCommunication! This
+    // value is only used during recording. When streaming, the sync ratio comes
+    // from muscle_camera/streaming_sync_ratio and this field is ignored.
+    syncRatioSpinBox_->setEnabled(false);
     QHBoxLayout *syncRatioLayout = new QHBoxLayout();
     syncRatioLayout->addWidget(new QLabel("Behavior FPS : muscle FPS"));
     syncRatioLayout->addWidget(syncRatioSpinBox_);
@@ -313,17 +285,25 @@ MainGUIWindow::MainGUIWindow(
         "muscle_camera", "default_light_on_time_us");
     muscleLightOnTimeSpinBox_->setValue(
         muscleCameraDefaultLightOnTimeUs / 1000.0);
-    if (dualRecordingConfig->isRecordingBoth()) {
-        muscleLightOnTimeSpinBox_->setValue(
-            dualRecordingConfig->getMuscleLightOnTimeUs() / 1000.0);
-        muscleLightOnTimeSpinBox_->setEnabled(false);
-    }
+    // Initialize the muscle camera's shutter-open window to match the displayed
+    // default. The window tracks this spin box from now on (see below).
+    muscleRecordingState_->muscleCamera->setLightOnTime(
+        muscleCameraDefaultLightOnTimeUs);
+    // Muscle-only parameter: disabled unless muscle imaging is enabled (the
+    // checkbox below toggles it).
+    muscleLightOnTimeSpinBox_->setEnabled(false);
     connect(
         muscleLightOnTimeSpinBox_,
         QOverload<double>::of(&QDoubleSpinBox::valueChanged),
         this,
-        [this](double) {
+        [this](double valueMs) {
+            // Don't touch the camera or controller mid-recording: the recording
+            // params were already sent and must stay fixed.
             if (!programState_->isRecording.load()) {
+                // Keep the camera's shutter-open window in sync with the
+                // light-on time so the muscle exposure stays correct.
+                muscleRecordingState_->muscleCamera->setLightOnTime(
+                    static_cast<unsigned int>(valueMs * 1000));
                 arduinoCommunication_->stream(buildStreamingParams());
             }
         });
@@ -402,20 +382,19 @@ MainGUIWindow::MainGUIWindow(
             // Muscle imaging on/off is expressed by enableMuscle: when off the
             // controller free-runs the behavior camera with the blue excitation
             // LED disabled (buildStreamingParams() reads muscleImagingEnabled_).
-            if (state == Qt::Checked) {
-                spdlog::info("Enabling muscle imaging");
-                muscleImagingEnabled_ = true;
-            } else {
-                spdlog::info("Disabling muscle imaging");
-                muscleImagingEnabled_ = false;
-            }
+            bool enabled = (state == Qt::Checked);
+            muscleImagingEnabled_ = enabled;
+            spdlog::info(
+                enabled ? "Enabling muscle imaging" : "Disabling muscle imaging");
+            // The muscle-only parameters are editable only when imaging muscle.
+            syncRatioSpinBox_->setEnabled(enabled);
+            muscleLightOnTimeSpinBox_->setEnabled(enabled);
+            // Re-stream so the controller switches modes immediately (sending a
+            // STREAM mid-recording would revert the controller and abort it).
             if (!programState_->isRecording.load()) {
                 arduinoCommunication_->stream(buildStreamingParams());
             }
         });
-    if (!dualRecordingConfig->isRecordingBoth()) {
-        muscleImagingCheckBox_->setEnabled(false);
-    }
     optionalFeaturesLayout->addWidget(muscleImagingCheckBox_);
 
     // Live image displays
@@ -524,13 +503,6 @@ MainGUIWindow::MainGUIWindow(
     layout->addLayout(recordStopButtonsLayout);
     setLayout(layout);
 
-    // Wait for the muscle camera before the first STREAM (its rolling/readout
-    // timing feeds the trigger params).
-    while (!muscleRecordingState->muscleCamera) {
-        spdlog::info("Waiting for muscle camera to be ready...");
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
-
     // Start in streaming mode: live preview only, not saving. Muscle imaging is
     // off by default (enableMuscle = false: behavior camera free-runs, blue
     // excitation LED off). The controller is configured with a single STREAM
@@ -588,6 +560,42 @@ void MainGUIWindow::startRecording() {
         }
     }
 
+    // If muscle imaging is enabled, derive and validate the muscle trigger
+    // timing from the current recording parameters. The derived values are
+    // saved in the experiment parameters metadata below. Validate before any
+    // irreversible work (directory creation, metadata writes) so an invalid
+    // configuration leaves nothing behind.
+    int muscleShutterOpenTimeUs = 0;
+    int muscleCamTriggerDelayUs = 0;
+    if (muscleImagingCheckBox_->isChecked()) {
+        MuscleTriggerTiming muscleTriggerTiming(
+            behaviorFPSSpinBox_->value(),
+            syncRatioSpinBox_->value(),
+            static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000));
+        double rollingShutterLineTimeUs = recorderConfig_.getParameter<double>(
+            "muscle_camera", "rolling_shutter_line_time_us");
+        int muscleCamReadoutTimeUs = recorderConfig_.getParameter<double>(
+            "muscle_camera", "sensor_readout_time_us");
+        if (!muscleTriggerTiming.computeParameters(
+                muscleRecordingState_->muscleCamera->getNumLinesScanned(),
+                rollingShutterLineTimeUs,
+                muscleCamReadoutTimeUs)) {
+            QMessageBox::critical(
+                this,
+                "Error",
+                "Invalid muscle recording configuration. In particular, check "
+                "that the muscle recording interval (1 / muscle FPS) is long "
+                "enough for the rolling shutter, light-on, and sensor readout "
+                "times. See "
+                "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
+            return;
+        }
+        muscleShutterOpenTimeUs =
+            muscleTriggerTiming.getMuscleShutterOpenTimeUs();
+        muscleCamTriggerDelayUs =
+            muscleTriggerTiming.getMuscleCamTriggerDelayUs();
+    }
+
     // Toggle GUI buttons
     recordButton_->setEnabled(false);
     stopButton_->setEnabled(true);
@@ -635,6 +643,8 @@ void MainGUIWindow::startRecording() {
         syncRatioSpinBox_->value(),
         behaviorExposureTimeSpinBox_->value(),
         muscleLightOnTimeSpinBox_->value(),
+        muscleShutterOpenTimeUs,
+        muscleCamTriggerDelayUs,
         experimentProtocol_->toPlainText().toStdString());
     spdlog::info(
         "Saved experiment parameters to '{}'",
@@ -666,17 +676,6 @@ void MainGUIWindow::startRecording() {
     } else {
         spdlog::warn(
             "Muscle camera calibration parameters not defined. Not saving.");
-    }
-
-    // Save timing metadata
-    if (dualRecordingConfigForSaving_->isRecordingBoth()) {
-        std::filesystem::path behaviorCalibrationFilePath =
-            saveDirectory_->getDirectory() /
-            "metadata/dual_recording_timing.yaml";
-        dualRecordingConfigForSaving_->saveToFile(behaviorCalibrationFilePath);
-        spdlog::info(
-            "Saved dual recording timing parameters to '{}'",
-            behaviorCalibrationFilePath.string());
     }
 
     // Send triggering parameters and start recording. The controller reverts to
@@ -745,11 +744,11 @@ TriggerParams MainGUIWindow::buildStreamingParams() const {
 TriggerParams MainGUIWindow::buildRecordingParams() const {
     TriggerParams params;
     // The muscle camera is recorded (and the blue excitation light pulsed) only
-    // when the dual-recording config has both cameras enabled; otherwise the
-    // controller free-runs the behavior camera (enableMuscle = false).
-    params.enableMuscle = dualRecordingConfigForSaving_->isRecordingBoth();
+    // when muscle imaging is enabled; otherwise the controller free-runs the
+    // behavior camera (enableMuscle = false).
+    params.enableMuscle = muscleImagingEnabled_;
     params.behFrameRate = behaviorFPSSpinBox_->value();
-    params.behMuscSyncRatio = dualRecordingConfigForSaving_->getSyncRatio();
+    params.behMuscSyncRatio = syncRatioSpinBox_->value();
     params.behExpTime = static_cast<unsigned int>(
         behaviorExposureTimeSpinBox_->value() * 1000);
     params.muscEffExpTime =
@@ -907,135 +906,6 @@ void MainGUIWindow::updateMuscleImageDisplay() {
         Qt::KeepAspectRatio,
         Qt::SmoothTransformation);
     muscleImageDisplayLabel_->setPixmap(pixmap);
-}
-
-DualRecordingConfigWindow::DualRecordingConfigWindow(
-    const RecorderConfig &recorderConfig,
-    std::shared_ptr<DualRecordingConfig> dualRecordingConfig,
-    const MuscleCameraROI &muscleCameraROI,
-    QWidget *parent)
-    : QDialog(parent), dualRecordingConfigForSaving_(dualRecordingConfig),
-      recorderConfig_(recorderConfig), muscleCameraROI_(muscleCameraROI) {
-    setWindowTitle("Dual recording configuration");
-    mainLayout_ = new QVBoxLayout(this);
-    resize(desiredWidth_, desiredHeight_);
-
-    // Block for recording behavior only
-    QLabel *labelTitle =
-        new QLabel("<b>Recording both behavior and muscle</b>");
-    QLabel *labelNoMuscle = new QLabel(
-        "<i>If you wish to record behavior only</i>, click the button below.");
-    labelNoMuscle->setWordWrap(true);
-    withoutMuscleButton_ = new QPushButton("Record behavior only", this);
-    connect(
-        withoutMuscleButton_,
-        &QPushButton::clicked,
-        this,
-        &DualRecordingConfigWindow::onButtonClicked);
-    mainLayout_->addWidget(labelTitle);
-    mainLayout_->addWidget(labelNoMuscle);
-    mainLayout_->addWidget(withoutMuscleButton_);
-    mainLayout_->addSpacing(10);
-
-    // Block for dual recording
-    QLabel *labelWithMuscle = new QLabel(
-        "<i>If you wish to record both behavior and muscle</i>, complete the "
-        "following settings and click the button below. Once the program "
-        "starts, you will not be able to change these settings. If you want "
-        "to change them, you will have to restart the program.");
-    labelWithMuscle->setWordWrap(true);
-    mainLayout_->addWidget(labelWithMuscle);
-
-    // Behavior FPS
-    QHBoxLayout *behaviorCameraFPSLayout = new QHBoxLayout();
-    QLabel *behaviorCameraFPSLabel =
-        new QLabel("Behavior camera FPS (Hz)", this);
-    behaviorCameraFPSSpinBox_ = new QSpinBox(this);
-    behaviorCameraFPSSpinBox_->setRange(1, 1000);
-    behaviorCameraFPSSpinBox_->setValue(recorderConfig.getParameter<int>(
-        "behavior_camera", "default_recording_fps"));
-    behaviorCameraFPSLayout->addWidget(behaviorCameraFPSLabel);
-    behaviorCameraFPSLayout->addWidget(behaviorCameraFPSSpinBox_);
-    mainLayout_->addLayout(behaviorCameraFPSLayout);
-
-    // Behavior-muscle sync ratio
-    QHBoxLayout *syncRatioLayout = new QHBoxLayout();
-    QLabel *syncRatioLabel =
-        new QLabel("Sync ratio (behavior FPS : muscle FPS)", this);
-    syncRatioSpinBox_ = new QSpinBox(this);
-    syncRatioSpinBox_->setRange(1, 100);
-    syncRatioSpinBox_->setValue(recorderConfig.getParameter<int>(
-        "muscle_camera", "default_recording_sync_ratio"));
-    syncRatioLayout->addWidget(syncRatioLabel);
-    syncRatioLayout->addWidget(syncRatioSpinBox_);
-    mainLayout_->addLayout(syncRatioLayout);
-
-    // Muscle exposure time
-    QHBoxLayout *muscleLightOnTimeLayout = new QHBoxLayout();
-    QLabel *muscleLightOnTimeLabel =
-        new QLabel("Muscle exposure (light-on) time (ms)", this);
-    muscleLightOnTimeSpinBox_ = new QDoubleSpinBox(this);
-    muscleLightOnTimeSpinBox_->setRange(0.001, 10000.0);
-    muscleLightOnTimeSpinBox_->setValue(
-        recorderConfig.getParameter<int>(
-            "muscle_camera", "default_light_on_time_us") /
-        1000.0);
-    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeLabel);
-    muscleLightOnTimeLayout->addWidget(muscleLightOnTimeSpinBox_);
-    mainLayout_->addLayout(muscleLightOnTimeLayout);
-
-    withMuscleButton_ = new QPushButton("Record behavior and muscle", this);
-    connect(
-        withMuscleButton_,
-        &QPushButton::clicked,
-        this,
-        &DualRecordingConfigWindow::onButtonClicked);
-    mainLayout_->addWidget(withMuscleButton_);
-}
-
-DualRecordingConfigWindow::~DualRecordingConfigWindow() {
-    // Nothing to clean up here, as we are using Qt's parent-child
-}
-
-void DualRecordingConfigWindow::onButtonClicked() {
-    dualRecordingConfigForSaving_->setRecordBoth(sender() == withMuscleButton_);
-    dualRecordingConfigForSaving_->setBehaviorCameraFPS(
-        behaviorCameraFPSSpinBox_->value());
-    dualRecordingConfigForSaving_->setSyncRatio(syncRatioSpinBox_->value());
-    dualRecordingConfigForSaving_->setMuscleLightOnTimeUs(
-        static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000));
-
-    int muscleImageHeight = muscleCameraROI_.imageHeight;
-    double muscleCameraLineScanTimeUs = recorderConfig_.getParameter<double>(
-        "muscle_camera", "rolling_shutter_line_time_us");
-    int muscleCameraReadoutTimeUs = recorderConfig_.getParameter<double>(
-        "muscle_camera", "sensor_readout_time_us");
-
-    bool isValid = dualRecordingConfigForSaving_->computeParameters(
-        muscleImageHeight,
-        muscleCameraLineScanTimeUs,
-        muscleCameraReadoutTimeUs);
-
-    if (!isValid) {
-        QMessageBox::critical(
-            this,
-            "Error",
-            "Invalid configuration for recording both behavior and muscle. "
-            "Please check the parameters and try again. "
-            "In particular, check if the muscle recording interval "
-            "(i.e. 1 / muscleFPS) is greater than the minimum. See "
-            "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
-    } else {
-        spdlog::info(
-            "Behavior-muscle corecording config set: "
-            "recordBoth={}, behaviorCameraFPS={}, syncRatio={}, "
-            "muscleLightOnTimeUs={}",
-            dualRecordingConfigForSaving_->isRecordingBoth(),
-            dualRecordingConfigForSaving_->getBehaviorCameraFPS(),
-            dualRecordingConfigForSaving_->getSyncRatio(),
-            dualRecordingConfigForSaving_->getMuscleLightOnTimeUs());
-        accept(); // close the dialog
-    }
 }
 
 int parseProtocolString(

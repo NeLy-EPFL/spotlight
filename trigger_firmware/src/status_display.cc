@@ -10,7 +10,7 @@ const char *const StatusDisplay::labels_[StatusDisplay::numLines] = {
     "Beh FPS",
     "Beh-mus ratio",
     "Beh exp",
-    "Musc exp",
+    "Mus exp",
 };
 
 namespace {
@@ -64,6 +64,10 @@ void StatusDisplay::setBehFrameRate(unsigned long fps) {
 
 void StatusDisplay::setBehMuscSyncRatio(unsigned long ratio) {
     std::snprintf(values_[behMuscRatioLine], valueBufferSize, "%lu:1", ratio);
+}
+
+void StatusDisplay::setBehMuscRatioNA() {
+    setValue(behMuscRatioLine, "N/A");
 }
 
 void StatusDisplay::setBehExpTime(unsigned long us) {

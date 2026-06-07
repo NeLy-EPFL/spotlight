@@ -29,6 +29,15 @@ void TriggerController::begin() {
 
     // Light the status LED to match the initial "INITIALIZING" state (yellow).
     statusLed_.begin();
+
+    // Stream immediately with the default parameters so the behavior camera is
+    // running before the host sends its first STREAM command. This overrides the
+    // "INITIALIZING" status drawn above with "STREAMING".
+    TriggerParams defaultParams;
+    defaultParams.enableMuscle = config::defaultEnableMuscle;
+    defaultParams.behFrameRate = config::defaultBehFrameRate;
+    defaultParams.behExpTime = config::defaultBehExpTime;
+    startStreaming(defaultParams);
 }
 
 void TriggerController::update() {
@@ -82,8 +91,12 @@ void TriggerController::handleStream(const Command &cmd) {
             "period");
         return;
     }
+    startStreaming(cmd.params);
+}
+
+void TriggerController::startStreaming(const TriggerParams &params) {
     error_ = false;
-    applyParams(cmd.params);
+    applyParams(params);
     opSequence_.clear();
     device_.turnOffOptoCh(OptoChannel::ALL);
     mode_ = Mode::streaming;
@@ -381,11 +394,14 @@ void TriggerController::refreshStatus() {
     display_.setStatus(status);
     if (configured_) {
         display_.setBehFrameRate(params_.behFrameRate);
-        display_.setBehMuscSyncRatio(params_.behMuscSyncRatio);
         display_.setBehExpTime(params_.behExpTime);
+        // The sync ratio and muscle exposure are meaningless when muscle imaging
+        // is disabled (the behavior camera free-runs), so show "N/A"/"OFF".
         if (params_.enableMuscle) {
+            display_.setBehMuscSyncRatio(params_.behMuscSyncRatio);
             display_.setMuscExpTime(params_.muscEffExpTime);
         } else {
+            display_.setBehMuscRatioNA();
             display_.setMuscExpOff();
         }
     }

@@ -247,7 +247,8 @@ TEST(WriteExperimentParameters, WritesReadableYaml) {
     writeExperimentParameters(
         out, /*behavior_fps=*/100, /*muscle_imaging_enabled=*/true,
         /*muscle_sync_ratio=*/3, /*behavior_exposure_time_ms=*/2.5f,
-        /*muscle_exposure_time_ms=*/8.0f, "opto_protocol_A");
+        /*muscle_exposure_time_ms=*/8.0f, /*muscle_shutter_open_time_us=*/12000,
+        /*muscle_cam_trigger_delay_us=*/4000, "opto_protocol_A");
 
     YAML::Node node = YAML::LoadFile(out.string());
     EXPECT_EQ(node["behavior_fps"].as<int>(), 100);
@@ -255,7 +256,24 @@ TEST(WriteExperimentParameters, WritesReadableYaml) {
     EXPECT_EQ(node["muscle_sync_ratio"].as<int>(), 3);
     EXPECT_FLOAT_EQ(node["behavior_exposure_time_ms"].as<float>(), 2.5f);
     EXPECT_FLOAT_EQ(node["muscle_exposure_time_ms"].as<float>(), 8.0f);
+    EXPECT_EQ(node["muscle_shutter_open_time_us"].as<int>(), 12000);
+    EXPECT_EQ(node["muscle_cam_trigger_delay_us"].as<int>(), 4000);
     EXPECT_EQ(node["experiment_protocol"].as<std::string>(), "opto_protocol_A");
+}
+
+TEST(WriteExperimentParameters, OmitsMuscleTimingWhenMuscleDisabled) {
+    TempDir dir;
+    fs::path out = dir.file("experiment_parameters.yaml");
+    writeExperimentParameters(
+        out, /*behavior_fps=*/100, /*muscle_imaging_enabled=*/false,
+        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_ms=*/2.5f,
+        /*muscle_exposure_time_ms=*/8.0f, /*muscle_shutter_open_time_us=*/0,
+        /*muscle_cam_trigger_delay_us=*/0, "opto_protocol_A");
+
+    YAML::Node node = YAML::LoadFile(out.string());
+    EXPECT_FALSE(node["muscle_imaging_enabled"].as<bool>());
+    EXPECT_FALSE(node["muscle_shutter_open_time_us"]);
+    EXPECT_FALSE(node["muscle_cam_trigger_delay_us"]);
 }
 
 TEST(PrepareOutputFolder, CreatesDirectoryAndReturnsAbsolutePath) {

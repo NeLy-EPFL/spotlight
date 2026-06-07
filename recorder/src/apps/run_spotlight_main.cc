@@ -7,9 +7,9 @@
  * Reads arena dimensions from <arena_dir>/metadata.yaml to derive the stage
  * range used by the motion-stage preview widget.
  *
- * Shows a DualRecordingConfigWindow dialog at startup to set behaviour/muscle
- * frame rates and exposure. Then launches all acquisition, saving, tracking,
- * and Arduino threads and opens the main GUI window.
+ * Launches all acquisition, saving, tracking, and Arduino threads and opens the
+ * main GUI window. Whether muscle is imaged, and the muscle/behavior frame rates
+ * and exposures, are controlled from the main GUI window at runtime.
  *
  * CLI:  run-spotlight -p PROFILE_DIR -a ARENA_DIR [OPTIONS]
  *       (see --help for details; -a/--arena is required)
@@ -113,25 +113,6 @@ int runSpotlightMain(int argc, char **argv) {
     // Load muscle ROI
     std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
     MuscleCameraROI muscleROI = getMuscleCameraROI(roiFilePath);
-
-    // Ask for behavior-muscle synchronization parameters
-    std::shared_ptr<DualRecordingConfig> dualRecordingConfig =
-        std::make_shared<DualRecordingConfig>();
-    DualRecordingConfigWindow configWindow(
-        recorderConfig, dualRecordingConfig, muscleROI);
-    if (configWindow.exec() == QDialog::Accepted) {
-        spdlog::info(
-            "User accepted the configuration dialog. Setting params: "
-            "recordBoth: {}, behavior FPS: {}, "
-            "sync ratio: {}, muscle light-on time: {} us",
-            dualRecordingConfig->isRecordingBoth(),
-            dualRecordingConfig->getBehaviorCameraFPS(),
-            dualRecordingConfig->getSyncRatio(),
-            dualRecordingConfig->getMuscleLightOnTimeUs());
-    } else {
-        spdlog::info("User cancelled the configuration dialog. Exiting.");
-        return 0;
-    }
 
     // Make atomic variable that holds the save directory
     std::string defaultSaveDirectory =
@@ -340,8 +321,8 @@ int runSpotlightMain(int argc, char **argv) {
             spdlog::warn("Muscle camera is not initialized.");
         }
     }
-    muscleRecordingState->muscleCamera->setLightOnTime(
-        dualRecordingConfig->getMuscleLightOnTimeUs());
+    // The muscle camera's shutter-open window is configured from the main GUI
+    // window (initialized to, and tracking, the muscle light-on time spin box).
 
     // Start muscle image savers
     std::vector<std::thread> muscleImageSaverThreads;
@@ -366,7 +347,6 @@ int runSpotlightMain(int argc, char **argv) {
     // Create and show GUI
     MainGUIWindow localMainGUIWindow(
         recorderConfig,
-        dualRecordingConfig,
         behaviorRecordingState,
         muscleRecordingState,
         trackingControlState,

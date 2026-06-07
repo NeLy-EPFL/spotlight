@@ -78,6 +78,10 @@ class TriggerController {
     // --- Command handling -------------------------------------------------
     void handleCommand(const Command &cmd);
     void handleStream(const Command &cmd);
+    // Enter streaming mode with `params` (assumed timing-valid): clears the error
+    // state and any opSequence, drops the opto channels, and refreshes status.
+    // Shared by handleStream() and the default-streaming setup in begin().
+    void startStreaming(const TriggerParams &params);
     void handleStartRecording(const Command &cmd);
     void handleStopRecording();
     void handleLog(const Command &cmd);
@@ -121,7 +125,10 @@ class TriggerController {
     StatusLed statusLed_;
 
     Mode mode_ = Mode::streaming;
-    bool configured_ = false; // a STREAM/START_RECORDING has been received
+    // True once parameters have been applied. begin() applies the default
+    // streaming parameters, so the controller is configured (and streaming) from
+    // startup; the "initializing" status is therefore only ever transient.
+    bool configured_ = false;
     bool paused_ = false;     // physical on/off switch override
     bool error_ = false; // latched fault; halts triggering until reconfigured
 

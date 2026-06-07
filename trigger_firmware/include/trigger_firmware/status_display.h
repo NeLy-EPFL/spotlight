@@ -17,7 +17,7 @@
  *     Beh FPS: x
  *     Beh-mus ratio: x:1
  *     Beh exp: x us
- *     Musc exp: x us
+ *     Mus exp: x us
  *
  * For each row, the x is:
  *   - For "Status":
@@ -31,10 +31,11 @@
  *   - For "Beh FPS": the behFrameRate parameter of the most recent RUN
  *     command
  *   - For "Beh-mus ratio": the behMuscSyncRatio parameter of the most recent RUN
- *     command, followed by ":1"
+ *     command, followed by ":1"; or "N/A" when that command had enableMuscle
+ *     false (muscle imaging disabled, so the ratio is meaningless)
  *   - For "Beh exp": the behExpTime parameter of the most recent RUN
  *     command, followed by " us"
- *   - For "Musc exp": the muscEffExpTime parameter of the most recent
+ *   - For "Mus exp": the muscEffExpTime parameter of the most recent
  *     RUN command, followed by " us"; or "OFF" when that command had
  *     enableMuscle false (muscle imaging disabled)
  * The Status line should occupy the top 16 pixels (which are in yellow), and
@@ -74,9 +75,11 @@ class StatusDisplay {
     void setStatus(Status status);
     void setBehFrameRate(unsigned long fps);
     void setBehMuscSyncRatio(unsigned long ratio);
+    /** Show "N/A" on the "Beh-mus ratio" line (muscle imaging disabled). */
+    void setBehMuscRatioNA();
     void setBehExpTime(unsigned long us);
     void setMuscExpTime(unsigned long us);
-    /** Show "OFF" on the "Musc exp" line (muscle imaging disabled). */
+    /** Show "OFF" on the "Mus exp" line (muscle imaging disabled). */
     void setMuscExpOff();
 
     /** Redraw the whole screen from the cached line values. */
