@@ -145,12 +145,6 @@ int runSpotlightMain(int argc, char **argv) {
         throw std::runtime_error(errorMessage);
     }
 
-    // The arena-registration pipeline only fits the behavior camera; a
-    // muscle-camera calibration is no longer produced. Pass a default-
-    // constructed (undefined) one so downstream code that conditionally
-    // reads it keeps working.
-    CalibrationParams muscleCamCalibrationParams;
-
     // Load the active-area mask for closed-loop tracking.
     double boundaryMarginMm =
         recorderConfig.getParameter<double>("tracking", "boundary_margin_mm");
@@ -363,7 +357,6 @@ int runSpotlightMain(int argc, char **argv) {
         muscleRecordingState,
         trackingControlState,
         std::ref(behaviorCamCalibrationParams),
-        std::ref(muscleCamCalibrationParams),
         saveDirectory,
         arduinoCommunication,
         programState,

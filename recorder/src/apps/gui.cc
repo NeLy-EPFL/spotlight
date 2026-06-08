@@ -173,7 +173,6 @@ MainGUIWindow::MainGUIWindow(
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
     CalibrationParams &behaviorCamCalibrationParams,
-    CalibrationParams &muscleCamCalibrationParams,
     std::shared_ptr<SaveDirectory> saveDirectory,
     std::shared_ptr<ArduinoCommunication> arduinoCommunication,
     std::shared_ptr<ProgramState> programState,
@@ -189,7 +188,6 @@ MainGUIWindow::MainGUIWindow(
       muscleRecordingState_(muscleRecordingState),
       trackingControlState_(trackingControlState),
       behaviorCamCalibrationParams_(behaviorCamCalibrationParams),
-      muscleCamCalibrationParams_(muscleCamCalibrationParams),
       saveDirectory_(saveDirectory),
       arduinoCommunication_(arduinoCommunication), programState_(programState),
       programmedRecordingStop_(programmedRecordingStop),
@@ -449,19 +447,22 @@ MainGUIWindow::MainGUIWindow(
         this,
         &MainGUIWindow::stopRecording);
 
-    // Add timer to keep checking for programmedRecordingStop
+    // Add timer to keep checking for programmedRecordingStop. The acquirer
+    // threads stop recording exactly on the programmed frame count by
+    // themselves; this only finalizes the GUI (reverts the UI and cameras to
+    // streaming) shortly after.
     QTimer *programmedStopCheckTimer = new QTimer(this);
     connect(
         programmedStopCheckTimer,
         &QTimer::timeout,
         this,
         [this, programmedRecordingStop]() {
-            if (programmedRecordingStop->hasEndedFlagForGUI.load()) {
-                spdlog::info("Protocol stop reached. Stopping recording.");
+            if (programmedRecordingStop->programmedStopReached.load()) {
+                spdlog::info("Protocol stop reached. Finalizing recording.");
                 endRecording(/*reachedProgrammedEnd=*/true);
                 programmedRecordingStop->numBehaviorFramesExpected = -1;
                 programmedRecordingStop->numMuscleFramesExpected = -1;
-                programmedRecordingStop->hasEndedFlagForGUI.store(
+                programmedRecordingStop->programmedStopReached.store(
                     false); // toggle off
                 QMessageBox::information(
                     this,
@@ -680,18 +681,6 @@ void MainGUIWindow::startRecording() {
     spdlog::info(
         "Saved behavior calibration parameters to '{}'",
         behaviorCalibrationFilePath.string());
-    if (muscleCamCalibrationParams_.isDefined) {
-        std::filesystem::path muscleCalibrationFilePath =
-            saveDirectory_->getDirectory() /
-            "metadata/calibration_parameters_muscle.yaml";
-        muscleCamCalibrationParams_.saveToFile(muscleCalibrationFilePath);
-        spdlog::info(
-            "Saved muscle calibration parameters to '{}'",
-            muscleCalibrationFilePath.string());
-    } else {
-        spdlog::warn(
-            "Muscle camera calibration parameters not defined. Not saving.");
-    }
 
     // Send triggering parameters and start recording. The controller reverts to
     // the streaming (revert-to) params when the recording ends.
@@ -963,8 +952,8 @@ int parseProtocolString(
  * ";"-separated list of steps, each "frameIdx/channel/op":
  *   - "<n>/ch2/on", "<n>/ch3/off": toggle an optogenetics channel
  *   - "<n>/x/stop": end the recording and revert to streaming
- * A single ";" denotes an empty (open) recording. Returns the number of steps,
- * or -1 on a malformed string.
+ * An empty string (or a single ";") denotes an open recording with no
+ * programmed steps. Returns the number of steps, or -1 on a malformed string.
  */
 {
     opSequence.clear();
@@ -983,8 +972,7 @@ int parseProtocolString(
             "  - to switch an optogenetics channel, channel is 'ch2' or 'ch3' "
             "(channel 1 is reserved for the IR LED) and op is 'on' or 'off';\n"
             "  - to end the recording, channel is 'x' and op is 'stop'.\n\n"
-            "A single ';' on its own denotes an open recording (no programmed "
-            "stop).\n\n"
+            "Leave empty for open recording (no programmed stop).\n\n"
             "Example:\n"
             "    300/ch2/on;600/ch2/off;900/x/stop\n"
             "turns channel 2 on after frame 300, off after frame 600, and "

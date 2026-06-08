@@ -79,7 +79,6 @@ class MainGUIWindow : public QWidget {
         std::shared_ptr<MuscleRecordingState> muscleRecordingState,
         std::shared_ptr<TrackingControlState> trackingControlState,
         CalibrationParams &behaviorCamCalibrationParams,
-        CalibrationParams &muscleCamCalibrationParams,
         std::shared_ptr<SaveDirectory> saveDirectory,
         std::shared_ptr<ArduinoCommunication> arduinoCommunication,
         std::shared_ptr<ProgramState> programState,
@@ -144,7 +143,6 @@ class MainGUIWindow : public QWidget {
     std::shared_ptr<MuscleRecordingState> muscleRecordingState_;
     std::shared_ptr<TrackingControlState> trackingControlState_;
     CalibrationParams &behaviorCamCalibrationParams_;
-    CalibrationParams &muscleCamCalibrationParams_;
     ActiveAreaMask &activeAreaMask_;
     std::shared_ptr<SaveDirectory> saveDirectory_;
     std::shared_ptr<ArduinoCommunication> arduinoCommunication_;

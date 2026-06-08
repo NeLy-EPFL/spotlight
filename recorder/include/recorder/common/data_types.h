@@ -77,6 +77,10 @@ struct ProgramState {
 struct ProgrammedStop {
     int numBehaviorFramesExpected = -1;
     int numMuscleFramesExpected = -1;
-    std::atomic<bool> hasEndedFlagForGUI = false;
+    // Raised by the behavior acquirer once it has recorded exactly the
+    // programmed number of frames and stopped on its own. It signals the GUI to
+    // finalize the recording (revert the UI and cameras to streaming); by the
+    // time the GUI acts, the saved frame count is already exact.
+    std::atomic<bool> programmedStopReached = false;
 };
 

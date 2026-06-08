@@ -43,6 +43,7 @@ add_executable(recorder_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/calibration.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/recorder_config.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/muscle_recording.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/saver_perf_tracker.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/peripherals/muscle_camera.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/apps/shared_memory_utils.cc)
 

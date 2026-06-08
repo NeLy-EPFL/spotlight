@@ -1,5 +1,7 @@
 #include "recorder/common/behavior_recording.h"
 
+#include "recorder/common/saver_perf_tracker.h"
+
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
@@ -28,6 +30,30 @@ void behaviorImageAcquirer(
     long int currentFrameId = 0;
 
     bool wasRecording = false;
+    // Set once this thread has acquired exactly the programmed number of frames
+    // and stopped recording on its own, so subsequent frames are discarded
+    // until the GUI tears the recording down.
+    bool reachedProgrammedStop = false;
+
+    // Flush a partial group of one or two buffered frames as a single
+    // pseudo-BGR image (the missing channel(s) are saved black and are not
+    // logged in the CSV metadata; see makePseudoBGRImageFromThreeFrames and
+    // makeMetadataStringFromThreeFrames). Resets the buffer index.
+    auto flushPartialGroup = [&]() {
+        GroupOfThreeFrames partialGroup;
+        partialGroup.frame0 = frameDataBuffer[0];
+        if (frameDataBufferIndex > 1) {
+            partialGroup.frame1 = frameDataBuffer[1];
+        }
+        partialGroup.numValidFrames = static_cast<int>(frameDataBufferIndex);
+        {
+            std::lock_guard<std::mutex> lock(
+                behaviorRecordingState->behaviorImageQueueMutex);
+            behaviorRecordingState->behaviorImageQueue.push(partialGroup);
+        }
+        behaviorRecordingState->behaviorImageQueueCondVar.notify_one();
+        frameDataBufferIndex = 0;
+    };
 
     while (!programState->toQuit.load()) {
         // Acquire image data
@@ -51,13 +77,17 @@ void behaviorImageAcquirer(
 
         bool isRecording = programState->isRecording.load();
 
-        if (isRecording) {
-            if (!wasRecording) {
-                // Start of a new recording session: reset the counters.
-                frameDataBufferIndex = 0;
-                currentFrameId = 0;
-            }
+        if (isRecording && !wasRecording) {
+            // Start of a new recording session: reset the counters.
+            frameDataBufferIndex = 0;
+            currentFrameId = 0;
+            reachedProgrammedStop = false;
+        }
 
+        int numFramesExpected =
+            programmedRecordingStop->numBehaviorFramesExpected;
+
+        if (isRecording && !reachedProgrammedStop) {
             frameData.frameId = currentFrameId;
 
             frameDataBuffer[frameDataBufferIndex++] = frameData;
@@ -80,45 +110,45 @@ void behaviorImageAcquirer(
                 frameDataBufferIndex = 0;
             }
 
-            // Whether we've reached a programmed stop
-            int numFramesExpected =
-                programmedRecordingStop->numBehaviorFramesExpected;
-            if (currentFrameId == numFramesExpected - 1 &&
-                numFramesExpected >= 0) {
-                programmedRecordingStop->hasEndedFlagForGUI.store(true);
-                spdlog::info("Programmed stop reached. Behavior acquisition "
-                             "thread is telling GUI to stopping recording.");
+            // Stop exactly on the programmed frame count. Once the last expected
+            // frame has been acquired, flush any partial group and stop
+            // recording right here, rather than waiting for the GUI to tear the
+            // recording down (which would overrun by however many frames arrive
+            // during the GUI's poll latency). The GUI is notified via
+            // programmedStopReached so it can finalize the UI and revert the
+            // cameras to streaming.
+            if (numFramesExpected >= 0 &&
+                currentFrameId == numFramesExpected - 1) {
+                if (frameDataBufferIndex > 0) {
+                    flushPartialGroup();
+                }
+                reachedProgrammedStop = true;
+                programmedRecordingStop->programmedStopReached.store(true);
+                spdlog::info(
+                    "Programmed stop reached after {} behavior frames. Behavior "
+                    "acquisition thread stopped recording and is telling the "
+                    "GUI to finalize.",
+                    numFramesExpected);
             }
 
             currentFrameId++;
         } else {
-            if (wasRecording && frameDataBufferIndex > 0) {
-                // The recording just stopped on a partial group of one or two
-                // frames. Flush it: the missing channels are saved black and
-                // are not logged in the CSV metadata (see
-                // makePseudoBGRImageFromThreeFrames and
-                // makeMetadataStringFromThreeFrames).
-                GroupOfThreeFrames partialGroup;
-                partialGroup.frame0 = frameDataBuffer[0];
-                if (frameDataBufferIndex > 1) {
-                    partialGroup.frame1 = frameDataBuffer[1];
-                }
-                partialGroup.numValidFrames =
-                    static_cast<int>(frameDataBufferIndex);
-                {
-                    std::lock_guard<std::mutex> lock(
-                        behaviorRecordingState->behaviorImageQueueMutex);
-                    behaviorRecordingState->behaviorImageQueue.push(
-                        partialGroup);
-                }
-                behaviorRecordingState->behaviorImageQueueCondVar.notify_one();
+            if (wasRecording && !reachedProgrammedStop &&
+                frameDataBufferIndex > 0) {
+                // A user-initiated stop landed on a partial group of one or two
+                // frames; flush it. (A programmed stop has already flushed its
+                // own partial group above.)
+                flushPartialGroup();
             }
 
-            // Not recording: any newly arrived frame is discarded (it is only
-            // used for the live preview above). Reset the counters for the next
-            // recording session.
-            frameDataBufferIndex = 0;
-            currentFrameId = 0;
+            if (!isRecording) {
+                // Not recording: any newly arrived frame is discarded (it is
+                // only used for the live preview above). Reset the counters for
+                // the next recording session.
+                frameDataBufferIndex = 0;
+                currentFrameId = 0;
+                reachedProgrammedStop = false;
+            }
         }
 
         wasRecording = isRecording;
@@ -159,18 +189,8 @@ void behaviorImageSaver(
 
     int queueLength = -1;
 
-    // Performance logging. Logging every save is too noisy, so each saver
-    // thread instead reports its mean save time and mean queue length averaged
-    // over a rolling window. The first window is ~2 s (so early problems such
-    // as the disk falling behind surface quickly); every window after that is
-    // ~1 minute.
-    constexpr uint64_t firstWindowUs = 2'000'000;  // 2 seconds
-    constexpr uint64_t windowUs = 60'000'000;      // 1 minute
-    uint64_t windowStartTime = getCurrentTimeMicroseconds();
-    uint64_t windowEndTime = windowStartTime + firstWindowUs;
-    uint64_t saveTimeSumUs = 0;
-    uint64_t queueLengthSum = 0;
-    int saveCount = 0;
+    SaverPerfTracker perfTracker(
+        "Behavior image saver thread", "group of three frames", threadIdString);
 
     while (!programState->toQuit.load()) {
         GroupOfThreeFrames frameGroup;
@@ -195,6 +215,8 @@ void behaviorImageSaver(
             behaviorRecordingState->behaviorImageQueue.pop();
         }
 
+        perfTracker.updateRecordingState(programState->isRecording.load());
+
         uint64_t startTime = getCurrentTimeMicroseconds();
 
         std::string filenameStem =
@@ -215,27 +237,8 @@ void behaviorImageSaver(
         metadataFile << makeMetadataStringFromThreeFrames(frameGroup);
         metadataFile.close();
 
-        // Accumulate this save into the current window; once the window has
-        // elapsed, report the window's mean performance and start a new one.
-        uint64_t now = getCurrentTimeMicroseconds();
-        saveTimeSumUs += now - startTime;
-        queueLengthSum += queueLength;
-        saveCount++;
-        if (now >= windowEndTime) {
-            spdlog::info(
-                "Behavior image saver thread (thread ID {}), mean over past "
-                "{:.0f} s: {:.1f} frames in queue, {} us to save each group of "
-                "three frames",
-                threadIdString,
-                (now - windowStartTime) / 1e6,
-                static_cast<double>(queueLengthSum) / saveCount,
-                saveTimeSumUs / saveCount);
-            windowStartTime = now;
-            windowEndTime = now + windowUs;
-            saveTimeSumUs = 0;
-            queueLengthSum = 0;
-            saveCount = 0;
-        }
+        perfTracker.recordSave(
+            getCurrentTimeMicroseconds() - startTime, queueLength);
     }
     spdlog::info("Behavior image saver thread stopped");
 }

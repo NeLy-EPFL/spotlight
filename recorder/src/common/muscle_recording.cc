@@ -1,5 +1,7 @@
 #include "recorder/common/muscle_recording.h"
 
+#include "recorder/common/saver_perf_tracker.h"
+
 MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
     : x0(x0), x1(x1), y0(y0), y1(y1), xOffset(x0 - 1), yOffset(y0 - 1),
       imageWidth(x1 - x0 + 1), imageHeight(y1 - y0 + 1) {}
@@ -116,7 +118,10 @@ void muscleImageAcquirer(
 
     spdlog::info("Muscle camera configured. Entering frame grabbing loop...");
     long int currentFrameId = 0;
-    bool notExpectingMoreFrames = false;
+    // Set once this thread has enqueued exactly the programmed number of frames
+    // and stopped recording on its own, so subsequent frames are discarded
+    // until the GUI tears the recording down.
+    bool reachedProgrammedStop = false;
 
     while (!programState->toQuit.load()) {
         FrameData frameData =
@@ -126,7 +131,11 @@ void muscleImageAcquirer(
         }
         muscleRecordingState->latestFrameHolder->setLatestFrameData(frameData);
 
-        if (programState->isRecording.load()) {
+        bool isRecording = programState->isRecording.load();
+        int numFramesExpected =
+            programmedRecordingStop->numMuscleFramesExpected;
+
+        if (isRecording && !reachedProgrammedStop) {
             frameData.frameId = currentFrameId++;
             {
                 std::lock_guard<std::mutex> lock(
@@ -135,28 +144,22 @@ void muscleImageAcquirer(
             }
             muscleRecordingState->muscleImageQueueCondVar.notify_one();
 
-            if (notExpectingMoreFrames) {
-                spdlog::error(
-                    "Muscle camera is not expecting more frames because a "
-                    "programmed stop was reached, but it got one anyway!");
+            // Stop exactly on the programmed frame count: once the last expected
+            // frame has been enqueued, stop recording on our own so no extra
+            // frames are saved. Nothing else to do here -- the behavior acquirer
+            // notifies the GUI to finalize, and the Arduino also stops
+            // triggering the muscle camera by itself.
+            if (numFramesExpected >= 0 && currentFrameId == numFramesExpected) {
+                reachedProgrammedStop = true;
+                spdlog::info(
+                    "Muscle camera reached programmed stop after {} frames.",
+                    numFramesExpected);
             }
-
-            // Whether we've reached a programmed stop
-            int numFramesExpected =
-                programmedRecordingStop->numMuscleFramesExpected;
-            if (currentFrameId == numFramesExpected && numFramesExpected >= 0) {
-                // Placeholder - nothing to do here actually because the
-                // Arduino will stop triggering the muscle camera by itself
-                // Don't toggle programmedRecordingStop->hasEndedFlagForGUI (the
-                // behavior acquirer thread will do it)
-                spdlog::info("Muscle camera reached programmed stop.");
-                notExpectingMoreFrames = true;
-            }
-        } else {
+        } else if (!isRecording) {
             // If we're not recording, we need to reset the frame ID
             // counter so that the next recording session starts at 0
             currentFrameId = 0;
-            notExpectingMoreFrames = false;
+            reachedProgrammedStop = false;
         }
     }
 }
@@ -182,18 +185,8 @@ void muscleImageSaver(
     uint64_t startTime = 0;
     FrameData frameData;
 
-    // Performance logging. Logging every save is too noisy, so each saver
-    // thread instead reports its mean save time and mean queue length averaged
-    // over a rolling window. The first window is ~2 s (so early problems such
-    // as the disk falling behind surface quickly); every window after that is
-    // ~1 minute.
-    constexpr uint64_t firstWindowUs = 2'000'000;  // 2 seconds
-    constexpr uint64_t windowUs = 60'000'000;      // 1 minute
-    uint64_t windowStartTime = getCurrentTimeMicroseconds();
-    uint64_t windowEndTime = windowStartTime + firstWindowUs;
-    uint64_t saveTimeSumUs = 0;
-    uint64_t queueLengthSum = 0;
-    int saveCount = 0;
+    SaverPerfTracker perfTracker(
+        "Muscle image saver thread", "frame", threadIdString);
 
     while (!programState->toQuit.load()) {
         {
@@ -215,6 +208,9 @@ void muscleImageSaver(
             frameData = muscleRecordingState->muscleImageQueue.front();
             muscleRecordingState->muscleImageQueue.pop();
         }
+
+        perfTracker.updateRecordingState(programState->isRecording.load());
+
         startTime = getCurrentTimeMicroseconds();
         std::string filenameStem =
             "muscle_frame_" + fmt::format("{:09}", frameData.frameId);
@@ -248,26 +244,8 @@ void muscleImageSaver(
             metadataFile.close();
         }
 
-        // Accumulate this save into the current window; once the window has
-        // elapsed, report the window's mean performance and start a new one.
-        uint64_t now = getCurrentTimeMicroseconds();
-        saveTimeSumUs += now - startTime;
-        queueLengthSum += queueLength;
-        saveCount++;
-        if (now >= windowEndTime) {
-            spdlog::info(
-                "Muscle image saver thread (thread ID {}), mean over past "
-                "{:.0f} s: {:.1f} frames in queue, {} us to save each frame",
-                threadIdString,
-                (now - windowStartTime) / 1e6,
-                static_cast<double>(queueLengthSum) / saveCount,
-                saveTimeSumUs / saveCount);
-            windowStartTime = now;
-            windowEndTime = now + windowUs;
-            saveTimeSumUs = 0;
-            queueLengthSum = 0;
-            saveCount = 0;
-        }
+        perfTracker.recordSave(
+            getCurrentTimeMicroseconds() - startTime, queueLength);
     }
 }
 
