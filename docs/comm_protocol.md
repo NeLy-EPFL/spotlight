@@ -53,7 +53,7 @@ Because `recParams` and `revertToParams` each have the same shape as a `STREAM` 
 
 If `opSequence` is empty, the recording is _open_: it keeps going on until the user stops it in the GUI, at which point the recorder sends a `STOP_RECORDING` command to the triggering controller. Aside from a different set of timing parameters, the behavior of the triggering controller is the same as `STREAM`.
 
-If `opSequence` is not empty, the recording is _scheduled_: it executes steps in the `opSequence`. Each step shall be executed after the `frameIdx`-th behavior camera frame based on the following rules:
+If `opSequence` is not empty, the recording is _scheduled_: it executes steps in the `opSequence`. A non-empty `opSequence` must contain exactly one STOP step, and it must be the very last step. Each step shall be executed after the `frameIdx`-th behavior camera frame based on the following rules:
 
 - If `op` is ON, the controller sets the state of the digital pin corresponding to the `channel` to HIGH, vice versa. In this case, the channel must be 2 or 3 (as 1 is occupied by the IR LED already).
 - If `op` is STOP, the controller switches back to streaming mode automatically. The channel is set to -1 (the global `ALL` channel), as the operation is global. The triggering controller should then revert to streaming using `revertToParams`.

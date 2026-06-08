@@ -953,7 +953,9 @@ int parseProtocolString(
  *   - "<n>/ch2/on", "<n>/ch3/off": toggle an optogenetics channel
  *   - "<n>/x/stop": end the recording and revert to streaming
  * An empty string (or a single ";") denotes an open recording with no
- * programmed steps. Returns the number of steps, or -1 on a malformed string.
+ * programmed steps. If any steps are given, the protocol must contain exactly
+ * one "<n>/x/stop" step and it must be the very last step. Returns the number
+ * of steps, or -1 on a malformed string.
  */
 {
     opSequence.clear();
@@ -972,6 +974,9 @@ int parseProtocolString(
             "  - to switch an optogenetics channel, channel is 'ch2' or 'ch3' "
             "(channel 1 is reserved for the IR LED) and op is 'on' or 'off';\n"
             "  - to end the recording, channel is 'x' and op is 'stop'.\n\n"
+            "If any steps are given, the protocol must contain exactly one "
+            "'x/stop' step, and it must be the very last step.\n\n"
+            "Do not add a trailing ';' at the end.\n\n"
             "Leave empty for open recording (no programmed stop).\n\n"
             "Example:\n"
             "    300/ch2/on;600/ch2/off;900/x/stop\n"
@@ -1031,6 +1036,19 @@ int parseProtocolString(
         }
         opSequence.push_back(step);
         ++numStepsParsed;
+    }
+
+    // If any steps are given, require exactly one stop step, at the very end.
+    if (numStepsParsed > 0) {
+        int numStops = 0;
+        for (const OperationStep &step : opSequence) {
+            if (step.op == OpType::STOP) {
+                ++numStops;
+            }
+        }
+        if (numStops != 1 || opSequence.back().op != OpType::STOP) {
+            return reportError();
+        }
     }
 
     return numStepsParsed;
