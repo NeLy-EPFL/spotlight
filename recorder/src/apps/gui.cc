@@ -602,8 +602,16 @@ void MainGUIWindow::startRecording() {
             std::filesystem::remove_all(saveDir);
             break;
         } else if (msgBox.clickedButton() == autoIncrementButton) {
-            std::string incremented = incrementDirectoryName(saveDir.string());
-            directoryLineEdit_->setText(QString::fromStdString(incremented));
+            // Keep incrementing until we land on a free (non-existent or
+            // empty) directory, in case the immediately-next number is also
+            // already taken.
+            saveDir = incrementDirectoryName(saveDir.string());
+            while (std::filesystem::is_directory(saveDir) &&
+                   !std::filesystem::is_empty(saveDir)) {
+                saveDir = incrementDirectoryName(saveDir.string());
+            }
+            directoryLineEdit_->setText(
+                QString::fromStdString(saveDir.string()));
             saveDir = saveDirectory_->getDirectory();
         } else {
             return;
@@ -649,8 +657,9 @@ void MainGUIWindow::startRecording() {
         behaviorFPSSpinBox_->value(),
         muscleImagingCheckBox_->isChecked(),
         syncRatioSpinBox_->value(),
-        behaviorExposureTimeSpinBox_->value(),
-        muscleLightOnTimeSpinBox_->value(),
+        // Convert ms to us
+        static_cast<int>(behaviorExposureTimeSpinBox_->value() * 1000),
+        static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000),
         muscleNominalExposureUs,
         muscleBufferTimeUs,
         experimentProtocol_->toPlainText().toStdString());

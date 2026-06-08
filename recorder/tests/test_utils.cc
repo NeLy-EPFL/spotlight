@@ -239,16 +239,16 @@ TEST(WriteExperimentParameters, WritesReadableYaml) {
     fs::path out = dir.file("experiment_parameters.yaml");
     writeExperimentParameters(
         out, /*behavior_fps=*/100, /*muscle_imaging_enabled=*/true,
-        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_ms=*/2.5f,
-        /*muscle_exposure_time_ms=*/8.0f, /*muscle_nominal_exposure_us=*/12000,
+        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_us=*/2500,
+        /*muscle_light_on_time_us=*/8000, /*muscle_nominal_exposure_us=*/12000,
         /*muscle_buffer_time_us=*/4000, "opto_protocol_A");
 
     YAML::Node node = YAML::LoadFile(out.string());
     EXPECT_EQ(node["behavior_fps"].as<int>(), 100);
     EXPECT_TRUE(node["muscle_imaging_enabled"].as<bool>());
     EXPECT_EQ(node["muscle_sync_ratio"].as<int>(), 3);
-    EXPECT_FLOAT_EQ(node["behavior_exposure_time_ms"].as<float>(), 2.5f);
-    EXPECT_FLOAT_EQ(node["muscle_exposure_time_ms"].as<float>(), 8.0f);
+    EXPECT_EQ(node["behavior_exposure_time_us"].as<int>(), 2500);
+    EXPECT_EQ(node["muscle_light_on_time_us"].as<int>(), 8000);
     EXPECT_EQ(node["muscle_nominal_exposure_us"].as<int>(), 12000);
     EXPECT_EQ(node["muscle_buffer_time_us"].as<int>(), 4000);
     EXPECT_EQ(node["experiment_protocol"].as<std::string>(), "opto_protocol_A");
@@ -259,8 +259,8 @@ TEST(WriteExperimentParameters, OmitsMuscleTimingWhenMuscleDisabled) {
     fs::path out = dir.file("experiment_parameters.yaml");
     writeExperimentParameters(
         out, /*behavior_fps=*/100, /*muscle_imaging_enabled=*/false,
-        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_ms=*/2.5f,
-        /*muscle_exposure_time_ms=*/8.0f, /*muscle_nominal_exposure_us=*/0,
+        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_us=*/2500,
+        /*muscle_light_on_time_us=*/8000, /*muscle_nominal_exposure_us=*/0,
         /*muscle_buffer_time_us=*/0, "opto_protocol_A");
 
     YAML::Node node = YAML::LoadFile(out.string());

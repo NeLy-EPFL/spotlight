@@ -55,8 +55,8 @@ void writeExperimentParameters(
     int behavior_fps,
     bool muscle_imaging_enabled,
     int muscle_sync_ratio,
-    float behavior_exposure_time_ms,
-    float muscle_exposure_time_ms,
+    int behavior_exposure_time_us,
+    int muscle_light_on_time_us,
     int muscle_nominal_exposure_us,
     int muscle_buffer_time_us,
     const std::string &experiment_protocol);

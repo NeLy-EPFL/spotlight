@@ -191,8 +191,8 @@ void writeExperimentParameters(
     int behavior_fps,
     bool muscle_imaging_enabled,
     int muscle_sync_ratio,
-    float behavior_exposure_time_ms,
-    float muscle_exposure_time_ms,
+    int behavior_exposure_time_us,
+    int muscle_light_on_time_us,
     int muscle_nominal_exposure_us,
     int muscle_buffer_time_us,
     const std::string &experiment_protocol) {
@@ -203,10 +203,10 @@ void writeExperimentParameters(
     out << YAML::Key << "muscle_imaging_enabled" << YAML::Value
         << muscle_imaging_enabled;
     out << YAML::Key << "muscle_sync_ratio" << YAML::Value << muscle_sync_ratio;
-    out << YAML::Key << "behavior_exposure_time_ms" << YAML::Value
-        << behavior_exposure_time_ms;
-    out << YAML::Key << "muscle_exposure_time_ms" << YAML::Value
-        << muscle_exposure_time_ms;
+    out << YAML::Key << "behavior_exposure_time_us" << YAML::Value
+        << behavior_exposure_time_us;
+    out << YAML::Key << "muscle_light_on_time_us" << YAML::Value
+        << muscle_light_on_time_us;
     // Derived continuous-mode timing is only meaningful when imaging muscle.
     if (muscle_imaging_enabled) {
         out << YAML::Key << "muscle_nominal_exposure_us" << YAML::Value
