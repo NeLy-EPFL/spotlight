@@ -698,7 +698,7 @@ void MainGUIWindow::startRecording() {
     programState_->isRecording.store(true);
 
     spdlog::info(
-        "Recording STARTED: {} recording, muscle imaging {}. Saving to "'{}'",
+        "Recording STARTED: {} recording, muscle imaging {}. Saving to '{}'",
         currentRecordingIsScheduled_ ? "scheduled" : "open",
         muscleImagingCheckBox_->isChecked() ? "enabled" : "disabled",
         saveDirectory_->getDirectory().string());
