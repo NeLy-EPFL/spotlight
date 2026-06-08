@@ -178,7 +178,15 @@ ArduinoCommunication::ArduinoCommunication(
 }
 
 ArduinoCommunication::~ArduinoCommunication() {
-    arduinoCommThread_.join();
+    // Always signal the comm thread to stop before joining it. Without this, an
+    // owner that forgets to call stopCommunication() (as the run-spotlight
+    // shutdown path does) would deadlock here forever, since the thread's loop
+    // only exits once stopCommunication_ is set. stopCommunication() is
+    // idempotent, so this is harmless when the owner already called it.
+    stopCommunication();
+    if (arduinoCommThread_.joinable()) {
+        arduinoCommThread_.join();
+    }
 }
 
 void ArduinoCommunication::enqueueMessage(const std::string &message) {
