@@ -178,14 +178,22 @@ void muscleImageSaver(
     compressionParams.push_back(cv::IMWRITE_TIFF_COMPRESSION);
     compressionParams.push_back(tiffCompressionMethod);
 
-    int frameCount = 0;
     int queueLength = -1;
     uint64_t startTime = 0;
-    uint64_t walltime = 0;
     FrameData frameData;
 
-    int performanceLoggingInterval = recorderConfig.getParameter<int>(
-        "muscle_camera", "saving_performance_logging_interval");
+    // Performance logging. Logging every save is too noisy, so each saver
+    // thread instead reports its mean save time and mean queue length averaged
+    // over a rolling window. The first window is ~2 s (so early problems such
+    // as the disk falling behind surface quickly); every window after that is
+    // ~1 minute.
+    constexpr uint64_t firstWindowUs = 2'000'000;  // 2 seconds
+    constexpr uint64_t windowUs = 60'000'000;      // 1 minute
+    uint64_t windowStartTime = getCurrentTimeMicroseconds();
+    uint64_t windowEndTime = windowStartTime + firstWindowUs;
+    uint64_t saveTimeSumUs = 0;
+    uint64_t queueLengthSum = 0;
+    int saveCount = 0;
 
     while (!programState->toQuit.load()) {
         {
@@ -240,18 +248,26 @@ void muscleImageSaver(
             metadataFile.close();
         }
 
-        // Profiling and logging to monitor performance
-        walltime = getCurrentTimeMicroseconds() - startTime;
-        if (frameCount % performanceLoggingInterval == 0) {
+        // Accumulate this save into the current window; once the window has
+        // elapsed, report the window's mean performance and start a new one.
+        uint64_t now = getCurrentTimeMicroseconds();
+        saveTimeSumUs += now - startTime;
+        queueLengthSum += queueLength;
+        saveCount++;
+        if (now >= windowEndTime) {
             spdlog::info(
-                "Muscle image saver thread (thread ID {}) reporting: "
-                "{} frames in queue; "
-                "it took {} us to save a single frame",
+                "Muscle image saver thread (thread ID {}), mean over past "
+                "{:.0f} s: {:.1f} frames in queue, {} us to save each frame",
                 threadIdString,
-                queueLength,
-                walltime);
+                (now - windowStartTime) / 1e6,
+                static_cast<double>(queueLengthSum) / saveCount,
+                saveTimeSumUs / saveCount);
+            windowStartTime = now;
+            windowEndTime = now + windowUs;
+            saveTimeSumUs = 0;
+            queueLengthSum = 0;
+            saveCount = 0;
         }
-        frameCount++;
     }
 }
 
