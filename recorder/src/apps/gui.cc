@@ -509,9 +509,7 @@ bool MainGUIWindow::validateAndPrepareRecording(
         experimentProtocol_->toPlainText().toStdString(), opSequence);
     spdlog::info("Parsed {} protocol steps", opSequence.size());
     if (numStepsParsed < 0) {
-        std::string errorMessage = "Invalid experiment protocol string";
-        spdlog::error(errorMessage);
-        QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
+        // parseProtocolString has already shown a detailed error dialog.
         return false;
     } else if (numStepsParsed == 0) {
         spdlog::info("GUI starting recording without any protocol steps");
@@ -972,9 +970,25 @@ int parseProtocolString(
     opSequence.clear();
 
     auto reportError = []() {
-        std::string errorMessage = "Invalid experiment protocol";
-        spdlog::error(errorMessage);
-        QMessageBox::critical(nullptr, "Error", errorMessage.c_str());
+        spdlog::error("Invalid experiment protocol string");
+        QMessageBox::critical(
+            nullptr,
+            "Invalid experiment protocol",
+            "The experiment protocol string is invalid.\n\n"
+            "It must be a ';'-separated list of steps, each of the form\n"
+            "    frameIdx/channel/op\n"
+            "where:\n"
+            "  - frameIdx is a non-negative integer: the behavior-frame index "
+            "after which the step is applied;\n"
+            "  - to switch an optogenetics channel, channel is 'ch2' or 'ch3' "
+            "(channel 1 is reserved for the IR LED) and op is 'on' or 'off';\n"
+            "  - to end the recording, channel is 'x' and op is 'stop'.\n\n"
+            "A single ';' on its own denotes an open recording (no programmed "
+            "stop).\n\n"
+            "Example:\n"
+            "    300/ch2/on;600/ch2/off;900/x/stop\n"
+            "turns channel 2 on after frame 300, off after frame 600, and "
+            "stops the recording after frame 900.");
         return -1;
     };
 
