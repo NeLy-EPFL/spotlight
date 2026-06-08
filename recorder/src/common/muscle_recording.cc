@@ -136,6 +136,9 @@ void muscleImageAcquirer(
             programmedRecordingStop->numMuscleFramesExpected;
 
         if (isRecording && !reachedProgrammedStop) {
+            if (currentFrameId == 0) {
+                spdlog::info("First muscle frame of the recording received");
+            }
             frameData.frameId = currentFrameId++;
             {
                 std::lock_guard<std::mutex> lock(

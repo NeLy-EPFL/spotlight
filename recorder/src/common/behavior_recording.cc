@@ -82,6 +82,7 @@ void behaviorImageAcquirer(
             frameDataBufferIndex = 0;
             currentFrameId = 0;
             reachedProgrammedStop = false;
+            spdlog::info("First behavior frame of the recording received");
         }
 
         int numFramesExpected =

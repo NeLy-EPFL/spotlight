@@ -696,6 +696,12 @@ void MainGUIWindow::startRecording() {
     std::this_thread::sleep_for(
         std::chrono::microseconds(camFlushTimeUs * 8 / 10));
     programState_->isRecording.store(true);
+
+    spdlog::info(
+        "Recording STARTED: {} recording, muscle imaging {}. Saving to "'{}'",
+        currentRecordingIsScheduled_ ? "scheduled" : "open",
+        muscleImagingCheckBox_->isChecked() ? "enabled" : "disabled",
+        saveDirectory_->getDirectory().string());
 }
 
 void MainGUIWindow::stopRecording() {
@@ -729,6 +735,13 @@ void MainGUIWindow::endRecording(bool reachedProgrammedEnd) {
     // Stop queuing frames. The acquirer threads flush any partial behavior
     // group and discard subsequent frames (see behaviorImageAcquirer).
     programState_->isRecording.store(false);
+
+    spdlog::info(
+        "Recording STOPPED ({}): {} recording, muscle imaging {}",
+        reachedProgrammedEnd ? "reached scheduled end" : "user-initiated stop",
+        currentRecordingIsScheduled_ ? "scheduled" : "open",
+        muscleImagingCheckBox_->isChecked() ? "enabled" : "disabled");
+
     currentRecordingIsScheduled_ = false;
 }
 
