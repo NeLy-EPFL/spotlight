@@ -1,10 +1,7 @@
 #include "recorder/peripherals/muscle_camera.h"
 
-#include <cerrno> // errno, ECHILD
-#include <chrono>
 #include <filesystem>
 #include <sys/prctl.h> // prctl, PR_SET_PDEATHSIG
-#include <thread>
 
 namespace {
 std::string logLevelToStr(spdlog::level::level_enum logLevel) {
@@ -171,55 +168,19 @@ MuscleCamera::MuscleCamera(
     }
 }
 
-void MuscleCamera::stop() {
-    // Terminate the PCO camera server process. This is bounded: an unresponsive
-    // server can never block shutdown indefinitely, because we escalate to
-    // SIGKILL if it does not exit within the grace period. The process is reaped
-    // in both paths so it does not linger as a zombie.
-    //
-    // Idempotent: pcoCameraServerPID_ is cleared once reaped, so a later call
-    // (e.g. an explicit stop() followed by the destructor) is a no-op.
-    if (pcoCameraServerPID_ <= 0) {
-        return;
-    }
-
-    pid_t pid = pcoCameraServerPID_;
-    pcoCameraServerPID_ = -1;
-
-    kill(pid, SIGTERM);
-
-    // Poll for graceful exit up to a bounded deadline before escalating. The
-    // server checks its shutdown flag once per frame-wait timeout (0.1 s), so
-    // it normally exits well within this window.
-    constexpr int gracePeriodMs = 3000;
-    constexpr int pollIntervalMs = 20;
-    bool reaped = false;
-    for (int elapsedMs = 0; elapsedMs < gracePeriodMs;
-         elapsedMs += pollIntervalMs) {
-        pid_t result = waitpid(pid, nullptr, WNOHANG);
-        if (result == pid || (result == -1 && errno == ECHILD)) {
-            reaped = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(pollIntervalMs));
-    }
-
-    if (!reaped) {
-        spdlog::warn(
-            "PCO camera server (PID {}) did not exit within {} ms of SIGTERM; "
-            "escalating to SIGKILL.",
-            pid,
-            gracePeriodMs);
-        kill(pid, SIGKILL);
-        // SIGKILL cannot be caught or ignored, so this blocking reap is bounded.
-        waitpid(pid, nullptr, 0);
-    }
-
-    spdlog::info("PCO camera server process terminated.");
-}
-
 MuscleCamera::~MuscleCamera() {
-    stop();
+    // Cleanup code if needed
+    if (pcoCameraServerPID_ > 0) {
+        kill(pcoCameraServerPID_, SIGTERM);
+        waitpid(pcoCameraServerPID_, nullptr, 0);
+        spdlog::info("PCO camera server process terminated.");
+    } else {
+        spdlog::error(
+            "Invalid process ID (PID) for PCO camera server: {}. "
+            "PCO camera server process not started or already stopped. "
+            "This should never happen.",
+            pcoCameraServerPID_);
+    }
 }
 
 FrameData MuscleCamera::waitForOneFrame() {

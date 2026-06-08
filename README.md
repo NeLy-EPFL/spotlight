@@ -25,6 +25,7 @@ Documentation is available in the `docs/` folder:
 - [Hardware](docs/hardware.md): hardware to be controlled by this controller.
 - [Data acquisition workflow](docs/data_acquisition.md): how the cameras and lights are controlled and synchronized using continuous acquisition.
 - [Recorder-microcontroller communication protocol](docs/comm_protocol.md): JSON protocol for communication between the recorder and the triggering microcontroller.
+- [Troubleshooting](docs/troubleshooting.md): common runtime problems (e.g. the behavior camera grabber being held by another program, and hangs on quit).
 
 
 ## Building
