@@ -5,8 +5,8 @@ behavior_camera:
   roi_height: 1500
   frame_grabber_trigger_line: "TTLIO12"
   streaming_frame_rate: 25
-  num_image_saving_threads: 4
-  default_recording_fps: 100
+  num_image_saving_threads: 8
+  default_recording_fps: 396
   default_exposure_time_us: 1000
   saving_performance_logging_interval: 100
 
@@ -17,8 +17,8 @@ muscle_camera:
   roi_height: 1120
   streaming_sync_ratio: 1
   num_image_saving_threads: 4
-  default_recording_sync_ratio: 4
-  default_light_on_time_us: 3000
+  default_recording_sync_ratio: 6
+  default_light_on_time_us: 1000
   saving_performance_logging_interval: 25
   shared_frame_data_name: "/pco_camera_data"
   shared_shutter_open_time_name: "/pco_camera_shutter_open_time"
