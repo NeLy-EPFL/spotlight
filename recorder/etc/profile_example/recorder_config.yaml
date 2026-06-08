@@ -1,0 +1,72 @@
+behavior_camera:
+  full_frame_width: 2560
+  full_frame_height: 2048
+  roi_width: 1984
+  roi_height: 1500
+  frame_grabber_trigger_line: "TTLIO12"
+  streaming_frame_rate: 25
+  num_image_saving_threads: 4
+  default_recording_fps: 100
+  default_exposure_time_us: 1000
+  saving_performance_logging_interval: 100
+
+muscle_camera:
+  full_frame_width: 2048
+  full_frame_height: 2048
+  roi_width: 1120
+  roi_height: 1120
+  streaming_sync_ratio: 1
+  num_image_saving_threads: 4
+  default_recording_sync_ratio: 4
+  default_light_on_time_us: 3000
+  saving_performance_logging_interval: 25
+  shared_frame_data_name: "/pco_camera_data"
+  shared_shutter_open_time_name: "/pco_camera_shutter_open_time"
+  shared_frame_metadata_name: "/pco_camera_frame_metadata"
+  shared_mutex_name: "/pco_camera_mutex"
+  shared_condition_variable_name: "/pco_camera_condition_variable"
+  conversion_16to8bit_scale_camera_alignment: 800
+  conversion_16to8bit_offset_camera_alignment: -200
+  conversion_16to8bit_scale_recording_preview: 1000
+  conversion_16to8bit_offset_recording_preview: -200
+  # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
+  # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
+  rolling_shutter_line_time_us: 12.136
+  sensor_readout_time_us: 10  # actually 4.5, but 10 just to be safe
+
+motion_control:
+  motion_stage_device_manufacturer: "Zaber Technologies Inc."
+  motion_stage_device_description: "X-MCC2"
+  stage_serial_no_x_axis: 133838
+  stage_serial_no_y_axis: 122390
+  length_unit: "mm"
+  velocity_unit: "mm/s"
+  default_velocity_mm_per_sec: 63
+  calibration_scan_stride_mm: 2
+  calibration_scan_exposure_time_us: 1000
+  position_logging_frequency_hz: 75
+  apriltag_mapping_settling_frames: 5
+  physical_range_limit_mm: 151.5
+
+tracking:
+  update_frequency_hz: 30
+  distance_threshold_for_moving_mm: 0.3
+  min_fly_size_sq_pixels: 1000
+  boundary_margin_mm: 0.5
+  image_binarize_threshold: 75
+
+triggering:
+  image_buffer_flushing_wait_time_ms: 100
+  arduino_comm_timeout_ms: 1000
+  arduino_comm_retries: 3
+  arduino_device_manufacturer: "Arduino"
+  arduino_device_description: "Nano ESP32"
+
+gui:
+  behavior_camera_preview_width: 490
+  behavior_camera_preview_height: 490
+  muscle_camera_preview_width: 490
+  muscle_camera_preview_height: 490
+  motion_stage_preview_height: 200
+  motion_stage_preview_update_frequency_hz: 25
+  default_save_dir: "./images/"
