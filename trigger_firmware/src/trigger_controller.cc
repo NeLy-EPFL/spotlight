@@ -195,17 +195,6 @@ void TriggerController::runMuscleSyncedTriggers(unsigned long nowUs) {
     // onset starts a new sync group whose first behavior frame is locked to it.
     bool common = device_.isMuscCommonTime();
     bool onset = common && !prevCommonTime_;
-
-    // TEMP DIAGNOSTIC: report each common-time transition (up to a small budget
-    // armed in resetTiming()) so the host log can confirm the muscle status line
-    // is actually toggling and producing OFF->ON onsets. Remove once the muscle
-    // status wiring/polarity is verified.
-    if (common != prevCommonTime_ && commonTimeEdgeLogBudget_ > 0) {
-        --commonTimeEdgeLogBudget_;
-        Serial.println(common ? "DBG musc common-time edge OFF->ON (onset)"
-                              : "DBG musc common-time edge ON->OFF");
-    }
-
     prevCommonTime_ = common;
 
     // A fresh common-time onset while still mid-group means the muscle camera
@@ -332,20 +321,6 @@ void TriggerController::resetTiming() {
     // Seed the edge detector with the current level so a common time already in
     // progress does not count as a fresh onset.
     prevCommonTime_ = device_.isMuscCommonTime();
-
-    // TEMP DIAGNOSTIC: in muscle-synced mode, report the status line's initial
-    // level and arm reporting of the next handful of common-time edges so the
-    // host log shows whether the line is toggling at all. A constant-level (e.g.
-    // unconnected/floating, or wrong-polarity) line produces no OFF->ON onset, so
-    // the controller would wait here forever and the behavior camera would
-    // freeze. Remove once the muscle status wiring is verified.
-    if (muscleEnabled_) {
-        commonTimeEdgeLogBudget_ = 20;
-        Serial.print("DBG musc-sync armed; status line (pin A0) initially ");
-        Serial.println(prevCommonTime_ ? "ON (HIGH)" : "OFF (LOW)");
-    } else {
-        commonTimeEdgeLogBudget_ = 0;
-    }
     frameInGroup_ = 0;
     groupStartUs_ = micros();
     // Free-running mode: schedule the first behavior frame immediately.

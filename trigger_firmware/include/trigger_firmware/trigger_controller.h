@@ -152,11 +152,6 @@ class TriggerController {
     // Timing-loop state.
     bool awaitingMuscEdge_ = true;   // waiting for the next common-time onset
     bool prevCommonTime_ = false;    // previous isMuscCommonTime() reading
-    // TEMP DIAGNOSTIC: remaining number of muscle common-time edges to report
-    // over serial after each (re)configuration. Bounded so the diagnostic cannot
-    // flood the USB-CDC TX buffer and stall the timing loop. See
-    // runMuscleSyncedTriggers()/resetTiming(); remove once wiring is confirmed.
-    unsigned int commonTimeEdgeLogBudget_ = 0;
     unsigned long groupStartUs_ = 0; // micros() at the current group's onset
     unsigned int frameInGroup_ = 0;  // next behavior frame index in the group
     unsigned long nextBehFrameUs_ = 0; // free-running mode: next frame due time
