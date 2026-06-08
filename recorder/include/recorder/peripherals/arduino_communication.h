@@ -77,5 +77,14 @@ TriggerParams makeDefaultStreamParams(
     int syncRatio,
     bool muscleImagingOn);
 std::string findArduinoPortName(RecorderConfig &recorderConfig);
+// muscleImagingOn selects the controller's timing mode and defaults to off, to
+// match the behavior-only streaming default of the firmware and the GUI: false
+// gives free-running behavior-only acquisition; true gives muscle-synced
+// acquisition where behavior frames are gated on the muscle camera's
+// common-time signal. Only turn it on when a muscle camera is present,
+// otherwise the behavior camera stalls waiting for a signal that never arrives.
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
-    RecorderConfig &recorderConfig, int muscleNumLinesScanned, int syncRatio);
+    RecorderConfig &recorderConfig,
+    int muscleNumLinesScanned,
+    int syncRatio,
+    bool muscleImagingOn = false);

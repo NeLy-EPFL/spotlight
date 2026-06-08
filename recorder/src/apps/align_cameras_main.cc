@@ -221,7 +221,8 @@ void alignCamera(std::filesystem::path profileDir) {
     arduinoCommunication = initializeTriggeringWithDefaultParams(
         recorderConfig,
         muscleNumLinesScanned,
-        1); // sync ratio
+        1,     // sync ratio
+        true); // muscleImagingOn
 
     // Set up display windows
     setupDisplayWindows(recorderConfig);

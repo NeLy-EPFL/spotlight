@@ -292,7 +292,10 @@ std::string findArduinoPortName(RecorderConfig &recorderConfig) {
 }
 
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
-    RecorderConfig &recorderConfig, int muscleNumLinesScanned, int syncRatio) {
+    RecorderConfig &recorderConfig,
+    int muscleNumLinesScanned,
+    int syncRatio,
+    bool muscleImagingOn) {
     spdlog::info("Starting Arduino communication");
     std::string arduinoPortName = findArduinoPortName(recorderConfig);
     std::unique_ptr<ArduinoCommunication> arduinoCommunication =
@@ -305,8 +308,7 @@ std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
     arduinoCommunication->reset();
 
     TriggerParams params = makeDefaultStreamParams(
-        recorderConfig, muscleNumLinesScanned, syncRatio,
-        /*muscleImagingOn=*/true);
+        recorderConfig, muscleNumLinesScanned, syncRatio, muscleImagingOn);
     spdlog::info(
         "Streaming default trigger params: enableMuscle={}, behFrameRate={}, "
         "behExpTime={} us, behMuscSyncRatio={}, muscEffExpTime={} us, "

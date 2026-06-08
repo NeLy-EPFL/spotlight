@@ -177,10 +177,16 @@ void runArenaRegistrationScan(
     }
     spdlog::info("Behavior camera ready");
 
-    // Start Arduino triggering (behavior camera only; muscle params unused
-    // here)
+    // Start Arduino triggering. There is no muscle camera in the registration
+    // scan, so leave muscle imaging off (the default): the behavior camera
+    // free-runs. Were it on, the behavior camera would stall waiting for the
+    // muscle camera's common-time signal and the live preview would freeze.
     arduinoCommunication =
-        initializeTriggeringWithDefaultParams(recorderConfig, 0, 1);
+        initializeTriggeringWithDefaultParams(
+            recorderConfig,
+            0,  // muscleNumLinesScanned (ignored since muscle cam not enabled)
+            1,  // sync ratio (ignored since muscle cam not enabled)
+            false); // muscleImagingOn
 
     // Set up motion control
     MotionControl motionControl(recorderConfig);
