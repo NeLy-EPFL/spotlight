@@ -1,5 +1,7 @@
-#include "recorder/common/saver_perf_tracker.h"
+#include "recorder/common/loop_monitors.h"
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -48,4 +50,30 @@ void SaverPerfTracker::startWindow(uint64_t startTime, uint64_t durationUs) {
     saveTimeSumUs_ = 0;
     queueLengthSum_ = 0;
     saveCount_ = 0;
+}
+
+LoopRateLimiter::LoopRateLimiter(std::string loopDescription, int frequencyHz)
+    : loopDescription_(std::move(loopDescription)),
+      frequencyHz_(frequencyHz),
+      intervalUs_(1'000'000 / frequencyHz) {}
+
+void LoopRateLimiter::startCycle() {
+    cycleStartTime_ = getCurrentTimeMicroseconds();
+}
+
+void LoopRateLimiter::sleepUntilNextCycle() {
+    uint64_t elapsedUs = getCurrentTimeMicroseconds() - cycleStartTime_;
+    long int timeToSleepUs = intervalUs_ - elapsedUs;
+    if (timeToSleepUs > 0) {
+        std::this_thread::sleep_for(std::chrono::microseconds(timeToSleepUs));
+    } else {
+        spdlog::warn(
+            "{} is running behind. I'm running this loop at {} Hz, so I have "
+            "only {} us to complete each cycle. It took {} us this cycle. If "
+            "this only happens sporadically, it's harmless.",
+            loopDescription_,
+            frequencyHz_,
+            intervalUs_,
+            elapsedUs);
+    }
 }

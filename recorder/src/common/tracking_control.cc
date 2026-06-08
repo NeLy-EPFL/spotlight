@@ -1,5 +1,7 @@
 #include "recorder/common/tracking_control.h"
 
+#include "recorder/common/loop_monitors.h"
+
 // Shared global variables and sysnchronization primitives
 namespace {
 std::mutex requestMutex;
@@ -187,7 +189,8 @@ void trackingController(
 
     const int trackingUpdateFrequency =
         recorderConfig.getParameter<int>("tracking", "update_frequency_hz");
-    const uint64_t updateIntervalMicrosecs = 1e6 / trackingUpdateFrequency;
+    LoopRateLimiter rateLimiter(
+        "Tracking controller thread", trackingUpdateFrequency);
 
     const float trackingDistanceThresholdMm =
         recorderConfig.getParameter<float>(
@@ -200,7 +203,7 @@ void trackingController(
         "tracking", "image_binarize_threshold");
 
     while (!programState->toQuit.load()) {
-        uint64_t startTime = getCurrentTimeMicroseconds();
+        rateLimiter.startCycle();
 
         if (!trackingControlState->trackingOn.load()) {
             // Nothing to do here
@@ -292,22 +295,7 @@ void trackingController(
                 setTargetMotionStagePosition(targetPos, defaultVelocity);
             }
         }
-        uint64_t currentTime = getCurrentTimeMicroseconds();
-        uint64_t elapsedTime = currentTime - startTime;
-        long int timeToSleepMicrosecs = updateIntervalMicrosecs - elapsedTime;
-        if (timeToSleepMicrosecs > 0) {
-            std::this_thread::sleep_for(
-                std::chrono::microseconds(timeToSleepMicrosecs));
-        } else {
-            spdlog::warn(
-                "Tracking controller thread is running behind. "
-                "I'm updating stage position at {} Hz, so I have only {} us) "
-                "to complete each update. It took {} us this cycle. If this "
-                "only happens sporadically, it's harmless.",
-                trackingUpdateFrequency,
-                updateIntervalMicrosecs,
-                elapsedTime);
-        }
+        rateLimiter.sleepUntilNextCycle();
     }
 }
 
@@ -411,16 +399,18 @@ void motionStagePositionLogger(
     std::shared_ptr<ProgramState> programState) {
     const int positionLoggingFreq = recorderConfig.getParameter<int>(
         "motion_control", "position_logging_frequency_hz");
-    const int loggingIntervalMicrosecs = 1e6 / positionLoggingFreq;
+    LoopRateLimiter rateLimiter(
+        "Motion stage position logging thread", positionLoggingFreq);
 
     std::ofstream logFile;
     bool wasRecordingLastIter = false;
 
     while (!programState->toQuit.load()) {
+        rateLimiter.startCycle();
+
         // Get current position
         uint64_t startTime = getCurrentTimeMicroseconds();
         MotionStagePosition currentPosition = getCurrentMotionStagePosition();
-        uint64_t endTime = getCurrentTimeMicroseconds();
 
         // Update latest position for other threads
         {
@@ -458,22 +448,7 @@ void motionStagePositionLogger(
             wasRecordingLastIter = false;
         }
 
-        // Wait for the next logging interval
-        uint64_t elapsedTime = endTime - startTime;
-        long int timeToSleepMicrosecs = loggingIntervalMicrosecs - elapsedTime;
-        if (timeToSleepMicrosecs > 0) {
-            std::this_thread::sleep_for(
-                std::chrono::microseconds(timeToSleepMicrosecs));
-        } else {
-            spdlog::warn(
-                "Motion stage position logging thread is running behind. "
-                "I'm updating stage position at {} Hz, so I have only {} us) "
-                "to complete each update. It took {} us this cycle. If this "
-                "only happens sporadically, it's harmless.",
-                positionLoggingFreq,
-                loggingIntervalMicrosecs,
-                elapsedTime);
-        }
+        rateLimiter.sleepUntilNextCycle();
     }
     spdlog::info("Motion stage position logging thread stopped.");
 }

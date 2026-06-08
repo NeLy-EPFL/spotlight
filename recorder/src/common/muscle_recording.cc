@@ -1,6 +1,6 @@
 #include "recorder/common/muscle_recording.h"
 
-#include "recorder/common/saver_perf_tracker.h"
+#include "recorder/common/loop_monitors.h"
 
 MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
     : x0(x0), x1(x1), y0(y0), y1(y1), xOffset(x0 - 1), yOffset(y0 - 1),

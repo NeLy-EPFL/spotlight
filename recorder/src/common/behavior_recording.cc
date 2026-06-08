@@ -1,6 +1,6 @@
 #include "recorder/common/behavior_recording.h"
 
-#include "recorder/common/saver_perf_tracker.h"
+#include "recorder/common/loop_monitors.h"
 
 void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,

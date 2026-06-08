@@ -54,3 +54,37 @@ class SaverPerfTracker {
     int saveCount_ = 0;
     bool wasRecording_ = false;
 };
+
+// Paces a periodic loop to a target frequency and warns when the loop body
+// overruns its time budget.
+//
+// A loop that must run at a fixed rate (e.g. the tracking controller or the
+// stage position logger) measures how long its work took this cycle, then
+// sleeps for whatever remains of the cycle. If the work took longer than the
+// whole cycle there is nothing left to sleep and the loop has fallen behind;
+// that is reported as a warning. Sporadic overruns are harmless, so the message
+// says so.
+class LoopRateLimiter {
+  public:
+    // loopDescription: human-readable loop name used in the overrun warning,
+    //   e.g. "Tracking controller thread". frequencyHz: target loop frequency;
+    //   the minimum cycle period (the time budget for one iteration) is derived
+    //   from it.
+    LoopRateLimiter(std::string loopDescription, int frequencyHz);
+
+    // Call once at the start of each loop iteration, before the work, to mark
+    // the cycle's start time.
+    void startCycle();
+
+    // Call once at the end of each loop iteration, after the work. Sleeps for
+    // whatever remains of the cycle; if the work already overran the cycle, logs
+    // an overrun warning instead.
+    void sleepUntilNextCycle();
+
+  private:
+    std::string loopDescription_;
+    int frequencyHz_;
+    uint64_t intervalUs_;
+
+    uint64_t cycleStartTime_ = 0;
+};

@@ -109,7 +109,7 @@ set(COMMON_SOURCES
     src/common/cli.cc
     src/common/muscle_recording.cc
     src/common/recorder_config.cc
-    src/common/saver_perf_tracker.cc
+    src/common/loop_monitors.cc
     src/common/tracking_control.cc
     src/common/utils.cc)
 
@@ -176,7 +176,7 @@ add_executable(align-cameras
     src/common/behavior_recording.cc
     src/common/muscle_recording.cc
     src/common/recorder_config.cc
-    src/common/saver_perf_tracker.cc
+    src/common/loop_monitors.cc
     src/common/utils.cc
     src/common/cli.cc)
 target_include_directories(align-cameras PRIVATE ${RECORDER_INCLUDE_DIR})
@@ -200,7 +200,7 @@ add_executable(run-arena-registration-scan
     src/common/cli.cc
     src/common/recorder_config.cc
     src/common/behavior_recording.cc
-    src/common/saver_perf_tracker.cc
+    src/common/loop_monitors.cc
     src/common/utils.cc)
 target_include_directories(run-arena-registration-scan PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(run-arena-registration-scan Qt6::Widgets Qt6::SerialPort)
