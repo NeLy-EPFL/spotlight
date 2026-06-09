@@ -8,10 +8,6 @@ BehaviorCamera::BehaviorCamera(
     std::string ioLine)
     : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset),
       yOffset_(yOffset), ioLine_(ioLine) {
-    using Euresys::DeviceModule;
-    using Euresys::InterfaceModule;
-    using Euresys::RemoteModule;
-
     spdlog::info("Running GenTL eGrabber discovery...");
     Euresys::EGrabberDiscovery egrabberDiscovery(genTL_);
     egrabberDiscovery.discover();
@@ -33,9 +29,80 @@ BehaviorCamera::BehaviorCamera(
         deviceVendorName,
         deviceModelName);
 
-    // Set offset to 0 first - if the new image size is larger than the current
-    // one, setting the new image size directly may fail if newSize + currOffset
-    // exceeds the current image size.
+    configure();
+
+    formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
+
+    cameraReadyFlag_.store(true);
+}
+
+void BehaviorCamera::configure() {
+    using Euresys::DeviceModule;
+    using Euresys::InterfaceModule;
+    using Euresys::RemoteModule;
+
+    // =======================================================================
+    // Base grabber/camera setup, ported one-to-one from etc/euresys_config.js.
+    // That script used to be run by hand (via eGrabber Studio) before launching
+    // any recorder program; applying it here removes that manual step.
+    //
+    // A few of these settings are deliberately overridden further down by the
+    // ROI and external-trigger configuration (CameraControlMethod is set to
+    // EXTERNAL, the TTLIO12 line is turned into a trigger input, and the sensor
+    // ROI comes from the recorder config) -- exactly as they were overridden
+    // when the script was run by hand and the program reconfigured the grabber
+    // afterwards. They are kept here so this method alone leaves the grabber
+    // fully configured, and the original ordering is preserved (in particular
+    // the ExposureMode Off -> TriggerWidth dance below) so that calling
+    // configure() again is idempotent.
+    // =======================================================================
+    spdlog::info("Applying base grabber configuration (euresys_config.js)...");
+
+    // Negotiate Power-over-CoaXPress so the camera is powered over the link.
+    frameGrabberPtr_->execute<InterfaceModule>("CxpPoCxpAuto");
+
+    // Camera trigger + exposure. ExposureMode has to leave TriggerWidth before
+    // the FrameStart trigger can be (re)configured and then be restored to
+    // TriggerWidth; the guard is what makes a repeat call idempotent.
+    setStringAndCheck<RemoteModule>("TriggerSelector", "AcquisitionStart");
+    setStringAndCheck<RemoteModule>("TriggerMode", "On");
+    setStringAndCheck<RemoteModule>("TriggerSource", "CXPin");
+    setStringAndCheck<RemoteModule>("TriggerSelector", "FrameStart");
+    if (frameGrabberPtr_->getString<RemoteModule>("ExposureMode") ==
+        "TriggerWidth") {
+        setStringAndCheck<RemoteModule>("ExposureMode", "Off");
+    }
+    setStringAndCheck<RemoteModule>("TriggerMode", "On");
+    setStringAndCheck<RemoteModule>("TriggerSource", "CXPin");
+    setStringAndCheck<RemoteModule>("ExposureMode", "TriggerWidth");
+    setStringAndCheck<RemoteModule>("LinkConfig", "CXP6_X4");
+
+    // Camera control method. "RG" is overridden to "EXTERNAL" below;
+    // CycleTriggerSource is left as set here.
+    setStringAndCheck<DeviceModule>("CameraControlMethod", "RG");
+    setStringAndCheck<DeviceModule>("CycleTriggerSource", "Immediate");
+
+    // Strobe output lines. TTLIO12 is overridden to a trigger input below (it
+    // carries the external frame trigger from the microcontroller).
+    setStringAndCheck<InterfaceModule>("LineSelector", "TTLIO11");
+    setStringAndCheck<InterfaceModule>("LineSource", "Device0Strobe");
+    setStringAndCheck<InterfaceModule>("LineMode", "Output");
+    setStringAndCheck<InterfaceModule>("LineSelector", "TTLIO12");
+    setStringAndCheck<InterfaceModule>("LineSource", "Device0Strobe");
+    setStringAndCheck<InterfaceModule>("LineMode", "Output");
+    // Numeric features: set without the strict string read-back check, since
+    // they read back in a different textual form (e.g. "2" -> "2.000000").
+    spdlog::info("Setting LineSourceDivisionFactor to 4 and Gain to 2");
+    frameGrabberPtr_->setString<InterfaceModule>(
+        "LineSourceDivisionFactor", "4");
+    frameGrabberPtr_->setString<RemoteModule>("Gain", "2");
+
+    // =======================================================================
+    // Sensor ROI from the recorder config (supersedes the script's hard-coded
+    // ROI). Set the offsets to 0 first - if the new image size is larger than
+    // the current one, setting the new size directly may fail when
+    // newSize + currentOffset exceeds the sensor bounds.
+    // =======================================================================
     spdlog::info("Setting sensor OffsetX and OffsetY to 0, 0");
     setIntegerAndCheck<RemoteModule>("OffsetX", 0);
     setIntegerAndCheck<RemoteModule>("OffsetY", 0);
@@ -43,27 +110,29 @@ BehaviorCamera::BehaviorCamera(
     spdlog::info(
         "Setting sensor ROI - width: {}, height: {}, "
         "xOffset: {}, yOffset: {}",
-        imageWidth,
-        imageHeight,
-        xOffset,
-        yOffset);
-    setIntegerAndCheck<RemoteModule>("Width", imageWidth);
-    setIntegerAndCheck<RemoteModule>("Height", imageHeight);
-    setIntegerAndCheck<RemoteModule>("OffsetX", xOffset);
-    setIntegerAndCheck<RemoteModule>("OffsetY", yOffset);
+        imageWidth_,
+        imageHeight_,
+        xOffset_,
+        yOffset_);
+    setIntegerAndCheck<RemoteModule>("Width", imageWidth_);
+    setIntegerAndCheck<RemoteModule>("Height", imageHeight_);
+    setIntegerAndCheck<RemoteModule>("OffsetX", xOffset_);
+    setIntegerAndCheck<RemoteModule>("OffsetY", yOffset_);
     spdlog::info("Sensor ROI set");
 
+    // =======================================================================
+    // External-trigger configuration. The microcontroller feeds a trigger
+    // signal (high = active, exposure time controlled by trigger width) into
+    // `ioLine_` (TTLIO12) of the frame grabber.
+    // =======================================================================
     spdlog::info("Configuring trigger-related settings...");
-    // Hardware counterpart: feed a trigger signal (high = active, exposure
-    // time controlled by trigger width) to the `ioLine` of the frame grabber
-    // In our case, this is TTLIO12 on the external IO plug.
-    spdlog::info("Setting {} line as Input...", ioLine);
-    setStringAndCheck<InterfaceModule>("LineSelector", ioLine);
+    spdlog::info("Setting {} line as Input...", ioLine_);
+    setStringAndCheck<InterfaceModule>("LineSelector", ioLine_);
     setStringAndCheck<InterfaceModule>("LineMode", "Input");
 
-    spdlog::info("Setting LIN1 to specified ioLine ({})...", ioLine);
+    spdlog::info("Setting LIN1 to specified ioLine ({})...", ioLine_);
     setStringAndCheck<InterfaceModule>("LineInputToolSelector", "LIN1");
-    setStringAndCheck<InterfaceModule>("LineInputToolSource", ioLine);
+    setStringAndCheck<InterfaceModule>("LineInputToolSource", ioLine_);
 
     spdlog::info("Setting CameraControlMethod to EXTERNAL...");
     setStringAndCheck<DeviceModule>("CameraControlMethod", "EXTERNAL");
@@ -76,10 +145,9 @@ BehaviorCamera::BehaviorCamera(
 
     spdlog::info("Enabling trigger for FrameStart, using CXPin as source...");
     setStringAndCheck<RemoteModule>("TriggerSelector", "FrameStart");
-    // The following line must be excluded because when CameraControlMethod,
-    // TriggerMode must be "On" for FrameStart. This option is grayed out.
-    // setStringAndCheck<RemoteModule>("TriggerMode", "On");
-    // Let's just check its value instead
+    // TriggerMode must be "On" for FrameStart when CameraControlMethod is
+    // EXTERNAL (the option is grayed out / forced on), so it is checked rather
+    // than set here.
     assert(frameGrabberPtr_->getString<RemoteModule>("TriggerMode") == "On");
     setStringAndCheck<RemoteModule>("TriggerSource", "CXPin");
     spdlog::info("Trigger-related settings configured");
@@ -87,10 +155,6 @@ BehaviorCamera::BehaviorCamera(
     spdlog::info("Setting LinkConfig to CXP6_X4...");
     setStringAndCheck<RemoteModule>("LinkConfig", "CXP6_X4");
     spdlog::info("LinkConfig set");
-
-    formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
-
-    cameraReadyFlag_.store(true);
 }
 
 BehaviorCamera::~BehaviorCamera() {

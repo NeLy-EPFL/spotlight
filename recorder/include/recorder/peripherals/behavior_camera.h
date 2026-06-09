@@ -42,6 +42,11 @@ class BehaviorCamera {
     int currentFPS_;
     std::atomic<bool> cameraReadyFlag_{false};
 
+    // Apply the full GenICam configuration to the grabber and camera: the ROI
+    // and external-trigger setup plus the base configuration ported from
+    // etc/euresys_config.js. Called once by the constructor.
+    void configure();
+
     template <typename Module>
     bool setIntegerAndCheck(const std::string key, int value);
 

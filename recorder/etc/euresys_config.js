@@ -1,3 +1,12 @@
+// Grabber/camera setup script for the behavior camera, run from the eGrabber
+// Studio scripting console.
+//
+// As of the behavior-camera auto-configuration change, the recorder programs
+// apply this same setup themselves on startup (BehaviorCamera::configure() in
+// src/peripherals/behavior_camera.cc), so running this by hand before launching
+// is no longer required. It is kept as reference and for ad-hoc use in Studio;
+// keep it in sync with configure() if you change either one.
+
 var g = grabbers[0];
 
 g.InterfacePort.execute("CxpPoCxpAuto");
