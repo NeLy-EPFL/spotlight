@@ -11,7 +11,7 @@ This codebase is entirely implemented in C++. A set of tools for calibration, po
         - `run-arena-registration-scan`: a short program where (i) the translation stages move the cameras to predefined positions, and (ii) the behavior camera captures snapshots of fiducial markers at these positions. These images allow a separate Python program to build a mapping between camera pixel coordinates, translation stage physical coordinates, and physical coordinates in the behavior arena.
         - `run-homography-scan`: a short program that captures images of a high-resolution ChArUco board, which enable a separate Python program to fit the camera homography matrices for both cameras.
         - `run-spotlight`: the main program to record experimental data.
-    - Additionally, the recorder contains an internal `pco-camera-server` program that acquires images using the muscle camera and makes them available to the other programs via shared memory. Muscle-camera acquisition is split into its own executable because the PCO camera SDK is compiled with `PCO_LINUX` defined, which makes its headers inject Windows-compatibility typedefs and macros (`BOOL`, `WORD`, `DWORD`, `HANDLE`, `FALSE`/`TRUE`, `far`, ...) into the global namespace of every translation unit that includes a PCO header. Those names happen not to clash with the Qt/OpenCV headers used elsewhere, but isolating the server keeps this pollution -- along with the PCO link/runtime dependencies -- out of the GUI and tracking code. The server is a separate process and publishes frames over shared memory rather than linking into `run-spotlight`.
+    - Unlike a previous version, the muscle (PCO) camera is driven **in-process** by `run-spotlight` and `align-cameras` via the `MuscleCamera` class (`src/peripherals/muscle_camera.cc`), the same way the behavior (Euresys) camera is driven — a dedicated acquirer thread calls `MuscleCamera::waitForOneFrame()` in a loop. The PCO camera SDK is compiled with `PCO_LINUX` defined, which makes its headers inject Windows-compatibility typedefs and macros (`BOOL`, `WORD`, `DWORD`, `HANDLE`, `FALSE`/`TRUE`, `far`, ...) into the global namespace of every translation unit that includes a PCO header. Those names were verified not to clash with the Qt/OpenCV/Euresys headers, and `PCO_LINUX` is scoped **per file** (only `muscle_camera.cc` and the bundled PCO SDK sources) via a pimpl, so this pollution stays out of the GUI and tracking code. The PCO camera libraries are linked into `run-spotlight`/`align-cameras` directly; the system Qt lib dir is kept ahead of the PCO lib dir on the rpath so the bundled (and unused) Qt that ships in the PCO lib dir is never resolved. (Earlier versions ran the muscle camera as a separate `pco-camera-server` process that published frames over shared memory; that has been removed.)
 - **`trigger_firmware/`**: The embedded code that runs on the triggering microcontroller.
 - **`comm_protocol/`**: A JSON-based protocol for serial communication between the recorder and the microcontroller implemented as a light library.
     - This library is meant to be included by both the recorder and the microcontroller. Therefore, it needs to be especially efficient. It must avoid using exceptions to respect the linear workflow on the microcontroller.
@@ -20,11 +20,14 @@ This codebase is entirely implemented in C++. A set of tools for calibration, po
 
 ## Documentation
 
-Documentation is available in the `docs/` folder:
+Documentation is available in the `docs/` folder. Start at the index,
+[`docs/README.md`](docs/README.md), which splits the pages into a short **User's
+manual** (running an experiment end to end) and a fuller **Developer's manual**
+(internals, environment setup, hardware). A few entry points:
 
-- [Hardware](docs/hardware.md): hardware to be controlled by this controller.
+- [Architecture overview](docs/architecture.md): threads, in-process cameras, and the trigger microcontroller.
 - [Data acquisition workflow](docs/data_acquisition.md): how the cameras and lights are controlled and synchronized using continuous acquisition.
-- [Recorder-microcontroller communication protocol](docs/comm_protocol.md): JSON protocol for communication between the recorder and the triggering microcontroller.
+- [Building and installing](docs/setup/building.md) and [software dependencies](docs/setup/dependencies.md): how to build the components and install their dependencies.
 - [Troubleshooting](docs/troubleshooting.md): common runtime problems (e.g. the behavior camera grabber being held by another program, and hangs on quit).
 
 
@@ -54,7 +57,7 @@ cmake --build recorder/build -j 16
 ctest --test-dir recorder/build --output-on-failure  # run the unit tests
 ```
 
-The `recorder` unit tests (`recorder/tests/`) are written with GoogleTest and cover the hardware-independent logic (calibration, config loading, image/metadata utilities, muscle-camera ROI). They build by default when `recorder` is configured standalone (as above); set `-DRECORDER_BUILD_TESTS=ON` to opt in from the umbrella build.
+The `recorder` unit tests (`recorder/tests/`) are written with GoogleTest and cover the hardware-independent logic (calibration, config loading, image/metadata utilities, muscle-camera ROI and trigger timing). The rule for this suite is that **no test may require a physical device to respond** (a real camera, grabber, or motion stage) — but a test target *may* include external SDK headers and link the SDK libraries (e.g. it links the PCO SDK to exercise the timing/ROI logic that lives in `muscle_camera.cc`), since that only needs the SDK present, not live hardware. They build by default when `recorder` is configured standalone (as above); set `-DRECORDER_BUILD_TESTS=ON` to opt in from the umbrella build.
 
 ### `trigger_firmware`
 
@@ -98,13 +101,5 @@ The repository root also has an umbrella `CMakeLists.txt` that configures the de
 
 ## Developer info
 
-- Use C++20 (highest standard supported by `arduino-esp32 3.x` by default) for `trigger_firmware` and `comm_protocol`. Use C++23 for `recorder`.
-- Use code style specified in `.clang-format`. Don't use `clang-tidy`.
-- Use snake case for file names. Use suffices `.cc` and `.h`.
-- Prefer low overhead for `trigger_firmware` and `comm_protocol`. For `recorder`, be mindful of overhead since frame acquisition can run at up to 500 FPS. However, don't overoptimize at the cost of readability.
-- Follow best practices in using `const` and pass arguments by reference when applicable.
-- Write comments whenever the logic is unclear/untrivial. Don't hard-code "magic numbers" or "magic logics."
-- Use `#pragma once` instead of `#ifndef` guards in header files.
-- Use CMake and PlatformIO. `recorder` and `trigger_firmware` compile on their own. `comm_protocol` is a library included by both, but it can also be configured standalone to build and run its unit tests (see [Building](#building)).
-- Use only ASCII characters except in `.md` files.
-- Write _meaningful_ unit tests only. Don't write test just for the sake of it. Don't bloat the number of lines in test files just to test trivial stuff.
+Code style and conventions (language standards, formatting, naming, overhead, tests)
+are documented in [`docs/code_style.md`](docs/code_style.md).
