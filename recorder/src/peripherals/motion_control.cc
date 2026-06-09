@@ -110,6 +110,54 @@ MotionControl::MotionControl(const RecorderConfig &recorderConfig) {
     velocityUnitEnum_ =
         getVelocityUnitZaberEnum(recorderConfig.getParameter<std::string>(
             "motion_control", "velocity_unit"));
+
+    applyMotionStageSettings(recorderConfig);
+}
+
+void MotionControl::applyMotionStageSettings(
+    const RecorderConfig &recorderConfig) {
+    // The config keys carry their units in their names, so each setting is sent
+    // with the matching Zaber unit (independent of the configured
+    // length/velocity units used elsewhere).
+    double acceleration = recorderConfig.getParameter<double>(
+        "motion_control", "acceleration_mm_per_s_sq");
+    double accelerationRampTimeMs = recorderConfig.getParameter<double>(
+        "motion_control", "acceleration_ramp_time_ms");
+    double maxSpeed = recorderConfig.getParameter<double>(
+        "motion_control", "max_speed_mm_per_s");
+
+    for (MotionAxis axis : {X_AXIS, Y_AXIS}) {
+        zmASCII::AxisSettings settings = axisPtrLookup_[axis]->getSettings();
+        // Set "accel" alongside the accel-only and decel-only settings so that
+        // acceleration and deceleration are both pinned explicitly.
+        settings.set(
+            "accel",
+            acceleration,
+            zaber::motion::Units::ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED);
+        settings.set(
+            "motion.accelonly",
+            acceleration,
+            zaber::motion::Units::ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED);
+        settings.set(
+            "motion.decelonly",
+            acceleration,
+            zaber::motion::Units::ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED);
+        settings.set(
+            "motion.accel.ramptime",
+            accelerationRampTimeMs,
+            zaber::motion::Units::TIME_MILLISECONDS);
+        settings.set(
+            "maxspeed",
+            maxSpeed,
+            zaber::motion::Units::VELOCITY_MILLIMETRES_PER_SECOND);
+    }
+    spdlog::info(
+        "Applied motion stage settings to both axes: acceleration = {} mm/s^2 "
+        "(accel, motion.accelonly, motion.decelonly); ramp time = {} ms "
+        "(motion.accel.ramptime); max speed = {} mm/s (maxspeed)",
+        acceleration,
+        accelerationRampTimeMs,
+        maxSpeed);
 }
 
 MotionControl::~MotionControl() {

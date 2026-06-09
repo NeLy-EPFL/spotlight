@@ -197,7 +197,7 @@ void trackingController(
             "tracking", "distance_threshold_for_moving_mm");
 
     const float defaultVelocity = recorderConfig.getParameter<float>(
-        "motion_control", "default_velocity_mm_per_sec");
+        "motion_control", "default_velocity_mm_per_s");
 
     imageBinarizeThreshold = recorderConfig.getParameter<int>(
         "tracking", "image_binarize_threshold");

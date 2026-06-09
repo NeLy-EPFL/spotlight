@@ -191,7 +191,7 @@ void runArenaRegistrationScan(
     // Set up motion control
     MotionControl motionControl(recorderConfig);
     double motionVelocity = recorderConfig.getParameter<double>(
-        "motion_control", "default_velocity_mm_per_sec");
+        "motion_control", "default_velocity_mm_per_s");
     int settlingFrames = recorderConfig.getParameter<int>(
         "motion_control", "apriltag_mapping_settling_frames");
 

@@ -30,6 +30,10 @@ class MotionControl {
     bool checkIfIdle(MotionAxis axis);
 
   private:
+    // Push the explicit acceleration / ramp-time / max-speed settings from the
+    // config onto both Zaber axes.
+    void applyMotionStageSettings(const RecorderConfig &recorderConfig);
+
     RecorderConfig recorderConfig_;
     std::unordered_map<unsigned int, MotionAxis> serialNumberToAxisLookup_;
     std::string serialPortName_;

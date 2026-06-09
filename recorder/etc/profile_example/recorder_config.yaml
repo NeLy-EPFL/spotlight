@@ -39,12 +39,15 @@ motion_control:
   stage_serial_no_y_axis: 122390
   length_unit: "mm"
   velocity_unit: "mm/s"
-  default_velocity_mm_per_sec: 63
+  default_velocity_mm_per_s: 40
   calibration_scan_stride_mm: 2
   calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
   apriltag_mapping_settling_frames: 5
   physical_range_limit_mm: 151.5
+  acceleration_mm_per_s_sq: 120
+  acceleration_ramp_time_ms: 50
+  max_speed_mm_per_s: 40
 
 tracking:
   update_frequency_hz: 30
