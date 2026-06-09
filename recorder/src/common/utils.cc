@@ -191,52 +191,6 @@ void convert16BitTo8Bit(
     sourceImage.convertTo(targetImage, CV_8U, alpha, beta);
 }
 
-void writeExperimentParameters(
-    const std::filesystem::path &outputPath,
-    int behavior_fps,
-    bool muscle_imaging_enabled,
-    int muscle_sync_ratio,
-    int behavior_exposure_time_us,
-    int muscle_light_on_time_us,
-    int muscle_nominal_exposure_us,
-    int muscle_buffer_time_us,
-    const std::string &experiment_protocol) {
-    YAML::Emitter out;
-    out << YAML::BeginMap;
-
-    out << YAML::Key << "behavior_fps" << YAML::Value << behavior_fps;
-    out << YAML::Key << "muscle_imaging_enabled" << YAML::Value
-        << muscle_imaging_enabled;
-    out << YAML::Key << "muscle_sync_ratio" << YAML::Value << muscle_sync_ratio;
-    out << YAML::Key << "behavior_exposure_time_us" << YAML::Value
-        << behavior_exposure_time_us;
-    out << YAML::Key << "muscle_light_on_time_us" << YAML::Value
-        << muscle_light_on_time_us;
-    // Derived continuous-mode timing is only meaningful when imaging muscle.
-    if (muscle_imaging_enabled) {
-        out << YAML::Key << "muscle_nominal_exposure_us" << YAML::Value
-            << muscle_nominal_exposure_us;
-        out << YAML::Key << "muscle_buffer_time_us" << YAML::Value
-            << muscle_buffer_time_us;
-    }
-    out << YAML::Key << "experiment_protocol" << YAML::Value
-        << experiment_protocol;
-
-    out << YAML::EndMap;
-
-    std::ofstream fout(outputPath);
-    if (!fout.is_open()) {
-        std::string errorMessage =
-            "Failed to open file for writing experiment parameters: " +
-            outputPath.string();
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
-    }
-
-    fout << out.c_str();
-    fout.close();
-}
-
 SaveDirectory::SaveDirectory(const std::string &directory) {
     std::lock_guard<std::mutex> lock(mutex_);
     directory_ = expandPath(directory);

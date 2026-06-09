@@ -47,22 +47,6 @@ std::string expandPath(const std::string &path);
 void convert16BitTo8Bit(
     const cv::Mat &sourceImage, cv::Mat &targetImage, int vmin, int vmax);
 
-// The muscle_nominal_exposure_us and muscle_buffer_time_us values are the
-// derived continuous-mode (auto-sequence) timing (see MuscleTriggerTiming): the
-// nominal per-line exposure programmed into the camera, and the slack in the
-// common-time window beyond the light-on time. They are only written when
-// muscle_imaging_enabled is true.
-void writeExperimentParameters(
-    const std::filesystem::path &outputPath,
-    int behavior_fps,
-    bool muscle_imaging_enabled,
-    int muscle_sync_ratio,
-    int behavior_exposure_time_us,
-    int muscle_light_on_time_us,
-    int muscle_nominal_exposure_us,
-    int muscle_buffer_time_us,
-    const std::string &experiment_protocol);
-
 class SaveDirectory {
   public:
     SaveDirectory(const std::string &directory);

@@ -116,6 +116,43 @@ void addCrossToBehaviorImage(cv::Mat &image) {
         1);
 }
 
+bool trySaveSelectedROI(const std::filesystem::path &profileDir) {
+    // Validate the user-selected ROI center and, if it is in bounds, write the
+    // resulting ROI to <profileDir>/muscle_camera_roi.yaml. Returns true when an
+    // ROI was successfully saved (caller should break out of the streaming
+    // loop), false otherwise (caller should continue).
+    if (userSelectedCenterXDisplay == -1 || userSelectedCenterYDisplay == -1) {
+        spdlog::error(
+            "ROI center not set yet. Please select a center point on "
+            "the muscle camera image before saving the ROI.");
+        return false;
+    }
+
+    spdlog::info(
+        "User selected muscle camera center point at (x={}, y={})",
+        userSelectedCenterXDisplay,
+        userSelectedCenterYDisplay);
+    MuscleCameraROI roi = getROIFromDisplayCenter(
+        userSelectedCenterXDisplay, userSelectedCenterYDisplay);
+    if (roi.x0 <= 0 || roi.y0 <= 0 || roi.x1 > fullMuscleImageWidth ||
+        roi.y1 > fullMuscleImageHeight) {
+        spdlog::error("Selected ROI out of bound. Please try again.");
+        return false;
+    }
+
+    std::filesystem::path roiFilePath = profileDir / "muscle_camera_roi.yaml";
+    spdlog::info(
+        "Saving muscle camera ROI (x0={}, x1={}, y0={}, y1={}) to {}",
+        roi.x0,
+        roi.x1,
+        roi.y0,
+        roi.y1,
+        roiFilePath.string());
+    roi.toFile(roiFilePath);
+
+    return true;
+}
+
 void setupDisplayWindows(RecorderConfig &recorderConfig) {
     // Figure out window display size (note width/height are swapped because
     // images are roatated)
@@ -163,12 +200,12 @@ void alignCamera(std::filesystem::path profileDir) {
     muscleImageROIHeight =
         recorderConfig.getParameter<int>("muscle_camera", "roi_height");
 
-    // Load the default normalization window for displaying the 16-bit muscle
-    // image (same defaults as the histogram sliders in the main recording GUI).
+    // Load the normalization window for displaying the 16-bit muscle image
+    // during camera alignment (separate from the main GUI's histogram defaults).
     int muscleDisplayVmin = recorderConfig.getParameter<int>(
-        "muscle_camera", "default_display_vmin");
+        "muscle_camera", "align_cameras_display_vmin");
     int muscleDisplayVmax = recorderConfig.getParameter<int>(
-        "muscle_camera", "default_display_vmax");
+        "muscle_camera", "align_cameras_display_vmax");
 
     // Set up shared recording states
     std::shared_ptr<ProgramState> programState =
@@ -295,38 +332,10 @@ void alignCamera(std::filesystem::path profileDir) {
         }
         if (pressedKey == 13) {
             // Enter key pressed
-            if (userSelectedCenterXDisplay == -1 ||
-                userSelectedCenterYDisplay == -1) {
-                spdlog::error(
-                    "ROI center not set yet. Please select a center point on "
-                    "the muscle camera image before saving the ROI.");
-                continue;
+            if (trySaveSelectedROI(profileDir)) {
+                break;
             }
-
-            spdlog::info(
-                "User selected muscle camera center point at (x={}, y={})",
-                userSelectedCenterXDisplay,
-                userSelectedCenterYDisplay);
-            MuscleCameraROI roi = getROIFromDisplayCenter(
-                userSelectedCenterXDisplay, userSelectedCenterYDisplay);
-            if (roi.x0 <= 0 || roi.y0 <= 0 || roi.x1 > fullMuscleImageWidth ||
-                roi.y1 > fullMuscleImageHeight) {
-                spdlog::error("Selected ROI out of bound. Please try again.");
-                continue;
-            }
-
-            std::filesystem::path roiFilePath =
-                profileDir / "muscle_camera_roi.yaml";
-            spdlog::info(
-                "Saving muscle camera ROI (x0={}, x1={}, y0={}, y1={}) to {}",
-                roi.x0,
-                roi.x1,
-                roi.y0,
-                roi.y1,
-                roiFilePath.string());
-            roi.toFile(roiFilePath);
-
-            break;
+            continue;
         }
     }
 

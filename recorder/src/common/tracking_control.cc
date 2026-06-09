@@ -171,6 +171,80 @@ void motionControlRequestHandler(
     spdlog::info("Motion stage request handler thread stopped.");
 }
 
+// Run one automatic-tracking update: grab the latest behavior image, locate
+// the fly, and move the stage to re-center it if it has drifted far enough.
+void updateTrackingTarget(
+    const RecorderConfig &recorderConfig,
+    ActiveAreaMask &activeAreaMask,
+    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
+    std::shared_ptr<TrackingControlState> trackingControlState,
+    const CalibrationParams &behaviorCamCalibrationParams,
+    float trackingDistanceThresholdMm,
+    float defaultVelocity) {
+    cv::Mat myBehaviorImage =
+        behaviorRecordingState->latestFrameHolder->getLatestFrameData().image;
+    reorientBehaviorImage(myBehaviorImage, myBehaviorImage);
+    cv::Mat activeAreaMaskCurrView = activeAreaMask.warpToCurrentView(
+        myBehaviorImage, getCurrentMotionStagePosition());
+
+    MotionStagePosition myMotionStagePosition;
+    {
+        std::lock_guard<std::mutex> lock(
+            trackingControlState->latestMotionStagePositionMutex);
+        myMotionStagePosition =
+            trackingControlState->latestMotionStagePosition;
+    }
+
+    bool isFound = false;
+    double physicalPosX = 0;
+    double physicalPosY = 0;
+    if (behaviorRecordingState->behaviorCamera &&
+        behaviorRecordingState->behaviorCamera->isReady()) {
+        std::tie(isFound, physicalPosX, physicalPosY) =
+            calculateFlyPositionAbsoluteMm(
+                myBehaviorImage,
+                myMotionStagePosition,
+                activeAreaMaskCurrView,
+                behaviorCamCalibrationParams,
+                recorderConfig);
+    }
+
+    if (isFound) {
+        auto [currentPhysicalPosX, currentPhysicalPosY] =
+            behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
+                myMotionStagePosition.xPosMm,
+                myMotionStagePosition.yPosMm,
+                myBehaviorImage.rows / 2,
+                myBehaviorImage.cols / 2);
+
+        double distanceToTarget = calculateDistance(
+            physicalPosX,
+            physicalPosY,
+            currentPhysicalPosX,
+            currentPhysicalPosY);
+
+        // Only move the stage once the fly has drifted far enough from
+        // the center of the view. Holding still when it is already close
+        // avoids jittering, reduces wear on the motors, and reduces
+        // mechanical resonance. (Don't `continue` here: that would skip
+        // the end-of-cycle sleep below and busy-loop the thread, which
+        // also floods the motion-control request queue.)
+        if (distanceToTarget >= trackingDistanceThresholdMm) {
+            // X stage should move in the OPPOSITE direction: the arena
+            // is facing downward, so the +x direction of the arena is
+            // the opposite of the +x direction of the stage.
+            double dx = -1 * (physicalPosX - currentPhysicalPosX);
+            double dy = physicalPosY - currentPhysicalPosY;
+            MotionStagePosition targetMotionStagePosition = {
+                myMotionStagePosition.xPosMm + dx,
+                myMotionStagePosition.yPosMm + dy,
+                ABSOLUTE};
+            setTargetMotionStagePosition(
+                targetMotionStagePosition, defaultVelocity);
+        }
+    }
+}
+
 void trackingController(
     const RecorderConfig &recorderConfig,
     ActiveAreaMask &activeAreaMask,
@@ -208,70 +282,14 @@ void trackingController(
         if (!trackingControlState->trackingOn.load()) {
             // Nothing to do here
         } else if (!trackingControlState->shouldOverrideTracking.load()) {
-            cv::Mat myBehaviorImage =
-                behaviorRecordingState->latestFrameHolder->getLatestFrameData()
-                    .image;
-            reorientBehaviorImage(myBehaviorImage, myBehaviorImage);
-            cv::Mat activeAreaMaskCurrView = activeAreaMask.warpToCurrentView(
-                myBehaviorImage, getCurrentMotionStagePosition());
-
-            MotionStagePosition myMotionStagePosition;
-            {
-                std::lock_guard<std::mutex> lock(
-                    trackingControlState->latestMotionStagePositionMutex);
-                myMotionStagePosition =
-                    trackingControlState->latestMotionStagePosition;
-            }
-
-            bool isFound = false;
-            double physicalPosX = 0;
-            double physicalPosY = 0;
-            if (behaviorRecordingState->behaviorCamera &&
-                behaviorRecordingState->behaviorCamera->isReady()) {
-                std::tie(isFound, physicalPosX, physicalPosY) =
-                    calculateFlyPositionAbsoluteMm(
-                        myBehaviorImage,
-                        myMotionStagePosition,
-                        activeAreaMaskCurrView,
-                        behaviorCamCalibrationParams,
-                        recorderConfig);
-            }
-
-            if (isFound) {
-                auto [currentPhysicalPosX, currentPhysicalPosY] =
-                    behaviorCamCalibrationParams
-                        .stagePosAndPixelPosToPhysicalPos(
-                            myMotionStagePosition.xPosMm,
-                            myMotionStagePosition.yPosMm,
-                            myBehaviorImage.rows / 2,
-                            myBehaviorImage.cols / 2);
-
-                double distanceToTarget = calculateDistance(
-                    physicalPosX,
-                    physicalPosY,
-                    currentPhysicalPosX,
-                    currentPhysicalPosY);
-
-                // Only move the stage once the fly has drifted far enough from
-                // the center of the view. Holding still when it is already close
-                // avoids jittering, reduces wear on the motors, and reduces
-                // mechanical resonance. (Don't `continue` here: that would skip
-                // the end-of-cycle sleep below and busy-loop the thread, which
-                // also floods the motion-control request queue.)
-                if (distanceToTarget >= trackingDistanceThresholdMm) {
-                    // X stage should move in the OPPOSITE direction: the arena
-                    // is facing downward, so the +x direction of the arena is
-                    // the opposite of the +x direction of the stage.
-                    double dx = -1 * (physicalPosX - currentPhysicalPosX);
-                    double dy = physicalPosY - currentPhysicalPosY;
-                    MotionStagePosition targetMotionStagePosition = {
-                        myMotionStagePosition.xPosMm + dx,
-                        myMotionStagePosition.yPosMm + dy,
-                        ABSOLUTE};
-                    setTargetMotionStagePosition(
-                        targetMotionStagePosition, defaultVelocity);
-                }
-            }
+            updateTrackingTarget(
+                recorderConfig,
+                activeAreaMask,
+                behaviorRecordingState,
+                trackingControlState,
+                behaviorCamCalibrationParams,
+                trackingDistanceThresholdMm,
+                defaultVelocity);
         } else {
             // spdlog::debug("Tracking controller is overriding tracking.");
             MotionStagePosition currentPos = getCurrentMotionStagePosition();

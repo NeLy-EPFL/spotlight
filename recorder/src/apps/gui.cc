@@ -3,14 +3,17 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
+
+#include <yaml-cpp/yaml.h>
 
 namespace {
 // Layout constants for the muscle histogram + range slider widget.
 constexpr int kHistogramNumBins = 256;
-constexpr int kHistogramWidgetHeight = 110;
-constexpr int kSliderAreaHeight = 22;
+constexpr int kHistogramWidgetHeight = 65;
+constexpr int kSliderAreaHeight = 12;
 constexpr int kHandleHalfWidth = 5;
 
 QImage cvMatToQImage(const cv::Mat &mat) {
@@ -220,6 +223,9 @@ MotionControlWidget::MotionControlWidget(
         "gui", "motion_stage_preview_update_frequency_hz");
     int guiMotionStagePreviewHeight =
         recorderConfig.getParameter<int>("gui", "motion_stage_preview_height");
+    // Enlarge the stage preview by 50% over its configured height; the width is
+    // derived from the height below, so it scales by the same factor.
+    guiMotionStagePreviewHeight = guiMotionStagePreviewHeight * 3 / 2;
 
     connect(
         &timer_,
@@ -349,17 +355,84 @@ MainGUIWindow::MainGUIWindow(
       activeAreaMask_(activeAreaMask), stageMinXMm_(stageMinXMm),
       stageMaxXMm_(stageMaxXMm), stageMinYMm_(stageMinYMm),
       stageMaxYMm_(stageMaxYMm) {
-    streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
+    loadRecordingParameters();
+
+    // Arrange layout. The config text boxes (and their labels) occupy a
+    // fixed-width column on the left, wide enough that the labels and spin boxes
+    // are not cramped. The record/stop buttons sit immediately to the right of
+    // that column with a small gap. The save directory row joins the same column
+    // below the protocol box, so the vertical gap above it matches the spacing
+    // between the config rows.
+    const int configRowsWidth = 700;
+    const int buttonsGap = 12;
+
+    QVBoxLayout *configRowsLayout = new QVBoxLayout();
+    configRowsLayout->setContentsMargins(0, 0, 0, 0);
+    configRowsLayout->addLayout(createBehaviorFPSRow());
+    configRowsLayout->addLayout(createSyncRatioRow());
+    configRowsLayout->addLayout(createBehaviorExposureRow());
+    configRowsLayout->addLayout(createMuscleExposureRow());
+    configRowsLayout->addLayout(createProtocolRow());
+    QWidget *configRowsPanel = new QWidget(this);
+    configRowsPanel->setLayout(configRowsLayout);
+    configRowsPanel->setFixedWidth(configRowsWidth);
+
+    // Config rows on the left, the buttons immediately to their right (with a
+    // gap), and a trailing stretch so the buttons stay next to the boxes rather
+    // than being pushed to the far edge.
+    QHBoxLayout *configAndButtonsLayout = new QHBoxLayout();
+    configAndButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    configAndButtonsLayout->addWidget(configRowsPanel);
+    configAndButtonsLayout->addSpacing(buttonsGap);
+    configAndButtonsLayout->addLayout(createRecordStopButtons());
+    configAndButtonsLayout->addStretch();
+
+    // The config-rows-plus-buttons block and the save directory row share one
+    // column so the save directory is separated from the protocol box by the
+    // same vertical spacing as the config rows are from each other. Both rows
+    // start at x = 0 and use the same configRowsWidth + buttonsGap, so the save
+    // directory text box aligns with the spin boxes above and the Browse /
+    // Increment buttons align with the Record / Stop buttons. The panel is left
+    // unconstrained in width so the (horizontally laid out) Browse / Increment
+    // buttons are never clipped; the trailing stretch in each row absorbs the
+    // slack.
+    QVBoxLayout *topBlockLayout = new QVBoxLayout();
+    topBlockLayout->setContentsMargins(0, 0, 0, 0);
+    topBlockLayout->addLayout(configAndButtonsLayout);
+    topBlockLayout->addLayout(createSaveDirectoryRow(configRowsWidth, buttonsGap));
+    QWidget *topBlockPanel = new QWidget(this);
+    topBlockPanel->setLayout(topBlockLayout);
+
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->addWidget(topBlockPanel, 0, Qt::AlignLeft);
+    layout->addLayout(createLiveImageDisplays());
+    setLayout(layout);
+
+    setupProgrammedStopTimer();
+
+    // Start in streaming mode: live preview only, not saving. Muscle imaging is
+    // off by default (enableMuscle = false: behavior camera free-runs, blue
+    // excitation LED off). The controller is configured with a single STREAM
+    // command.
+    recordButton_->setEnabled(true);
+    stopButton_->setEnabled(false);
+    muscleImagingCheckBox_->setEnabled(true);
+    programState_->isRecording.store(false);
+    arduinoCommunication_->stream(buildStreamingParams());
+}
+
+void MainGUIWindow::loadRecordingParameters() {
+    streamingBehaviorFPS_ = recorderConfig_.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
 
     // Load rolling shutter parameter
-    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
+    double rollingShutterLineTimeUs = recorderConfig_.getParameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
-    int muscleCamReadoutTimeUs = recorderConfig.getParameter<double>(
+    int muscleCamReadoutTimeUs = recorderConfig_.getParameter<double>(
         "muscle_camera", "sensor_readout_time_us");
 
     // Load streaming sync ratio
-    streamingSyncRatio_ = recorderConfig.getParameter<int>(
+    streamingSyncRatio_ = recorderConfig_.getParameter<int>(
         "muscle_camera", "streaming_sync_ratio");
 
     // The muscle camera is started (and waited for) in run_spotlight_main before
@@ -372,12 +445,13 @@ MainGUIWindow::MainGUIWindow(
         muscleRecordingState_->muscleCamera->getNumLinesScanned() *
         rollingShutterLineTimeUs);
     pcoCamReadoutTimeUs_ = static_cast<unsigned int>(muscleCamReadoutTimeUs);
+}
 
-    // Behavior FPS widget
+QLayout *MainGUIWindow::createBehaviorFPSRow() {
     behaviorFPSSpinBox_ = new QSpinBox(this);
     behaviorFPSSpinBox_->setRange(1, 1000);
     int behaviorCameraDefaultRecordingFrameRate =
-        recorderConfig.getParameter<int>(
+        recorderConfig_.getParameter<int>(
             "behavior_camera", "default_recording_fps");
     behaviorFPSSpinBox_->setValue(behaviorCameraDefaultRecordingFrameRate);
     // Don't connect to ArduinoCommunication! This value is only used during
@@ -386,11 +460,13 @@ MainGUIWindow::MainGUIWindow(
     QHBoxLayout *behaviorFPSLayout = new QHBoxLayout();
     behaviorFPSLayout->addWidget(new QLabel("Behavior FPS (Hz)"));
     behaviorFPSLayout->addWidget(behaviorFPSSpinBox_);
+    return behaviorFPSLayout;
+}
 
-    // Behavior-muscle synchronization ratio
+QLayout *MainGUIWindow::createSyncRatioRow() {
     syncRatioSpinBox_ = new QSpinBox(this);
     syncRatioSpinBox_->setRange(1, INT_MAX);
-    int syncRatio = recorderConfig.getParameter<int>(
+    int syncRatio = recorderConfig_.getParameter<int>(
         "muscle_camera", "default_recording_sync_ratio");
     syncRatioSpinBox_->setValue(syncRatio);
     // Muscle-only parameter: disabled unless muscle imaging is enabled (the
@@ -401,11 +477,13 @@ MainGUIWindow::MainGUIWindow(
     QHBoxLayout *syncRatioLayout = new QHBoxLayout();
     syncRatioLayout->addWidget(new QLabel("Behavior FPS : muscle FPS"));
     syncRatioLayout->addWidget(syncRatioSpinBox_);
+    return syncRatioLayout;
+}
 
-    // Behavior exposure time widget
+QLayout *MainGUIWindow::createBehaviorExposureRow() {
     behaviorExposureTimeSpinBox_ = new QDoubleSpinBox(this);
     behaviorExposureTimeSpinBox_->setRange(0.001, 1000.0);
-    defaultBehExpTimeUs_ = recorderConfig.getParameter<int>(
+    defaultBehExpTimeUs_ = recorderConfig_.getParameter<int>(
         "behavior_camera", "default_exposure_time_us");
     behaviorExposureTimeSpinBox_->setValue(defaultBehExpTimeUs_ / 1000.0);
     // Buffered recording parameter: applied only when a recording starts (see
@@ -418,11 +496,13 @@ MainGUIWindow::MainGUIWindow(
     behaviorExposureTimeLayout->addWidget(
         new QLabel("Behavior exposure time (ms)"));
     behaviorExposureTimeLayout->addWidget(behaviorExposureTimeSpinBox_);
+    return behaviorExposureTimeLayout;
+}
 
-    // Muscle exposure time widget
+QLayout *MainGUIWindow::createMuscleExposureRow() {
     muscleLightOnTimeSpinBox_ = new QDoubleSpinBox(this);
     muscleLightOnTimeSpinBox_->setRange(0.001, 1000.0);
-    defaultMuscLightOnTimeUs_ = recorderConfig.getParameter<int>(
+    defaultMuscLightOnTimeUs_ = recorderConfig_.getParameter<int>(
         "muscle_camera", "default_light_on_time_us");
     muscleLightOnTimeSpinBox_->setValue(defaultMuscLightOnTimeUs_ / 1000.0);
     // Initialize the free-running (auto-sequence) muscle camera to the streaming
@@ -440,34 +520,53 @@ MainGUIWindow::MainGUIWindow(
     muscleLightOnTimeLayout->addWidget(
         new QLabel("Muscle exposure (light-on) time (ms)"));
     muscleLightOnTimeLayout->addWidget(muscleLightOnTimeSpinBox_);
+    return muscleLightOnTimeLayout;
+}
 
-    // Experiment protocol widget
+QLayout *MainGUIWindow::createProtocolRow() {
     QLabel *protocolLabel = new QLabel("Experiment protocol", this);
     experimentProtocol_ = new QTextEdit(this);
     experimentProtocol_->setMinimumHeight(40);
     QVBoxLayout *protocolLayout = new QVBoxLayout();
     protocolLayout->addWidget(protocolLabel);
     protocolLayout->addWidget(experimentProtocol_);
+    return protocolLayout;
+}
 
-    // Save directory widget
+QLayout *MainGUIWindow::createSaveDirectoryRow(
+    int configRowsWidth, int buttonsGap) {
     directoryLineEdit_ = new QLineEdit(this);
-    directoryLineEdit_->setText(saveDirectory->getDirectory().c_str());
+    directoryLineEdit_->setText(saveDirectory_->getDirectory().c_str());
     connect(
         directoryLineEdit_,
         &QLineEdit::textChanged,
         this,
-        [this, saveDirectory](const QString &text) {
+        [this](const QString &text) {
             spdlog::debug("saveDirectory changed to {}", text.toStdString());
-            saveDirectory->setDirectory(text.toStdString());
+            saveDirectory_->setDirectory(text.toStdString());
         });
     QPushButton *browseButton = new QPushButton("Browse", this);
     QPushButton *incrementButton = new QPushButton("Increment", this);
 
+    // The label + text box occupy the same fixed-width column as the config
+    // rows, so the text box's right edge aligns with the spin boxes above. The
+    // Browse / Increment buttons then sit (after the same gap) left-aligned to
+    // the Record / Stop buttons column.
+    QHBoxLayout *labelAndEditLayout = new QHBoxLayout();
+    labelAndEditLayout->setContentsMargins(0, 0, 0, 0);
+    labelAndEditLayout->addWidget(new QLabel("Save directory"));
+    labelAndEditLayout->addWidget(directoryLineEdit_);
+    QWidget *labelAndEditPanel = new QWidget(this);
+    labelAndEditPanel->setLayout(labelAndEditLayout);
+    labelAndEditPanel->setFixedWidth(configRowsWidth);
+
     QHBoxLayout *directoryLayout = new QHBoxLayout();
-    directoryLayout->addWidget(new QLabel("Save Directory"));
-    directoryLayout->addWidget(directoryLineEdit_);
+    directoryLayout->setContentsMargins(0, 0, 0, 0);
+    directoryLayout->addWidget(labelAndEditPanel);
+    directoryLayout->addSpacing(buttonsGap);
     directoryLayout->addWidget(browseButton);
     directoryLayout->addWidget(incrementButton);
+    directoryLayout->addStretch();
 
     connect(
         browseButton,
@@ -479,29 +578,55 @@ MainGUIWindow::MainGUIWindow(
         &QPushButton::clicked,
         this,
         &MainGUIWindow::incrementDirectory);
+    return directoryLayout;
+}
 
-    // Optional features checkboxes: tracking and muscle imaging
-    QHBoxLayout *optionalFeaturesLayout = new QHBoxLayout();
-    optionalFeaturesLayout->addWidget(new QLabel("Optional features"));
-
-    // Check box to enable/disable tracking
-    trackingEnabledCheckBox_ = new QCheckBox("Enable tracking", this);
-    trackingEnabledCheckBox_->setChecked(true);
+QLayout *MainGUIWindow::createBehaviorPreviewColumn(
+    int previewWidth, int columnHeight) {
+    behaviorImageDisplayLabel_ = new QLabel(this);
+    behaviorImageDisplayLabel_->setFixedSize(previewWidth, columnHeight);
+    QVBoxLayout *behaviorColumnLayout = new QVBoxLayout();
+    behaviorColumnLayout->addWidget(new QLabel("Behavior preview", this));
+    behaviorColumnLayout->addWidget(behaviorImageDisplayLabel_);
+    behaviorColumnLayout->addStretch();
+    // Add timer for behavior display updates
+    imageDisplayTimer_ = new QTimer(this);
     connect(
-        trackingEnabledCheckBox_,
-        &QCheckBox::checkStateChanged,
+        imageDisplayTimer_,
+        &QTimer::timeout,
         this,
-        [this, trackingControlState](int state) {
-            if (state == Qt::Checked) {
-                trackingControlState->trackingOn.store(true);
-            } else {
-                trackingControlState->trackingOn.store(false);
-            }
-        });
-    optionalFeaturesLayout->addWidget(trackingEnabledCheckBox_);
+        &MainGUIWindow::updateBehaviorImageDisplay);
+    imageDisplayTimer_->start(1000 / streamingBehaviorFPS_);
+    return behaviorColumnLayout;
+}
 
-    // Check box to enable/disable muscle imaging
-    muscleImagingCheckBox_ = new QCheckBox("Enable muscle imaging", this);
+QLayout *MainGUIWindow::createMusclePreviewColumn(
+    int previewWidth, int previewHeight) {
+    muscleImageDisplayLabel_ = new QLabel(this);
+    muscleImageDisplayLabel_->setFixedSize(previewWidth, previewHeight);
+
+    // Histogram + normalization-range slider for the muscle preview, shown only
+    // while muscle imaging is enabled (toggled by the checkbox above).
+    int histogramDisplayMin = recorderConfig_.getParameter<int>(
+        "muscle_camera", "histogram_display_min");
+    int histogramDisplayMax = recorderConfig_.getParameter<int>(
+        "muscle_camera", "histogram_display_max");
+    int defaultDisplayVmin = recorderConfig_.getParameter<int>(
+        "muscle_camera", "default_display_vmin");
+    int defaultDisplayVmax = recorderConfig_.getParameter<int>(
+        "muscle_camera", "default_display_vmax");
+    muscleHistogramWidget_ = new MuscleHistogramWidget(
+        histogramDisplayMin,
+        histogramDisplayMax,
+        defaultDisplayVmin,
+        defaultDisplayVmax,
+        this);
+    muscleHistogramWidget_->setFixedWidth(previewWidth);
+    muscleHistogramWidget_->setVisible(false);
+
+    // Muscle-imaging on/off checkbox, right-aligned in the column title so it
+    // sits at the right edge of the muscle preview.
+    muscleImagingCheckBox_ = new QCheckBox("Enable", this);
     muscleImagingCheckBox_->setChecked(false);
     connect(
         muscleImagingCheckBox_,
@@ -527,63 +652,24 @@ MainGUIWindow::MainGUIWindow(
                 arduinoCommunication_->stream(buildStreamingParams());
             }
         });
-    optionalFeaturesLayout->addWidget(muscleImagingCheckBox_);
 
-    // Live image displays
-    QHBoxLayout *liveImageDisplayLayout = new QHBoxLayout();
-
-    // Behavior camera preview
-    behaviorImageDisplayLabel_ = new QLabel(this);
-    int behaviorCameraPreviewWidth = recorderConfig.getParameter<int>(
-        "gui", "behavior_camera_preview_width");
-    int behaviorCameraPreviewHeight = recorderConfig.getParameter<int>(
-        "gui", "behavior_camera_preview_height");
-    behaviorImageDisplayLabel_->setFixedSize(
-        behaviorCameraPreviewWidth, behaviorCameraPreviewHeight);
-    liveImageDisplayLayout->addWidget(behaviorImageDisplayLabel_);
-    // Add timer to for behavior display updates
-    imageDisplayTimer_ = new QTimer(this);
-    connect(
-        imageDisplayTimer_,
-        &QTimer::timeout,
-        this,
-        &MainGUIWindow::updateBehaviorImageDisplay);
-    imageDisplayTimer_->start(1000 / streamingBehaviorFPS_);
-
-    // Muscle camera preview
-    muscleImageDisplayLabel_ = new QLabel(this);
-    int muscleCameraPreviewWidth =
-        recorderConfig.getParameter<int>("gui", "muscle_camera_preview_width");
-    int muscleCameraPreviewHeight =
-        recorderConfig.getParameter<int>("gui", "muscle_camera_preview_height");
-    muscleImageDisplayLabel_->setFixedSize(
-        muscleCameraPreviewWidth, muscleCameraPreviewHeight);
-
-    // Histogram + normalization-range slider for the muscle preview, shown only
-    // while muscle imaging is enabled (toggled by the checkbox above).
-    int histogramDisplayMin = recorderConfig.getParameter<int>(
-        "muscle_camera", "histogram_display_min");
-    int histogramDisplayMax = recorderConfig.getParameter<int>(
-        "muscle_camera", "histogram_display_max");
-    int defaultDisplayVmin =
-        recorderConfig.getParameter<int>("muscle_camera", "default_display_vmin");
-    int defaultDisplayVmax =
-        recorderConfig.getParameter<int>("muscle_camera", "default_display_vmax");
-    muscleHistogramWidget_ = new MuscleHistogramWidget(
-        histogramDisplayMin,
-        histogramDisplayMax,
-        defaultDisplayVmin,
-        defaultDisplayVmax,
-        this);
-    muscleHistogramWidget_->setFixedWidth(muscleCameraPreviewWidth);
-    muscleHistogramWidget_->setVisible(false);
-
-    // Stack the muscle preview and its histogram in a column beside the behavior
-    // preview.
-    QVBoxLayout *musclePreviewLayout = new QVBoxLayout();
-    musclePreviewLayout->addWidget(muscleImageDisplayLabel_);
-    musclePreviewLayout->addWidget(muscleHistogramWidget_);
-    liveImageDisplayLayout->addLayout(musclePreviewLayout);
+    // Stack the muscle preview directly on top of its histogram (no gap between
+    // the two), then place that stack under the column title (title text on the
+    // left, the Enable checkbox right-aligned to the preview's right edge).
+    QVBoxLayout *musclePreviewStack = new QVBoxLayout();
+    musclePreviewStack->setSpacing(0);
+    musclePreviewStack->setContentsMargins(0, 0, 0, 0);
+    musclePreviewStack->addWidget(muscleImageDisplayLabel_);
+    musclePreviewStack->addWidget(muscleHistogramWidget_);
+    QHBoxLayout *muscleTitleLayout = new QHBoxLayout();
+    muscleTitleLayout->setContentsMargins(0, 0, 0, 0);
+    muscleTitleLayout->addWidget(new QLabel("Muscle preview", this));
+    muscleTitleLayout->addStretch();
+    muscleTitleLayout->addWidget(muscleImagingCheckBox_);
+    QVBoxLayout *muscleColumnLayout = new QVBoxLayout();
+    muscleColumnLayout->addLayout(muscleTitleLayout);
+    muscleColumnLayout->addLayout(musclePreviewStack);
+    muscleColumnLayout->addStretch();
     // Add timer for muscle display updates
     QTimer *muscleImageDisplayTimer = new QTimer(this);
     connect(
@@ -595,24 +681,103 @@ MainGUIWindow::MainGUIWindow(
         static_cast<float>(streamingBehaviorFPS_) / streamingSyncRatio_;
     spdlog::info("Muscle streaming FPS: {}", muscleStreamingFPS);
     muscleImageDisplayTimer->start(1000 / muscleStreamingFPS);
+    return muscleColumnLayout;
+}
 
-    // Motion stage state display
+QLayout *MainGUIWindow::createStagePreviewColumn() {
     motionControlWidget_ = new MotionControlWidget(
-        recorderConfig,
-        trackingControlState,
+        recorderConfig_,
+        trackingControlState_,
         stageMinXMm_,
         stageMaxXMm_,
         stageMinYMm_,
         stageMaxYMm_,
         this);
+    // Tracking on/off checkbox, right-aligned in the column title so it sits at
+    // the right edge of the stage preview.
+    trackingEnabledCheckBox_ = new QCheckBox("Tracking", this);
+    trackingEnabledCheckBox_->setChecked(true);
+    connect(
+        trackingEnabledCheckBox_,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this](int state) {
+            if (state == Qt::Checked) {
+                trackingControlState_->trackingOn.store(true);
+            } else {
+                trackingControlState_->trackingOn.store(false);
+            }
+        });
+    QHBoxLayout *stageTitleLayout = new QHBoxLayout();
+    stageTitleLayout->setContentsMargins(0, 0, 0, 0);
+    stageTitleLayout->addWidget(new QLabel("Stage position", this));
+    stageTitleLayout->addStretch();
+    stageTitleLayout->addWidget(trackingEnabledCheckBox_);
+    QVBoxLayout *stageColumnLayout = new QVBoxLayout();
+    stageColumnLayout->addLayout(stageTitleLayout);
+    stageColumnLayout->addWidget(motionControlWidget_);
+    stageColumnLayout->addStretch();
+    return stageColumnLayout;
+}
 
-    // Record and stop buttons
+QLayout *MainGUIWindow::createLiveImageDisplays() {
+    // Each preview sits in its own column under a title; the columns are
+    // separated by explicit spacers and top-aligned via a trailing stretch so
+    // their titles and tops line up.
+    QHBoxLayout *liveImageDisplayLayout = new QHBoxLayout();
+    liveImageDisplayLayout->setSpacing(0);
+
+    int muscleCameraPreviewWidth =
+        recorderConfig_.getParameter<int>("gui", "muscle_camera_preview_width");
+    int muscleCameraPreviewHeight =
+        recorderConfig_.getParameter<int>("gui", "muscle_camera_preview_height");
+    // The muscle column is the muscle preview stacked on top of its histogram /
+    // slider; size the behavior preview to that combined height so the two
+    // columns line up.
+    int muscleColumnHeight = muscleCameraPreviewHeight + kHistogramWidgetHeight;
+
+    // Derive the behavior preview width from the displayed behavior frame's
+    // aspect ratio, so the image fills the label exactly with no left/right
+    // padding (which would otherwise widen the gap to the muscle preview beyond
+    // the muscle-to-stage gap). The behavior frame is rotated 90 degrees for
+    // display (see reorientBehaviorImage), so its displayed width:height ratio is
+    // the ROI height:width.
+    int behaviorRoiWidth =
+        recorderConfig_.getParameter<int>("behavior_camera", "roi_width");
+    int behaviorRoiHeight =
+        recorderConfig_.getParameter<int>("behavior_camera", "roi_height");
+    int behaviorCameraPreviewWidth = calculateBehaviorCameraPreviewWidth(
+        muscleColumnHeight, behaviorRoiHeight, behaviorRoiWidth);
+
+    liveImageDisplayLayout->addLayout(createBehaviorPreviewColumn(
+        behaviorCameraPreviewWidth, muscleColumnHeight));
+    // 0.5x the muscle-to-stage gap separates the behavior and muscle columns.
+    liveImageDisplayLayout->addSpacing(20);
+    liveImageDisplayLayout->addLayout(createMusclePreviewColumn(
+        muscleCameraPreviewWidth, muscleCameraPreviewHeight));
+    // Motion stage state display, placed to the right of the muscle preview to
+    // keep the window from getting too tall. It stays there whether or not
+    // muscle imaging is enabled. Same 20 px gap between the muscle and stage
+    // columns.
+    liveImageDisplayLayout->addSpacing(20);
+    liveImageDisplayLayout->addLayout(createStagePreviewColumn());
+    liveImageDisplayLayout->addStretch();
+    return liveImageDisplayLayout;
+}
+
+QLayout *MainGUIWindow::createRecordStopButtons() {
+    // Slightly larger than the other buttons and placed to the right of the
+    // config text boxes (see final layout assembly).
     recordButton_ = new QPushButton("Record", this);
     stopButton_ = new QPushButton("Stop", this);
     stopButton_->setEnabled(false); // initially disabled
-    QHBoxLayout *recordStopButtonsLayout = new QHBoxLayout();
+    recordButton_->setMinimumSize(120, 50);
+    stopButton_->setMinimumSize(120, 50);
+    QVBoxLayout *recordStopButtonsLayout = new QVBoxLayout();
+    recordStopButtonsLayout->addStretch();
     recordStopButtonsLayout->addWidget(recordButton_);
     recordStopButtonsLayout->addWidget(stopButton_);
+    recordStopButtonsLayout->addStretch();
     connect(
         recordButton_,
         &QPushButton::clicked,
@@ -623,23 +788,25 @@ MainGUIWindow::MainGUIWindow(
         &QPushButton::clicked,
         this,
         &MainGUIWindow::stopRecording);
+    return recordStopButtonsLayout;
+}
 
-    // Add timer to keep checking for programmedRecordingStop. The acquirer
-    // threads stop recording exactly on the programmed frame count by
-    // themselves; this only finalizes the GUI (reverts the UI and cameras to
+void MainGUIWindow::setupProgrammedStopTimer() {
+    // The acquirer threads stop recording exactly on the programmed frame count
+    // by themselves; this only finalizes the GUI (reverts the UI and cameras to
     // streaming) shortly after.
     QTimer *programmedStopCheckTimer = new QTimer(this);
     connect(
         programmedStopCheckTimer,
         &QTimer::timeout,
         this,
-        [this, programmedRecordingStop]() {
-            if (programmedRecordingStop->programmedStopReached.load()) {
+        [this]() {
+            if (programmedRecordingStop_->programmedStopReached.load()) {
                 spdlog::info("Protocol stop reached. Finalizing recording.");
                 endRecording(/*reachedProgrammedEnd=*/true);
-                programmedRecordingStop->numBehaviorFramesExpected = -1;
-                programmedRecordingStop->numMuscleFramesExpected = -1;
-                programmedRecordingStop->programmedStopReached.store(
+                programmedRecordingStop_->numBehaviorFramesExpected = -1;
+                programmedRecordingStop_->numMuscleFramesExpected = -1;
+                programmedRecordingStop_->programmedStopReached.store(
                     false); // toggle off
                 QMessageBox::information(
                     this,
@@ -648,30 +815,6 @@ MainGUIWindow::MainGUIWindow(
             }
         });
     programmedStopCheckTimer->start(500); // Check every 0.5 second
-
-    // Arrange layout
-    QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->addLayout(behaviorFPSLayout);
-    layout->addLayout(syncRatioLayout);
-    layout->addLayout(behaviorExposureTimeLayout);
-    layout->addLayout(muscleLightOnTimeLayout);
-    layout->addLayout(protocolLayout);
-    layout->addLayout(directoryLayout);
-    layout->addLayout(optionalFeaturesLayout);
-    layout->addLayout(liveImageDisplayLayout);
-    layout->addWidget(motionControlWidget_);
-    layout->addLayout(recordStopButtonsLayout);
-    setLayout(layout);
-
-    // Start in streaming mode: live preview only, not saving. Muscle imaging is
-    // off by default (enableMuscle = false: behavior camera free-runs, blue
-    // excitation LED off). The controller is configured with a single STREAM
-    // command.
-    recordButton_->setEnabled(true);
-    stopButton_->setEnabled(false);
-    muscleImagingCheckBox_->setEnabled(true);
-    programState_->isRecording.store(false);
-    arduinoCommunication->stream(buildStreamingParams());
 }
 
 bool MainGUIWindow::validateAndPrepareRecording(
@@ -754,7 +897,72 @@ void MainGUIWindow::startRecording() {
         return;
     }
 
-    // Warn if the save directory already exists and is non-empty
+    // Warn if the save directory already exists and is non-empty, letting the
+    // user overwrite it, auto-increment to a free directory, or cancel.
+    if (!confirmOrResolveSaveDirectory()) {
+        return;
+    }
+
+    // Validate the experiment protocol and (when imaging muscle) the muscle
+    // trigger timing before any side effects -- camera exposure change, button
+    // toggles, directory creation, metadata writes -- so an invalid
+    // configuration aborts cleanly and leaves nothing behind. The derived muscle
+    // timing is returned for the metadata and the exposure update below.
+    std::deque<OperationStep> opSequence;
+    int muscleNominalExposureUs = 0;
+    int muscleBufferTimeUs = 0;
+    if (!validateAndPrepareRecording(
+            opSequence, muscleNominalExposureUs, muscleBufferTimeUs)) {
+        return;
+    }
+
+    // Switch the free-running camera to the recording muscle frame rate before
+    // START_RECORDING, so it is already emitting common-time onsets at the
+    // recording cadence when the firmware begins locking the behavior frames to
+    // them. The controller's camFlushTimeUs delay covers the transient while the
+    // new exposure takes effect.
+    if (muscleImagingCheckBox_->isChecked()) {
+        muscleRecordingState_->muscleCamera->setNominalExposureUs(
+            static_cast<unsigned int>(muscleNominalExposureUs));
+    }
+
+    // Toggle GUI buttons
+    recordButton_->setEnabled(false);
+    stopButton_->setEnabled(true);
+    muscleImagingCheckBox_->setEnabled(false);
+
+    // Initialize save directory
+    saveDirectory_->initialize();
+
+    // Save the recording metadata into the freshly created save directory. These
+    // read the recording parameters directly off the widgets.
+    writeExperimentParameters(muscleNominalExposureUs, muscleBufferTimeUs);
+    writeRecorderConfig();
+    writeBehaviorCalibrationParameters();
+
+    // Send triggering parameters and start recording. The controller reverts to
+    // the streaming (revert-to) params when the recording ends.
+    TriggerParams recParams = buildRecordingParams();
+    TriggerParams revertToParams = buildStreamingParams();
+    arduinoCommunication_->startRecording(recParams, revertToParams, opSequence);
+
+    // The controller waits camFlushTimeUs after START_RECORDING before it starts
+    // triggering, so that frames acquired with the previous (streaming) params
+    // drain out of the camera buffers. Ignore frames for a fraction of that
+    // window on this side too, so the recording does not begin with stale frames
+    // (see camFlushTimeUs in comm_protocol/protocol.h).
+    std::this_thread::sleep_for(
+        std::chrono::microseconds(camFlushTimeUs * 8 / 10));
+    programState_->isRecording.store(true);
+
+    spdlog::info(
+        "Recording STARTED: {} recording, muscle imaging {}. Saving to '{}'",
+        currentRecordingIsScheduled_ ? "scheduled" : "open",
+        muscleImagingCheckBox_->isChecked() ? "enabled" : "disabled",
+        saveDirectory_->getDirectory().string());
+}
+
+bool MainGUIWindow::confirmOrResolveSaveDirectory() {
     std::filesystem::path saveDir = saveDirectory_->getDirectory();
     while (std::filesystem::is_directory(saveDir) &&
            !std::filesystem::is_empty(saveDir)) {
@@ -790,95 +998,72 @@ void MainGUIWindow::startRecording() {
                 QString::fromStdString(saveDir.string()));
             saveDir = saveDirectory_->getDirectory();
         } else {
-            return;
+            return false;
         }
     }
+    return true;
+}
 
-    // Validate the experiment protocol and (when imaging muscle) the muscle
-    // trigger timing before any side effects -- camera exposure change, button
-    // toggles, directory creation, metadata writes -- so an invalid
-    // configuration aborts cleanly and leaves nothing behind. The derived muscle
-    // timing is returned for the metadata and the exposure update below.
-    std::deque<OperationStep> opSequence;
-    int muscleNominalExposureUs = 0;
-    int muscleBufferTimeUs = 0;
-    if (!validateAndPrepareRecording(
-            opSequence, muscleNominalExposureUs, muscleBufferTimeUs)) {
-        return;
-    }
-
-    // Switch the free-running camera to the recording muscle frame rate before
-    // START_RECORDING, so it is already emitting common-time onsets at the
-    // recording cadence when the firmware begins locking the behavior frames to
-    // them. The controller's camFlushTimeUs delay covers the transient while the
-    // new exposure takes effect.
-    if (muscleImagingCheckBox_->isChecked()) {
-        muscleRecordingState_->muscleCamera->setNominalExposureUs(
-            static_cast<unsigned int>(muscleNominalExposureUs));
-    }
-
-    // Toggle GUI buttons
-    recordButton_->setEnabled(false);
-    stopButton_->setEnabled(true);
-    muscleImagingCheckBox_->setEnabled(false);
-
-    // Initialize save directory
-    saveDirectory_->initialize();
-
-    // Save metadata: experiment parameters
-    std::filesystem::path experimentParametersFilePath =
+void MainGUIWindow::writeExperimentParameters(
+    int muscleNominalExposureUs, int muscleBufferTimeUs) {
+    std::filesystem::path outputPath =
         saveDirectory_->getDirectory() / "metadata/experiment_parameters.yaml";
-    writeExperimentParameters(
-        experimentParametersFilePath,
-        behaviorFPSSpinBox_->value(),
-        muscleImagingCheckBox_->isChecked(),
-        syncRatioSpinBox_->value(),
-        // Convert ms to us
-        static_cast<int>(behaviorExposureTimeSpinBox_->value() * 1000),
-        static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000),
-        muscleNominalExposureUs,
-        muscleBufferTimeUs,
-        experimentProtocol_->toPlainText().toStdString());
-    spdlog::info(
-        "Saved experiment parameters to '{}'",
-        experimentParametersFilePath.string());
+    bool muscleImagingEnabled = muscleImagingCheckBox_->isChecked();
 
-    // Save metadata: recording config
-    std::filesystem::path recordingConfigFilePath =
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    out << YAML::Key << "behavior_fps" << YAML::Value
+        << behaviorFPSSpinBox_->value();
+    out << YAML::Key << "muscle_imaging_enabled" << YAML::Value
+        << muscleImagingEnabled;
+    out << YAML::Key << "muscle_sync_ratio" << YAML::Value
+        << syncRatioSpinBox_->value();
+    // Convert ms to us.
+    out << YAML::Key << "behavior_exposure_time_us" << YAML::Value
+        << static_cast<int>(behaviorExposureTimeSpinBox_->value() * 1000);
+    out << YAML::Key << "muscle_light_on_time_us" << YAML::Value
+        << static_cast<int>(muscleLightOnTimeSpinBox_->value() * 1000);
+    // The derived continuous-mode (auto-sequence) timing -- the nominal per-line
+    // exposure programmed into the camera and the slack in the common-time window
+    // beyond the light-on time -- is only meaningful when imaging muscle.
+    if (muscleImagingEnabled) {
+        out << YAML::Key << "muscle_nominal_exposure_us" << YAML::Value
+            << muscleNominalExposureUs;
+        out << YAML::Key << "muscle_buffer_time_us" << YAML::Value
+            << muscleBufferTimeUs;
+    }
+    out << YAML::Key << "experiment_protocol" << YAML::Value
+        << experimentProtocol_->toPlainText().toStdString();
+    out << YAML::EndMap;
+
+    std::ofstream fout(outputPath);
+    if (!fout.is_open()) {
+        std::string errorMessage =
+            "Failed to open file for writing experiment parameters: " +
+            outputPath.string();
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+    fout << out.c_str();
+    fout.close();
+
+    spdlog::info("Saved experiment parameters to '{}'", outputPath.string());
+}
+
+void MainGUIWindow::writeRecorderConfig() {
+    std::filesystem::path outputPath =
         saveDirectory_->getDirectory() / "metadata/recorder_config.yaml";
-    recorderConfig_.saveToFile(recordingConfigFilePath);
-    spdlog::info(
-        "Saved recorder config to '{}'", recordingConfigFilePath.string());
+    recorderConfig_.saveToFile(outputPath);
+    spdlog::info("Saved recorder config to '{}'", outputPath.string());
+}
 
-    // Save metadata: calibration parameters
-    std::filesystem::path behaviorCalibrationFilePath =
+void MainGUIWindow::writeBehaviorCalibrationParameters() {
+    std::filesystem::path outputPath =
         saveDirectory_->getDirectory() /
         "metadata/calibration_parameters_behavior.yaml";
-    behaviorCamCalibrationParams_.saveToFile(behaviorCalibrationFilePath);
+    behaviorCamCalibrationParams_.saveToFile(outputPath);
     spdlog::info(
-        "Saved behavior calibration parameters to '{}'",
-        behaviorCalibrationFilePath.string());
-
-    // Send triggering parameters and start recording. The controller reverts to
-    // the streaming (revert-to) params when the recording ends.
-    TriggerParams recParams = buildRecordingParams();
-    TriggerParams revertToParams = buildStreamingParams();
-    arduinoCommunication_->startRecording(recParams, revertToParams, opSequence);
-
-    // The controller waits camFlushTimeUs after START_RECORDING before it starts
-    // triggering, so that frames acquired with the previous (streaming) params
-    // drain out of the camera buffers. Ignore frames for a fraction of that
-    // window on this side too, so the recording does not begin with stale frames
-    // (see camFlushTimeUs in comm_protocol/protocol.h).
-    std::this_thread::sleep_for(
-        std::chrono::microseconds(camFlushTimeUs * 8 / 10));
-    programState_->isRecording.store(true);
-
-    spdlog::info(
-        "Recording STARTED: {} recording, muscle imaging {}. Saving to '{}'",
-        currentRecordingIsScheduled_ ? "scheduled" : "open",
-        muscleImagingCheckBox_->isChecked() ? "enabled" : "disabled",
-        saveDirectory_->getDirectory().string());
+        "Saved behavior calibration parameters to '{}'", outputPath.string());
 }
 
 void MainGUIWindow::stopRecording() {
@@ -1011,9 +1196,16 @@ void MainGUIWindow::browseDirectory() {
 }
 
 void MainGUIWindow::incrementDirectory() {
-    std::string current = saveDirectory_->getDirectory().string();
-    std::string incremented = incrementDirectoryName(current);
-    directoryLineEdit_->setText(QString::fromStdString(incremented));
+    // Increment at least once, then keep incrementing until we land on a free
+    // (non-existent or empty) directory, matching the auto-increment behavior
+    // used when starting a recording (see confirmOrResolveSaveDirectory).
+    std::filesystem::path incremented =
+        incrementDirectoryName(saveDirectory_->getDirectory().string());
+    while (std::filesystem::is_directory(incremented) &&
+           !std::filesystem::is_empty(incremented)) {
+        incremented = incrementDirectoryName(incremented.string());
+    }
+    directoryLineEdit_->setText(QString::fromStdString(incremented.string()));
 }
 
 cv::Mat addCornerMarker(

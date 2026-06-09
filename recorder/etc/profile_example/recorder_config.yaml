@@ -27,6 +27,8 @@ muscle_camera:
   histogram_display_max: 1400
   default_display_vmin: 200
   default_display_vmax: 800
+  align_cameras_display_vmin: 0
+  align_cameras_display_vmax: 400
   # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
   # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
   rolling_shutter_line_time_us: 12.136
@@ -64,10 +66,11 @@ triggering:
   arduino_device_description: "Nano ESP32"
 
 gui:
-  behavior_camera_preview_width: 490
-  behavior_camera_preview_height: 490
+  # The behavior preview height matches the full muscle display height (muscle
+  # preview + histogram) and its width is derived in code from the behavior ROI
+  # aspect ratio, so both are computed rather than configured here.
   muscle_camera_preview_width: 490
   muscle_camera_preview_height: 490
-  motion_stage_preview_height: 200
+  motion_stage_preview_height: 300
   motion_stage_preview_update_frequency_hz: 25
   default_save_dir: "./images/"

@@ -164,6 +164,41 @@ class MainGUIWindow : public QWidget {
         int &muscleNominalExposureUs,
         int &muscleBufferTimeUs);
 
+    // --- Constructor helpers ---
+    // Read the streaming parameters and cache the PCO sensor timing into
+    // members (must run before the create*() helpers and buildStreamingParams).
+    void loadRecordingParameters();
+    // Each create*Row()/create*Column() builds one part of the GUI, stores the
+    // relevant widget pointers in members, and returns the assembled layout.
+    QLayout *createBehaviorFPSRow();
+    QLayout *createSyncRatioRow();
+    QLayout *createBehaviorExposureRow();
+    QLayout *createMuscleExposureRow();
+    QLayout *createProtocolRow();
+    QLayout *createSaveDirectoryRow(int configRowsWidth, int buttonsGap);
+    QLayout *createBehaviorPreviewColumn(int previewWidth, int columnHeight);
+    QLayout *createMusclePreviewColumn(int previewWidth, int previewHeight);
+    QLayout *createStagePreviewColumn();
+    QLayout *createLiveImageDisplays();
+    QLayout *createRecordStopButtons();
+    // Poll for a programmed (protocol-driven) stop and finalize the GUI when it
+    // is reached.
+    void setupProgrammedStopTimer();
+
+    // --- startRecording() helpers ---
+    // Resolve a save directory that already exists and is non-empty by prompting
+    // the user (overwrite / auto-increment / cancel). Returns false if the user
+    // cancelled, in which case the recording must not start.
+    bool confirmOrResolveSaveDirectory();
+    // Write the recording metadata files into the (already created) save
+    // directory, reading the recording parameters directly from the widgets. The
+    // muscle timing passed to writeExperimentParameters is the derived
+    // continuous-mode timing from validateAndPrepareRecording().
+    void writeExperimentParameters(
+        int muscleNominalExposureUs, int muscleBufferTimeUs);
+    void writeRecorderConfig();
+    void writeBehaviorCalibrationParameters();
+
     std::shared_ptr<ProgramState> programState_;
     QSpinBox *behaviorFPSSpinBox_;
     QSpinBox *syncRatioSpinBox_;

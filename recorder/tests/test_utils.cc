@@ -235,40 +235,11 @@ TEST(ExpandPath, LeavesOtherPathsUntouched) {
 /* File / IO helpers                                                          */
 /* -------------------------------------------------------------------------- */
 
-TEST(WriteExperimentParameters, WritesReadableYaml) {
-    TempDir dir;
-    fs::path out = dir.file("experiment_parameters.yaml");
-    writeExperimentParameters(
-        out, /*behavior_fps=*/100, /*muscle_imaging_enabled=*/true,
-        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_us=*/2500,
-        /*muscle_light_on_time_us=*/8000, /*muscle_nominal_exposure_us=*/12000,
-        /*muscle_buffer_time_us=*/4000, "opto_protocol_A");
-
-    YAML::Node node = YAML::LoadFile(out.string());
-    EXPECT_EQ(node["behavior_fps"].as<int>(), 100);
-    EXPECT_TRUE(node["muscle_imaging_enabled"].as<bool>());
-    EXPECT_EQ(node["muscle_sync_ratio"].as<int>(), 3);
-    EXPECT_EQ(node["behavior_exposure_time_us"].as<int>(), 2500);
-    EXPECT_EQ(node["muscle_light_on_time_us"].as<int>(), 8000);
-    EXPECT_EQ(node["muscle_nominal_exposure_us"].as<int>(), 12000);
-    EXPECT_EQ(node["muscle_buffer_time_us"].as<int>(), 4000);
-    EXPECT_EQ(node["experiment_protocol"].as<std::string>(), "opto_protocol_A");
-}
-
-TEST(WriteExperimentParameters, OmitsMuscleTimingWhenMuscleDisabled) {
-    TempDir dir;
-    fs::path out = dir.file("experiment_parameters.yaml");
-    writeExperimentParameters(
-        out, /*behavior_fps=*/100, /*muscle_imaging_enabled=*/false,
-        /*muscle_sync_ratio=*/3, /*behavior_exposure_time_us=*/2500,
-        /*muscle_light_on_time_us=*/8000, /*muscle_nominal_exposure_us=*/0,
-        /*muscle_buffer_time_us=*/0, "opto_protocol_A");
-
-    YAML::Node node = YAML::LoadFile(out.string());
-    EXPECT_FALSE(node["muscle_imaging_enabled"].as<bool>());
-    EXPECT_FALSE(node["muscle_nominal_exposure_us"]);
-    EXPECT_FALSE(node["muscle_buffer_time_us"]);
-}
+// NOTE: the experiment-parameters YAML writer used to be a free function
+// (writeExperimentParameters) and was unit-tested here. It now lives as a
+// private MainGUIWindow method that reads the recording parameters directly off
+// the GUI widgets, so it is no longer reachable from these hardware-independent
+// tests. The two tests that covered it were removed with that refactor.
 
 TEST(PrepareOutputFolder, CreatesDirectoryAndReturnsAbsolutePath) {
     TempDir dir;

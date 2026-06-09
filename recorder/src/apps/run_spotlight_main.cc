@@ -23,6 +23,113 @@ std::shared_ptr<ProgramState> programState;
 std::shared_ptr<BehaviorRecordingState> behaviorRecordingState;
 std::shared_ptr<MuscleRecordingState> muscleRecordingState;
 std::shared_ptr<ArduinoCommunication> arduinoCommunication;
+
+// Stage range (mm) covering the arena, for the motion-stage preview widget.
+struct StageRange {
+    double minXMm, maxXMm, minYMm, maxYMm;
+};
+
+StageRange computeStageRangeFromArena(
+    const std::filesystem::path &arenaDir,
+    RecorderConfig &recorderConfig,
+    CalibrationParams &behaviorCamCalibrationParams)
+/**
+ * Compute the stage range covering the arena, for the motion-stage preview
+ * widget. Read arena dimensions from <arenaDir>/metadata.yaml, then invert the
+ * calibration model at the image center to find which stage position
+ * corresponds to each of the four arena corners. The computed limits are
+ * clipped to [0, physical_range_limit_mm].
+ *
+ * Side effect: registers the clipped limits as software motion stage limits via
+ * setMotionStageLimits() so setTargetMotionStagePosition() clamps.
+ */
+{
+    std::filesystem::path arenaMetadataPath = arenaDir / "metadata.yaml";
+    if (!std::filesystem::exists(arenaMetadataPath)) {
+        std::string errorMessage = fmt::format(
+            "Arena metadata file not found: {}", arenaMetadataPath.string());
+        spdlog::critical(errorMessage);
+        throw std::runtime_error(errorMessage);
+    }
+    YAML::Node arenaMetadata = YAML::LoadFile(arenaMetadataPath.string());
+    auto arenaDim = arenaMetadata["arena_dim"].as<std::vector<double>>();
+    double arenaSizeXMm = arenaDim[0];
+    double arenaSizeYMm = arenaDim[1];
+    // Saved/registration images are rotated 90 deg CCW from the raw
+    // sensor, so the image's column count equals the sensor ROI height
+    // and its row count equals the ROI width.
+    int roiWidth =
+        recorderConfig.getParameter<int>("behavior_camera", "roi_width");
+    int roiHeight =
+        recorderConfig.getParameter<int>("behavior_camera", "roi_height");
+    int imageCenterCol = roiHeight / 2;
+    int imageCenterRow = roiWidth / 2;
+    double stageMinXMm = std::numeric_limits<double>::infinity();
+    double stageMaxXMm = -std::numeric_limits<double>::infinity();
+    double stageMinYMm = std::numeric_limits<double>::infinity();
+    double stageMaxYMm = -std::numeric_limits<double>::infinity();
+    for (const auto &corner : std::vector<std::pair<double, double>>{
+             {0.0, 0.0},
+             {arenaSizeXMm, 0.0},
+             {arenaSizeXMm, arenaSizeYMm},
+             {0.0, arenaSizeYMm},
+         }) {
+        auto [sx, sy] =
+            behaviorCamCalibrationParams.physicalPosAndPixelPosToStagePos(
+                corner.first, corner.second, imageCenterRow, imageCenterCol);
+        stageMinXMm = std::min(stageMinXMm, sx);
+        stageMaxXMm = std::max(stageMaxXMm, sx);
+        stageMinYMm = std::min(stageMinYMm, sy);
+        stageMaxYMm = std::max(stageMaxYMm, sy);
+    }
+    spdlog::info(
+        "Stage range covering arena {}x{} mm: X=[{:.3f}, {:.3f}], "
+        "Y=[{:.3f}, {:.3f}] mm",
+        arenaSizeXMm,
+        arenaSizeYMm,
+        stageMinXMm,
+        stageMaxXMm,
+        stageMinYMm,
+        stageMaxYMm);
+
+    // Clip computed limits to [0, physical_range_limit_mm] and register them
+    // as software motion stage limits so setTargetMotionStagePosition() clamps.
+    double physicalRangeLimitMm = recorderConfig.getParameter<double>(
+        "motion_control", "physical_range_limit_mm");
+    auto clipToPhysicalRange =
+        [physicalRangeLimitMm](double val, const char *name) -> double {
+        double clipped = std::clamp(val, 0.0, physicalRangeLimitMm);
+        if (clipped != val) {
+            spdlog::warn(
+                "Software stage limit {} ({:.3f} mm) falls outside physical "
+                "range [0, {:.3f}] mm; clamping to {:.3f} mm.",
+                name,
+                val,
+                physicalRangeLimitMm,
+                clipped);
+        }
+        return clipped;
+    };
+    stageMinXMm = clipToPhysicalRange(stageMinXMm, "stageMinX");
+    stageMaxXMm = clipToPhysicalRange(stageMaxXMm, "stageMaxX");
+    stageMinYMm = clipToPhysicalRange(stageMinYMm, "stageMinY");
+    stageMaxYMm = clipToPhysicalRange(stageMaxYMm, "stageMaxY");
+    setMotionStageLimits(stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm);
+
+    return {stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm};
+}
+
+void joinIfJoinable(std::thread &thread, const char *name)
+/**
+ * Join `thread` if it is joinable, logging before and after.
+ */
+{
+    spdlog::debug("Waiting for {} to finish", name);
+    if (thread.joinable()) {
+        thread.join();
+    }
+    spdlog::debug("{} finished", name);
+}
 } // namespace
 
 bool quitProgram()
@@ -154,81 +261,10 @@ int runSpotlightMain(int argc, char **argv) {
         behaviorCamCalibrationParams.stageAndPixelToPhysical);
     spdlog::info("Loaded active area mask from {}", arenaDir.string());
 
-    // Compute the stage range covering the arena, for the motion-stage
-    // preview widget. Read arena dimensions from <arenaDir>/metadata.yaml,
-    // then invert the calibration model at the image center to find which
-    // stage position corresponds to each of the four arena corners.
-    std::filesystem::path arenaMetadataPath = arenaDir / "metadata.yaml";
-    if (!std::filesystem::exists(arenaMetadataPath)) {
-        std::string errorMessage = fmt::format(
-            "Arena metadata file not found: {}", arenaMetadataPath.string());
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
-    }
-    YAML::Node arenaMetadata = YAML::LoadFile(arenaMetadataPath.string());
-    auto arenaDim = arenaMetadata["arena_dim"].as<std::vector<double>>();
-    double arenaSizeXMm = arenaDim[0];
-    double arenaSizeYMm = arenaDim[1];
-    // Saved/registration images are rotated 90 deg CCW from the raw
-    // sensor, so the image's column count equals the sensor ROI height
-    // and its row count equals the ROI width.
-    int roiWidth =
-        recorderConfig.getParameter<int>("behavior_camera", "roi_width");
-    int roiHeight =
-        recorderConfig.getParameter<int>("behavior_camera", "roi_height");
-    int imageCenterCol = roiHeight / 2;
-    int imageCenterRow = roiWidth / 2;
-    double stageMinXMm = std::numeric_limits<double>::infinity();
-    double stageMaxXMm = -std::numeric_limits<double>::infinity();
-    double stageMinYMm = std::numeric_limits<double>::infinity();
-    double stageMaxYMm = -std::numeric_limits<double>::infinity();
-    for (const auto &corner : std::vector<std::pair<double, double>>{
-             {0.0, 0.0},
-             {arenaSizeXMm, 0.0},
-             {arenaSizeXMm, arenaSizeYMm},
-             {0.0, arenaSizeYMm},
-         }) {
-        auto [sx, sy] =
-            behaviorCamCalibrationParams.physicalPosAndPixelPosToStagePos(
-                corner.first, corner.second, imageCenterRow, imageCenterCol);
-        stageMinXMm = std::min(stageMinXMm, sx);
-        stageMaxXMm = std::max(stageMaxXMm, sx);
-        stageMinYMm = std::min(stageMinYMm, sy);
-        stageMaxYMm = std::max(stageMaxYMm, sy);
-    }
-    spdlog::info(
-        "Stage range covering arena {}x{} mm: X=[{:.3f}, {:.3f}], "
-        "Y=[{:.3f}, {:.3f}] mm",
-        arenaSizeXMm,
-        arenaSizeYMm,
-        stageMinXMm,
-        stageMaxXMm,
-        stageMinYMm,
-        stageMaxYMm);
-
-    // Clip computed limits to [0, physical_range_limit_mm] and register them
-    // as software motion stage limits so setTargetMotionStagePosition() clamps.
-    double physicalRangeLimitMm = recorderConfig.getParameter<double>(
-        "motion_control", "physical_range_limit_mm");
-    auto clipToPhysicalRange =
-        [physicalRangeLimitMm](double val, const char *name) -> double {
-        double clipped = std::clamp(val, 0.0, physicalRangeLimitMm);
-        if (clipped != val) {
-            spdlog::warn(
-                "Software stage limit {} ({:.3f} mm) falls outside physical "
-                "range [0, {:.3f}] mm; clamping to {:.3f} mm.",
-                name,
-                val,
-                physicalRangeLimitMm,
-                clipped);
-        }
-        return clipped;
-    };
-    stageMinXMm = clipToPhysicalRange(stageMinXMm, "stageMinX");
-    stageMaxXMm = clipToPhysicalRange(stageMaxXMm, "stageMaxX");
-    stageMinYMm = clipToPhysicalRange(stageMinYMm, "stageMinY");
-    stageMaxYMm = clipToPhysicalRange(stageMaxYMm, "stageMaxY");
-    setMotionStageLimits(stageMinXMm, stageMaxXMm, stageMinYMm, stageMaxYMm);
+    // Compute the stage range covering the arena, for the motion-stage preview
+    // widget. Also registers software motion stage limits as a side effect.
+    StageRange stageRange = computeStageRangeFromArena(
+        arenaDir, recorderConfig, behaviorCamCalibrationParams);
 
     // Initialize behavior and muscle imaging states
     behaviorRecordingState = std::make_shared<BehaviorRecordingState>();
@@ -362,10 +398,10 @@ int runSpotlightMain(int argc, char **argv) {
         programState,
         programmedRecordingStop,
         activeAreaMask,
-        stageMinXMm,
-        stageMaxXMm,
-        stageMinYMm,
-        stageMaxYMm,
+        stageRange.minXMm,
+        stageRange.maxXMm,
+        stageRange.minYMm,
+        stageRange.maxYMm,
         nullptr);
     mainGUIWindow = &localMainGUIWindow;
     mainGUIWindow->show();
@@ -373,53 +409,24 @@ int runSpotlightMain(int argc, char **argv) {
     int result = application->exec();
 
     // Wait for threads to finish
-    spdlog::debug("Waiting for behavior image acquirer thread to finish");
-    if (behaviorImageAcquirerThread.joinable()) {
-        behaviorImageAcquirerThread.join();
-    }
-    spdlog::debug("Behavior image acquirer thread finished");
+    joinIfJoinable(
+        behaviorImageAcquirerThread, "behavior image acquirer thread");
 
     for (auto &thread : behaviorImageSaverThreads) {
-        spdlog::debug(
-            "Waiting for one of the behavior image saver threads to finish");
-        if (thread.joinable()) {
-            thread.join();
-        }
-        spdlog::debug("One of the behavior image saver threads finished");
+        joinIfJoinable(thread, "one of the behavior image saver threads");
     }
 
-    spdlog::debug("Waiting for muscle image acquirer thread to finish");
-    if (muscleImageAcquirerThread.joinable()) {
-        muscleImageAcquirerThread.join();
-    }
-    spdlog::debug("Muscle image acquirer thread finished");
+    joinIfJoinable(muscleImageAcquirerThread, "muscle image acquirer thread");
 
     for (auto &thread : muscleImageSaverThreads) {
-        spdlog::debug(
-            "Waiting for one of the muscle image saver threads to finish");
-        if (thread.joinable()) {
-            thread.join();
-        }
-        spdlog::debug("One of the muscle image saver threads finished");
+        joinIfJoinable(thread, "one of the muscle image saver threads");
     }
 
-    spdlog::debug("Waiting for motion control IO thread to finish");
-    if (motionControlIOThread.joinable()) {
-        motionControlIOThread.join();
-    }
-    spdlog::debug("Motion control IO thread finished");
-
-    spdlog::debug("Waiting for motion stage position logger thread to finish");
-    if (motionStagePositionLoggerThread.joinable()) {
-        motionStagePositionLoggerThread.join();
-    }
-    spdlog::debug("Motion stage position logger thread finished");
-
-    spdlog::debug("Waiting for tracking controller thread to finish");
-    if (trackingControllerThread.joinable()) {
-        trackingControllerThread.join();
-    }
-    spdlog::debug("Tracking controller thread finished");
+    joinIfJoinable(motionControlIOThread, "motion control IO thread");
+    joinIfJoinable(
+        motionStagePositionLoggerThread,
+        "motion stage position logger thread");
+    joinIfJoinable(trackingControllerThread, "tracking controller thread");
 
     return result;
 }
