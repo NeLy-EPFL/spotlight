@@ -44,12 +44,19 @@ bool quitProgram()
         behaviorRecordingState->behaviorCamera->stop();
     }
 
-    // Terminate PCO camera server
+    // Terminate PCO camera server. stop() is bounded (SIGTERM, then SIGKILL
+    // after a grace period), so an unresponsive server can never block the
+    // shutdown indefinitely.
+    //
+    // We deliberately do NOT reset muscleRecordingState->muscleCamera here: the
+    // muscle acquirer thread dereferences that shared_ptr without taking its own
+    // copy, so destroying the MuscleCamera now would be a use-after-free. Once
+    // the server is gone the acquirer blocks forever in waitForOneFrame()'s
+    // pthread_cond_wait, but it is abandoned at std::exit() below, with the
+    // MuscleCamera object left alive and valid until the process exits.
     if (muscleRecordingState->muscleCamera) {
         spdlog::info("Stopping acquisition on muscle camera");
-        pid_t pcoCameraServerPid =
-            muscleRecordingState->muscleCamera->getCameraServerPID();
-        kill(pcoCameraServerPid, SIGTERM);
+        muscleRecordingState->muscleCamera->stop();
     }
 
     // Tell motion control request handler thread to stop
@@ -59,7 +66,6 @@ bool quitProgram()
     // Tell behavior camera saver threads to stop
     spdlog::info("Telling behavior image saver threads to stop.");
     stopBehaviorImageSaver(behaviorRecordingState, programState);
-    muscleRecordingState->muscleCamera = nullptr;
 
     spdlog::info("Telling muscle image saver threads to stop.");
     stopMuscleImageSaver(muscleRecordingState, programState);

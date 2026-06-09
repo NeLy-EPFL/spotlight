@@ -80,6 +80,10 @@ class MuscleCamera {
         std::string profileDir,
         spdlog::level::level_enum logLevel);
     ~MuscleCamera();
+    // Terminate the PCO camera server process. Bounded (SIGTERM, then SIGKILL
+    // after a grace period) so an unresponsive server can never block shutdown
+    // indefinitely. Idempotent and safe to call before destruction.
+    void stop();
     FrameData waitForOneFrame();
     // Program the camera's nominal per-line exposure (us). In continuous
     // (auto-sequence) mode this also sets the free-run frame rate, since the
