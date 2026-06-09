@@ -187,23 +187,24 @@ TEST(PreviewWidth, ScalesHeightByStageAspectRatio) {
     EXPECT_EQ(calculateBehaviorCameraPreviewWidth(100, 2, 3), 66);
 }
 
-TEST(Convert16To8, AppliesScaleAndOffsetWithSaturation) {
-    cv::Mat src(1, 2, CV_16UC1);
+TEST(Convert16To8, MapsWindowOntoEightBitRangeWithClamping) {
+    cv::Mat src(1, 3, CV_16UC1);
     src.at<uint16_t>(0, 0) = 100;
-    src.at<uint16_t>(0, 1) = 1000;
+    src.at<uint16_t>(0, 1) = 500;
+    src.at<uint16_t>(0, 2) = 1000;
 
     cv::Mat dst;
-    // scale 255 cancels the 16->8 normalisation, giving unit gain.
-    convert16BitTo8Bit(src, dst, /*scale=*/255, /*offset=*/0);
+    // Window [0, 1000] maps linearly: 500 lands at the midpoint, 1000 at white.
+    convert16BitTo8Bit(src, dst, /*vmin=*/0, /*vmax=*/1000);
     ASSERT_EQ(dst.type(), CV_8UC1);
-    EXPECT_EQ(dst.at<uchar>(0, 0), 100);
-    EXPECT_EQ(dst.at<uchar>(0, 1), 255); // 1000 saturates to the 8-bit max
+    EXPECT_EQ(dst.at<uchar>(0, 1), 128); // round(500 * 255 / 1000)
+    EXPECT_EQ(dst.at<uchar>(0, 2), 255);
 
-    convert16BitTo8Bit(src, dst, /*scale=*/510, /*offset=*/0); // gain 2.0
-    EXPECT_EQ(dst.at<uchar>(0, 0), 200);
-
-    convert16BitTo8Bit(src, dst, /*scale=*/255, /*offset=*/50);
-    EXPECT_EQ(dst.at<uchar>(0, 0), 150);
+    // Window [200, 800]: pixels at/below vmin are black, at/above vmax white.
+    convert16BitTo8Bit(src, dst, /*vmin=*/200, /*vmax=*/800);
+    EXPECT_EQ(dst.at<uchar>(0, 0), 0);   // 100 < vmin -> black
+    EXPECT_EQ(dst.at<uchar>(0, 1), 128); // round((500 - 200) * 255 / 600)
+    EXPECT_EQ(dst.at<uchar>(0, 2), 255); // 1000 > vmax -> white
 }
 
 TEST(CurrentTime, IsPositiveAndNonDecreasing) {

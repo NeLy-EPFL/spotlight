@@ -1,9 +1,18 @@
 #include "recorder/apps/gui.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 
 namespace {
+// Layout constants for the muscle histogram + range slider widget.
+constexpr int kHistogramNumBins = 256;
+constexpr int kHistogramWidgetHeight = 110;
+constexpr int kSliderAreaHeight = 22;
+constexpr int kHandleHalfWidth = 5;
+
 QImage cvMatToQImage(const cv::Mat &mat) {
     if (mat.empty()) {
         return QImage();
@@ -42,6 +51,152 @@ std::string incrementDirectoryName(const std::string &path) {
     oss << path.substr(0, start) << std::setfill('0') << std::setw(width) << num
         << "/";
     return oss.str();
+}
+
+MuscleHistogramWidget::MuscleHistogramWidget(
+    int histogramMin,
+    int histogramMax,
+    int defaultVmin,
+    int defaultVmax,
+    QWidget *parent)
+    : QWidget(parent), histogramMin_(histogramMin), histogramMax_(histogramMax),
+      vmin_(defaultVmin), vmax_(defaultVmax),
+      histogram_(kHistogramNumBins, 0.0f) {
+    setMinimumHeight(kHistogramWidgetHeight);
+}
+
+void MuscleHistogramWidget::setImage(const cv::Mat &image16Bit) {
+    if (image16Bit.empty()) {
+        return;
+    }
+    int numBins = static_cast<int>(histogram_.size());
+    int channels[] = {0};
+    int histSize[] = {numBins};
+    // calcHist's upper bound is exclusive, so add 1 to include histogramMax_.
+    float valueRange[] = {
+        static_cast<float>(histogramMin_),
+        static_cast<float>(histogramMax_ + 1)};
+    const float *ranges[] = {valueRange};
+    cv::Mat hist;
+    cv::calcHist(
+        &image16Bit, 1, channels, cv::Mat(), hist, 1, histSize, ranges);
+    // Normalize bin heights to the tallest bin so the histogram fills the
+    // available height regardless of frame size / brightness.
+    double maxBin = 0.0;
+    cv::minMaxLoc(hist, nullptr, &maxBin);
+    for (int i = 0; i < numBins; ++i) {
+        histogram_[i] =
+            maxBin > 0.0 ? hist.at<float>(i) / static_cast<float>(maxBin) : 0.0f;
+    }
+    update();
+}
+
+int MuscleHistogramWidget::valueToX(int value) const {
+    int usableWidth = std::max(1, width() - 2 * kHandleHalfWidth);
+    return kHandleHalfWidth + (value - histogramMin_) * usableWidth /
+                                  std::max(1, histogramMax_ - histogramMin_);
+}
+
+int MuscleHistogramWidget::xToValue(int x) const {
+    int usableWidth = std::max(1, width() - 2 * kHandleHalfWidth);
+    int value = histogramMin_ + (x - kHandleHalfWidth) *
+                                    (histogramMax_ - histogramMin_) /
+                                    usableWidth;
+    return std::clamp(value, histogramMin_, histogramMax_);
+}
+
+void MuscleHistogramWidget::paintEvent(QPaintEvent *event) {
+    Q_UNUSED(event);
+    QPainter painter(this);
+
+    int sliderTop = height() - kSliderAreaHeight;
+    int histogramHeight = sliderTop;
+
+    painter.fillRect(rect(), QColor(30, 30, 30));
+
+    // Histogram bars.
+    int numBins = static_cast<int>(histogram_.size());
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(180, 180, 180));
+    for (int i = 0; i < numBins; ++i) {
+        int x0 = width() * i / numBins;
+        int x1 = width() * (i + 1) / numBins;
+        int barHeight = static_cast<int>(histogram_[i] * histogramHeight);
+        painter.drawRect(
+            x0, histogramHeight - barHeight, std::max(1, x1 - x0), barHeight);
+    }
+
+    int xMin = valueToX(vmin_);
+    int xMax = valueToX(vmax_);
+
+    // Dim the regions outside the selected [vmin, vmax] window.
+    painter.setBrush(QColor(0, 0, 0, 130));
+    painter.drawRect(0, 0, xMin, histogramHeight);
+    painter.drawRect(xMax, 0, width() - xMax, histogramHeight);
+
+    // Slider groove and selected span.
+    int grooveY = sliderTop + kSliderAreaHeight / 2;
+    painter.setPen(QPen(QColor(120, 120, 120), 2));
+    painter.drawLine(
+        kHandleHalfWidth, grooveY, width() - kHandleHalfWidth, grooveY);
+    painter.setPen(QPen(QColor(80, 160, 240), 3));
+    painter.drawLine(xMin, grooveY, xMax, grooveY);
+
+    // Min handle (blue) with a guide line over the histogram.
+    painter.setPen(QPen(QColor(80, 160, 240), 1));
+    painter.drawLine(xMin, 0, xMin, histogramHeight);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(80, 160, 240));
+    painter.drawRect(
+        xMin - kHandleHalfWidth,
+        sliderTop,
+        2 * kHandleHalfWidth,
+        kSliderAreaHeight);
+
+    // Max handle (orange) with a guide line over the histogram.
+    painter.setPen(QPen(QColor(240, 160, 60), 1));
+    painter.drawLine(xMax, 0, xMax, histogramHeight);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(240, 160, 60));
+    painter.drawRect(
+        xMax - kHandleHalfWidth,
+        sliderTop,
+        2 * kHandleHalfWidth,
+        kSliderAreaHeight);
+
+    // Value labels.
+    painter.setPen(Qt::white);
+    painter.drawText(
+        QRect(2, 0, width() - 4, 14),
+        Qt::AlignLeft,
+        QString("min %1").arg(vmin_));
+    painter.drawText(
+        QRect(2, 0, width() - 4, 14),
+        Qt::AlignRight,
+        QString("max %1").arg(vmax_));
+}
+
+void MuscleHistogramWidget::mousePressEvent(QMouseEvent *event) {
+    int x = static_cast<int>(event->position().x());
+    // Grab whichever handle is closer to the click.
+    draggedHandle_ = std::abs(x - valueToX(vmin_)) <= std::abs(x - valueToX(vmax_))
+                         ? DraggedHandle::Min
+                         : DraggedHandle::Max;
+    mouseMoveEvent(event);
+}
+
+void MuscleHistogramWidget::mouseMoveEvent(QMouseEvent *event) {
+    if (draggedHandle_ == DraggedHandle::None) {
+        return;
+    }
+    int value = xToValue(static_cast<int>(event->position().x()));
+    if (draggedHandle_ == DraggedHandle::Min) {
+        // The min handle can never move past the max handle.
+        vmin_ = std::min(value, vmax_);
+    } else {
+        vmax_ = std::max(value, vmin_);
+    }
+    update();
 }
 
 MotionControlWidget::MotionControlWidget(
@@ -196,12 +351,6 @@ MainGUIWindow::MainGUIWindow(
       stageMaxYMm_(stageMaxYMm) {
     streamingBehaviorFPS_ = recorderConfig.getParameter<int>(
         "behavior_camera", "streaming_frame_rate");
-
-    // Load parameters for displaying 16-bit muscle image
-    muscleImage16To8BitScale_ = recorderConfig.getParameter<int>(
-        "muscle_camera", "conversion_16to8bit_scale_camera_alignment");
-    muscleImage16To8BitOffset_ = recorderConfig.getParameter<int>(
-        "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
 
     // Load rolling shutter parameter
     double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
@@ -369,6 +518,9 @@ MainGUIWindow::MainGUIWindow(
             // The muscle-only parameters are editable only when imaging muscle.
             syncRatioSpinBox_->setEnabled(enabled);
             muscleLightOnTimeSpinBox_->setEnabled(enabled);
+            // The histogram/range slider is only meaningful with a live muscle
+            // preview.
+            muscleHistogramWidget_->setVisible(enabled);
             // Re-stream so the controller switches modes immediately (sending a
             // STREAM mid-recording would revert the controller and abort it).
             if (!programState_->isRecording.load()) {
@@ -406,7 +558,32 @@ MainGUIWindow::MainGUIWindow(
         recorderConfig.getParameter<int>("gui", "muscle_camera_preview_height");
     muscleImageDisplayLabel_->setFixedSize(
         muscleCameraPreviewWidth, muscleCameraPreviewHeight);
-    liveImageDisplayLayout->addWidget(muscleImageDisplayLabel_);
+
+    // Histogram + normalization-range slider for the muscle preview, shown only
+    // while muscle imaging is enabled (toggled by the checkbox above).
+    int histogramDisplayMin = recorderConfig.getParameter<int>(
+        "muscle_camera", "histogram_display_min");
+    int histogramDisplayMax = recorderConfig.getParameter<int>(
+        "muscle_camera", "histogram_display_max");
+    int defaultDisplayVmin =
+        recorderConfig.getParameter<int>("muscle_camera", "default_display_vmin");
+    int defaultDisplayVmax =
+        recorderConfig.getParameter<int>("muscle_camera", "default_display_vmax");
+    muscleHistogramWidget_ = new MuscleHistogramWidget(
+        histogramDisplayMin,
+        histogramDisplayMax,
+        defaultDisplayVmin,
+        defaultDisplayVmax,
+        this);
+    muscleHistogramWidget_->setFixedWidth(muscleCameraPreviewWidth);
+    muscleHistogramWidget_->setVisible(false);
+
+    // Stack the muscle preview and its histogram in a column beside the behavior
+    // preview.
+    QVBoxLayout *musclePreviewLayout = new QVBoxLayout();
+    musclePreviewLayout->addWidget(muscleImageDisplayLabel_);
+    musclePreviewLayout->addWidget(muscleHistogramWidget_);
+    liveImageDisplayLayout->addLayout(musclePreviewLayout);
     // Add timer for muscle display updates
     QTimer *muscleImageDisplayTimer = new QTimer(this);
     connect(
@@ -942,12 +1119,15 @@ void MainGUIWindow::updateMuscleImageDisplay() {
     if (latestFrame.empty()) {
         return;
     }
+    // Update the live histogram from the raw 16-bit frame, then normalize the
+    // preview using the [vmin, vmax] window selected on the slider.
+    muscleHistogramWidget_->setImage(latestFrame);
     cv::Mat processedFrame;
     convert16BitTo8Bit(
         latestFrame,
         processedFrame,
-        muscleImage16To8BitScale_,
-        muscleImage16To8BitOffset_);
+        muscleHistogramWidget_->vmin(),
+        muscleHistogramWidget_->vmax());
     reorientMuscleImage(processedFrame, processedFrame);
     QImage qImage = cvMatToQImage(processedFrame);
     QPixmap pixmap = QPixmap::fromImage(qImage).scaled(

@@ -163,11 +163,12 @@ void alignCamera(std::filesystem::path profileDir) {
     muscleImageROIHeight =
         recorderConfig.getParameter<int>("muscle_camera", "roi_height");
 
-    // Load parameters for displaying 16-bit image
-    int muscleImage16To8BitScale = recorderConfig.getParameter<int>(
-        "muscle_camera", "conversion_16to8bit_scale_camera_alignment");
-    int muscleImage16To8BitOffset = recorderConfig.getParameter<int>(
-        "muscle_camera", "conversion_16to8bit_offset_camera_alignment");
+    // Load the default normalization window for displaying the 16-bit muscle
+    // image (same defaults as the histogram sliders in the main recording GUI).
+    int muscleDisplayVmin = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_display_vmin");
+    int muscleDisplayVmax = recorderConfig.getParameter<int>(
+        "muscle_camera", "default_display_vmax");
 
     // Set up shared recording states
     std::shared_ptr<ProgramState> programState =
@@ -272,10 +273,7 @@ void alignCamera(std::filesystem::path profileDir) {
         addCrossToBehaviorImage(behaviorImageDisplay);
 
         convert16BitTo8Bit(
-            muscleImage,
-            muscleImage,
-            muscleImage16To8BitScale,
-            muscleImage16To8BitOffset);
+            muscleImage, muscleImage, muscleDisplayVmin, muscleDisplayVmax);
         targetSize = cv::Size(
             muscleImage.cols / DISPLAY_DOWNSAMPLE_FACTOR,
             muscleImage.rows / DISPLAY_DOWNSAMPLE_FACTOR);

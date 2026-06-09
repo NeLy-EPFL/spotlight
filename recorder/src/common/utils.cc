@@ -1,5 +1,7 @@
 #include "recorder/common/utils.h"
 
+#include <algorithm>
+
 uint64_t getCurrentTimeMicroseconds() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
                std::chrono::high_resolution_clock::now().time_since_epoch())
@@ -179,11 +181,14 @@ std::string expandPath(const std::string &path) {
 }
 
 void convert16BitTo8Bit(
-    const cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset) {
-    // Normalize the range of a 16-bit image (0 - 2^16) to that of a 8-bit
-    // image (0 - 2^8): divide whatever factor the caller wants by 2^(16-8)
-    double alpha = scale / 255.0;
-    sourceImage.convertTo(targetImage, CV_8U, alpha, offset);
+    const cv::Mat &sourceImage, cv::Mat &targetImage, int vmin, int vmax) {
+    // Linearly map the [vmin, vmax] window of the 16-bit image onto the 8-bit
+    // range [0, 255]: pixels at or below vmin become black, pixels at or above
+    // vmax become white. convertTo saturates out-of-range results, giving the
+    // clamping for free.
+    double alpha = 255.0 / std::max(1, vmax - vmin);
+    double beta = -vmin * alpha;
+    sourceImage.convertTo(targetImage, CV_8U, alpha, beta);
 }
 
 void writeExperimentParameters(

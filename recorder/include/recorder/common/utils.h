@@ -42,8 +42,10 @@ size_t getMyThreadIdHash();
 
 std::string expandPath(const std::string &path);
 
+// Map the [vmin, vmax] intensity window of a 16-bit image onto the 8-bit
+// display range [0, 255], clamping values outside the window to black / white.
 void convert16BitTo8Bit(
-    const cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
+    const cv::Mat &sourceImage, cv::Mat &targetImage, int vmin, int vmax);
 
 // The muscle_nominal_exposure_us and muscle_buffer_time_us values are the
 // derived continuous-mode (auto-sequence) timing (see MuscleTriggerTiming): the

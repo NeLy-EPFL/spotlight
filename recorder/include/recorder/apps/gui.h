@@ -15,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QSerialPort>
@@ -67,6 +68,46 @@ class MotionControlWidget : public QWidget {
     float maxYAbsoluteMm_;
 
     std::shared_ptr<TrackingControlState> trackingControlState_;
+};
+
+// Live histogram of the muscle camera image with a two-handle range slider
+// underneath. The two handles select the [vmin, vmax] intensity window used to
+// normalize the displayed muscle image (pixels <= vmin are black, >= vmax are
+// white). The min handle can never cross past the max handle. Both the
+// histogram x-axis and the slider span the fixed [histogramMin, histogramMax]
+// intensity range read from the recorder config.
+class MuscleHistogramWidget : public QWidget {
+  public:
+    MuscleHistogramWidget(
+        int histogramMin,
+        int histogramMax,
+        int defaultVmin,
+        int defaultVmax,
+        QWidget *parent = nullptr);
+
+    // Recompute the histogram from a 16-bit (CV_16UC1) muscle frame and repaint.
+    void setImage(const cv::Mat &image16Bit);
+
+    int vmin() const { return vmin_; }
+    int vmax() const { return vmax_; }
+
+  protected:
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+
+  private:
+    int valueToX(int value) const;
+    int xToValue(int x) const;
+
+    enum class DraggedHandle { None, Min, Max };
+
+    int histogramMin_;
+    int histogramMax_;
+    int vmin_;
+    int vmax_;
+    std::vector<float> histogram_; // bin heights normalized to [0, 1]
+    DraggedHandle draggedHandle_ = DraggedHandle::None;
 };
 
 class MainGUIWindow : public QWidget {
@@ -137,6 +178,7 @@ class MainGUIWindow : public QWidget {
     QPushButton *stopButton_;
     QLabel *behaviorImageDisplayLabel_;
     QLabel *muscleImageDisplayLabel_;
+    MuscleHistogramWidget *muscleHistogramWidget_;
     QTimer *imageDisplayTimer_;
     RecorderConfig recorderConfig_;
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState_;
@@ -152,8 +194,6 @@ class MainGUIWindow : public QWidget {
     double stageMinYMm_;
     double stageMaxYMm_;
 
-    int muscleImage16To8BitScale_ = 1;
-    int muscleImage16To8BitOffset_ = 0;
     int streamingBehaviorFPS_ = 0;
     int streamingSyncRatio_ = 1;
     // Default behavior exposure / muscle light-on times (us), from the recorder

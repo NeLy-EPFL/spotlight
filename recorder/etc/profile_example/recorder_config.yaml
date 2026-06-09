@@ -23,10 +23,10 @@ muscle_camera:
   shared_frame_metadata_name: "/pco_camera_frame_metadata"
   shared_mutex_name: "/pco_camera_mutex"
   shared_condition_variable_name: "/pco_camera_condition_variable"
-  conversion_16to8bit_scale_camera_alignment: 800
-  conversion_16to8bit_offset_camera_alignment: -200
-  conversion_16to8bit_scale_recording_preview: 1000
-  conversion_16to8bit_offset_recording_preview: -200
+  histogram_display_min: 0
+  histogram_display_max: 1400
+  default_display_vmin: 200
+  default_display_vmax: 800
   # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
   # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
   rolling_shutter_line_time_us: 12.136
