@@ -31,8 +31,8 @@ struct StageRange {
 
 StageRange computeStageRangeFromArena(
     const std::filesystem::path &arenaDir,
-    RecorderConfig &recorderConfig,
-    CalibrationParams &behaviorCamCalibrationParams)
+    const RecorderConfig &recorderConfig,
+    const CalibrationParams &behaviorCamCalibrationParams)
 /**
  * Compute the stage range covering the arena, for the motion-stage preview
  * widget. Read arena dimensions from <arenaDir>/metadata.yaml, then invert the

@@ -51,21 +51,21 @@ class SaveDirectory {
   public:
     SaveDirectory(const std::string &directory);
     void setDirectory(const std::string &directory);
-    std::filesystem::path getDirectory();
+    std::filesystem::path getDirectory() const;
     void initialize();
 
   private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     fs::path directory_;
 };
 
 class LatestFrame {
   public:
     LatestFrame();
-    FrameData getLatestFrameData();
+    FrameData getLatestFrameData() const;
     void setLatestFrameData(const FrameData &frameData);
 
   private:
     FrameData latestFrameData_;
-    std::mutex latestFrameMutex_;
+    mutable std::mutex latestFrameMutex_;
 };

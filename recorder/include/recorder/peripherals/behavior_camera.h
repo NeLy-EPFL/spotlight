@@ -22,7 +22,7 @@ class BehaviorCamera {
         unsigned int imageHeight,
         unsigned int xOffset,
         unsigned int yOffset,
-        std::string ioLine);
+        const std::string &ioLine);
     ~BehaviorCamera();
     void start(size_t bufferSize = 40);
     void stop();
@@ -48,10 +48,10 @@ class BehaviorCamera {
     void configure();
 
     template <typename Module>
-    bool setIntegerAndCheck(const std::string key, int value);
+    bool setIntegerAndCheck(const std::string &key, int value);
 
     template <typename Module>
-    bool setStringAndCheck(const std::string key, const std::string value);
+    bool setStringAndCheck(const std::string &key, const std::string &value);
 };
 
 int roundToNearestValidBehaviorCamDimension(int value);

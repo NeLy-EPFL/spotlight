@@ -245,7 +245,7 @@ void ArduinoCommunication::stopCommunication() {
 }
 
 TriggerParams makeDefaultStreamParams(
-    RecorderConfig &recorderConfig,
+    const RecorderConfig &recorderConfig,
     int muscleNumLinesScanned,
     int syncRatio,
     bool muscleImagingOn) {
@@ -271,7 +271,7 @@ TriggerParams makeDefaultStreamParams(
     return params;
 }
 
-std::string findArduinoPortName(RecorderConfig &recorderConfig) {
+std::string findArduinoPortName(const RecorderConfig &recorderConfig) {
     std::string udev_port_name = "/dev/arduino_trigger";
     if (fs::exists(udev_port_name)) {
         spdlog::info(
@@ -292,7 +292,7 @@ std::string findArduinoPortName(RecorderConfig &recorderConfig) {
 }
 
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
-    RecorderConfig &recorderConfig,
+    const RecorderConfig &recorderConfig,
     int muscleNumLinesScanned,
     int syncRatio,
     bool muscleImagingOn) {

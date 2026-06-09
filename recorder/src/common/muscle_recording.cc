@@ -6,13 +6,13 @@ MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
     : x0(x0), x1(x1), y0(y0), y1(y1), xOffset(x0 - 1), yOffset(y0 - 1),
       imageWidth(x1 - x0 + 1), imageHeight(y1 - y0 + 1) {}
 
-bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight) {
+bool MuscleCameraROI::isWithinBound(int fullWidth, int fullHeight) const {
     return (
         x0 > 0 && x1 <= fullWidth && y0 > 0 && y1 <= fullHeight && x0 < x1 &&
         y0 < y1);
 }
 
-int MuscleCameraROI::toFile(std::filesystem::path path) {
+int MuscleCameraROI::toFile(const std::filesystem::path &path) const {
     YAML::Node node;
     node["x0"] = x0;
     node["x1"] = x1;
@@ -34,11 +34,11 @@ int MuscleCameraROI::toFile(std::filesystem::path path) {
     return 0;
 }
 
-std::tuple<int, int> MuscleCameraROI::getCenterXY() {
+std::tuple<int, int> MuscleCameraROI::getCenterXY() const {
     return std::make_tuple((x0 + x1) / 2, (y0 + y1) / 2);
 }
 
-MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath) {
+MuscleCameraROI getMuscleCameraROI(const std::filesystem::path &roiFilePath) {
     YAML::Node node;
     try {
         node = YAML::LoadFile(roiFilePath.string());
@@ -93,7 +93,7 @@ void muscleImageAcquirer(
     unsigned int xOffset,
     unsigned int yOffset,
     const RecorderConfig &recorderConfig,
-    std::string profileDir,
+    const std::string &profileDir,
     spdlog::level::level_enum logLevel,
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<ProgramState> programState,

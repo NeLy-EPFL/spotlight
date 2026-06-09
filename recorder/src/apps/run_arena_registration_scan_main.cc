@@ -421,7 +421,8 @@ void scanAllApriltags(
 } // namespace
 
 void runArenaRegistrationScan(
-    std::filesystem::path profileDir, std::filesystem::path arenaDir) {
+    const std::filesystem::path &profileDir,
+    const std::filesystem::path &arenaDir) {
     std::filesystem::path metadataPath = arenaDir / "metadata.yaml";
 
     if (!std::filesystem::exists(arenaDir)) {

@@ -22,7 +22,7 @@ class RecorderConfig {
     T getParameter(
         const std::string &section, const std::string &parameter) const;
 
-    void saveToFile(const std::string &yamlPath);
+    void saveToFile(const std::string &yamlPath) const;
 
   private:
     YAML::Node parameters_;

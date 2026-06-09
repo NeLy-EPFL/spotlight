@@ -77,7 +77,7 @@ class MuscleCamera {
         double rollingShutterLineTimeUs,
         double sensorReadoutTimeUs,
         const RecorderConfig &recorderConfig,
-        std::string profileDir,
+        const std::string &profileDir,
         spdlog::level::level_enum logLevel);
     ~MuscleCamera();
     // Terminate the PCO camera server process. Bounded (SIGTERM, then SIGKILL
@@ -111,7 +111,7 @@ class MuscleCamera {
     const RecorderConfig &recorderConfig_;
     unsigned int lastFrameCount_;
 
-    bool isROIValid();
+    bool isROIValid() const;
 };
 
 int roundToNearestValidMuscleCamHorizontal(int value);

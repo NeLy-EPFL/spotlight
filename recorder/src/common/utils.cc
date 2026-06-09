@@ -201,7 +201,7 @@ void SaveDirectory::setDirectory(const std::string &directory) {
     directory_ = expandPath(directory);
 }
 
-std::filesystem::path SaveDirectory::getDirectory() {
+std::filesystem::path SaveDirectory::getDirectory() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return directory_;
 }
@@ -223,7 +223,7 @@ void SaveDirectory::initialize() {
 
 LatestFrame::LatestFrame() : latestFrameData_({0, 0, 0, cv::Mat()}) {}
 
-FrameData LatestFrame::getLatestFrameData() {
+FrameData LatestFrame::getLatestFrameData() const {
     std::lock_guard<std::mutex> lock(latestFrameMutex_);
     return latestFrameData_;
 }

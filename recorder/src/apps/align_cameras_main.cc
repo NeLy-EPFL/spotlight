@@ -153,7 +153,7 @@ bool trySaveSelectedROI(const std::filesystem::path &profileDir) {
     return true;
 }
 
-void setupDisplayWindows(RecorderConfig &recorderConfig) {
+void setupDisplayWindows(const RecorderConfig &recorderConfig) {
     // Figure out window display size (note width/height are swapped because
     // images are roatated)
     int behaviorImageDisplayWidth =
@@ -183,7 +183,7 @@ void setupDisplayWindows(RecorderConfig &recorderConfig) {
 }
 } // namespace
 
-void alignCamera(std::filesystem::path profileDir) {
+void alignCamera(const std::filesystem::path &profileDir) {
     std::filesystem::path configPath = profileDir / "recorder_config.yaml";
     spdlog::info(
         "alignCameras loading recorder configuration from {}",

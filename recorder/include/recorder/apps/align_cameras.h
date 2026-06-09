@@ -18,4 +18,4 @@
 #include "recorder/peripherals/behavior_camera.h"
 #include "recorder/peripherals/muscle_camera.h"
 
-void alignCamera(std::filesystem::path profileDir);
+void alignCamera(const std::filesystem::path &profileDir);

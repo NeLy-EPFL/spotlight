@@ -34,9 +34,9 @@ class MuscleCameraROI {
     int imageHeight;
 
     MuscleCameraROI(int x0, int x1, int y0, int y1);
-    bool isWithinBound(int fullWidth, int fullHeight);
-    int toFile(std::filesystem::path path);
-    std::tuple<int, int> getCenterXY();
+    bool isWithinBound(int fullWidth, int fullHeight) const;
+    int toFile(const std::filesystem::path &path) const;
+    std::tuple<int, int> getCenterXY() const;
 };
 
 // Function declarations
@@ -46,7 +46,7 @@ void muscleImageAcquirer(
     unsigned int xOffset,
     unsigned int yOffset,
     const RecorderConfig &recorderConfig,
-    std::string profileDir,
+    const std::string &profileDir,
     spdlog::level::level_enum logLevel,
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<ProgramState> programState,
@@ -69,4 +69,4 @@ void stopMuscleImageSaver(
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<ProgramState> programState);
 
-MuscleCameraROI getMuscleCameraROI(std::filesystem::path roiFilePath);
+MuscleCameraROI getMuscleCameraROI(const std::filesystem::path &roiFilePath);

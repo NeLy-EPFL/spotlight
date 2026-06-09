@@ -5,7 +5,7 @@ BehaviorCamera::BehaviorCamera(
     unsigned int imageHeight,
     unsigned int xOffset,
     unsigned int yOffset,
-    std::string ioLine)
+    const std::string &ioLine)
     : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset),
       yOffset_(yOffset), ioLine_(ioLine) {
     spdlog::info("Running GenTL eGrabber discovery...");
@@ -200,7 +200,7 @@ bool BehaviorCamera::isReady() const {
 }
 
 template <typename Module>
-bool BehaviorCamera::setIntegerAndCheck(const std::string key, int value) {
+bool BehaviorCamera::setIntegerAndCheck(const std::string &key, int value) {
     spdlog::info("Setting GenICam integer parameter {} to {}", key, value);
     frameGrabberPtr_->setInteger<Module>(key, value);
     int retrievedValue = frameGrabberPtr_->getInteger<Module>(key);
@@ -213,7 +213,7 @@ bool BehaviorCamera::setIntegerAndCheck(const std::string key, int value) {
 
 template <typename Module>
 bool BehaviorCamera::setStringAndCheck(
-    const std::string key, const std::string value) {
+    const std::string &key, const std::string &value) {
     spdlog::info("Setting GenICam string parameter {} to {}", key, value);
     frameGrabberPtr_->setString<Module>(key, value);
     std::string retrievedValue = frameGrabberPtr_->getString<Module>(key);

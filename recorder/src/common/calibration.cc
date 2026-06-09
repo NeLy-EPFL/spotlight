@@ -148,7 +148,7 @@ std::tuple<double, double> CalibrationParams::physicalPosAndPixelPosToStagePos(
         physicalPosX, physicalPosY, pixelPosCol, pixelPosRow);
 }
 
-void CalibrationParams::saveToFile(const std::string &yamlPath) {
+void CalibrationParams::saveToFile(const std::string &yamlPath) const {
     if (!isDefined) {
         throw std::runtime_error("Calibration parameters are not defined.");
     }

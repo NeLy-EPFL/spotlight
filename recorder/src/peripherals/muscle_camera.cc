@@ -38,7 +38,7 @@ MuscleCamera::MuscleCamera(
     double rollingShutterLineTimeUs,
     double sensorReadoutTimeUs,
     const RecorderConfig &recorderConfig,
-    std::string profileDir,
+    const std::string &profileDir,
     spdlog::level::level_enum logLevel)
     // Member initializers are in declaration order (avoids -Wreorder).
     : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1),
@@ -264,7 +264,7 @@ FrameData MuscleCamera::waitForOneFrame() {
     }
 }
 
-bool MuscleCamera::isROIValid() {
+bool MuscleCamera::isROIValid() const {
     int fullFrameWidth =
         recorderConfig_.getParameter<int>("muscle_camera", "full_frame_width");
     int fullFrameHeight =

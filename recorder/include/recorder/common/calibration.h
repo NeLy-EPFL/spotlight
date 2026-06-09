@@ -54,7 +54,7 @@ class CalibrationParams {
         int pixelPosRow,
         int pixelPosCol) const;
 
-    void saveToFile(const std::string &yamlPath);
+    void saveToFile(const std::string &yamlPath) const;
 
   private:
     YAML::Node calibration_;

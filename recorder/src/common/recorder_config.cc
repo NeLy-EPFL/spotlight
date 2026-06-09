@@ -11,7 +11,7 @@ RecorderConfig::RecorderConfig(const std::string &yamlPath) : isDefined(true) {
     }
 }
 
-void RecorderConfig::saveToFile(const std::string &yamlPath) {
+void RecorderConfig::saveToFile(const std::string &yamlPath) const {
     if (!isDefined) {
         throw std::runtime_error("Parameters are not defined.");
     }

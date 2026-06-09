@@ -72,11 +72,11 @@ class ArduinoCommunication {
 // Build a default streaming params struct from the recorder config. The PCO
 // rolling time is derived from the muscle ROI height (number of scanned lines).
 TriggerParams makeDefaultStreamParams(
-    RecorderConfig &recorderConfig,
+    const RecorderConfig &recorderConfig,
     int muscleNumLinesScanned,
     int syncRatio,
     bool muscleImagingOn);
-std::string findArduinoPortName(RecorderConfig &recorderConfig);
+std::string findArduinoPortName(const RecorderConfig &recorderConfig);
 // muscleImagingOn selects the controller's timing mode and defaults to off, to
 // match the behavior-only streaming default of the firmware and the GUI: false
 // gives free-running behavior-only acquisition; true gives muscle-synced
@@ -84,7 +84,7 @@ std::string findArduinoPortName(RecorderConfig &recorderConfig);
 // common-time signal. Only turn it on when a muscle camera is present,
 // otherwise the behavior camera stalls waiting for a signal that never arrives.
 std::unique_ptr<ArduinoCommunication> initializeTriggeringWithDefaultParams(
-    RecorderConfig &recorderConfig,
+    const RecorderConfig &recorderConfig,
     int muscleNumLinesScanned,
     int syncRatio,
     bool muscleImagingOn = false);

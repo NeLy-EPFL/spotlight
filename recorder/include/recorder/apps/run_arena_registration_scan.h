@@ -21,5 +21,6 @@
 #include "recorder/peripherals/motion_control.h"
 
 void runArenaRegistrationScan(
-    std::filesystem::path profileDir, std::filesystem::path arenaDir);
+    const std::filesystem::path &profileDir,
+    const std::filesystem::path &arenaDir);
 
