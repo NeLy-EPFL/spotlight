@@ -35,23 +35,40 @@ kill <PID>                    # or just close the eGrabber Studio window
 If the camera was left in a bad state by an unclean exit (see below), a
 power-cycle of the camera (and grabber) clears it.
 
-## `run-spotlight` may hang on quit (needs a manual kill)
+## `run-spotlight` quit must be a clean `std::exit(0)`, or it strands the behavior camera
 
-The quit-robustness commit `d2b38006` ("make program quit more robust to
-error") was **reverted on 2026-06-08** by request, to keep things simple for
-now. With it reverted, shutdown is back to the older behavior:
+**Invariant to preserve:** in `run-spotlight` the CoaXPress grabber is released
+only by `~BehaviorCamera`/`~EGrabber`, which run *solely* during the clean
+`std::exit(0)` at the end of `quitProgram()`. The quit path calls
+`behaviorCamera->stop()`, which stops streaming but does **not** release the
+device, and the `behaviorCamera` is never reset — so its destructor runs only
+via static teardown at `std::exit(0)`. Any exit that is *not* that clean
+`std::exit(0)` — a segfault, or a `kill -9` — skips the release and strands the
+grabber mid-stream, leaving the camera unresponsive even to eGrabber Studio until
+it is **power-cycled**. (`quitProgram()` is also the `SIGINT` handler, so it must
+never be allowed to wedge such that a second `^C` re-enters it mid-`std::exit()`,
+which is undefined behavior and segfaults.)
 
-- `ArduinoCommunication`'s destructor joins the comm thread *without* signaling
-  it to stop first, and `MuscleCamera`'s destructor does an unbounded blocking
-  `waitpid` on the PCO camera server.
-- So if the comm thread or the PCO server does not exit promptly, `run-spotlight`
-  can hang on quit and has to be killed manually:
+Keeping that exit clean requires shutdown to be **bounded** — no step may block
+forever. This is exactly what the quit-robustness commit `d2b38006` ("make
+program quit more robust to error") ensures, and why these three properties must
+be preserved:
 
-  ```bash
-  pkill -9 run-spotlight
-  ```
+- `MuscleCamera::stop()` SIGTERMs the PCO camera server and then escalates to
+  SIGKILL after a grace period, so an unresponsive server can never block quit.
+- `~ArduinoCommunication` calls `stopCommunication()` before joining its comm
+  thread, so the join cannot deadlock (`quitProgram()` only stops excitation,
+  never the comm thread itself).
+- `quitProgram()` does **not** reset `muscleRecordingState->muscleCamera`: the
+  muscle-acquirer thread dereferences that `shared_ptr` without taking its own
+  copy, so destroying the `MuscleCamera` mid-shutdown is a use-after-free.
 
-This is accepted for now. Note that being killed (rather than quitting cleanly)
-is itself an unclean exit, which can leave the behavior grabber reserved until
-the next launch's discovery — see the section above. If quit-on-exit robustness
-becomes worth revisiting, restore `d2b38006`.
+History: `d2b38006` was briefly reverted on 2026-06-08 (to simplify), which
+reintroduced a quit hang (deadlocked Arduino join) and a use-after-free segfault.
+Both are unclean exits that stranded the grabber — e.g. the 2026-06-08 19:22 log,
+where shutdown hangs, `^C` re-enters `quitProgram()` mid-`std::exit()`, and the
+process segfaults. It was **restored on 2026-06-09**. If you simplify shutdown
+again, preserve the three bounded-shutdown properties above.
+
+If the camera is already stranded by an earlier unclean exit, power-cycle the
+camera (and grabber) to clear it.
