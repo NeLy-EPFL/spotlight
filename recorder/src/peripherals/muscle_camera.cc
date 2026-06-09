@@ -56,7 +56,7 @@ MuscleCamera::MuscleCamera(
     // Capture our PID before forking so the child can detect (after arming its
     // parent-death signal below) whether we already died in the race window
     // between fork() and prctl().
-    pid_t parentPidBeforeFork = getpid();
+    pid_t parentPIDBeforeFork = getpid();
 
     pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
 
@@ -80,7 +80,7 @@ MuscleCamera::MuscleCamera(
         prctl(PR_SET_PDEATHSIG, SIGTERM);
         // Close the race where the parent already died before the prctl() above
         // took effect: in that case exit now rather than becoming an orphan.
-        if (getppid() != parentPidBeforeFork) {
+        if (getppid() != parentPIDBeforeFork) {
             _exit(EXIT_FAILURE);
         }
 

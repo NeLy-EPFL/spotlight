@@ -30,7 +30,7 @@ MotionControl::MotionControl(const RecorderConfig &recorderConfig) {
             "motion_control", "motion_stage_device_description");
     // getSerialPortName(description, manufacturer): pass the arguments in that
     // order (matching the function signature and the Arduino call site).
-    std::string serialPortName_ = getSerialPortName(
+    serialPortName_ = getSerialPortName(
         motionStageDeviceDescription, motionStageDeviceManufacturer);
     connection_ =
         zmASCII::Connection::openSerialPort("/dev/" + serialPortName_);

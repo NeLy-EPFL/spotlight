@@ -211,9 +211,8 @@ MotionControlWidget::MotionControlWidget(
     double maxYAbsoluteMm,
     QWidget *parent)
     : QWidget(parent), trackingControlState_(trackingControlState) {
-    // Stage bounds are now derived externally (in runSpotlight_main) from
-    // the arena dimensions and the fitted calibration model, instead of
-    // being read from removed motion_control.x_min_mm/etc. config keys.
+    // Stage bounds are derived externally (in run_spotlight_main) from the
+    // arena dimensions and the fitted calibration model, then passed in here.
     minXAbsoluteMm_ = minXAbsoluteMm;
     maxXAbsoluteMm_ = maxXAbsoluteMm;
     minYAbsoluteMm_ = minYAbsoluteMm;
@@ -742,12 +741,12 @@ QLayout *MainGUIWindow::createLiveImageDisplays() {
     // the muscle-to-stage gap). The behavior frame is rotated 90 degrees for
     // display (see reorientBehaviorImage), so its displayed width:height ratio is
     // the ROI height:width.
-    int behaviorRoiWidth =
+    int behaviorROIWidth =
         recorderConfig_.getParameter<int>("behavior_camera", "roi_width");
-    int behaviorRoiHeight =
+    int behaviorROIHeight =
         recorderConfig_.getParameter<int>("behavior_camera", "roi_height");
     int behaviorCameraPreviewWidth = calculateBehaviorCameraPreviewWidth(
-        muscleColumnHeight, behaviorRoiHeight, behaviorRoiWidth);
+        muscleColumnHeight, behaviorROIHeight, behaviorROIWidth);
 
     liveImageDisplayLayout->addLayout(createBehaviorPreviewColumn(
         behaviorCameraPreviewWidth, muscleColumnHeight));

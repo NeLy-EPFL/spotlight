@@ -36,7 +36,7 @@
 
 #include <comm_protocol/protocol.h>
 
-// Forward declaration from main.hpp
+// Defined in run_spotlight_main.cc
 bool quitProgram();
 
 class MotionControlWidget : public QWidget {

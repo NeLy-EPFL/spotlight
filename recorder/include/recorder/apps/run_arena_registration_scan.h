@@ -1,11 +1,9 @@
 #pragma once
 
 /**
- * runArenaRegistrationScan.hpp
- *
- * Declares runArenaRegistrationScan(profileDir, arenaDir), which performs
- * the automated mapping-board scan.  See runArenaRegistrationScan_main.cpp
- * for the full workflow description and output_format.md for the output spec.
+ * Declares runArenaRegistrationScan(profileDir, arenaDir), which performs the
+ * automated mapping-board scan. See run_arena_registration_scan_main.cc for the
+ * full workflow description and docs/output_format.md for the output spec.
  */
 
 #include <filesystem>
