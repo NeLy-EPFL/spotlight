@@ -191,7 +191,7 @@ pco::CameraException (0x8003103e): Firmware error 8003103e at device 'SC2 Main u
 ```
 
 The ROI size must be a multiple of **32 px horizontally** and **8 px vertically**,
-and at least **64×18 px**.
+and at least **64×16 px**.
 
 > [!IMPORTANT]
 > `x0`/`y0` are 1-indexed, but do **not** add 1 to `x1`/`y1`:

@@ -26,20 +26,52 @@ Both `-p` (profile, with `recorder_config.yaml` and `muscle_camera_roi.yaml`) an
 `-v` / `--verbosity` control logging. The application reads the arena files
 automatically and exits with an error if either is missing or malformed.
 
-## Startup and main window
+## Configure recording parameters in the GUI
 
-A configuration dialog sets the recording parameters before the main window opens:
+The recording parameters are set inline in the main window. The numeric fields are
+*buffered* — they are read when a recording starts and have no live effect on the
+streaming preview:
 
-- **Record muscle** (both cameras) or behavior only.
-- **Behavior FPS** and exposure time.
-- **Muscle sync ratio** (the muscle camera images once every N behavior frames).
-- **Muscle light-on time** (the effective muscle exposure).
+- **Behavior FPS (Hz)** — behavior-camera frame rate during recording.
+- **Behavior exposure time (ms)** — behavior-camera exposure.
+- **Behavior FPS : muscle FPS** — the sync ratio; the muscle camera images once
+  every N behavior frames. Editable only while muscle imaging is enabled.
+- **Muscle exposure (light-on) time (ms)** — the effective muscle exposure.
+  Editable only while muscle imaging is enabled.
 
-The main window shows live previews (behavior, and muscle if enabled), a
-motion-stage position indicator, a tracking on/off toggle (when on, the stage keeps
-the fly centered), a save-directory selector, the
+The window is laid out as three preview columns, each with a title and (where
+applicable) a checkbox right-aligned to the preview's right edge:
+
+- **Behavior preview** — the live behavior camera image.
+- **Muscle preview** — the live muscle camera image, with an **Enable** checkbox.
+  When checked, both cameras record and the muscle preview, histogram, and slider
+  become active; when unchecked, only the behavior camera records. The muscle-only
+  fields above are enabled/disabled together with this checkbox.
+- **Stage position** — a motion-stage position indicator, with a **Tracking**
+  checkbox. When tracking is on, the stage keeps the fly centered.
+
+Below the previews are the save-directory selector, the
 [experiment protocol](#experiment-protocol-string) field, and
 **Start / Stop recording**.
+
+### Muscle preview histogram and range slider
+
+Directly under the muscle preview is a histogram with a two-handle range slider.
+It is shown only while muscle imaging is enabled. The histogram displays the
+intensity distribution of the latest raw 16-bit muscle frame, updated live.
+
+The two handles set the `[vmin, vmax]` window used to map the 16-bit frame to the
+8-bit preview: the blue handle (labelled `min`) is the lower bound and the orange
+handle (labelled `max`) is the upper bound. Pixels at or below `vmin` display as
+black and pixels at or above `vmax` display as white; the regions of the histogram
+outside the window are dimmed. Drag a handle to adjust its value — clicking nearer
+the min handle drags the min, nearer the max handle drags the max.
+
+This only affects how the preview is displayed; it does not change the raw frames
+written to disk (muscle images are always saved as full 16-bit TIFFs). The
+handles' default positions and the histogram's value range come from
+`default_display_vmin` / `default_display_vmax` and `histogram_display_min` /
+`histogram_display_max` in the profile's `recorder_config.yaml`.
 
 ## Recording
 
