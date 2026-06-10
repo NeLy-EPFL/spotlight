@@ -1,9 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <csignal>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <tuple>
 
@@ -25,8 +27,16 @@ class BehaviorCamera {
         const std::string &ioLine);
     ~BehaviorCamera();
     void start(size_t bufferSize = 40);
+    // Stop streaming and interrupt any in-progress (or future) waitForOneFrame()
+    // so it returns std::nullopt. Thread-safe and idempotent; called from the
+    // acquirer at loop exit and from the shutdown path. Does NOT release the
+    // grabber device -- that happens in ~BehaviorCamera/~EGrabber.
     void stop();
-    FrameData waitForOneFrame();
+    // Block until the next frame is acquired and return it. Returns std::nullopt
+    // once stop() has been called (so the acquirer loop can exit promptly even if
+    // no frames are arriving -- e.g. the camera is not being triggered). The grab
+    // uses a bounded timeout and cancelPop() so it never blocks indefinitely.
+    std::optional<FrameData> waitForOneFrame();
     bool isReady() const;
 
   private:
@@ -41,6 +51,9 @@ class BehaviorCamera {
     std::string ioLine_;
     int currentFPS_;
     std::atomic<bool> cameraReadyFlag_{false};
+    // Set by stop(); makes waitForOneFrame() return std::nullopt so the acquirer
+    // thread can be joined on shutdown.
+    std::atomic<bool> stopRequested_{false};
 
     // Apply the full GenICam configuration to the grabber and camera: the ROI
     // and external-trigger setup plus the base configuration ported from

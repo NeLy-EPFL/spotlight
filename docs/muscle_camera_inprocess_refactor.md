@@ -1,7 +1,14 @@
 # Can the PCO muscle camera be acquired in-process (no separate server)?
 
-Design note / investigation. **Status: analysis only -- not implemented.** Hand this
-to an implementing agent later.
+Design note / investigation. **Status: IMPLEMENTED (2026-06-09).** The muscle
+camera is now driven in-process by `MuscleCamera` (`src/peripherals/muscle_camera.cc`,
+pimpl'd over the PCO SDK); the `pco-camera-server` target, `pco_camera_server_main.cc`,
+and the `shared_memory_utils` / `PCOSharedMemory` plumbing have been removed, and
+`PCO_LINUX=1` is scoped per file. Parameter changes (exposure / muscle frame rate)
+are applied by the acquirer thread via stop->reconfigure->restart, and shutdown is
+join-based (the acquirer is joined before the camera is destroyed). The analysis
+below is kept for context. See `README.md`, `docs/data_acquisition.md`, and the
+quit section of `docs/troubleshooting.md` for the current behaviour.
 
 ## Question
 

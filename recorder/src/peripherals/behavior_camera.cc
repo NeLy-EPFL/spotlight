@@ -1,5 +1,19 @@
 #include "recorder/peripherals/behavior_camera.h"
 
+#include <sstream>
+#include <thread>
+
+namespace {
+// The behavior camera is constructed and driven on the behavior acquirer thread;
+// include the thread id in the init logs so it is clear which camera/thread is
+// (e.g.) stuck in GenTL discovery or throwing during configuration.
+std::string currentThreadIdString() {
+    std::stringstream ss;
+    ss << std::this_thread::get_id();
+    return ss.str();
+}
+} // namespace
+
 BehaviorCamera::BehaviorCamera(
     unsigned int imageWidth,
     unsigned int imageHeight,
@@ -8,12 +22,30 @@ BehaviorCamera::BehaviorCamera(
     const std::string &ioLine)
     : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset),
       yOffset_(yOffset), ioLine_(ioLine) {
-    spdlog::info("Running GenTL eGrabber discovery...");
+    std::string threadId = currentThreadIdString();
+    spdlog::info(
+        "Behavior camera: running GenTL eGrabber discovery (thread {})...",
+        threadId);
     Euresys::EGrabberDiscovery egrabberDiscovery(genTL_);
     egrabberDiscovery.discover();
-    spdlog::info("GenTL eGrabber discovery completed");
+    spdlog::info(
+        "Behavior camera: GenTL eGrabber discovery completed ({} grabber(s), "
+        "{} camera(s) found)",
+        egrabberDiscovery.egrabberCount(),
+        egrabberDiscovery.cameraCount());
+    if (egrabberDiscovery.cameraCount() < 1) {
+        throw std::runtime_error(
+            "GenTL discovery found no cameras on the frame grabber. Check that "
+            "the camera is powered and connected, and that no other GenTL client "
+            "(e.g. eGrabber Studio) is holding the grabber.");
+    }
 
-    spdlog::info("Configuring camera...");
+    // The following lines each touch the grabber/camera and may throw on
+    // failure; the step logs make it clear in the log which one did.
+    spdlog::info(
+        "Behavior camera: selecting camera 0 and opening the grabber "
+        "(thread {})...",
+        threadId);
     camera_ = egrabberDiscovery.cameras(0);
     frameGrabberPtr_ = std::make_unique<Euresys::EGrabber<>>(camera_);
     Euresys::EGrabberInfo frameGrabberInfo = camera_.grabbers[0];
@@ -22,7 +54,7 @@ BehaviorCamera::BehaviorCamera(
     std::string deviceVendorName = frameGrabberInfo.deviceVendorName;
     std::string deviceModelName = frameGrabberInfo.deviceModelName;
     spdlog::info(
-        "Camera configured - interface ID: {}, device ID: {}, "
+        "Behavior camera identified - interface ID: {}, device ID: {}, "
         "device vendor: {}, device model: {}",
         interfaceID,
         deviceID,
@@ -34,6 +66,7 @@ BehaviorCamera::BehaviorCamera(
     formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
 
     cameraReadyFlag_.store(true);
+    spdlog::info("Behavior camera configured and ready (thread {})", threadId);
 }
 
 void BehaviorCamera::configure() {
@@ -168,31 +201,58 @@ void BehaviorCamera::start(size_t bufferSize) {
 }
 
 void BehaviorCamera::stop() {
-    frameGrabberPtr_->stop();
+    // Idempotent: only act on the first call. (The acquirer stops the camera at
+    // loop exit, and the shutdown path may also stop it.)
+    if (stopRequested_.exchange(true)) {
+        return;
+    }
+    if (frameGrabberPtr_) {
+        // cancelPop() unblocks a grab currently waiting in waitForOneFrame()
+        // (the pending pop throws GC_ERR_ABORT, which waitForOneFrame catches),
+        // so the acquirer thread can observe the stop and exit even when no
+        // frames are arriving (e.g. the camera is not being triggered). Then
+        // stop streaming. The grabber device itself is released later, by
+        // ~BehaviorCamera/~EGrabber.
+        frameGrabberPtr_->cancelPop();
+        frameGrabberPtr_->stop();
+    }
 }
 
-FrameData BehaviorCamera::waitForOneFrame() {
-    // Getting the buffer is the main blocking call
-    Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
+std::optional<FrameData> BehaviorCamera::waitForOneFrame() {
+    // Bounded grab: pop with a timeout so the call returns periodically to
+    // re-check stopRequested_, and so stop()'s cancelPop() can interrupt a
+    // blocked pop immediately. Returns std::nullopt once stopped.
+    constexpr uint64_t kGrabTimeoutMs = 200;
+    while (!stopRequested_.load()) {
+        try {
+            Euresys::ScopedBuffer buffer(*frameGrabberPtr_, kGrabTimeoutMs);
 
-    // Get image data and metadata
-    uint64_t receivedTime = getCurrentTimeMicroseconds();
-    uint8_t *dataPtr = buffer.getInfo<uint8_t *>(Euresys::gc::BUFFER_INFO_BASE);
-    uint64_t grabberTimestamp =
-        buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
-    uint64_t acquisitionTime = grabberTimestamp / 1000;
+            // Get image data and metadata
+            uint64_t receivedTime = getCurrentTimeMicroseconds();
+            uint8_t *dataPtr =
+                buffer.getInfo<uint8_t *>(Euresys::gc::BUFFER_INFO_BASE);
+            uint64_t grabberTimestamp =
+                buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
+            uint64_t acquisitionTime = grabberTimestamp / 1000;
 
-    // Make FrameData object
-    FrameData frameData;
-    frameData.acquisitionTime = acquisitionTime;
-    frameData.receivedTime = receivedTime;
-    // Clone: dataPtr points into the grabber buffer owned by `buffer` (a
-    // ScopedBuffer), which is requeued to the grabber when this function
-    // returns. Without a copy the returned image would alias a buffer the
-    // grabber may refill at any time.
-    frameData.image =
-        cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr).clone();
-    return frameData;
+            // Make FrameData object
+            FrameData frameData;
+            frameData.acquisitionTime = acquisitionTime;
+            frameData.receivedTime = receivedTime;
+            // Clone: dataPtr points into the grabber buffer owned by `buffer` (a
+            // ScopedBuffer), which is requeued to the grabber when this scope
+            // ends. Without a copy the returned image would alias a buffer the
+            // grabber may refill at any time.
+            frameData.image =
+                cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr).clone();
+            return frameData;
+        } catch (const Euresys::gentl_error &) {
+            // Expected: a timeout (no frame within kGrabTimeoutMs) or GC_ERR_ABORT
+            // from stop()'s cancelPop(). Loop to re-check stopRequested_.
+            continue;
+        }
+    }
+    return std::nullopt;
 }
 
 bool BehaviorCamera::isReady() const {

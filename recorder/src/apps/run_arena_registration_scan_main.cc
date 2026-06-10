@@ -460,11 +460,28 @@ void runArenaRegistrationScan(
 
     // Wait for camera ready
     size_t retryCount = 0;
-    while (!behaviorRecordingState->behaviorCamera ||
-           !behaviorRecordingState->behaviorCamera->isReady()) {
+    while ((!behaviorRecordingState->behaviorCamera ||
+            !behaviorRecordingState->behaviorCamera->isReady()) &&
+           !programState->toQuit.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (++retryCount % 20 == 0)
             spdlog::warn("Waiting for behavior camera to initialize...");
+    }
+    // The behavior acquirer sets toQuit if the camera fails to open; abort cleanly
+    // instead of spinning here forever. Triggering and motion are not set up yet,
+    // so just stop and join the behavior acquirer before destroying its camera.
+    if (programState->toQuit.load()) {
+        spdlog::critical(
+            "Behavior camera failed to initialize. Aborting arena registration "
+            "scan.");
+        if (behaviorRecordingState->behaviorCamera) {
+            behaviorRecordingState->behaviorCamera->stop();
+        }
+        if (behaviorThread.joinable()) {
+            behaviorThread.join();
+        }
+        behaviorRecordingState->behaviorCamera = nullptr;
+        return;
     }
     spdlog::info("Behavior camera ready");
 
@@ -488,13 +505,17 @@ void runArenaRegistrationScan(
 
     auto shutdown = [&]() {
         programState->toQuit.store(true);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Interrupt the grab so the acquirer returns even if no frames are
+        // arriving (waitForOneFrame() returns std::nullopt once stopped), JOIN
+        // it, and only then destroy the camera -- the acquirer dereferences
+        // behaviorRecordingState->behaviorCamera, so resetting it before the join
+        // would be a use-after-free.
         if (behaviorRecordingState->behaviorCamera) {
             behaviorRecordingState->behaviorCamera->stop();
-            behaviorRecordingState->behaviorCamera = nullptr;
         }
         if (behaviorThread.joinable())
             behaviorThread.join();
+        behaviorRecordingState->behaviorCamera = nullptr;
         // The new protocol has no "stop triggering" command; switch the blue
         // excitation light off, then close the link.
         arduinoCommunication->stopExcitation();

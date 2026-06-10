@@ -67,40 +67,89 @@ find_library(ZABER_MOTION_LIB NAMES zaber-motion REQUIRED)
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
 include_directories(${EGRABBER_INCLUDE_DIR})
 
-# PCO camera SDK (only the pco-camera-server target needs it). PCO_LINUX selects
-# the PCO headers' Linux code paths and is scoped to the pco-camera-server target
-# (see target_compile_definitions below) rather than defined globally. Two notes:
+# PCO camera SDK. The muscle (PCO) camera is driven in-process by muscle_camera.cc
+# (no separate server / shared memory anymore), so the SDK is linked into
+# run-spotlight and align-cameras. PCO_LINUX selects the PCO headers' Linux code
+# paths; it is scoped PER FILE (see set_source_files_properties below) to exactly
+# the TUs that include PCO headers -- the bundled SDK .cpp files and
+# muscle_camera.cc -- rather than to the whole target. Two notes:
 #   - It must expand to a non-empty token: some PCO headers test it with
 #     `#elif PCO_LINUX` (e.g. etc_xcite_defs.h, etc_xcite_export.h), so an empty
 #     define would expand to bare `#elif` with no expression and fail to compile.
 #     The build passes PCO_LINUX=1.
 #   - Selecting the Linux path makes pco_linux_defs.h inject Windows-compat
 #     typedefs and macros (BOOL/BYTE/WORD/DWORD/HANDLE/..., FALSE/TRUE/MAKEWORD/
-#     far/MAX_PATH/...) into the global namespace of every translation unit that
-#     pulls in a PCO header. (This is the header's `#elif defined(PCO_LINUX)`
-#     branch; the `_WIN32` `#include <windows.h>` branch is never taken on Linux,
-#     and with neither defined the header hits its `#error`. The shims have no
-#     include guard either.) These names do not actually clash with the
-#     Qt/OpenCV/Euresys headers used elsewhere -- combining them in one TU still
-#     compiles -- so this is not a hard incompatibility. Keeping PCO_LINUX (and
-#     the SDK it pulls in) on its own target confines that global pollution and
-#     the PCO link/runtime dependencies to one binary, which is also why
-#     muscle-camera acquisition runs as a separate shared-memory server instead
-#     of linking into run-spotlight.
+#     far/MAX_PATH/...) into the global namespace of every TU that pulls in a PCO
+#     header. (This is the header's `#elif defined(PCO_LINUX)` branch; the
+#     `_WIN32` `#include <windows.h>` branch is never taken on Linux, and with
+#     neither defined the header hits its `#error`. The shims have no include
+#     guard either.) These names were empirically verified not to clash with the
+#     Qt/OpenCV/Euresys headers (the four stacks compile in one TU), and per-file
+#     scoping keeps the shims out of gui.cc and the other Qt TUs.
+#
+# Runtime/link note (bundled Qt/ICU skew): /opt/pco/pco.cpp/lib also ships a
+# bundled Qt 6.5.3 / ICU 56 (for PCO's own GUI tools), but the four camera libs
+# linked below depend on NONE of it (verified: no Qt/ICU in their NEEDED). The
+# binaries find system Qt 6.8.2 via LD_LIBRARY_PATH and the Qt lib dir placed
+# FIRST on the rpath (ahead of PCO_LIB_DIR), so the bundled Qt is never resolved.
 set(PCO_ROOT_DIR "/opt/pco/pco.cpp")
 set(PCO_INCLUDE_DIR "${PCO_ROOT_DIR}/include")
 set(PCO_LIB_DIR "${PCO_ROOT_DIR}/lib")
 set(PCO_CAMERA_DIR "${PCO_ROOT_DIR}/pco.camera")
-set(SDKLIB pco_sc2cam)
-set(RECORDERLIB pco_recorder)
-set(CONVERTLIB pco_convert)
-set(XCITELIB etc_xcite)
+# Link the four camera libs by absolute path (rather than via link_directories),
+# so the linker is unambiguous and we do not put PCO_LIB_DIR on the *link* search
+# path. Runtime resolution of these libs and their libpco* siblings is handled by
+# the rpath set per target below.
+set(PCO_LIBS
+    ${PCO_LIB_DIR}/libpco_sc2cam.so
+    ${PCO_LIB_DIR}/libpco_recorder.so
+    ${PCO_LIB_DIR}/libpco_convert.so
+    ${PCO_LIB_DIR}/libetc_xcite.so)
 set(PCO_CAMERA_SOURCES
     ${PCO_CAMERA_DIR}/cameraexception.cpp
     ${PCO_CAMERA_DIR}/image.cpp
     ${PCO_CAMERA_DIR}/camera.cpp
     ${PCO_CAMERA_DIR}/xcite.cpp
     ${PCO_CAMERA_DIR}/stdafx.cpp)
+# Scope PCO_LINUX=1 to muscle_camera.cc (the only non-PCO-SDK TU that includes
+# PCO headers). The bundled SDK sources get PCO_LINUX=1 through
+# pco_camera_sources's target_compile_definitions (see below).
+set_source_files_properties(
+    src/peripherals/muscle_camera.cc
+    PROPERTIES COMPILE_DEFINITIONS PCO_LINUX=1)
+
+# The PCO headers (stdafx.h, camera.h, ...) live under PCO_CAMERA_DIR and
+# PCO_INCLUDE_DIR. muscle_camera.cc and the bundled SDK sources need both.
+set(PCO_INCLUDE_DIRS ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
+
+# PCO camera SDK source files compiled as a shared library to prevent WEAK ELF
+# symbol interference with EGenTL's coaxlink.cti. When the PCO SDK sources are
+# compiled into an executable (or a shared library without symbol controls),
+# GCC emits WEAK inline-function symbols (_ZNSt9exceptionC1Ev and many
+# std::string / std::chrono / etc. helpers) into the dynamic symbol table.
+# When coaxlink.cti is later dlopen'd by EGenTL, its undefined references are
+# resolved from the global symbol table; if the PCO-derived WEAK versions "win"
+# over the libstdc++.so implementations, the ioctl sequence coaxlink issues
+# diverges from the expected one and EGrabber<> construction fails with
+# DriverNotAvailable. The version script (pco_camera_sources.map) restricts the
+# .so's dynamic exports to the pco:: and etc:: namespace symbols only; all
+# std::* inline helpers become local (hidden), so coaxlink.cti never resolves
+# them from this library.
+set(PCO_CAMERA_SOURCES_MAP ${CMAKE_CURRENT_SOURCE_DIR}/pco_camera_sources.map)
+add_library(pco_camera_sources SHARED ${PCO_CAMERA_SOURCES})
+target_compile_definitions(pco_camera_sources PRIVATE PCO_LINUX=1)
+target_include_directories(pco_camera_sources PRIVATE ${PCO_INCLUDE_DIRS})
+target_link_libraries(pco_camera_sources PRIVATE ${PCO_LIBS})
+target_link_options(pco_camera_sources PRIVATE
+    -Wl,--version-script,${PCO_CAMERA_SOURCES_MAP})
+set_target_properties(pco_camera_sources PROPERTIES
+    LINK_DEPENDS ${PCO_CAMERA_SOURCES_MAP}
+    INSTALL_RPATH "${PCO_LIB_DIR}")
+
+# Qt lib dir, placed first on the rpath so the bundled Qt in PCO_LIB_DIR is never
+# resolved ahead of system Qt. Derived from the imported Qt6::Core target.
+get_target_property(_qt6_core_location Qt6::Core LOCATION)
+get_filename_component(QT_LIB_DIR "${_qt6_core_location}" DIRECTORY)
 
 # --- Shared source groups ----------------------------------------------------
 set(COMMON_SOURCES
@@ -119,35 +168,12 @@ set(PERIPHERAL_SOURCES
     src/peripherals/motion_control.cc
     src/peripherals/muscle_camera.cc)
 
-# --- pco-camera-server -------------------------------------------------------
-# Internal server that acquires muscle-camera frames and publishes them over
-# shared memory. Built against the PCO SDK and kept separate from the rest.
-add_executable(pco-camera-server
-    src/apps/pco_camera_server_main.cc
-    src/apps/shared_memory_utils.cc
-    src/common/recorder_config.cc
-    ${PCO_CAMERA_SOURCES})
-target_include_directories(pco-camera-server PUBLIC
-    ${RECORDER_INCLUDE_DIR} ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
-# Scope PCO_LINUX to this target only (see note above). This reaches the bundled
-# PCO SDK .cpp files (PCO_CAMERA_SOURCES), which do not include our headers.
-target_compile_definitions(pco-camera-server PRIVATE PCO_LINUX=1)
-target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
-target_link_libraries(pco-camera-server PUBLIC ${SDKLIB} ${RECORDERLIB} ${CONVERTLIB} ${XCITELIB})
-target_link_libraries(pco-camera-server PUBLIC pthread rt dl)
-target_link_libraries(pco-camera-server PUBLIC ${OpenCV_LIBS})
-target_link_libraries(pco-camera-server PUBLIC spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-target_link_libraries(pco-camera-server PUBLIC yaml-cpp)
-set_target_properties(pco-camera-server PROPERTIES
-    INSTALL_RPATH "${PCO_LIB_DIR}"
-    BUILD_WITH_INSTALL_RPATH TRUE)
-
 # --- run-spotlight -----------------------------------------------------------
-# The main recording application.
+# The main recording application. The PCO muscle camera is driven in-process via
+# muscle_camera.cc (part of PERIPHERAL_SOURCES) + the bundled PCO SDK sources.
 add_executable(run-spotlight
     ${PERIPHERAL_SOURCES}
     ${COMMON_SOURCES}
-    src/apps/shared_memory_utils.cc
     src/apps/gui.cc
     # gui.h declares the Q_OBJECT class MainGUIWindow. It must be listed as a
     # target source so AUTOMOC scans it and emits its meta-object code: the
@@ -155,21 +181,30 @@ add_executable(run-spotlight
     # same-directory header discovery misses it.
     include/recorder/apps/gui.h
     src/apps/run_spotlight_main.cc)
-target_include_directories(run-spotlight PRIVATE ${RECORDER_INCLUDE_DIR})
+target_include_directories(run-spotlight PRIVATE
+    ${RECORDER_INCLUDE_DIR} ${PCO_INCLUDE_DIRS})
 target_link_libraries(run-spotlight pthread rt dl)
 target_link_libraries(run-spotlight Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(run-spotlight ${OpenCV_LIBS})
 target_link_libraries(run-spotlight ${ZABER_MOTION_LIB})
+target_link_libraries(run-spotlight ${PCO_LIBS} pco_camera_sources)
 target_link_libraries(run-spotlight spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-spotlight yaml-cpp)
 target_link_libraries(run-spotlight comm_protocol)
-set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
+# Installed binary: Qt lib dir first, then PCO lib dir (for the camera libs +
+# their libpco* siblings); see the bundled-Qt/ICU note above. $ORIGIN/../lib
+# locates libpco_camera_sources.so installed alongside (see install() below).
+# The build-tree binary keeps CMake's auto rpath (which already includes
+# PCO_LIB_DIR, since the PCO libs are linked by absolute path, plus Qt and
+# /usr/local/lib).
+set_target_properties(run-spotlight PROPERTIES
+    AUTOMOC ON
+    INSTALL_RPATH "${QT_LIB_DIR};${PCO_LIB_DIR};$ORIGIN/../lib")
 
 # --- align-cameras -----------------------------------------------------------
 # Camera and excitation-beam alignment tool.
 add_executable(align-cameras
     src/apps/align_cameras_main.cc
-    src/apps/shared_memory_utils.cc
     src/peripherals/behavior_camera.cc
     src/peripherals/muscle_camera.cc
     src/peripherals/arduino_communication.cc
@@ -179,21 +214,24 @@ add_executable(align-cameras
     src/common/loop_monitors.cc
     src/common/utils.cc
     src/common/cli.cc)
-target_include_directories(align-cameras PRIVATE ${RECORDER_INCLUDE_DIR})
+target_include_directories(align-cameras PRIVATE
+    ${RECORDER_INCLUDE_DIR} ${PCO_INCLUDE_DIRS})
 target_link_libraries(align-cameras PRIVATE pthread rt dl)
 target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)
 target_link_libraries(align-cameras PRIVATE ${OpenCV_LIBS})
+target_link_libraries(align-cameras PRIVATE ${PCO_LIBS} pco_camera_sources)
 target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(align-cameras PRIVATE yaml-cpp)
 target_link_libraries(align-cameras PRIVATE comm_protocol)
-set_target_properties(align-cameras PROPERTIES AUTOMOC ON)
+set_target_properties(align-cameras PROPERTIES
+    AUTOMOC ON
+    INSTALL_RPATH "${QT_LIB_DIR};${PCO_LIB_DIR};$ORIGIN/../lib")
 
 # --- run-arena-registration-scan ---------------------------------------------
 # Automated mapping-board scan over the translation-stage positions.
 find_library(DMTX_LIB NAMES dmtx REQUIRED)
 add_executable(run-arena-registration-scan
     src/apps/run_arena_registration_scan_main.cc
-    src/apps/shared_memory_utils.cc
     src/peripherals/behavior_camera.cc
     src/peripherals/motion_control.cc
     src/peripherals/arduino_communication.cc
@@ -225,14 +263,16 @@ if(RECORDER_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# Install compiled binaries to the bin folder.
+# Install compiled binaries and the PCO camera sources shared library.
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
 install(
     TARGETS
-        pco-camera-server
         run-spotlight
         align-cameras
         run-arena-registration-scan
-    RUNTIME DESTINATION
-        bin
+    RUNTIME DESTINATION bin
+)
+install(
+    TARGETS pco_camera_sources
+    LIBRARY DESTINATION lib
 )

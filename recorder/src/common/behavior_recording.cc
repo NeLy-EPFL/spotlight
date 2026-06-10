@@ -1,5 +1,7 @@
 #include "recorder/common/behavior_recording.h"
 
+#include <typeinfo>
+
 #include "recorder/common/loop_monitors.h"
 
 void behaviorImageAcquirer(
@@ -13,17 +15,48 @@ void behaviorImageAcquirer(
     std::string frameGrabberTriggerLine =
         recorderConfig.getParameter<std::string>(
             "behavior_camera", "frame_grabber_trigger_line");
-    behaviorRecordingState->behaviorCamera = std::make_shared<BehaviorCamera>(
-        cameraROI.imageWidth,
-        cameraROI.imageHeight,
-        cameraROI.xOffset,
-        cameraROI.yOffset,
-        frameGrabberTriggerLine);
 
-    spdlog::info("Behavior camera configured");
-
-    behaviorRecordingState->behaviorCamera->start();
-    spdlog::info("Behavior camera started");
+    // Open and configure the behavior camera. If this fails (e.g. the grabber is
+    // held by another GenTL client, or was left stranded by a previous unclean
+    // exit), catch it and request a clean shutdown instead of letting the
+    // exception escape the thread -- an uncaught exception here would
+    // std::terminate/abort the whole process, and that abrupt exit is itself what
+    // strands the CoaXPress grabber (see docs/troubleshooting.md), perpetuating
+    // the failure on the next run. Destroying the partially-constructed
+    // BehaviorCamera during the throw releases the grabber cleanly.
+    try {
+        behaviorRecordingState->behaviorCamera =
+            std::make_shared<BehaviorCamera>(
+                cameraROI.imageWidth,
+                cameraROI.imageHeight,
+                cameraROI.xOffset,
+                cameraROI.yOffset,
+                frameGrabberTriggerLine);
+        behaviorRecordingState->behaviorCamera->start();
+        spdlog::info("Behavior camera started");
+    } catch (const Euresys::gentl_error &e) {
+        // Euresys exceptions carry a useful message; surface the GenTL error
+        // code and description rather than a bare what().
+        spdlog::critical(
+            "Failed to initialize the behavior camera (Euresys GenTL error {}"
+            "{}): {}. Requesting shutdown.",
+            static_cast<int>(e.gc_err),
+            e.description.empty() ? "" : ", " + e.description,
+            e.what());
+        programState->toQuit.store(true);
+        return;
+    } catch (const std::exception &e) {
+        // Log the dynamic exception type too: a bare `std::exception` (what() ==
+        // "std::exception") is uninformative on its own, and the type name points
+        // at where it really came from.
+        spdlog::critical(
+            "Failed to initialize the behavior camera [{}]: {}. Requesting "
+            "shutdown.",
+            typeid(e).name(),
+            e.what());
+        programState->toQuit.store(true);
+        return;
+    }
 
     FrameData frameDataBuffer[3];
     size_t frameDataBufferIndex = 0;
@@ -56,20 +89,15 @@ void behaviorImageAcquirer(
     };
 
     while (!programState->toQuit.load()) {
-        // Acquire image data
-        // // Benchmark here shows that the waitForOneFrame() function takes
-        // // on average (triggeringCyclePeriod - 150) us to complete. So we
-        // // have plenty of margin and can theoretically record at
-        // // 1,000,000 / 200-ish = 5,000 fps.
-        // // uint64_t startTime = getCurrentTimeMicroseconds();
-        // spdlog::debug(
-        //     "Behavior image acquirer thread waiting for one frame");
-        FrameData frameData =
+        // Acquire image data. waitForOneFrame() returns std::nullopt when the
+        // camera has been stopped (shutdown) -- it then unblocks promptly even if
+        // no frames are arriving -- so loop back to re-check toQuit and exit.
+        std::optional<FrameData> maybeFrame =
             behaviorRecordingState->behaviorCamera->waitForOneFrame();
-        // spdlog::debug(
-        //     "Behavior image acquirer thread received one frame");
-        // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
-        // spdlog::info("Behavior camera waited {} us", waitTime);
+        if (!maybeFrame.has_value()) {
+            continue;
+        }
+        FrameData frameData = std::move(*maybeFrame);
 
         // Update latest frame for live display
         behaviorRecordingState->latestFrameHolder->setLatestFrameData(

@@ -18,11 +18,6 @@ muscle_camera:
   num_image_saving_threads: 4
   default_recording_sync_ratio: 6
   default_light_on_time_us: 1000
-  shared_frame_data_name: "/pco_camera_data"
-  shared_shutter_open_time_name: "/pco_camera_shutter_open_time"
-  shared_frame_metadata_name: "/pco_camera_frame_metadata"
-  shared_mutex_name: "/pco_camera_mutex"
-  shared_condition_variable_name: "/pco_camera_condition_variable"
   histogram_display_min: 0
   histogram_display_max: 1400
   default_display_vmin: 200

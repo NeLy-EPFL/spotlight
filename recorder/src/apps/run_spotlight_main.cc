@@ -24,6 +24,12 @@ std::shared_ptr<BehaviorRecordingState> behaviorRecordingState;
 std::shared_ptr<MuscleRecordingState> muscleRecordingState;
 std::shared_ptr<ArduinoCommunication> arduinoCommunication;
 
+// Set by the SIGINT handler (async-signal-safe: it only stores to an atomic).
+// A QTimer on the main thread polls it and closes the window, so Ctrl-C and the
+// GUI close button take the exact same shutdown path (closeEvent -> quitProgram)
+// rather than running anything Qt-unsafe from signal context.
+std::atomic<bool> sigintReceived{false};
+
 // Stage range (mm) covering the arena, for the motion-stage preview widget.
 struct StageRange {
     double minXMm, maxXMm, minYMm, maxYMm;
@@ -134,33 +140,33 @@ void joinIfJoinable(std::thread &thread, const char *name)
 
 bool quitProgram()
 /**
- * Quit gracefully by explicitly stopping acquisition on the behavior
- * camera* and telling saver threads that the work is done.
+ * Signal every worker thread to wind down, then return so the Qt event loop
+ * exits and runSpotlightMain() can JOIN every thread before any hardware object
+ * is destroyed.
  *
- * * Without stopping acquisition explicitly, the frame grabber will
- * think the device is still busy the next time we run the program.
+ * This only *signals* shutdown; it does not call std::exit() and does not join
+ * here. Joining (and only then destroying the cameras) happens in
+ * runSpotlightMain() after application->exec() returns. This ordering is what
+ * makes the in-process muscle camera safe: the MuscleCamera object is touched
+ * only by the muscle acquirer thread, so it must outlive that thread.
+ *
+ * Notes:
+ *   - The muscle camera is stop()'d so a blocked waitForOneFrame() returns
+ *     std::nullopt and the muscle acquirer breaks out of its loop even if no
+ *     muscle frames are arriving.
+ *   - The behavior camera is NOT stopped here: its acquirer self-terminates on
+ *     toQuit (it stops its own grabber at loop exit). Its grab is bounded (a
+ *     200 ms ScopedBuffer pop) and interruptible, so it observes toQuit and
+ *     returns promptly even if no frames are arriving; the unified teardown in
+ *     runSpotlightMain() additionally stop()s it before joining. (Only the blue
+ *     excitation light is switched off below.)
  */
 {
-    spdlog::info("SIGINT received. Initiating graceful shutdown");
+    spdlog::info("Shutdown requested. Initiating graceful shutdown");
 
     programState->toQuit.store(true);
 
-    // Stop behavior camera acquisition
-    if (behaviorRecordingState->behaviorCamera) {
-        spdlog::info("Stopping acquisition on behavior camera");
-        behaviorRecordingState->behaviorCamera->stop();
-    }
-
-    // Terminate PCO camera server. stop() is bounded (SIGTERM, then SIGKILL
-    // after a grace period), so an unresponsive server can never block the
-    // shutdown indefinitely.
-    //
-    // We deliberately do NOT reset muscleRecordingState->muscleCamera here: the
-    // muscle acquirer thread dereferences that shared_ptr without taking its own
-    // copy, so destroying the MuscleCamera now would be a use-after-free. Once
-    // the server is gone the acquirer blocks forever in waitForOneFrame()'s
-    // pthread_cond_wait, but it is abandoned at std::exit() below, with the
-    // MuscleCamera object left alive and valid until the process exits.
+    // Unblock the muscle acquirer's grab so it can observe toQuit and exit.
     if (muscleRecordingState->muscleCamera) {
         spdlog::info("Stopping acquisition on muscle camera");
         muscleRecordingState->muscleCamera->stop();
@@ -181,11 +187,19 @@ bool quitProgram()
     spdlog::info("Switching off muscle excitation light.");
     arduinoCommunication->stopExcitation();
 
-    std::exit(0);
+    // Let the Qt event loop terminate so exec() returns and the join/teardown in
+    // runSpotlightMain() runs. (Closing the last window would also do this, but
+    // calling quit() explicitly covers the SIGINT path too.)
+    if (application) {
+        application->quit();
+    }
+    return true;
 }
 
 int runSpotlightMain(int argc, char **argv) {
-    std::signal(SIGINT, [](int) { quitProgram(); });
+    // Async-signal-safe: only store to an atomic. A QTimer below polls it on the
+    // main thread and routes Ctrl-C through the same close path as the GUI.
+    std::signal(SIGINT, [](int) { sigintReceived.store(true); });
 
     // Parse command line arguments
     CLIOptions options = parseCLI(argc, argv);
@@ -321,92 +335,171 @@ int runSpotlightMain(int argc, char **argv) {
     }
     spdlog::info("Behavior camera saver threads started");
 
-    // Start muscle image acquirer
+    // Initialize the behavior (Euresys) camera FULLY before starting the muscle
+    // (PCO) camera thread. The two camera SDKs must not run their library init /
+    // device discovery concurrently in this process: doing so was observed to
+    // hang the Euresys GenTL discovery (it never completes), which then wedges
+    // the behavior acquirer thread in its constructor -- so no behavior frames
+    // ever arrive and quit hangs joining that thread. This could not happen when
+    // the muscle camera ran as a separate process (PCO_InitializeLib ran in that
+    // child, never overlapping Euresys discovery here). Serializing the two inits
+    // restores that separation.
     spdlog::info(
-        "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
-        "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
-        roiFilePath.string(),
-        muscleROI.x0,
-        muscleROI.x1,
-        muscleROI.y0,
-        muscleROI.y1,
-        muscleROI.xOffset,
-        muscleROI.yOffset,
-        muscleROI.imageWidth,
-        muscleROI.imageHeight);
-    std::thread muscleImageAcquirerThread(
-        muscleImageAcquirer,
-        muscleROI.imageWidth,
-        muscleROI.imageHeight,
-        muscleROI.xOffset,
-        muscleROI.yOffset,
-        recorderConfig,
-        profileDir,
-        spdlog::get_level(),
-        muscleRecordingState,
-        programState,
-        programmedRecordingStop);
-    spdlog::info("Muscle camera acquisition thread started");
-    size_t retryCount = 0;
-    while (!muscleRecordingState->muscleCamera) {
-        // Wait for the muscle camera to be initialized
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        spdlog::warn("Waiting for muscle camera to be initialized...");
-        retryCount++;
-        if (retryCount % 10 == 0) {
-            spdlog::warn("Muscle camera is not initialized.");
-        }
+        "Waiting for behavior camera to initialize before starting the muscle "
+        "camera...");
+    while ((!behaviorRecordingState->behaviorCamera ||
+            !behaviorRecordingState->behaviorCamera->isReady()) &&
+           !programState->toQuit.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    // The muscle camera's shutter-open window is configured from the main GUI
-    // window (initialized to, and tracking, the muscle light-on time spin box).
-
-    // Start muscle image savers
+    // The behavior acquirer sets toQuit if the camera fails to open (so the wait
+    // above does not spin forever). Track whether startup succeeded; on failure
+    // we skip the rest of startup but still fall through to the unified
+    // join/teardown below -- an early `return` here would destroy still-joinable
+    // std::threads and std::terminate the process (which would also strand the
+    // grabber). muscleImageAcquirerThread / muscleImageSaverThreads are declared
+    // here so they are in scope at the joins even when startup is aborted before
+    // they are created (a default-constructed thread is simply not joinable).
+    bool startupOk = !programState->toQuit.load();
+    std::thread muscleImageAcquirerThread;
     std::vector<std::thread> muscleImageSaverThreads;
-    int numMuscleImageSaverThreads = recorderConfig.getParameter<int>(
-        "muscle_camera", "num_image_saving_threads");
-    for (int i = 0; i < numMuscleImageSaverThreads; i++) {
-        muscleImageSaverThreads.push_back(std::thread(
-            muscleImageSaver,
+    int result = 0;
+    if (!startupOk) {
+        spdlog::critical(
+            "Behavior camera failed to initialize. Aborting startup.");
+    }
+
+    if (startupOk) {
+        spdlog::info("Behavior camera initialized; starting muscle camera.");
+
+        // Start muscle image acquirer
+        spdlog::info(
+            "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
+            "(xOffset={}, yOffset={}, imageWidth={}, imageHeight={})",
+            roiFilePath.string(),
+            muscleROI.x0,
+            muscleROI.x1,
+            muscleROI.y0,
+            muscleROI.y1,
+            muscleROI.xOffset,
+            muscleROI.yOffset,
+            muscleROI.imageWidth,
+            muscleROI.imageHeight);
+        muscleImageAcquirerThread = std::thread(
+            muscleImageAcquirer,
+            muscleROI.imageWidth,
+            muscleROI.imageHeight,
+            muscleROI.xOffset,
+            muscleROI.yOffset,
             recorderConfig,
             muscleRecordingState,
-            saveDirectory,
             programState,
-            5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
+            programmedRecordingStop);
+        spdlog::info("Muscle camera acquisition thread started");
+        size_t retryCount = 0;
+        while (!muscleRecordingState->muscleCamera &&
+               !programState->toQuit.load()) {
+            // Wait for the muscle camera to be initialized. Also bail out if the
+            // acquirer failed to open the camera and requested a shutdown, so we
+            // do not spin here forever.
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            spdlog::warn("Waiting for muscle camera to be initialized...");
+            retryCount++;
+            if (retryCount % 10 == 0) {
+                spdlog::warn("Muscle camera is not initialized.");
+            }
+        }
+        if (programState->toQuit.load()) {
+            spdlog::critical(
+                "Muscle camera failed to initialize. Aborting startup.");
+            startupOk = false;
+        }
     }
-    spdlog::info("Muscle camera saver threads started");
 
-    // Start Arduino triggering interface
-    std::string arduinoPortName = findArduinoPortName(recorderConfig);
-    arduinoCommunication =
-        std::make_shared<ArduinoCommunication>(arduinoPortName);
+    if (startupOk) {
+        // The muscle camera's shutter-open window is configured from the main GUI
+        // window (initialized to, and tracking, the muscle light-on time spin
+        // box).
 
-    // Reboot the trigger controller into a clean, known state at startup. The
-    // comm thread waits for the reboot and reopens the port, so the GUI's first
-    // STREAM (sent when the main window is constructed below) reaches the freshly
-    // reset controller.
-    arduinoCommunication->reset();
+        // Start muscle image savers
+        int numMuscleImageSaverThreads = recorderConfig.getParameter<int>(
+            "muscle_camera", "num_image_saving_threads");
+        for (int i = 0; i < numMuscleImageSaverThreads; i++) {
+            muscleImageSaverThreads.push_back(std::thread(
+                muscleImageSaver,
+                recorderConfig,
+                muscleRecordingState,
+                saveDirectory,
+                programState,
+                5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
+        }
+        spdlog::info("Muscle camera saver threads started");
 
-    // Create and show GUI
-    MainGUIWindow localMainGUIWindow(
-        recorderConfig,
-        behaviorRecordingState,
-        muscleRecordingState,
-        trackingControlState,
-        std::ref(behaviorCamCalibrationParams),
-        saveDirectory,
-        arduinoCommunication,
-        programState,
-        programmedRecordingStop,
-        activeAreaMask,
-        stageRange.minXMm,
-        stageRange.maxXMm,
-        stageRange.minYMm,
-        stageRange.maxYMm,
-        nullptr);
-    mainGUIWindow = &localMainGUIWindow;
-    mainGUIWindow->show();
+        // Start Arduino triggering interface
+        std::string arduinoPortName = findArduinoPortName(recorderConfig);
+        arduinoCommunication =
+            std::make_shared<ArduinoCommunication>(arduinoPortName);
 
-    int result = application->exec();
+        // Reboot the trigger controller into a clean, known state at startup. The
+        // comm thread waits for the reboot and reopens the port, so the GUI's
+        // first STREAM (sent when the main window is constructed below) reaches
+        // the freshly reset controller.
+        arduinoCommunication->reset();
+
+        // Create and show GUI
+        MainGUIWindow localMainGUIWindow(
+            recorderConfig,
+            behaviorRecordingState,
+            muscleRecordingState,
+            trackingControlState,
+            std::ref(behaviorCamCalibrationParams),
+            saveDirectory,
+            arduinoCommunication,
+            programState,
+            programmedRecordingStop,
+            activeAreaMask,
+            stageRange.minXMm,
+            stageRange.maxXMm,
+            stageRange.minYMm,
+            stageRange.maxYMm,
+            nullptr);
+        mainGUIWindow = &localMainGUIWindow;
+        mainGUIWindow->show();
+
+        // Poll the SIGINT flag on the main thread and route Ctrl-C through the
+        // same graceful close as the GUI's close button (closeEvent ->
+        // quitProgram).
+        QTimer sigintPollTimer;
+        QObject::connect(&sigintPollTimer, &QTimer::timeout, [&]() {
+            if (sigintReceived.load() && mainGUIWindow) {
+                spdlog::info("SIGINT received; closing the main window.");
+                mainGUIWindow->close();
+            }
+        });
+        sigintPollTimer.start(100); // ms
+
+        result = application->exec();
+        mainGUIWindow = nullptr;
+    }
+
+    // Unified teardown -- reached on both a normal GUI close and a startup abort.
+    // Signal shutdown and tell every worker thread to stop (interrupting the
+    // camera grabs so the acquirers exit even if no frames are arriving), then
+    // JOIN them all before destroying the cameras: the in-process cameras are
+    // touched only by their acquirer threads and must outlive them. On the normal
+    // path quitProgram() already signalled most of this; the calls here are
+    // idempotent and also cover the startup-abort path (where quitProgram() never
+    // ran).
+    programState->toQuit.store(true);
+    if (behaviorRecordingState->behaviorCamera) {
+        behaviorRecordingState->behaviorCamera->stop();
+    }
+    if (muscleRecordingState->muscleCamera) {
+        muscleRecordingState->muscleCamera->stop();
+    }
+    stopMotionControlRequestHandler(programState);
+    stopBehaviorImageSaver(behaviorRecordingState, programState);
+    stopMuscleImageSaver(muscleRecordingState, programState);
 
     // Wait for threads to finish
     joinIfJoinable(
@@ -428,7 +521,13 @@ int runSpotlightMain(int argc, char **argv) {
         "motion stage position logger thread");
     joinIfJoinable(trackingControllerThread, "tracking controller thread");
 
-    return result;
+    // Every acquirer thread is now joined, so it is safe to destroy the cameras.
+    // ~MuscleCamera stops the camera and tears down the PCO SDK; ~BehaviorCamera
+    // releases the grabber.
+    muscleRecordingState->muscleCamera = nullptr;
+    behaviorRecordingState->behaviorCamera = nullptr;
+
+    return startupOk ? result : 1;
 }
 
 int main(int argc, char **argv) {

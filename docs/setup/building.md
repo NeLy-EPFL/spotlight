@@ -32,7 +32,7 @@ This also builds the `comm_protocol` dependency:
 ```sh
 cmake -S recorder -B recorder/build
 cmake --build recorder/build -j 16
-ctest --test-dir recorder/build --output-on-failure        # run the unit tests
+ctest --test-dir recorder/build -LE hardware --output-on-failure   # unit tests
 ```
 
 The binaries are produced under `recorder/build/`. The three programs are
@@ -42,10 +42,70 @@ The binaries are produced under `recorder/build/`. The three programs are
 
 The unit tests (`recorder/tests/`) cover the hardware-independent logic
 (calibration, config loading, image/metadata utilities, muscle-camera ROI and
-trigger timing). **No test requires a physical device to respond**, though a test
-target may include vendor SDK headers and link the SDK libraries. They build by
-default when `recorder` is configured standalone; set `-DRECORDER_BUILD_TESTS=ON`
+trigger timing). **No unit test requires a physical device to respond**, though a
+test target may include vendor SDK headers and link the SDK libraries. They build
+by default when `recorder` is configured standalone; set `-DRECORDER_BUILD_TESTS=ON`
 to opt in from the umbrella build.
+
+### Hardware tests
+
+A separate set of tests **does** drive a physical device. They are all tagged with
+the CTest label **`hardware`** so the normal run can skip them (the `-LE hardware`
+above) and the rig can run only them:
+
+```sh
+ctest --test-dir recorder/build -L hardware --output-on-failure    # only hardware tests
+ctest --test-dir recorder/build --output-on-failure                # everything (unit + hardware)
+```
+
+Current hardware tests:
+
+| Test | What it checks | Needs |
+|---|---|---|
+| `BehaviorCameraHardware.ConstructsAndConfigures` | Behavior (JAI/Euresys) camera opens + GenICam configuration succeeds | Behavior camera |
+| `MuscleCameraHardware.InitializesAcquiresAndCloses` | Muscle (PCO) camera initializes, produces a frame, and closes cleanly | Muscle camera |
+| `BothCamerasHardware.SequentialInitBringsBothUp` | Both cameras come up using the **serialized** init order of the apps (behavior fully ready, *then* muscle) | Both cameras |
+
+> [!IMPORTANT]
+> A hardware test needs the device(s) attached **and free** to pass — e.g. close
+> eGrabber Studio first, since the grabber can be opened by only one client at a
+> time. Run them on the recording computer, not in CI. They still *build* (and
+> CTest still *lists* them) on any machine that can build the recorder; only
+> *running* them touches hardware.
+
+These live in **two** executables (both labeled `hardware`):
+
+- `recorder_hardware_tests` — the behavior-camera test only. It deliberately does
+  **not** link the PCO/muscle SDK, so a failure here is isolated from the muscle
+  camera (useful for answering "is the behavior-camera problem caused by the PCO
+  SDK being loaded?").
+- `recorder_hardware_tests_pco` — the muscle and both-camera tests, which link both
+  the PCO and Euresys SDKs.
+
+To add a hardware test, drop it in whichever target fits (PCO-free vs. PCO-linked)
+in `recorder/tests/CMakeLists.txt`; both are already labeled `hardware`.
+
+By default CTest only prints a test's output when it fails (`--output-on-failure`).
+To see SDK messages, initialization output, and GoogleTest lines for every test
+regardless of outcome, add `-V` (verbose):
+
+```sh
+ctest --test-dir recorder/build -L hardware -V
+```
+
+Alternatively, run the test binary directly to get raw GoogleTest output
+(no CTest wrapper):
+
+```sh
+./recorder/build/recorder_hardware_tests          # behavior-camera tests
+./recorder/build/recorder_hardware_tests_pco      # muscle + both-cameras tests
+```
+
+Pass `--gtest_filter=TestSuite.TestName` to run a single test case:
+
+```sh
+./recorder/build/recorder_hardware_tests_pco --gtest_filter=MuscleCameraHardware.InitializesAcquiresAndCloses
+```
 
 > [!TIP]
 > If a compile error appears during a parallel build, rerun with `-j 1` to get the

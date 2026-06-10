@@ -1,32 +1,304 @@
 #include "recorder/peripherals/muscle_camera.h"
 
-#include <cerrno> // errno, ECHILD
+// The PCO headers select their Linux code paths with `#elif PCO_LINUX`, so
+// PCO_LINUX must expand to a non-empty token (an empty define would produce
+// `#elif` with no expression). The build provides it per-file via
+// set_source_files_properties on this .cc (and the bundled PCO SDK sources);
+// this is a fallback so the file still compiles if that is ever dropped.
+#ifndef PCO_LINUX
+#define PCO_LINUX 1
+#endif
+
+#include <atomic>
 #include <chrono>
-#include <filesystem>
-#include <sys/prctl.h> // prctl, PR_SET_PDEATHSIG
-#include <thread>
+#include <climits>
+#include <condition_variable>
+#include <mutex>
+
+#include <opencv2/opencv.hpp>
+
+// clang-format off
+// stdafx.h must come first: it includes pco_linux_defs.h (WORD/BYTE/DWORD) and
+// <variant>, which camera.h, cameraexception.h, and sc2_defs.h all depend on.
+// Disable clang-format, which would sort these includes alphabetically.
+#include "stdafx.h"
+#include "camera.h"
+#include "cameraexception.h"
+#include "sc2_defs.h"
+// clang-format on
 
 namespace {
-std::string logLevelToStr(spdlog::level::level_enum logLevel) {
-    switch (logLevel) {
-    case spdlog::level::trace:
-        return "trace";
-    case spdlog::level::debug:
-        return "debug";
-    case spdlog::level::info:
-        return "info";
-    case spdlog::level::warn:
-        return "warn";
-    case spdlog::level::err:
-        return "error";
-    case spdlog::level::critical:
-        return "critical";
-    case spdlog::level::off:
-        return "off";
-    default:
-        spdlog::error("Unknown log level: {}. Using 'info'.", logLevel);
-        return "info";
+// Wait for an image with a small internal delay and a short timeout, so the
+// blocking grab returns regularly to re-check the stop flag (see
+// Impl::waitForOneFrame). Mirrors the values used by the old PCO server.
+constexpr bool kWaitWithSmallDelay = true;
+constexpr double kWaitTimeoutSecs = 0.1;
+constexpr uint32_t kTimeoutErrorCode = 0x80004001; // see PCO manual
+// Ring-buffer depth for continuous recording.
+constexpr int kRecordBufferSize = 10;
+} // namespace
+
+// ===========================================================================
+// MuscleCamera::Impl -- all PCO SDK state and the acquire loop. This struct is
+// the whole reason MuscleCamera is pimpl'd: it is defined only in this .cc (the
+// lone TU compiled with PCO_LINUX=1), so the PCO headers and their global
+// Windows-ism shims (BOOL/WORD/DWORD/...) never reach muscle_camera.h or anything
+// that includes it. See the class comment in muscle_camera.h for the rationale.
+// ===========================================================================
+struct MuscleCamera::Impl {
+    // ROI (1-based sensor coordinates, as the PCO SDK expects).
+    unsigned int x0;
+    unsigned int x1;
+    unsigned int y0;
+    unsigned int y1;
+    int imageWidth;
+    int imageHeight;
+    double sensorReadoutTimeUs;
+
+    // Set by stop() (any thread), observed by the acquirer thread.
+    std::atomic<bool> stopRequested{false};
+
+    // Desired state posted by setNominalExposureUs()/setEnabled() (any thread)
+    // and applied by the acquirer thread before its next grab. Guarded by
+    // paramMutex; paramCv wakes the acquirer when it is blocked waiting (camera
+    // disabled) and the state changes (re-enabled or stop requested).
+    std::mutex paramMutex;
+    std::condition_variable paramCv;
+    unsigned int desiredExposureUs = 0;
+    bool desiredEnabled = true;
+
+    // Acquirer-thread-only state.
+    pco::Camera camera;
+    unsigned int currentExposureUs = 0;
+    bool recording = false;
+    bool isFirstFrame = true;
+
+    Impl(
+        int imageWidth_,
+        int imageHeight_,
+        int xOffset,
+        int yOffset,
+        double sensorReadoutTimeUs_,
+        unsigned int initialExposureUs)
+        : x0(xOffset + 1), x1(xOffset + imageWidth_), y0(yOffset + 1),
+          y1(yOffset + imageHeight_), imageWidth(imageWidth_),
+          imageHeight(imageHeight_), sensorReadoutTimeUs(sensorReadoutTimeUs_),
+          desiredExposureUs(initialExposureUs),
+          currentExposureUs(initialExposureUs) {}
+
+    // Apply the static (ROI / trigger / SMA#4) configuration. Ported one-to-one
+    // from the old pco-camera-server's setupPCOCamera.
+    void configureCamera() {
+        spdlog::info("Getting default PCO camera configuration");
+        camera.defaultConfiguration();
+        pco::Configuration config = camera.getConfiguration();
+        config.roi.x0 = x0;
+        config.roi.x1 = x1;
+        config.roi.y0 = y0;
+        config.roi.y1 = y1;
+        // Auto-sequence ("auto trigger") = continuous rolling shutter: the camera
+        // free-runs, exposing each line back-to-back with no idle line-reset
+        // time, instead of waiting for an external TTL trigger per frame. This is
+        // required by the acquisition design (docs/data_acquisition.md): the
+        // trigger firmware does NOT trigger this camera -- it locks the behavior
+        // camera to the muscle camera's free-running common-time signal on
+        // SMA #4 (configured below). The free-run frame rate is set via the
+        // nominal exposure (see applyExposure).
+        config.trigger_mode = TRIGGER_MODE_AUTOTRIGGER;
+        config.acquire_mode = ACQUIRE_MODE_AUTO;
+        // Zero inter-frame delay keeps the rolling shutter continuous (no idle
+        // time). Any sync delay is implemented in the trigger firmware, not here.
+        config.delay_time_s = 0.0;
+        config.noise_filter_mode = NOISE_FILTER_MODE_ON;
+        spdlog::info(
+            "Setting PCO camera configuration: x0={}, x1={}, y0={}, y1={}",
+            config.roi.x0,
+            config.roi.x1,
+            config.roi.y0,
+            config.roi.y1);
+        camera.setConfiguration(config);
+
+        // Set trigger polarity.
+        camera.configureHWIO_1_exposureTrigger(
+            true, pco::HWIO_EdgePolarity::rising_edge);
+
+        // Drive SMA #4 as the muscle camera's "common time" reference for the
+        // trigger firmware. The firmware treats the line being HIGH as "in common
+        // time" and fires the behavior frame + blue LED on the LOW->HIGH onset,
+        // so the camera must drive the line HIGH for exactly the common-time
+        // window.
+        //   - signal_type status_expos: report the exposure status on SMA #4.
+        //   - timing global: for a rolling shutter, "global" is the interval when
+        //     all lines are exposed simultaneously, i.e. the common time. NOT
+        //     all_lines, which spans the whole rolling exposure envelope and would
+        //     make the onset fire ~rollingTime too early.
+        //   - polarity high_level: makes the line HIGH during common time (LOW
+        //     otherwise), matching the firmware's edge.
+        camera.configureHWIO_4_statusExpos(
+            true,
+            pco::HWIO_Polarity::high_level,
+            pco::HWIO_4_SignalType::status_expos,
+            pco::HWIO_StatusExpos_Timing::global); // global = common time
     }
+
+    // Program the nominal per-line exposure (also the free-run frame rate). Must
+    // be called while NOT recording (PCO does not allow changing the free-run
+    // exposure during recording -- hence the stop->reconfigure->restart in
+    // applyPendingReconfig).
+    void applyExposure(unsigned int exposureUs) {
+        spdlog::info("Setting PCO camera nominal exposure to {} us", exposureUs);
+        camera.setExposureTime(exposureUs / 1000000.0);
+        camera.autoExposureOff();
+        currentExposureUs = exposureUs;
+    }
+
+    void startRecording() {
+        camera.record(kRecordBufferSize, pco::RecordMode::ring_buffer);
+        recording = true;
+        // After a (re)start the next image is again a "first image".
+        isFirstFrame = true;
+    }
+
+    void stopRecording() {
+        if (recording) {
+            camera.stop();
+            recording = false;
+        }
+    }
+
+    // Bring the camera in line with the desired enable/exposure state, via
+    // stop->reconfigure->restart as needed (the PCO camera cannot change its
+    // free-run exposure, nor start/stop, without stopping the recording). Runs on
+    // the acquirer thread only. Returns true if the camera is now enabled and
+    // recording (ready to grab), false if it is currently disabled.
+    bool applyDesiredState() {
+        bool enabled;
+        unsigned int exposureUs;
+        {
+            std::lock_guard<std::mutex> lock(paramMutex);
+            enabled = desiredEnabled;
+            exposureUs = desiredExposureUs;
+        }
+        if (!enabled) {
+            stopRecording();
+            return false;
+        }
+        // Enabled: a live exposure change requires stop->reprogram->restart, so
+        // stop first if the desired exposure differs from what is programmed.
+        if (recording && exposureUs != currentExposureUs) {
+            spdlog::info(
+                "Applying muscle camera exposure change {} us -> {} us "
+                "(stop/reconfigure/restart)",
+                currentExposureUs,
+                exposureUs);
+            stopRecording();
+        }
+        if (!recording) {
+            applyExposure(exposureUs);
+            startRecording();
+        }
+        return true;
+    }
+
+    std::optional<FrameData> waitForOneFrame() {
+        pco::Image pcoImage;
+        while (!stopRequested.load()) {
+            // Apply any pending exposure/enable change, (re)starting recording as
+            // needed. If the camera is disabled, block until it is re-enabled or
+            // stop is requested (rather than busy-spinning), then report "no
+            // frame" so the acquirer loop can re-check its own shutdown flag.
+            if (!applyDesiredState()) {
+                std::unique_lock<std::mutex> lock(paramMutex);
+                paramCv.wait_for(
+                    lock, std::chrono::milliseconds(200), [this] {
+                        return stopRequested.load() || desiredEnabled;
+                    });
+                return std::nullopt;
+            }
+
+            // Blocking grab with a short timeout so we periodically return to
+            // the top of the loop and can observe stopRequested / a pending
+            // reconfigure. A timeout is expected (e.g. when the muscle camera is
+            // running slowly) and is not an error.
+            try {
+                if (isFirstFrame) {
+                    camera.waitForFirstImage(
+                        kWaitWithSmallDelay, kWaitTimeoutSecs);
+                    isFirstFrame = false;
+                } else {
+                    camera.waitForNewImage(
+                        kWaitWithSmallDelay, kWaitTimeoutSecs);
+                }
+            } catch (pco::CameraException &e) {
+                if (static_cast<uint32_t>(e.error_code()) == kTimeoutErrorCode) {
+                    continue; // expected; re-check stop flag and try again
+                }
+                throw;
+            }
+
+            // Fetch the latest image and copy it out. The cv::Mat wraps the SDK's
+            // buffer, which is reused on the next grab, so clone() takes a private
+            // copy before returning.
+            camera.image(
+                pcoImage, PCO_RECORDER_LATEST_IMAGE, pco::DataFormat::Mono16);
+            cv::Mat cvImage(
+                pcoImage.height(),
+                pcoImage.width(),
+                CV_16UC1,
+                pcoImage.raw_data().first);
+
+            FrameData frameData;
+            frameData.acquisitionTime = getCurrentTimeMicroseconds();
+            frameData.receivedTime = frameData.acquisitionTime;
+            frameData.image = cvImage.clone();
+            return frameData;
+        }
+        return std::nullopt;
+    }
+};
+
+namespace {
+bool isROIValid(
+    int x0,
+    int x1,
+    int y0,
+    int y1,
+    int imageWidth,
+    int imageHeight,
+    const RecorderConfig &recorderConfig) {
+    int fullFrameWidth =
+        recorderConfig.getParameter<int>("muscle_camera", "full_frame_width");
+    int fullFrameHeight =
+        recorderConfig.getParameter<int>("muscle_camera", "full_frame_height");
+    if (x0 < 1 || x1 > fullFrameWidth || y0 < 1 || y1 > fullFrameHeight ||
+        x0 >= x1 || y0 >= y1 || imageWidth % 32 != 0 || imageHeight % 8 != 0 ||
+        imageWidth < 64 || imageHeight < 16) {
+        spdlog::critical(
+            "Invalid ROI for muscle camera. The following conditions must be "
+            "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
+            "minimum size of the ROI is 64x16 pixels. The width must be a "
+            "multiple of 32 and the height must be a multiple of 8.",
+            fullFrameWidth,
+            fullFrameHeight);
+        return false;
+    }
+    return true;
+}
+
+// Initial nominal per-line exposure for the free-running camera, derived from
+// the default streaming muscle interval (streaming sync ratio / streaming
+// behavior FPS): exposure = muscleInterval - readout. The GUI overwrites this
+// live (via setNominalExposureUs) as soon as it knows the active parameters.
+unsigned int computeDefaultExposureUs(
+    const RecorderConfig &recorderConfig, double sensorReadoutTimeUs) {
+    const int streamingBehFPS = recorderConfig.getParameter<int>(
+        "behavior_camera", "streaming_frame_rate");
+    const int streamingSyncRatio = recorderConfig.getParameter<int>(
+        "muscle_camera", "streaming_sync_ratio");
+    const unsigned int defaultMuscleIntervalUs = static_cast<unsigned int>(
+        1000000.0 * streamingSyncRatio / streamingBehFPS);
+    return defaultMuscleIntervalUs -
+        static_cast<unsigned int>(sensorReadoutTimeUs);
 }
 } // namespace
 
@@ -35,276 +307,110 @@ MuscleCamera::MuscleCamera(
     int imageHeight,
     int xOffset,
     int yOffset,
-    double rollingShutterLineTimeUs,
     double sensorReadoutTimeUs,
-    const RecorderConfig &recorderConfig,
-    const std::string &profileDir,
-    spdlog::level::level_enum logLevel)
-    // Member initializers are in declaration order (avoids -Wreorder).
-    : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1),
-      y1_(yOffset + imageHeight), imageWidth_(imageWidth),
-      imageHeight_(imageHeight),
-      rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
-      sensorReadoutTimeUs_(sensorReadoutTimeUs), pcoCameraServerPID_(-1),
-      frameDataPtr_(nullptr), shutterOpenTimePtr_(nullptr),
-      frameMetadataPtr_(nullptr), mutexPtr_(nullptr), condVarPtr_(nullptr),
-      recorderConfig_(recorderConfig), lastFrameCount_(UINT_MAX) {
-    if (!isROIValid()) {
+    const RecorderConfig &recorderConfig) {
+    int x0 = xOffset + 1;
+    int x1 = xOffset + imageWidth;
+    int y0 = yOffset + 1;
+    int y1 = yOffset + imageHeight;
+    if (!isROIValid(
+            x0, x1, y0, y1, imageWidth, imageHeight, recorderConfig)) {
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
 
-    // Capture our PID before forking so the child can detect (after arming its
-    // parent-death signal below) whether we already died in the race window
-    // between fork() and prctl().
-    pid_t parentPIDBeforeFork = getpid();
-
-    pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
-
-    if (pid < 0) {
-        std::string errorMessage =
-            "Failed to fork process in order to start PCO camera server: " +
-            std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
-    } else if (pid == 0) {
-        // Child process.
-        //
-        // Ask the kernel to send us SIGTERM if our parent (the recorder) dies.
-        // Without this, a recorder that is SIGKILLed or crashes never runs
-        // ~MuscleCamera(), so the camera server is orphaned and keeps the PCO
-        // camera open indefinitely. The next run then fails to open the camera
-        // (it is already "attached") and the SDK reports the cryptic
-        // "Handle is invalid" (0xa00a3002). The server installs a SIGTERM
-        // handler that stops and closes the camera cleanly. PR_SET_PDEATHSIG
-        // survives the execl() below because pco-camera-server is not set-uid.
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-        // Close the race where the parent already died before the prctl() above
-        // took effect: in that case exit now rather than becoming an orphan.
-        if (getppid() != parentPIDBeforeFork) {
-            _exit(EXIT_FAILURE);
-        }
-
-        // Resolve pco-camera-server alongside the running recorder binary so we
-        // always launch the matching build, rather than whatever happens to be
-        // on $PATH.
-        std::filesystem::path serverPath =
-            std::filesystem::canonical("/proc/self/exe").parent_path() /
-            "pco-camera-server";
-
-        execl(
-            serverPath.c_str(),
-            "pco-camera-server",
-            "--profile-dir",
-            profileDir.c_str(),
-            "--x-min",
-            std::to_string(x0_).c_str(),
-            "--x-max",
-            std::to_string(x1_).c_str(),
-            "--y-min",
-            std::to_string(y0_).c_str(),
-            "--y-max",
-            std::to_string(y1_).c_str(),
-            "--delay",
-            "0", // sync delay is implemented in Arduino code, not here!
-            "--verbosity",
-            logLevelToStr(logLevel).c_str(),
-            (char *)nullptr);
-
-        // If execl returns, it must have failed
-        std::string errorMessage = "Failed to execute PCO camera server at " +
-                                   serverPath.string() + ": " +
-                                   std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        exit(EXIT_FAILURE); // Exit child process
-    } else {
-        // Parent process
-        pcoCameraServerPID_ = pid;
-        spdlog::info(
-            "PCO camera server started with process ID (PID): {}",
-            pcoCameraServerPID_);
-
-        // Wait for the camera server to initialize
-        sleep(1); // sleep for 1 second
-
-        // Setup shared memory buffers
-        spdlog::info("Muscle camera API: Setting up shared memory buffer...");
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for frame data");
-        bool createNew = false;
-
-        size_t frameBufferSize = imageWidth * imageHeight * 2; // CV_16UC1
-        std::string shmFrameDataName = recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_frame_data_name");
-        PCOSharedMemory::setupFrameData(
-            shmFrameDataName, frameBufferSize, frameDataPtr_, createNew);
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for shutter-open "
-            "time");
-        std::string shmShutterOpenTimeName =
-            recorderConfig.getParameter<std::string>(
-                "muscle_camera", "shared_shutter_open_time_name");
-        PCOSharedMemory::setupShutterOpenTime(
-            shmShutterOpenTimeName, shutterOpenTimePtr_, createNew);
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for frame metadata");
-        std::string shmFrameMetadataName =
-            recorderConfig.getParameter<std::string>(
-                "muscle_camera", "shared_frame_metadata_name");
-        PCOSharedMemory::setupFrameMetadata(
-            shmFrameMetadataName, frameMetadataPtr_, createNew);
-
-        spdlog::info("Muscle camera API: Setting up shared memory for mutex");
-        std::string shmMutexName = recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_mutex_name");
-        PCOSharedMemory::setupMutex(shmMutexName, mutexPtr_, createNew);
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for cond var");
-        std::string shmCondVarName = recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_condition_variable_name");
-        PCOSharedMemory::setupConditionVariable(
-            shmCondVarName, condVarPtr_, createNew);
-        spdlog::info("Shared memory setup complete for PCO camera");
-    }
-}
-
-void MuscleCamera::stop() {
-    // Terminate the PCO camera server process. This is bounded: an unresponsive
-    // server can never block shutdown indefinitely, because we escalate to
-    // SIGKILL if it does not exit within the grace period. The process is reaped
-    // in both paths so it does not linger as a zombie.
-    //
-    // Idempotent: pcoCameraServerPID_ is cleared once reaped, so a later call
-    // (e.g. an explicit stop() followed by the destructor) is a no-op.
-    if (pcoCameraServerPID_ <= 0) {
-        return;
+    // The PCO SDK keeps global state (camera scan/open handles, recorder, etc.)
+    // that must be initialized before any pco::Camera is constructed. Skipping
+    // this makes the Camera constructor's PCO_ScanCameras/PCO_OpenCameraDevice
+    // calls operate on an invalid SDK handle, which surfaces as the cryptic
+    // "Handle is invalid" (0xa00a3002). Mirror the PCO samples, which always pair
+    // PCO_InitializeLib()/PCO_CleanupLib() around camera use.
+    spdlog::info("Initializing PCO SDK library");
+    if (int err = PCO_InitializeLib(); err != PCO_NOERROR) {
+        throw std::runtime_error(fmt::format(
+            "Failed to initialize PCO SDK library (error 0x{:08x})",
+            static_cast<uint32_t>(err)));
     }
 
-    pid_t pid = pcoCameraServerPID_;
-    pcoCameraServerPID_ = -1;
+    unsigned int initialExposureUs =
+        computeDefaultExposureUs(recorderConfig, sensorReadoutTimeUs);
 
-    kill(pid, SIGTERM);
-
-    // Poll for graceful exit up to a bounded deadline before escalating. The
-    // server checks its shutdown flag once per frame-wait timeout (0.1 s), so
-    // it normally exits well within this window.
-    constexpr int gracePeriodMs = 3000;
-    constexpr int pollIntervalMs = 20;
-    bool reaped = false;
-    for (int elapsedMs = 0; elapsedMs < gracePeriodMs;
-         elapsedMs += pollIntervalMs) {
-        pid_t result = waitpid(pid, nullptr, WNOHANG);
-        if (result == pid || (result == -1 && errno == ECHILD)) {
-            reaped = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(pollIntervalMs));
+    try {
+        impl_ = std::make_unique<Impl>(
+            imageWidth,
+            imageHeight,
+            xOffset,
+            yOffset,
+            sensorReadoutTimeUs,
+            initialExposureUs);
+        spdlog::info("Setting up PCO muscle camera");
+        impl_->configureCamera();
+        impl_->applyExposure(initialExposureUs);
+        impl_->startRecording();
+        spdlog::info("PCO muscle camera setup complete; recording started");
+    } catch (...) {
+        // The Impl (and its pco::Camera) is destroyed by unique_ptr; release the
+        // SDK so a later run can reopen the camera.
+        impl_.reset();
+        PCO_CleanupLib();
+        throw;
     }
-
-    if (!reaped) {
-        spdlog::warn(
-            "PCO camera server (PID {}) did not exit within {} ms of SIGTERM; "
-            "escalating to SIGKILL.",
-            pid,
-            gracePeriodMs);
-        kill(pid, SIGKILL);
-        // SIGKILL cannot be caught or ignored, so this blocking reap is bounded.
-        waitpid(pid, nullptr, 0);
-    }
-
-    spdlog::info("PCO camera server process terminated.");
 }
 
 MuscleCamera::~MuscleCamera() {
-    stop();
+    // The acquirer thread has already been joined by the time we get here (see
+    // the threading contract in the header), so it is safe to touch the camera.
+    if (impl_) {
+        try {
+            impl_->stopRecording();
+        } catch (const std::exception &e) {
+            spdlog::warn("Error stopping PCO muscle camera: {}", e.what());
+        }
+        impl_.reset();
+    }
+    spdlog::info("PCO muscle camera stopped; releasing SDK");
+    PCO_CleanupLib();
 }
 
-FrameData MuscleCamera::waitForOneFrame() {
-    while (true) {
-        // Read data from shared memory
-        pthread_mutex_lock(mutexPtr_);
-        // spdlog::debug("Waiting for new frame...");
-        pthread_cond_wait(condVarPtr_, mutexPtr_);
-        // spdlog::debug("New frame available");
-        unsigned int frameCount = frameMetadataPtr_->frameCount;
-        uint64_t acquisitionTime = frameMetadataPtr_->acquisitionTime;
-
-        if (frameCount == lastFrameCount_) {
-            pthread_mutex_unlock(mutexPtr_);
-            spdlog::warn(
-                "PCO camera API is waken up by the camera server, but no new "
-                "frame is available. This could be a spurious wakeup of the "
-                "condition variable (very rare), but more likely it indicates "
-                "a problem in shared memory or synchronization primitives.");
-            continue;
-        }
-
-        // Copy the frame out of shared memory while still holding the lock. The
-        // cv::Mat below only wraps frameDataPtr_, which the camera server
-        // overwrites (memcpy) on every new frame; cloning under the lock takes a
-        // private copy before the server can begin writing the next frame, so
-        // the returned image can never be torn by a concurrent write.
-        cv::Mat image =
-            cv::Mat(imageHeight_, imageWidth_, CV_16UC1, frameDataPtr_).clone();
-        pthread_mutex_unlock(mutexPtr_);
-
-        if (image.empty()) {
-            spdlog::error("muscleCamera API got an empty image");
-        }
-
-        lastFrameCount_ = frameCount;
-        FrameData frameData;
-        frameData.acquisitionTime = acquisitionTime;
-        frameData.receivedTime = getCurrentTimeMicroseconds();
-        frameData.image = image;
-        return frameData;
+void MuscleCamera::stop() {
+    {
+        std::lock_guard<std::mutex> lock(impl_->paramMutex);
+        impl_->stopRequested.store(true);
     }
+    // Wake the acquirer if it is blocked in the disabled-state wait.
+    impl_->paramCv.notify_all();
 }
 
-bool MuscleCamera::isROIValid() const {
-    int fullFrameWidth =
-        recorderConfig_.getParameter<int>("muscle_camera", "full_frame_width");
-    int fullFrameHeight =
-        recorderConfig_.getParameter<int>("muscle_camera", "full_frame_height");
-    if (x0_ < 1 || x1_ > fullFrameWidth || y0_ < 1 || y1_ > fullFrameHeight ||
-        x0_ >= x1_ || y0_ >= y1_ || imageWidth_ % 32 != 0 ||
-        imageHeight_ % 8 != 0 || imageWidth_ < 64 || imageHeight_ < 16) {
-        spdlog::critical(
-            "Invalid ROI for muscle camera. The following conditions must be "
-            "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
-            "minimum size of the ROI is 64x16 pixels. The width must be a "
-            "multiple of 32 and the height must be a multiple of 8.",
-            imageWidth_,
-            imageHeight_);
-        return false;
+void MuscleCamera::setEnabled(bool enabled) {
+    {
+        std::lock_guard<std::mutex> lock(impl_->paramMutex);
+        impl_->desiredEnabled = enabled;
     }
+    // Wake the acquirer if it is parked in the disabled-state wait so it can
+    // restart the camera promptly on re-enable.
+    impl_->paramCv.notify_all();
+}
 
-    return true;
+std::optional<FrameData> MuscleCamera::waitForOneFrame() {
+    return impl_->waitForOneFrame();
 }
 
 void MuscleCamera::setNominalExposureUs(unsigned int exposureUs) {
-    if (shutterOpenTimePtr_ != nullptr) {
-        // The PCO camera server polls this shared value in its acquisition loop
-        // and applies it as the camera's nominal per-line exposure (see
-        // serveFrames() in pco_camera_server_main.cc). In continuous mode this
-        // also sets the free-run frame rate.
-        *shutterOpenTimePtr_ = exposureUs;
-    } else {
-        spdlog::error(
-            "Cannot set exposure time. Shared memory pointer is null.");
-    }
-}
-
-pid_t MuscleCamera::getCameraServerPID() const {
-    return pcoCameraServerPID_;
+    // Just post the desired value; the acquirer thread compares it against the
+    // programmed exposure each loop and applies any change via
+    // stop->reconfigure->restart (see Impl::applyDesiredState).
+    std::lock_guard<std::mutex> lock(impl_->paramMutex);
+    impl_->desiredExposureUs = exposureUs;
 }
 
 int MuscleCamera::getNumLinesScanned() const {
-    return imageHeight_;
+    return impl_->imageHeight;
 }
+
+// MuscleTriggerTiming and the ROI-rounding helpers are hardware-independent (no
+// PCO calls), but live here alongside the rest of muscle_camera.h's
+// implementation so there is one .cc per header. The recorder unit tests link
+// this TU (and the PCO SDK) to exercise them; that is fine because the tests
+// never open or talk to a camera (see recorder/tests/CMakeLists.txt).
 
 int roundToNearestValidMuscleCamHorizontal(int value) {
     int remainder = value % 32;

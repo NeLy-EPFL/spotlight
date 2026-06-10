@@ -93,28 +93,31 @@ void muscleImageAcquirer(
     unsigned int xOffset,
     unsigned int yOffset,
     const RecorderConfig &recorderConfig,
-    const std::string &profileDir,
-    spdlog::level::level_enum logLevel,
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop) {
     spdlog::info("Muscle image acquirer thread started");
 
-    // Create muscle camera
-    double rollingShutterLineTimeUs = recorderConfig.getParameter<double>(
-        "muscle_camera", "rolling_shutter_line_time_us");
+    // Create the in-process PCO muscle camera. Opening the camera can throw a
+    // PCO exception (e.g. no camera attached); treat that as fatal and request a
+    // clean program shutdown rather than terminating with an uncaught exception.
     double sensorReadoutTimeUs = recorderConfig.getParameter<double>(
         "muscle_camera", "sensor_readout_time_us");
-    muscleRecordingState->muscleCamera = std::make_shared<MuscleCamera>(
-        imageWidth,
-        imageHeight,
-        xOffset,
-        yOffset,
-        rollingShutterLineTimeUs,
-        sensorReadoutTimeUs,
-        recorderConfig,
-        profileDir,
-        logLevel);
+    try {
+        muscleRecordingState->muscleCamera = std::make_shared<MuscleCamera>(
+            imageWidth,
+            imageHeight,
+            xOffset,
+            yOffset,
+            sensorReadoutTimeUs,
+            recorderConfig);
+    } catch (const std::exception &e) {
+        spdlog::critical(
+            "Failed to start the muscle camera: {}. Requesting shutdown.",
+            e.what());
+        programState->toQuit.store(true);
+        return;
+    }
 
     spdlog::info("Muscle camera configured. Entering frame grabbing loop...");
     long int currentFrameId = 0;
@@ -123,47 +126,75 @@ void muscleImageAcquirer(
     // until the GUI tears the recording down.
     bool reachedProgrammedStop = false;
 
-    while (!programState->toQuit.load()) {
-        FrameData frameData =
-            muscleRecordingState->muscleCamera->waitForOneFrame();
-        if (frameData.image.empty()) {
-            spdlog::error("muscleImageAcquirer thread got an empty image");
+    // Acquire frames until shutdown. waitForOneFrame() returns std::nullopt once
+    // the camera is stop()'d on shutdown, letting us break promptly even if no
+    // muscle frames are arriving (the object stays alive until this thread is
+    // joined; see the MuscleCamera threading contract). PCO exceptions are caught
+    // here so they never escape the thread.
+    try {
+        while (!programState->toQuit.load()) {
+            std::optional<FrameData> maybeFrame =
+                muscleRecordingState->muscleCamera->waitForOneFrame();
+            if (!maybeFrame.has_value()) {
+                // No frame this round. waitForOneFrame() returns nullopt for two
+                // distinct reasons: (a) the camera is disabled (muscle imaging
+                // toggled off -- it blocked briefly and will resume when
+                // re-enabled), or (b) stop() was called for shutdown. Loop back
+                // rather than break: case (a) must keep this acquirer alive so it
+                // resumes when re-enabled, and case (b) is handled by the
+                // while-condition (shutdown sets toQuit before calling stop()).
+                // Breaking here would kill the acquirer the first time muscle
+                // imaging is disabled -- which, since it is off by default, would
+                // happen on every launch.
+                continue;
+            }
+            FrameData frameData = std::move(*maybeFrame);
+            if (frameData.image.empty()) {
+                spdlog::error("muscleImageAcquirer thread got an empty image");
+            }
+            muscleRecordingState->latestFrameHolder->setLatestFrameData(
+                frameData);
+
+            bool isRecording = programState->isRecording.load();
+            int numFramesExpected =
+                programmedRecordingStop->numMuscleFramesExpected;
+
+            if (isRecording && !reachedProgrammedStop) {
+                if (currentFrameId == 0) {
+                    spdlog::info("First muscle frame of the recording received");
+                }
+                frameData.frameId = currentFrameId++;
+                {
+                    std::lock_guard<std::mutex> lock(
+                        muscleRecordingState->muscleImageQueueMutex);
+                    muscleRecordingState->muscleImageQueue.push(frameData);
+                }
+                muscleRecordingState->muscleImageQueueCondVar.notify_one();
+
+                // Stop exactly on the programmed frame count: once the last
+                // expected frame has been enqueued, stop recording on our own so
+                // no extra frames are saved. Nothing else to do here -- the
+                // behavior acquirer notifies the GUI to finalize, and the Arduino
+                // also stops triggering the muscle camera by itself.
+                if (numFramesExpected >= 0 &&
+                    currentFrameId == numFramesExpected) {
+                    reachedProgrammedStop = true;
+                    spdlog::info(
+                        "Muscle camera reached programmed stop after {} frames.",
+                        numFramesExpected);
+                }
+            } else if (!isRecording) {
+                // If we're not recording, we need to reset the frame ID
+                // counter so that the next recording session starts at 0
+                currentFrameId = 0;
+                reachedProgrammedStop = false;
+            }
         }
-        muscleRecordingState->latestFrameHolder->setLatestFrameData(frameData);
-
-        bool isRecording = programState->isRecording.load();
-        int numFramesExpected =
-            programmedRecordingStop->numMuscleFramesExpected;
-
-        if (isRecording && !reachedProgrammedStop) {
-            if (currentFrameId == 0) {
-                spdlog::info("First muscle frame of the recording received");
-            }
-            frameData.frameId = currentFrameId++;
-            {
-                std::lock_guard<std::mutex> lock(
-                    muscleRecordingState->muscleImageQueueMutex);
-                muscleRecordingState->muscleImageQueue.push(frameData);
-            }
-            muscleRecordingState->muscleImageQueueCondVar.notify_one();
-
-            // Stop exactly on the programmed frame count: once the last expected
-            // frame has been enqueued, stop recording on our own so no extra
-            // frames are saved. Nothing else to do here -- the behavior acquirer
-            // notifies the GUI to finalize, and the Arduino also stops
-            // triggering the muscle camera by itself.
-            if (numFramesExpected >= 0 && currentFrameId == numFramesExpected) {
-                reachedProgrammedStop = true;
-                spdlog::info(
-                    "Muscle camera reached programmed stop after {} frames.",
-                    numFramesExpected);
-            }
-        } else if (!isRecording) {
-            // If we're not recording, we need to reset the frame ID
-            // counter so that the next recording session starts at 0
-            currentFrameId = 0;
-            reachedProgrammedStop = false;
-        }
+    } catch (const std::exception &e) {
+        spdlog::critical(
+            "Muscle camera acquisition failed: {}. Requesting shutdown.",
+            e.what());
+        programState->toQuit.store(true);
     }
 }
 

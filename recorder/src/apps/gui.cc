@@ -639,6 +639,12 @@ QLayout *MainGUIWindow::createMusclePreviewColumn(
             muscleImagingEnabled_ = enabled;
             spdlog::info(
                 enabled ? "Enabling muscle imaging" : "Disabling muscle imaging");
+            // Start/stop the muscle camera itself: when imaging is off the camera
+            // is stopped (it no longer free-runs or drives its common-time
+            // signal); it is restarted when re-enabled. Done before re-streaming
+            // so the camera is already spinning up as the controller starts
+            // locking the behavior frames to its common-time onsets.
+            muscleRecordingState_->muscleCamera->setEnabled(enabled);
             // The muscle-only parameters are editable only when imaging muscle.
             syncRatioSpinBox_->setEnabled(enabled);
             muscleLightOnTimeSpinBox_->setEnabled(enabled);
@@ -651,6 +657,12 @@ QLayout *MainGUIWindow::createMusclePreviewColumn(
                 arduinoCommunication_->stream(buildStreamingParams());
             }
         });
+    // Sync the camera's initial enabled state to the checkbox. The box is
+    // unchecked by default (above), so the muscle camera starts stopped and only
+    // runs once the user enables imaging. (MuscleCamera defaults to enabled,
+    // which is what align-cameras -- with no such checkbox -- wants.)
+    muscleRecordingState_->muscleCamera->setEnabled(
+        muscleImagingCheckBox_->isChecked());
 
     // Stack the muscle preview directly on top of its histogram (no gap between
     // the two), then place that stack under the column title (title text on the

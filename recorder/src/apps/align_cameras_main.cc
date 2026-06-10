@@ -228,17 +228,72 @@ void alignCamera(const std::filesystem::path &profileDir) {
         programmedRecordingStop);
     spdlog::info("Behavior camera acquisition thread started");
 
+    // Declared now (assigned once the behavior camera is ready) so the shutdown
+    // lambda below can join it on an early abort even before it is started.
+    std::thread muscleImageAcquirerThread;
+
+    // Single teardown path, used both on a normal exit and on an early abort when
+    // a camera fails to initialize. Signals shutdown, interrupts both camera grabs
+    // so the acquirers return even if no frames are arriving (waitForOneFrame()
+    // returns std::nullopt once stopped), JOINs both acquirers before destroying
+    // either camera (each in-process camera is touched only by its acquirer thread
+    // and must outlive it), then switches the excitation light off and closes the
+    // Arduino link if triggering was ever started.
+    auto shutdown = [&]() {
+        programState->toQuit.store(true);
+        if (behaviorRecordingState->behaviorCamera) {
+            behaviorRecordingState->behaviorCamera->stop();
+        }
+        if (muscleRecordingState->muscleCamera) {
+            muscleRecordingState->muscleCamera->stop();
+        }
+        if (behaviorImageAcquirerThread.joinable()) {
+            behaviorImageAcquirerThread.join();
+        }
+        if (muscleImageAcquirerThread.joinable()) {
+            muscleImageAcquirerThread.join();
+        }
+        behaviorRecordingState->behaviorCamera = nullptr;
+        muscleRecordingState->muscleCamera = nullptr;
+        if (arduinoCommunication) {
+            spdlog::info("Switching off excitation and closing Arduino link");
+            arduinoCommunication->stopExcitation();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            arduinoCommunication->stopCommunication();
+        }
+    };
+
+    // Initialize the behavior (Euresys) camera fully before starting the muscle
+    // (PCO) camera thread: the two camera SDKs must not run their library init /
+    // device discovery concurrently in this process (it was observed to hang the
+    // Euresys GenTL discovery). See the same guard in run_spotlight_main.cc.
+    spdlog::info(
+        "Waiting for behavior camera to initialize before starting the muscle "
+        "camera...");
+    while ((!behaviorRecordingState->behaviorCamera ||
+            !behaviorRecordingState->behaviorCamera->isReady()) &&
+           !programState->toQuit.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    // The behavior acquirer sets toQuit if the camera fails to open; abort cleanly
+    // instead of spinning here forever.
+    if (programState->toQuit.load()) {
+        spdlog::critical(
+            "Behavior camera failed to initialize. Aborting align-cameras.");
+        shutdown();
+        return;
+    }
+    spdlog::info("Behavior camera initialized; starting muscle camera.");
+
     spdlog::info("Setting up muscle camera acquisition thread");
     muscleRecordingState->latestFrameHolder = std::make_shared<LatestFrame>();
-    std::thread muscleImageAcquirerThread(
+    muscleImageAcquirerThread = std::thread(
         muscleImageAcquirer,
         fullMuscleImageWidth,
         fullMuscleImageHeight,
         0, // xOffset
         0, // yOffset
         recorderConfig,
-        profileDir,
-        spdlog::get_level(),
         muscleRecordingState,
         programState,
         programmedRecordingStop);
@@ -246,13 +301,22 @@ void alignCamera(const std::filesystem::path &profileDir) {
 
     // Start Arduino triggering interface set default triggering parameters
     size_t retryCount = 0;
-    while (!muscleRecordingState->muscleCamera) {
+    while (!muscleRecordingState->muscleCamera &&
+           !programState->toQuit.load()) {
         spdlog::debug("Waiting for muscle camera to be ready");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         retryCount++;
         if (retryCount % 10 == 0) {
             spdlog::warn("Muscle camera is not initialized.");
         }
+    }
+    // The muscle acquirer sets toQuit if the camera fails to open; abort cleanly
+    // instead of spinning here forever (and before dereferencing muscleCamera).
+    if (programState->toQuit.load()) {
+        spdlog::critical(
+            "Muscle camera failed to initialize. Aborting align-cameras.");
+        shutdown();
+        return;
     }
     int muscleNumLinesScanned =
         muscleRecordingState->muscleCamera->getNumLinesScanned();
@@ -339,28 +403,12 @@ void alignCamera(const std::filesystem::path &profileDir) {
         }
     }
 
-    // Stop the cameras
-    spdlog::info("Stopping behavior camera acquisition thread");
-    programState->toQuit.store(true);
-    // Give some time for acquisition threads to break out of loop
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (behaviorRecordingState->behaviorCamera) {
-        spdlog::info("Stopping acquisition on behavior camera");
-        behaviorRecordingState->behaviorCamera->stop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        behaviorRecordingState->behaviorCamera = nullptr;
-    }
-    muscleRecordingState->muscleCamera = nullptr;
-    behaviorImageAcquirerThread.join();
-    muscleImageAcquirerThread.join();
-    spdlog::info("Behavior camera acquisition thread stopped");
-
-    // Stop triggering. The new protocol has no "stop triggering" command, so
-    // switch the blue excitation light off, then close the link.
-    spdlog::info("Switching off excitation and closing Arduino link");
-    arduinoCommunication->stopExcitation();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    arduinoCommunication->stopCommunication();
+    // Stop the cameras and triggering via the single teardown path defined above
+    // (joins both acquirers before destroying the cameras, then switches off
+    // excitation and closes the Arduino link).
+    spdlog::info("Stopping camera acquisition threads");
+    shutdown();
+    spdlog::info("Camera acquisition threads stopped");
 }
 
 int main(int argc, char **argv) {

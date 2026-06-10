@@ -46,8 +46,6 @@ void muscleImageAcquirer(
     unsigned int xOffset,
     unsigned int yOffset,
     const RecorderConfig &recorderConfig,
-    const std::string &profileDir,
-    spdlog::level::level_enum logLevel,
     std::shared_ptr<MuscleRecordingState> muscleRecordingState,
     std::shared_ptr<ProgramState> programState,
     std::shared_ptr<ProgrammedStop> programmedRecordingStop);
