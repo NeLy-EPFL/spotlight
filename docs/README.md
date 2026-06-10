@@ -57,6 +57,7 @@ Everything in the User's manual, plus:
   - `run-homography-scan` *(TODO: not yet implemented; see [Camera homography](configuration/camera_homography.md))*
   - [`run-spotlight`](recorder/run_spotlight.md)
     - [Experiment protocol string](recorder/run_spotlight.md#experiment-protocol-string)
+  - [`reset-camera`](recorder/reset_camera.md) — recovery helper
 - Python tools (`spotlight-tools`)
   - [`fit-arena-registration`](python-tools/fit_arena_registration.md)
   - [`postprocess-recording`](python-tools/postprocess_recording.md)

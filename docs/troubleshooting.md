@@ -33,7 +33,9 @@ kill <PID>                    # or just close the eGrabber Studio window
 ```
 
 If the camera was left in a bad state by an unclean exit (see below), a
-power-cycle of the camera (and grabber) clears it.
+reset of the camera (and grabber) clears it. You can do this without
+unplugging anything with
+[`reset-camera behavior`](recorder/reset_camera.md).
 
 ---
 
@@ -85,7 +87,9 @@ pco::CameraException (0x800a300d): SDK DLL error 800a300d at device 'camera sdk 
 
 **Cause:** the PCO camera is not connected. **Fix:** check the USB connection;
 verify the camera's Status LED is solid green (not flashing); unplug/replug if
-needed.
+needed. If the camera is detected by the OS but the SDK still can't open it,
+try [`reset-camera muscle`](recorder/reset_camera.md) (USB link reset, not a
+true power cycle).
 
 ### `Value is out of range` — ROI is 1-indexed
 
@@ -133,7 +137,9 @@ pco::CameraException (0x80031022): Firmware error 80031022 at device 'SC2 Main u
 
 **Cause:** unknown; suspected the camera was not closed cleanly last time.
 **Workaround:** physically unplug/replug the camera USB cable and wait until the
-Status LED is solid green.
+Status LED is solid green. [`reset-camera muscle`](recorder/reset_camera.md)
+(USB link reset) may also clear it without unplugging, but is not a true power
+cycle.
 
 ## GUI
 

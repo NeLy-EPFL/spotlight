@@ -248,3 +248,12 @@ install(
     RUNTIME DESTINATION
         bin
 )
+
+# Install helper scripts (not build targets) alongside the binaries. PROGRAMS
+# installs with executable permissions.
+install(
+    PROGRAMS
+        scripts/reset-camera
+    DESTINATION
+        bin
+)
