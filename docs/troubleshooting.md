@@ -35,93 +35,6 @@ kill <PID>                    # or just close the eGrabber Studio window
 If the camera was left in a bad state by an unclean exit (see below), a
 power-cycle of the camera (and grabber) clears it.
 
-## Behavior camera: GenTL discovery hangs when started alongside the PCO camera
-
-Symptom — the log shows `Running GenTL eGrabber discovery...` but never the
-matching `GenTL eGrabber discovery completed`. The behavior preview stays blank
-(no behavior frames ever arrive), and closing the GUI then hangs forever (you
-have to `kill -9`).
-
-Cause — the behavior acquirer thread is stuck **inside the `BehaviorCamera`
-constructor**, in the Euresys GenTL discovery call. It never reaches its grab
-loop, so no frames are produced and `behaviorImageAcquirerThread.join()` at quit
-waits on a thread that will never return. The trigger is **running the Euresys
-discovery and the PCO SDK library init at the same time in the same process**:
-the muscle (PCO) camera is now driven in-process, so `PCO_InitializeLib()` /
-`pco::Camera` construction runs concurrently with `EGrabberDiscovery::discover()`
-on a separate thread, and that concurrency wedges the Euresys discovery. (This
-could not happen when the muscle camera ran as a separate `pco-camera-server`
-process: the PCO init lived in that child process and never overlapped the
-Euresys discovery in the recorder.)
-
-Fix (in the code) — `run-spotlight` and `align-cameras` now **serialize the two
-camera initializations**: they wait for the behavior camera to finish
-initializing (`BehaviorCamera::isReady()`) before starting the muscle-camera
-thread, so the Euresys discovery runs alone. If you add a new program that opens
-both cameras, keep that ordering.
-
-## `run-spotlight` quit must join the acquirer threads before destroying the cameras
-
-Both cameras are driven in-process: the behavior (Euresys) camera by the behavior
-acquirer thread, and the muscle (PCO) camera by the muscle acquirer thread (there
-is no separate camera process anymore). The camera objects are touched **only**
-by their acquirer threads, so they **must outlive those threads**. `run-spotlight`
-shutdown is therefore **join-based**, not `std::exit()`-based:
-
-1. `quitProgram()` only *signals* shutdown: it sets `programState->toQuit`,
-   `stop()`s the muscle camera, tells the saver/motion threads to stop, switches
-   off the blue excitation light, and calls `application->quit()` so the Qt event
-   loop exits. It does **not** call `std::exit()` and does **not** destroy any
-   camera.
-2. After `application->exec()` returns, `runSpotlightMain()` runs a single
-   teardown that `stop()`s **both** cameras, tells the savers/motion to stop
-   (idempotent with step 1), **joins every worker thread**, and only then resets
-   `muscleRecordingState->muscleCamera` and `behaviorRecordingState->behaviorCamera`
-   to `nullptr`. Those destructors run on the main thread with no acquirer alive:
-   `~BehaviorCamera`/`~EGrabber` releases the CoaXPress grabber, and
-   `~MuscleCamera` stops the PCO camera and calls `PCO_CleanupLib()`. This same
-   teardown is reached on a **startup abort** (a camera failing to initialize), so
-   that path also joins cleanly instead of `std::terminate`-ing on still-joinable
-   threads.
-
-**Invariant to preserve:** the CoaXPress grabber is released only by
-`~BehaviorCamera`/`~EGrabber`. Any exit that skips that destructor — a segfault,
-`std::terminate` (e.g. an uncaught exception in a thread, or destroying a
-joinable `std::thread`), or `kill -9` — strands the grabber mid-stream, leaving
-the camera unresponsive even to eGrabber Studio until it is **power-cycled**.
-
-This requires shutdown to be **bounded** — no step may block forever, and **both
-camera grabs are interruptible**:
-
-- `BehaviorCamera::waitForOneFrame()` uses a bounded `ScopedBuffer` pop (200 ms)
-  and `BehaviorCamera::stop()` calls `cancelPop()`, so a blocked grab throws
-  `GC_ERR_ABORT` (caught internally) and the call returns `std::nullopt`. The
-  acquirer therefore exits even if **no frames are arriving** (e.g. the camera is
-  not being triggered) — it does not depend on triggers continuing during
-  shutdown.
-- `MuscleCamera::waitForOneFrame()` similarly returns `std::nullopt` after
-  `MuscleCamera::stop()` (its PCO grab uses a ~100 ms `waitForNewImage` timeout
-  that re-checks the stop flag).
-- Because of the above, the teardown must actually **call `stop()` on both
-  cameras** (it does) — `toQuit` alone does not unblock a grab that is waiting for
-  a frame.
-- `~ArduinoCommunication` calls `stopCommunication()` before joining its comm
-  thread, so the join cannot deadlock (`quitProgram()` only stops excitation,
-  never the comm thread itself).
-- An uncaught exception while opening either camera is caught in its acquirer
-  (`behaviorImageAcquirer` / `muscleImageAcquirer`), which logs and sets `toQuit`
-  instead of letting the exception escape the thread and abort the process (an
-  abort would itself strand the grabber).
-
-`SIGINT` is async-signal-safe: the handler only stores to an atomic flag. A
-`QTimer` on the main thread polls it and calls `mainGUIWindow->close()`, so Ctrl-C
-and the GUI close button take the **same** path (`closeEvent` → `quitProgram`).
-This avoids running anything Qt-unsafe from signal context and the old hazard of a
-second `^C` re-entering `quitProgram()` mid-`std::exit()`.
-
-If the camera is already stranded by an earlier unclean exit, power-cycle the
-camera (and grabber) to clear it.
-
 ---
 
 The entries below are migrated hardware/SDK errors. Many are intermittent vendor-SDK
@@ -210,8 +123,7 @@ pco::CameraException (0xa00a3002): SDK DLL error a00a3002 at device 'camera sdk 
 ```
 
 **Cause:** unknown. **Workaround:** a clean rebuild (`make clean` then rebuild)
-seemed to help even with no source change — possibly related to the bundled PCO SDK
-sources being compiled into the recorder.
+seemed to help even with no source change.
 
 ### `Arm is not possible while record active`
 

@@ -212,16 +212,28 @@ target_link_libraries(run-arena-registration-scan ${DMTX_LIB})
 target_link_libraries(run-arena-registration-scan comm_protocol)
 
 # --- Unit tests --------------------------------------------------------------
-# Desktop GoogleTest unit tests for the recorder's hardware-independent logic
-# (see tests/). Like comm_protocol's tests, they build by default only in a
-# standalone recorder configuration, so the umbrella build does not pay for them
-# unless it opts in via -DRECORDER_BUILD_TESTS=ON.
+# Two test executables (see tests/CMakeLists.txt):
+#
+#   recorder_tests_nohardware  — hardware-independent logic; builds by default
+#     in a standalone recorder configuration.  Set -DRECORDER_BUILD_TESTS=ON
+#     to opt in from the umbrella build.
+#
+#   recorder_tests_hardware  — init/configure/destroy cycles for each
+#     peripheral and an all-hardware integration test.  Off by default; opt in
+#     with -DRECORDER_BUILD_HARDWARE_TESTS=ON.  Requires all four peripherals
+#     (Euresys camera, PCO camera, Zaber stages, Arduino) and
+#     SPOTLIGHT_PROFILE_DIR to be set at runtime.
 set(RECORDER_STANDALONE OFF)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(RECORDER_STANDALONE ON)
 endif()
-option(RECORDER_BUILD_TESTS "Build recorder unit tests" ${RECORDER_STANDALONE})
-if(RECORDER_BUILD_TESTS)
+option(RECORDER_BUILD_TESTS
+    "Build hardware-independent recorder unit tests"
+    ${RECORDER_STANDALONE})
+option(RECORDER_BUILD_HARDWARE_TESTS
+    "Build hardware-dependent recorder tests (requires all peripherals)"
+    OFF)
+if(RECORDER_BUILD_TESTS OR RECORDER_BUILD_HARDWARE_TESTS)
     add_subdirectory(tests)
 endif()
 

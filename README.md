@@ -57,7 +57,12 @@ cmake --build recorder/build -j 16
 ctest --test-dir recorder/build --output-on-failure  # run the unit tests
 ```
 
-The `recorder` unit tests (`recorder/tests/`) are written with GoogleTest and cover the hardware-independent logic (calibration, config loading, image/metadata utilities, muscle-camera ROI and trigger timing). The rule for this suite is that **no test may require a physical device to respond** (a real camera, grabber, or motion stage) — but a test target *may* include external SDK headers and link the SDK libraries (e.g. it links the PCO SDK to exercise the timing/ROI logic that lives in `muscle_camera.cc`), since that only needs the SDK present, not live hardware. They build by default when `recorder` is configured standalone (as above); set `-DRECORDER_BUILD_TESTS=ON` to opt in from the umbrella build.
+The `recorder/tests/` directory contains two GoogleTest executables:
+
+- **`recorder_tests_nohardware`**: hardware-independent logic (calibration, config loading, image/metadata utilities, muscle-camera ROI and trigger timing). No physical device needed. Builds by default when `recorder` is configured standalone; opt in from the umbrella build with `-DRECORDER_BUILD_TESTS=ON`.
+- **`recorder_tests_hardware`**: init/configure/destroy cycles for each peripheral (Euresys behavior camera, PCO muscle camera, Zaber motion stages, Arduino trigger controller) plus an all-hardware integration test. Requires all four peripherals to be powered and connected. Opt in with `-DRECORDER_BUILD_HARDWARE_TESTS=ON` and set `SPOTLIGHT_PROFILE_DIR` before running.
+
+See [Building and installing](docs/setup/building.md) for the full test commands.
 
 ### `trigger_firmware`
 
