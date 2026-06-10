@@ -6,12 +6,10 @@
 #include <spdlog/spdlog.h>
 #include <yaml-cpp/yaml.h>
 
-/**
- * @brief A linear mapping from two 2D spaces (plus intercept) to 2D space.
- * For example, this could represent the mapping from (stage position, pixel
- * position) to physical position. The first 2x2 block is the stage block, the
- * second 2x2 block is the pixel block, and then there are two bias terms.
- */
+// A linear mapping from two 2D spaces (plus intercept) to 2D space.
+// For example, this could represent the mapping from (stage position, pixel
+// position) to physical position. The first 2x2 block is the stage block, the
+// second 2x2 block is the pixel block, and then there are two bias terms.
 class LinearMapper2x2to2 {
   public:
     double w_X1toX, w_Y1toX, w_X2toX, w_Y2toX, biasX;

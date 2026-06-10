@@ -19,7 +19,7 @@ Conventions for contributing to this repository. The authoritative C++ formatter
 - Use snake_case for file names, with `.cc` and `.h` suffixes.
 - Use camelCase for variable names. For abbreviations, use all caps instead of capitalizing only the first letter (e.g. `blueLED` instead of `blueLed`). If the abbreviation is the first word, keep lower case (e.g. `ledPin`). Exception: for ID and IDX, use `Id` or `Idx`.
 - Private attribute names should end with an underscore, but not private functions.
-- Use `/**` for docstrings and `//` for comments.
+- Use Google style for documentation in header files: `//` comment lines, not `/* */` blocks.
 - Keep documentation complete but concise. Assume the user has a certain level of technical know-how. Don't write docs just for the sake of it; make sure it's meaningful.
 - Use `#pragma once` instead of `#ifndef` guards in header files.
 - Use only ASCII characters except in `.md` files.

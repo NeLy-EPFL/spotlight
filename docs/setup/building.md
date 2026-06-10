@@ -116,8 +116,11 @@ protocol coverage lives in the desktop GoogleTest suite (`comm_protocol/tests/`)
 the on-device `test_protocol` is only a smoke check.
 
 PlatformIO installs AUnit automatically (it is listed in `platformio.ini`'s
-`lib_deps`). See the [README](../../README.md) for the firmware test internals
-(`test_framework = custom`, `test_build_src`, the `PIO_UNIT_TESTING` guard).
+`lib_deps`). Because AUnit is not PlatformIO's built-in Unity framework,
+`platformio.ini` sets `test_framework = custom`; each test program drives
+`aunit::TestRunner` from its own `setup()`/`loop()`. The firmware sources are
+compiled into the test programs (`test_build_src = yes`), and `src/main.cc`
+excludes its `setup()`/`loop()` from test builds via `#ifndef PIO_UNIT_TESTING`.
 
 If uploads fail with a USB-permission error (`LIBUSB_ERROR_ACCESS` / no DFU device),
 see the [USB-upload troubleshooting](dependencies.md#usb-upload-troubleshooting) on
