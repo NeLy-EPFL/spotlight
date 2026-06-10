@@ -38,28 +38,32 @@ The recorder runs roughly the following threads:
 Shared data are protected with the usual synchronization primitives (mutexes and
 condition variables) to avoid race conditions and busy-waiting.
 
-## In-process cameras
+## Camera drivers
 
-Both cameras are driven **in-process**, each by its own acquirer thread that calls
-`waitForOneFrame()` in a loop:
+The behavior camera is driven **in-process** by its acquirer thread:
 
 - `BehaviorCamera` (`src/peripherals/behavior_camera.cc`) wraps the Euresys
-  EGrabber API for the JAI CoaXPress camera.
-- `MuscleCamera` (`src/peripherals/muscle_camera.cc`) wraps the PCO SDK for the
-  pco.panda 4.2, pimpl'd so the PCO headers (and the `PCO_LINUX` Windows-compat
-  shims they inject) stay confined to that one translation unit.
+  EGrabber API for the JAI CoaXPress camera and calls `waitForOneFrame()` in a
+  loop.
 
-> [!NOTE]
-> Earlier versions ran the muscle camera as a separate `pco-camera-server` process
-> that published frames over shared memory, because the PCO SDK was assumed to be
-> incompatible with the Qt/Euresys stack. That assumption did not hold; the server
-> and its shared-memory plumbing have been removed. The investigation that led to
-> this is preserved in [muscle_camera_inprocess_refactor.md](muscle_camera_inprocess_refactor.md).
+The muscle (PCO) camera runs as a **separate process**:
 
-Because the camera objects are touched only by their acquirer threads, shutdown is
-**join-based**: the acquirers are joined before the camera objects are destroyed,
-so the grabbers are released cleanly. See the quit section of
-[Troubleshooting](troubleshooting.md) for why this ordering matters.
+- `pco-camera-server` (`src/apps/pco_camera_server_main.cc`) opens the PCO panda
+  4.2, sets ROI/trigger/exposure, and publishes each frame over five shared-memory
+  regions (frame data, shutter-open time, frame metadata, mutex, condition
+  variable).
+- `MuscleCamera` (`src/peripherals/muscle_camera.cc`) `fork()`+`execl()`s
+  `pco-camera-server` on construction and maps the shared-memory regions.
+  `waitForOneFrame()` blocks on the shared condition variable and returns the
+  latest frame; `stop()` sends `SIGTERM` to the server; the destructor waits for
+  it to exit.
+
+The separate process keeps the PCO SDK (and the `PCO_LINUX` Windows-compat shims
+it injects into the global namespace) completely isolated from the Qt/Euresys
+stack, and means a crash in the PCO SDK cannot destabilize the GUI process.
+
+On shutdown, `quitProgram()` calls `stop()` on both cameras (releasing the Euresys
+grabber and terminating the PCO server) before calling `std::exit()`.
 
 ## Trigger microcontroller
 

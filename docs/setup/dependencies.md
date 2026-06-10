@@ -301,15 +301,6 @@ This should install a bunch of files under
 sample programs under `/opt/pco/pco.cpp/samples`. In particular, `ImageViewer` is a
 nice GUI program.
 
-> [!IMPORTANT]
-> The muscle camera is now driven **in-process** by the recorder, which compiles
-> the bundled PCO SDK sources directly. `/opt/pco/pco.cpp/lib/` ships its own
-> `libQt6*` and `libicu*`; these must never end up ahead of the system Qt on the
-> recorder's library search path. The recorder's CMake handles this (it keeps the
-> system Qt lib dir ahead of the PCO lib dir on the rpath). See
-> [Building and installing](building.md) and the
-> [architecture overview](../architecture.md).
-
 ## spdlog (C++ logging library)
 
 Install using the Debian package manager:

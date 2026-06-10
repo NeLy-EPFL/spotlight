@@ -11,10 +11,6 @@ data. It is implemented across `recorder/src/apps/run_spotlight_main.cc` and
 - For muscle imaging: a `muscle_camera_roi.yaml` in the profile (from
   [`align-cameras`](align_cameras.md)).
 
-> [!NOTE]
-> The muscle (PCO) camera is driven **in-process**; there is no separate
-> `pco-camera-server` to launch. See the [architecture overview](../architecture.md).
-
 ## Starting the application
 
 ```bash
