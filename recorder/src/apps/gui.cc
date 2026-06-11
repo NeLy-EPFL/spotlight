@@ -558,7 +558,7 @@ QLayout *MainGUIWindow::create_save_directory_row(
         &QLineEdit::textChanged,
         this,
         [this](const QString &text) {
-            spdlog::debug("saveDirectory changed to {}", text.toStdString());
+            spdlog::debug("save_directory changed to {}", text.toStdString());
             save_directory_->set_directory(text.toStdString());
         });
     QPushButton *browse_button = new QPushButton("Browse", this);
@@ -759,7 +759,7 @@ QLayout *MainGUIWindow::create_live_image_displays() {
     // aspect ratio, so the image fills the label exactly with no left/right
     // padding (which would otherwise widen the gap to the muscle preview beyond
     // the muscle-to-stage gap). The behavior frame is rotated 90 degrees for
-    // display (see reorientBehaviorImage), so its displayed width:height ratio
+    // display (see reorient_behavior_image), so its displayed width:height ratio
     // is the ROI height:width.
     int behavior_roi_width =
         recorder_config_.get_parameter<int>("behavior_camera", "roi_width");
@@ -845,7 +845,7 @@ bool MainGUIWindow::validate_and_prepare_recording(
         experiment_protocol_->toPlainText().toStdString(), op_sequence);
     spdlog::info("Parsed {} protocol steps", op_sequence.size());
     if (num_steps_parsed < 0) {
-        // parseProtocolString has already shown a detailed error dialog.
+        // parse_protocol_string has already shown a detailed error dialog.
         return false;
     } else if (num_steps_parsed == 0) {
         spdlog::info("GUI starting recording without any protocol steps");
@@ -937,7 +937,7 @@ void MainGUIWindow::start_recording() {
     // Switch the free-running camera to the recording muscle frame rate before
     // START_RECORDING, so it is already emitting common-time onsets at the
     // recording cadence when the firmware begins locking the behavior frames to
-    // them. The controller's camFlushTimeUs delay covers the transient while
+    // them. The controller's cam_flush_time_us delay covers the transient while
     // the new exposure takes effect.
     if (muscle_imaging_check_box_->isChecked()) {
         muscle_recording_state_->muscle_camera->set_nominal_exposure_us(
@@ -966,11 +966,11 @@ void MainGUIWindow::start_recording() {
     arduino_communication_->start_recording(
         rec_params, revert_to_params, op_sequence);
 
-    // The controller waits camFlushTimeUs after START_RECORDING before it
+    // The controller waits cam_flush_time_us after START_RECORDING before it
     // starts triggering, so that frames acquired with the previous (streaming)
     // params drain out of the camera buffers. Ignore frames for a fraction of
     // that window on this side too, so the recording does not begin with stale
-    // frames (see camFlushTimeUs in comm_protocol/protocol.h).
+    // frames (see cam_flush_time_us in comm_protocol/protocol.h).
     std::this_thread::sleep_for(
         std::chrono::microseconds(cam_flush_time_us * 8 / 10));
     program_state_->is_recording.store(true);
@@ -1117,7 +1117,7 @@ void MainGUIWindow::end_recording(bool reached_programmed_end) {
     push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
 
     // Stop queuing frames. The acquirer threads flush any partial behavior
-    // group and discard subsequent frames (see behaviorImageAcquirer).
+    // group and discard subsequent frames (see behavior_image_acquirer).
     program_state_->is_recording.store(false);
 
     spdlog::info(
@@ -1158,7 +1158,7 @@ TriggerParams MainGUIWindow::build_streaming_params() const {
     // During streaming the controller always runs DEFAULT parameters. The
     // recording spin boxes (behavior FPS, sync ratio, behavior exposure, muscle
     // light-on) are buffered in the GUI and take effect only when a recording
-    // starts (see buildRecordingParams). This keeps the controller's status
+    // starts (see build_recording_params). This keeps the controller's status
     // display showing the actual live behavior, never the not-yet-executed
     // recording config.
     //
@@ -1223,7 +1223,7 @@ void MainGUIWindow::browse_directory() {
 void MainGUIWindow::increment_directory() {
     // Increment at least once, then keep incrementing until we land on a free
     // (non-existent or empty) directory, matching the auto-increment behavior
-    // used when starting a recording (see confirmOrResolveSaveDirectory).
+    // used when starting a recording (see confirm_or_resolve_save_directory).
     std::filesystem::path incremented =
         increment_directory_name(save_directory_->get_directory().string());
     while (std::filesystem::is_directory(incremented) &&

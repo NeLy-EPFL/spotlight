@@ -707,15 +707,14 @@ void wait_until_motion_stage_idle_sync() {
     }
 }
 
-/**
- * @brief Waits asynchronously until the motion stage becomes idle.
- *
- * This function checks if the motion stage is idle by calling
- * `checkIfMotionStageIdle` every 500 ms. Like waitUntilMotionStageIdleSync(),
- * this function is blocking, but it doesn't block the thread that handles
- * requests to read form / write to the hardware, so other threads who need to
- * interface with the motion stages can still do it.
- */
+// Waits asynchronously until the motion stage becomes idle.
+//
+// This function checks if the motion stage is idle by calling
+// check_if_motion_stage_idle() every 500 ms. Like
+// wait_until_motion_stage_idle_sync(), this function is blocking, but it doesn't
+// block the thread that handles requests to read from / write to the hardware,
+// so other threads that need to interface with the motion stages can still do
+// it.
 void wait_until_motion_stage_idle_async() {
     while (!check_if_motion_stage_idle()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));

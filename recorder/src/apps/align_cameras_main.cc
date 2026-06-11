@@ -196,7 +196,7 @@ void setup_display_windows(const RecorderConfig &recorder_config) {
 void align_camera(const std::filesystem::path &profile_dir) {
     std::filesystem::path config_path = profile_dir / "recorder_config.yaml";
     spdlog::info(
-        "alignCameras loading recorder configuration from {}",
+        "align-cameras loading recorder configuration from {}",
         config_path.string());
     RecorderConfig recorder_config(config_path);
 

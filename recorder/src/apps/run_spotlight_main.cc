@@ -114,10 +114,10 @@ StageRange compute_stage_range_from_arena(
         }
         return clipped;
     };
-    stage_min_x_mm = clip_to_physical_range(stage_min_x_mm, "stageMinX");
-    stage_max_x_mm = clip_to_physical_range(stage_max_x_mm, "stageMaxX");
-    stage_min_y_mm = clip_to_physical_range(stage_min_y_mm, "stageMinY");
-    stage_max_y_mm = clip_to_physical_range(stage_max_y_mm, "stageMaxY");
+    stage_min_x_mm = clip_to_physical_range(stage_min_x_mm, "stage_min_x");
+    stage_max_x_mm = clip_to_physical_range(stage_max_x_mm, "stage_max_x");
+    stage_min_y_mm = clip_to_physical_range(stage_min_y_mm, "stage_min_y");
+    stage_max_y_mm = clip_to_physical_range(stage_max_y_mm, "stage_max_y");
     set_motion_stage_limits(
         stage_min_x_mm, stage_max_x_mm, stage_min_y_mm, stage_max_y_mm);
 
@@ -217,7 +217,7 @@ int run_spotlight_main(int argc, char **argv) {
         std::filesystem::path(expand_path(options.arena_dir));
     std::filesystem::path config_path = profile_dir / "recorder_config.yaml";
     spdlog::info(
-        "runSpotlight main loading recorder configuration from {}",
+        "run-spotlight loading recorder configuration from {}",
         config_path.string());
     RecorderConfig recorder_config(config_path);
     if (!recorder_config.is_defined) {

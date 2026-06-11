@@ -417,7 +417,7 @@ int main(int argc, char *argv[]) {
         pco_camera_server::expand_path(options.profile_dir));
     std::filesystem::path config_path = profile_dir / "recorder_config.yaml";
     spdlog::info(
-        "pcoCameraServer loading recorder configuration from {}",
+        "pco-camera-server loading recorder configuration from {}",
         config_path.string());
     RecorderConfig recorder_config(config_path);
 

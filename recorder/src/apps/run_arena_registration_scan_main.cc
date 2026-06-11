@@ -443,7 +443,7 @@ void run_arena_registration_scan(
     // Load recorder config
     std::filesystem::path config_path = profile_dir / "recorder_config.yaml";
     spdlog::info(
-        "arenaRegistrationScan loading recorder configuration from {}",
+        "run-arena-registration-scan loading recorder configuration from {}",
         config_path.string());
     RecorderConfig recorder_config(config_path);
 
