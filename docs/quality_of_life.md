@@ -15,7 +15,19 @@ full-black and full-white in the live preview.
 
 ## Status display on the trigger controller
 
-On the physical trigger control box, a display now shows the program status, behavior camera frame rate, behavior-muscle synchronization ratio, behavior camera exposure time, and muscle camera effective exposure (light-on) time.
+On the physical trigger control box, a display now shows the program status,
+behavior camera frame rate, behavior-muscle synchronization ratio, behavior
+camera exposure time, and muscle camera effective exposure (light-on) time.
+
+---
+
+## Functional on/off switch
+
+The on/off switch on the trigger control box now logically disables triggering
+and physically cuts 24V power for triggering the CCS light controller.
+Consequently, at the end of an experiment, the user only needs to flip this
+switch. The USB-C cable and main power supply for the light controller can
+remain plugged in.
 
 ---
 
