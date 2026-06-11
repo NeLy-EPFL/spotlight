@@ -4,57 +4,54 @@
 
 #include <Adafruit_SSD1306.h>
 
-/**
- * This class defines the interface for controlling the display used to show
- * current triggering configurations.
- *
- * Hardware: Midas MDOB128064WV-YBI OLED display (128x64 pixels) with built-in
- * I2C, controlled by Arduino Nano ESP32 via SDA (A4) and SCL (A5) pins.
- *
- * Format of displayed text (in a monospaced font):
- *
- *     Status: x
- *     Beh FPS: x
- *     Beh-mus ratio: x:1
- *     Beh exp: x us
- *     Mus exp: x us
- *
- * For each row, the x is:
- *   - For "Status":
- *     - "PAUSED" when the pause override is on (via physical on/off switch)
- *     - "STREAMING" after every command where recording/is_recording is false
- *     - "OPEN RECORDING" after every command where recording/is_recording is
- *       true and recording/op_sequence is empty
- *     - "SCHEDULED RECORDING" after every command where recording/is_recording
- *       is true and recording/op_sequence is nonempty
- *     - "ERROR" if the controller is in an error state
- *     - "RESETTING" briefly, after a RESET command, just before the controller
- *       reboots (all other lines blank)
- *   - For "Beh FPS": the beh_frame_rate parameter of the most recent RUN
- *     command
- *   - For "Beh-mus ratio": the beh_musc_sync_ratio parameter of the most recent
- *     RUN command, followed by ":1"; or "N/A" when that command had
- *     enable_muscle false (muscle imaging disabled, so the ratio is
- * meaningless)
- *   - For "Beh exp": the beh_exp_time parameter of the most recent RUN
- *     command, followed by " us"
- *   - For "Mus exp": the musc_eff_exp_time parameter of the most recent
- *     RUN command, followed by " us"; or "OFF" when that command had
- *     enable_muscle false (muscle imaging disabled)
- * The Status line should occupy the top 16 pixels (which are in yellow), and
- * the rest should occupy the bottom 48 pixels (which are in blue).
- *
- * Special case: Before the first RUN command is received, "Status" should show
- * "INITIALIZING" and the other fields should be empty (no units or "x").
- *
- * Usage: call begin() once during setup(), then use the per-line setters to
- * update individual values and call render() to push the cached state to the
- * panel. The setters only touch an in-memory cache, so several of them can be
- * batched (e.g. on a RUN command) before a single render().
- */
+// OLED status panel (Midas MDOB128064WV-YBI, 128x64 px, I2C via SDA/SCL on
+// A4/A5) that shows the current triggering configuration.
+//
+// Format of displayed text (in a monospaced font):
+//
+//     Status: x
+//     Beh FPS: x
+//     Beh-mus ratio: x:1
+//     Beh exp: x us
+//     Mus exp: x us
+//
+// For each row, the x is:
+//   - For "Status":
+//     - (all pixels off, nothing displayed) when the on/off switch is open
+//       (OPEN = paused, CLOSED = active; pin is INPUT_PULLUP)
+//     - "STREAMING" after every command where recording/is_recording is false
+//     - "OPEN RECORDING" after every command where recording/is_recording is
+//       true and recording/op_sequence is empty
+//     - "SCHEDULED RECORDING" after every command where recording/is_recording
+//       is true and recording/op_sequence is nonempty
+//     - "ERROR" if the controller is in an error state
+//     - "RESETTING" briefly, after a RESET command, just before the controller
+//       reboots (all other lines blank)
+//   - For "Beh FPS": the beh_frame_rate parameter of the most recent RUN
+//     command
+//   - For "Beh-mus ratio": the beh_musc_sync_ratio parameter of the most recent
+//     RUN command, followed by ":1"; or "N/A" when that command had
+//     enable_muscle false (muscle imaging disabled, so the ratio is
+//     meaningless)
+//   - For "Beh exp": the beh_exp_time parameter of the most recent RUN
+//     command, followed by " us"
+//   - For "Mus exp": the musc_eff_exp_time parameter of the most recent
+//     RUN command, followed by " us"; or "OFF" when that command had
+//     enable_muscle false (muscle imaging disabled)
+//
+// The Status line occupies the top 16 px (yellow band); the four parameter
+// lines share the bottom 48 px (blue band).
+//
+// Before the first RUN command, "Status" shows "INITIALIZING" and the other
+// fields are empty.
+//
+// Usage: call begin() once during setup(), then use the per-line setters to
+// update individual values and call render() to push the cached state to the
+// panel. The setters only touch an in-memory cache, so several can be batched
+// (e.g. on a RUN command) before a single render().
 class StatusDisplay {
   public:
-    /** Value shown on the "Status" line. */
+    // Value shown on the "Status" line.
     enum class Status {
         initializing,
         paused,
@@ -67,11 +64,9 @@ class StatusDisplay {
 
     StatusDisplay();
 
-    /**
-     * Initialize the OLED over I2C and draw the initial screen (status
-     * "INITIALIZING", all other values blank). Returns false if the panel did
-     * not acknowledge on the I2C bus.
-     */
+    // Initialize the OLED over I2C and draw the initial screen (status
+    // "INITIALIZING", all other values blank). Returns false if the panel did
+    // not acknowledge on the I2C bus.
     bool begin();
 
     // Per-line value setters. Each only updates the cached text for its line;
@@ -79,23 +74,24 @@ class StatusDisplay {
     void set_status(Status status);
     void set_beh_frame_rate(unsigned long fps);
     void set_beh_musc_sync_ratio(unsigned long ratio);
-    /** Show "N/A" on the "Beh-mus ratio" line (muscle imaging disabled). */
+    // Show "N/A" on the "Beh-mus ratio" line (muscle imaging disabled).
     void set_beh_musc_ratio_na();
     void set_beh_exp_time(unsigned long us);
     void set_musc_exp_time(unsigned long us);
-    /** Show "OFF" on the "Mus exp" line (muscle imaging disabled). */
+    // Show "OFF" on the "Mus exp" line (muscle imaging disabled).
     void set_musc_exp_off();
 
-    /**
-     * Blank every line (the status line and all parameter lines). Only touches
-     * the in-memory cache; call render() to push the cleared state to the
-     * panel. Used on a software reset, where the status is then set to
-     * "RESETTING".
-     */
+    // Blank every line (the status line and all parameter lines). Only touches
+    // the in-memory cache; call render() to push the cleared state to the
+    // panel. Used on a software reset, where the status is then set to
+    // "RESETTING".
     void clear();
 
-    /** Redraw the whole screen from the cached line values. */
+    // Redraw the whole screen from the cached line values.
     void render();
+
+    // Turn off all pixels (used when paused).
+    void render_off();
 
   private:
     // Lines in top-to-bottom display order. num_lines doubles as the line

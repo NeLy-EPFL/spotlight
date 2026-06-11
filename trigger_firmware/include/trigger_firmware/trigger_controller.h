@@ -9,62 +9,60 @@
 #include "trigger_firmware/status_display.h"
 #include "trigger_firmware/status_led.h"
 
-/**
- * Top-level trigger controller: the firmware's main object. It wires together
- * serial command input (SerialIO), the physical outputs (DeviceIO), the OLED
- * status panel (StatusDisplay), and the RGB status LED (StatusLed), and runs
- * the acquisition timing loop.
- *
- * Lifecycle: construct once, call begin() from setup(), then call update() once
- * per loop() iteration. update() is non-blocking except for the deliberate
- * camera-buffer flush on START_RECORDING, so the timing loop runs at full
- * speed.
- *
- * Acquisition model (see docs/data_acquisition.md): the operating mode is
- * selected per parameter set by TriggerParams::enable_muscle.
- *
- * When enable_muscle is true (muscle-synced mode), the muscle camera free-runs
- * in continuous mode and exposes a status signal that is HIGH during the common
- * time of every muscle frame. The controller waits for the onset of each common
- * time (DeviceIO::is_musc_common_time() becoming true) and, on that edge, fires
- * the first behavior frame of a sync group together with the blue excitation
- * LED. It then fires the remaining beh_musc_sync_ratio - 1 behavior frames on
- * its own clock at beh_frame_rate before waiting for the next common-time
- * onset. The muscle camera is never triggered over TTL (it is open-loop), so
- * the muscle trigger pin stays idle.
- *
- * When enable_muscle is false (free-running mode), the muscle camera is ignored
- * entirely: the controller triggers the behavior camera on its own clock at
- * beh_frame_rate, never reads the muscle common-time signal, and never pulses
- * the blue excitation LED. The muscle-only parameters (musc_eff_exp_time,
- * beh_musc_sync_ratio, pco_cam_rolling_time, pco_cam_readout_time) are unused.
- * This is the mode for behavior-only acquisition.
- *
- * Commands (see docs/comm_protocol.md): STREAM and START_RECORDING reconfigure
- * the timing parameters; START_RECORDING additionally carries an op_sequence
- * that toggles optogenetics channels at given behavior-frame indices and
- * reverts to streaming on its STOP step. STOP_RECORDING reverts an open
- * recording. LOG is echoed back over the serial port. RESET reboots the
- * microcontroller (esp_restart()); the recorder sends it at the start of every
- * program so the controller always begins from a clean, known state.
- *
- * Fault handling: a malformed command, a STOP_RECORDING received during a
- * scheduled recording, parameters whose camera exposure is not strictly shorter
- * than the frame period, or a detected muscle-frame overrun put the controller
- * into a latched error state. While in error every output is dropped and
- * triggering is halted; the controller leaves the error state only when the
- * next valid STREAM or START_RECORDING reconfigures it. A STOP_RECORDING with
- * no open recording to end (e.g. before any START_RECORDING) is instead logged
- * as a warning and ignored.
- */
+// Top-level trigger controller: the firmware's main object. It wires together
+// serial command input (SerialIO), the physical outputs (DeviceIO), the OLED
+// status panel (StatusDisplay), and the RGB status LED (StatusLed), and runs
+// the acquisition timing loop.
+//
+// Lifecycle: construct once, call begin() from setup(), then call update() once
+// per loop() iteration. update() is non-blocking except for the deliberate
+// camera-buffer flush on START_RECORDING, so the timing loop runs at full
+// speed.
+//
+// Acquisition model (see docs/data_acquisition.md): the operating mode is
+// selected per parameter set by TriggerParams::enable_muscle.
+//
+// When enable_muscle is true (muscle-synced mode), the muscle camera free-runs
+// in continuous mode and exposes a status signal that is HIGH during the common
+// time of every muscle frame. The controller waits for the onset of each common
+// time (DeviceIO::is_musc_common_time() becoming true) and, on that edge, fires
+// the first behavior frame of a sync group together with the blue excitation
+// LED. It then fires the remaining beh_musc_sync_ratio - 1 behavior frames on
+// its own clock at beh_frame_rate before waiting for the next common-time
+// onset. The muscle camera is never triggered over TTL (it is open-loop), so
+// the muscle trigger pin stays idle.
+//
+// When enable_muscle is false (free-running mode), the muscle camera is ignored
+// entirely: the controller triggers the behavior camera on its own clock at
+// beh_frame_rate, never reads the muscle common-time signal, and never pulses
+// the blue excitation LED. The muscle-only parameters (musc_eff_exp_time,
+// beh_musc_sync_ratio, pco_cam_rolling_time, pco_cam_readout_time) are unused.
+// This is the mode for behavior-only acquisition.
+//
+// Commands (see docs/comm_protocol.md): STREAM and START_RECORDING reconfigure
+// the timing parameters; START_RECORDING additionally carries an op_sequence
+// that toggles optogenetics channels at given behavior-frame indices and
+// reverts to streaming on its STOP step. STOP_RECORDING reverts an open
+// recording. LOG is echoed back over the serial port. RESET reboots the
+// microcontroller (esp_restart()); the recorder sends it at the start of every
+// program so the controller always begins from a clean, known state.
+//
+// Fault handling: a malformed command, a STOP_RECORDING received during a
+// scheduled recording, parameters whose camera exposure is not strictly shorter
+// than the frame period, or a detected muscle-frame overrun put the controller
+// into a latched error state. While in error every output is dropped and
+// triggering is halted; the controller leaves the error state only when the
+// next valid STREAM or START_RECORDING reconfigures it. A STOP_RECORDING with
+// no open recording to end (e.g. before any START_RECORDING) is instead logged
+// as a warning and ignored.
 class TriggerController {
   public:
     TriggerController();
 
-    /** Initialize serial, outputs, the pause switch, and the OLED panel. */
+    // Initialize serial, outputs, the pause switch, and the OLED panel.
     void begin();
 
-    /** Advance the controller by one cycle; call every loop() iteration. */
+    // Advance the controller by one cycle; call every loop() iteration.
     void update();
 
   private:

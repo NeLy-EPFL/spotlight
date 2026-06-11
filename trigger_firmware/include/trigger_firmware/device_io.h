@@ -2,15 +2,13 @@
 
 #include <comm_protocol/protocol.h>
 
-/**
- * Tracks and drives the state of every output the trigger controller owns: the
- * behavior and muscle camera triggers, the IR and blue excitation LEDs, and the
- * optogenetics channels. Each setter is idempotent: it only touches the
- * corresponding pin when the cached state actually changes.
- *
- * There is a single set of physical outputs, so this is a singleton: access the
- * sole instance through DeviceIO::get_instance().
- */
+// Tracks and drives the state of every output the trigger controller owns: the
+// behavior and muscle camera triggers, the IR and blue excitation LEDs, and the
+// optogenetics channels. Each setter is idempotent: it only touches the
+// corresponding pin when the cached state actually changes.
+//
+// There is a single set of physical outputs, so this is a singleton: access the
+// sole instance through DeviceIO::get_instance().
 class DeviceIO {
   public:
     static DeviceIO &get_instance();
