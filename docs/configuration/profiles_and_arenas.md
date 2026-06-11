@@ -12,9 +12,9 @@ Both are passed to the recorder programs via command-line flags.
   (not by `align-cameras`).
 
 ```bash
-./run-spotlight               -p ~/Spotlight/profiles/sibo_260514 -a ~/Spotlight/arenas/arena146
-./run-arena-registration-scan -p ~/Spotlight/profiles/sibo_260514 -a ~/Spotlight/arenas/arena146
-./align-cameras               -p ~/Spotlight/profiles/sibo_260514
+./run-spotlight               -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146
+./run-arena-registration-scan -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146
+./align-cameras               -p ~/Spotlight/profiles/default
 ```
 
 ## Profile directory
@@ -22,7 +22,7 @@ Both are passed to the recorder programs via command-line flags.
 Profiles live under `~/Spotlight/profiles/`. A typical profile:
 
 ```
-~/Spotlight/profiles/sibo_260514/
+~/Spotlight/profiles/default/
 │
 │ # ===== Recorder configuration (created manually) =====
 ├── recorder_config.yaml     # camera/stage/tracking/GUI settings

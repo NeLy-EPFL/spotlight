@@ -4,6 +4,21 @@ Conveniences added in the current refactor branch that are easy to miss.
 
 ---
 
+## Adjust dynamic range of muscle image during live preview
+
+In the `run-spotlight` GUI, a histogram is now displayed under the muscle live
+preview widget when muscle imaging is enabled. The user can move the two sliders
+on the histogram to adjust the minimum and maximum pixel values that map to
+full-black and full-white in the live preview.
+
+---
+
+## Status display on the trigger controller
+
+On the physical trigger control box, a display now shows the program status, behavior camera frame rate, behavior-muscle synchronization ratio, behavior camera exposure time, and muscle camera effective exposure (light-on) time.
+
+---
+
 ## `reset-camera` — OS-level camera recovery
 
 **`recorder/scripts/reset-camera`** resets a camera at the OS level when it is

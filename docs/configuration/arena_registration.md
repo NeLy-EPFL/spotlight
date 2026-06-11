@@ -31,7 +31,7 @@ it in the arena with the printed side facing the camera.
 
 ```bash
 ./run-arena-registration-scan \
-    -p ~/Spotlight/profiles/sibo_260514 \
+    -p ~/Spotlight/profiles/default \
     -a ~/Spotlight/arenas/arena146
 ```
 
@@ -66,7 +66,7 @@ options.
 
 ```bash
 ./run-spotlight \
-    -p ~/Spotlight/profiles/sibo_260514 \
+    -p ~/Spotlight/profiles/default \
     -a ~/Spotlight/arenas/arena146
 ```
 

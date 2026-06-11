@@ -14,7 +14,7 @@ data. It is implemented across `recorder/src/apps/run_spotlight_main.cc` and
 ## Starting the application
 
 ```bash
-./run-spotlight -p ~/Spotlight/profiles/sibo_260514 -a ~/Spotlight/arenas/arena146
+./run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146
 ```
 
 Both `-p` (profile, with `recorder_config.yaml` and `muscle_camera_roi.yaml`) and

@@ -42,7 +42,7 @@ Options:
 Only `--profile-dir` / `-p` is needed (the arena flag is unused here). For example:
 
 ```bash
-./align-cameras -p ~/Spotlight/profiles/sibo_260514
+./align-cameras -p ~/Spotlight/profiles/default
 ```
 
 Two windows pop up, one per camera. Press `ESC` at any time to quit without saving.

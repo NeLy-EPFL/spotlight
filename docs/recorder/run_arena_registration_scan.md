@@ -17,7 +17,7 @@ program and its output; for the end-to-end procedure (including the Python fit) 
 ## Usage
 
 ```bash
-./run-arena-registration-scan -p ~/Spotlight/profiles/sibo_260514 -a ~/Spotlight/arenas/arena146
+./run-arena-registration-scan -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146
 ```
 
 Both `-p` (profile) and `-a` (arena) are required. `-v` / `--verbosity` control

@@ -70,7 +70,7 @@ environment variable to the profile directory before running.
 # Re-configure to build hardware tests, then build and run:
 cmake -S recorder -B recorder/build -DRECORDER_BUILD_HARDWARE_TESTS=ON
 cmake --build recorder/build -j16
-export SPOTLIGHT_PROFILE_DIR=~/Spotlight/profiles/sibo_260514
+export SPOTLIGHT_PROFILE_DIR=~/Spotlight/profiles/default
 ctest --test-dir recorder/build --label-regex hardware --output-on-failure
 ```
 
