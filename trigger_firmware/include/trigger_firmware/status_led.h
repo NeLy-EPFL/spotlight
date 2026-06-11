@@ -44,9 +44,9 @@ class StatusLed {
     };
 
     /** PWM calibration constants (0 == off, 255 == full). */
-    inline static constexpr uint8_t red = 255;
-    inline static constexpr uint8_t green = 96;
-    inline static constexpr uint8_t blue = 128;
+    inline static constexpr uint8_t red = 100;
+    inline static constexpr uint8_t green = 75;
+    inline static constexpr uint8_t blue = 50;
 
     /** The color shown for `status` (see the class comment for the mapping). */
     static Color color_for(StatusDisplay::Status status) {
