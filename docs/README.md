@@ -15,8 +15,6 @@ superset that also covers internals, environment setup, and hardware.
 
 ## User's manual
 
-A master's intern should be able to pick this up in a day. Read it in order.
-
 - Configuration and calibration
   - [Profiles and arenas](configuration/profiles_and_arenas.md)
   - [Aligning the two cameras](recorder/align_cameras.md) (`align-cameras`) — muscle imaging only
