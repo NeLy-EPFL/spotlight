@@ -97,6 +97,11 @@ void StatusDisplay::render() {
     display_.display();
 }
 
+void StatusDisplay::render_off() {
+    display_.clearDisplay();
+    display_.display();
+}
+
 void StatusDisplay::set_value(Line line, const char *text) {
     std::strncpy(values_[line], text, value_buffer_size - 1);
     values_[line][value_buffer_size - 1] = '\0';

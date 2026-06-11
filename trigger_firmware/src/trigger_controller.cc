@@ -19,10 +19,10 @@ void TriggerController::begin() {
     // soft reset.
     device_.reset();
 
-    // The physical on/off switch grounds the pin when engaged, so a LOW reading
-    // means "paused". Sample it once so the startup status is correct.
+    // The on/off switch is wired so that OPEN = paused, CLOSED = active. With
+    // INPUT_PULLUP, OPEN reads HIGH and CLOSED (shorted to GND) reads LOW.
     pinMode(config::on_off_switch_pin, INPUT_PULLUP);
-    paused_ = digitalRead(config::on_off_switch_pin) == LOW;
+    paused_ = digitalRead(config::on_off_switch_pin) == HIGH;
 
     // Draws the initial "INITIALIZING" screen. A missing panel (begin() ==
     // false) is non-fatal: triggering does not depend on the display.
@@ -64,9 +64,9 @@ void TriggerController::update() {
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Command handling                                                           */
-/* -------------------------------------------------------------------------- */
+// ---------------------------------------------------------------------------
+// Command handling
+// ---------------------------------------------------------------------------
 
 void TriggerController::handle_command(const Command &cmd) {
     switch (cmd.cmd_type) {
@@ -177,9 +177,9 @@ void TriggerController::handle_reset() {
     esp_restart();
 }
 
-/* -------------------------------------------------------------------------- */
-/* Timing engine                                                              */
-/* -------------------------------------------------------------------------- */
+// ---------------------------------------------------------------------------
+// Timing engine
+// ---------------------------------------------------------------------------
 
 void TriggerController::run_triggers(unsigned long now_us) {
     if (muscle_enabled_) {
@@ -365,12 +365,12 @@ bool TriggerController::check_params_timing(const TriggerParams &params) const {
     return params.musc_eff_exp_time < musc_period_us;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Pause switch and display                                                   */
-/* -------------------------------------------------------------------------- */
+// ---------------------------------------------------------------------------
+// Pause switch and display
+// ---------------------------------------------------------------------------
 
 void TriggerController::poll_pause_switch() {
-    bool paused_now = digitalRead(config::on_off_switch_pin) == LOW;
+    bool paused_now = digitalRead(config::on_off_switch_pin) == HIGH;
     if (paused_now == paused_) {
         return;
     }
@@ -418,6 +418,11 @@ StatusDisplay::Status TriggerController::current_status() const {
 
 void TriggerController::refresh_status() {
     StatusDisplay::Status status = current_status();
+    if (status == StatusDisplay::Status::paused) {
+        display_.render_off();
+        status_led_.set_status(status);
+        return;
+    }
     display_.set_status(status);
     if (configured_) {
         display_.set_beh_frame_rate(params_.beh_frame_rate);
