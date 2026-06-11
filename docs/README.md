@@ -28,6 +28,7 @@ A master's intern should be able to pick this up in a day. Read it in order.
 - Post-processing
   - [Post-processing a recording](python-tools/postprocess_recording.md) (`postprocess-recording`)
   - [Visualizing the stage trajectory](python-tools/visualize_stage_trajectory.md) (`visualize-stage-trajectory`) — optional
+- [Quality-of-life improvements](quality_of_life.md) — `reset-camera`, trigger auto-reset, path increment
 - [Troubleshooting](troubleshooting.md)
 
 ---
@@ -62,5 +63,6 @@ Everything in the User's manual, plus:
   - [`fit-arena-registration`](python-tools/fit_arena_registration.md)
   - [`postprocess-recording`](python-tools/postprocess_recording.md)
   - [`visualize-stage-trajectory`](python-tools/visualize_stage_trajectory.md)
+- [Quality-of-life improvements](quality_of_life.md)
 - [Troubleshooting](troubleshooting.md)
 - [Code style and conventions](code_style.md)

@@ -35,7 +35,13 @@ cmake --build recorder/build -j 16
 ctest --test-dir recorder/build --output-on-failure        # run the unit tests
 ```
 
-The binaries are produced under `recorder/build/`. The three programs are
+To install the binaries to `recorder/bin/`:
+
+```sh
+cmake --install recorder/build
+```
+
+The three programs are
 [`run-spotlight`](../recorder/run_spotlight.md),
 [`align-cameras`](../recorder/align_cameras.md), and
 [`run-arena-registration-scan`](../recorder/run_arena_registration_scan.md).
