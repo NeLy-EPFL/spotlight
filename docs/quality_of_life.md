@@ -35,6 +35,25 @@ Arduino between runs**.  If the previous session left the firmware in a bad stat
 
 ---
 
+## Trigger firmware now built with PlatformIO, not the Arduino IDE
+
+The trigger firmware (`trigger_firmware/`) is built and flashed with
+**PlatformIO** instead of the Arduino IDE.  PlatformIO resolves the board,
+toolchain, and library dependencies automatically from `trigger_firmware/platformio.ini`,
+so there is no manual library installation step.
+
+```bash
+pio run -d trigger_firmware            # build
+pio run -d trigger_firmware -t upload  # flash the microcontroller
+```
+
+Install PlatformIO either as the **PlatformIO IDE** VS Code extension (recommended)
+or as the standalone CLI (`pip install platformio`).  See
+[setup/building.md](setup/building.md#trigger_firmware) for full instructions,
+including how to run the on-device unit tests.
+
+---
+
 ## Save-directory path increment in the GUI
 
 The save-directory row in `run-spotlight` has two new affordances for bumping the
