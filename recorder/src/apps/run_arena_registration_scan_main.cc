@@ -115,7 +115,8 @@ std::string read_data_matrix(const cv::Mat &gray8u) {
 
 // Block until a frame with a received_time different from after_time arrives.
 FrameData wait_for_next_frame(
-    const std::shared_ptr<LatestFrame>& latest_frame_holder, uint64_t after_time) {
+    const std::shared_ptr<LatestFrame> &latest_frame_holder,
+    uint64_t after_time) {
     FrameData frame;
     do {
         frame = latest_frame_holder->get_latest_frame_data();
@@ -486,9 +487,9 @@ void run_arena_registration_scan(
     // muscle camera's common-time signal and the live preview would freeze.
     arduino_communication = initialize_triggering_with_default_params(
         recorder_config,
-        0, // muscle_num_lines_scanned (ignored since muscle cam not enabled)
-        1, // sync ratio (ignored since muscle cam not enabled)
-        false); // muscle_imaging_on
+        /*muscle_num_lines_scanned=*/0,
+        /*sync_ratio=*/1,
+        /*muscle_imaging_on=*/false);
 
     // Set up motion control
     MotionControl motion_control(recorder_config);

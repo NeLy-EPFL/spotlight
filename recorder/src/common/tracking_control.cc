@@ -48,8 +48,8 @@ double software_y_max_mm = std::numeric_limits<double>::infinity();
 
 void motion_control_request_handler(
     const RecorderConfig &recorder_config,
-    const std::shared_ptr<TrackingControlState>& tracking_control_state,
-    const std::shared_ptr<ProgramState>& program_state) {
+    const std::shared_ptr<TrackingControlState> &tracking_control_state,
+    const std::shared_ptr<ProgramState> &program_state) {
     MotionControl motion_control(recorder_config);
 
     // Query the stages' soft travel limits once at init so that we can
@@ -181,8 +181,8 @@ void motion_control_request_handler(
 void update_tracking_target(
     const RecorderConfig &recorder_config,
     ActiveAreaMask &active_area_mask,
-    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
-    const std::shared_ptr<TrackingControlState>& tracking_control_state,
+    const std::shared_ptr<BehaviorRecordingState> &behavior_recording_state,
+    const std::shared_ptr<TrackingControlState> &tracking_control_state,
     const CalibrationParams &behavior_cam_calibration_params,
     float tracking_distance_threshold_mm,
     float default_velocity) {
@@ -256,10 +256,10 @@ void update_tracking_target(
 void tracking_controller(
     const RecorderConfig &recorder_config,
     ActiveAreaMask &active_area_mask,
-    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
-    const std::shared_ptr<TrackingControlState>& tracking_control_state,
+    const std::shared_ptr<BehaviorRecordingState> &behavior_recording_state,
+    const std::shared_ptr<TrackingControlState> &tracking_control_state,
     const CalibrationParams &behavior_cam_calibration_params,
-    const std::shared_ptr<ProgramState>& program_state) {
+    const std::shared_ptr<ProgramState> &program_state) {
     size_t retry_count = 0;
     while (!tracking_control_state->motion_control_handler_ready.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -373,13 +373,13 @@ ActiveAreaMask::ActiveAreaMask(
         full_arena_mask,
         full_arena_mask,
         erosion_kernel,
-        cv::Point(-1, -1), // anchor (default)
-        1,                 // iterations (default)
+        /*anchor=*/cv::Point(-1, -1),
+        /*iterations=*/1,
         // Set border value to 0 so that the erosion treats arena walls as
         // out-of-arena boundaries, so the edges are shrunk even if there
         // is no black pixels along the edges.
-        cv::BORDER_CONSTANT, // borderType
-        cv::Scalar(0));      // borderValue
+        /*borderType=*/cv::BORDER_CONSTANT,
+        /*borderValue=*/cv::Scalar(0));
 
     // Build the affine matrix that maps a camera pixel (col, row) to the
     // corresponding arena-mask pixel (col, row) when stage is at zero.
@@ -425,9 +425,9 @@ cv::Mat ActiveAreaMask::warp_to_current_view(
 
 void motion_stage_position_logger(
     const RecorderConfig &recorder_config,
-    const std::shared_ptr<TrackingControlState>& tracking_control_state,
-    const std::shared_ptr<SaveDirectory>& save_directory,
-    const std::shared_ptr<ProgramState>& program_state) {
+    const std::shared_ptr<TrackingControlState> &tracking_control_state,
+    const std::shared_ptr<SaveDirectory> &save_directory,
+    const std::shared_ptr<ProgramState> &program_state) {
     const int position_logging_freq = recorder_config.get_parameter<int>(
         "motion_control", "position_logging_frequency_hz");
     LoopRateLimiter rate_limiter(
@@ -712,10 +712,10 @@ void wait_until_motion_stage_idle_sync() {
 //
 // This function checks if the motion stage is idle by calling
 // check_if_motion_stage_idle() every 500 ms. Like
-// wait_until_motion_stage_idle_sync(), this function is blocking, but it doesn't
-// block the thread that handles requests to read from / write to the hardware,
-// so other threads that need to interface with the motion stages can still do
-// it.
+// wait_until_motion_stage_idle_sync(), this function is blocking, but it
+// doesn't block the thread that handles requests to read from / write to the
+// hardware, so other threads that need to interface with the motion stages can
+// still do it.
 void wait_until_motion_stage_idle_async() {
     while (!check_if_motion_stage_idle()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -793,7 +793,7 @@ void set_motion_stage_limits(
 }
 
 void stop_motion_control_request_handler(
-    const std::shared_ptr<ProgramState>& program_state) {
+    const std::shared_ptr<ProgramState> &program_state) {
     if (!program_state->to_quit.load()) {
         spdlog::critical(
             "stop_motion_control_request_handler() called but to_quit "

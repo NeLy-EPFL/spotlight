@@ -5,8 +5,8 @@
 void behavior_image_acquirer(
     const RecorderConfig &recorder_config,
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    const std::shared_ptr<ProgramState>& program_state,
-    const std::shared_ptr<ProgrammedStop>& programmed_recording_stop) {
+    const std::shared_ptr<ProgramState> &program_state,
+    const std::shared_ptr<ProgrammedStop> &programmed_recording_stop) {
     spdlog::info("Behavior image acquirer thread started");
     BehaviorCameraROI camera_roi =
         get_behavior_behavior_camera_roi(recorder_config);
@@ -171,8 +171,8 @@ void behavior_image_acquirer(
 void behavior_image_saver(
     const RecorderConfig &recorder_config,
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    const std::shared_ptr<SaveDirectory>& save_directory,
-    const std::shared_ptr<ProgramState>& program_state) {
+    const std::shared_ptr<SaveDirectory> &save_directory,
+    const std::shared_ptr<ProgramState> &program_state) {
     std::thread::id my_thread_id = std::this_thread::get_id();
     std::stringstream ss;
     ss << my_thread_id;
@@ -256,8 +256,8 @@ void behavior_image_saver(
 }
 
 void stop_behavior_image_saver(
-    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
-    const std::shared_ptr<ProgramState>& program_state) {
+    const std::shared_ptr<BehaviorRecordingState> &behavior_recording_state,
+    const std::shared_ptr<ProgramState> &program_state) {
     if (!program_state->to_quit.load()) {
         spdlog::critical("stop_behavior_image_saver() called but to_quit is "
                          "not set to true. This shouldn't happen.");
