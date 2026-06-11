@@ -22,7 +22,7 @@ Conventions for contributing to this repository. The authoritative C++ formatter
   git ls-files '*.cc' '*.h' | xargs clang-format -i
   ```
 
-  **clang-tidy** (naming and code quality): requires a built `recorder/build` (for `compile_commands.json`; this also covers `comm_protocol`). Check:
+  **clang-tidy** (naming and code quality): requires a built `recorder/build` (for `compile_commands.json`; this also covers `comm_protocol`). This should take about a minute. Most warnings are probably related to external libraries and are already supressed; these are safe to ignore. Check:
   ```
   run-clang-tidy -quiet -p recorder/build '.*spotlight-control/(recorder|comm_protocol)/(src|tests)/.*'
   ```
@@ -35,6 +35,17 @@ Conventions for contributing to this repository. The authoritative C++ formatter
 - Private member variables end with a trailing underscore (e.g. `image_width_`). Public members and all functions have no suffix.
 - Namespaces are lowercase (e.g. `namespace config`).
 - Use Google style for documentation in header files: `//` comment lines, not `/* */` blocks.
+- When labelling arguments at a call site (e.g. for boolean flags or otherwise ambiguous literals), use the `/*name=*/value` style rather than a trailing `// name` comment:
+  ```cpp
+  // preferred (use new lines if needed)
+  MuscleTriggerTiming timing(behavior_fps, /*sync_ratio=*/1, /*light_on=*/5000);
+
+  // avoid
+  MuscleTriggerTiming timing(behavior_fps,
+      1,    // sync_ratio
+      5000  // light_on
+  );
+  ```
 - Keep documentation complete but concise. Assume the user has a certain level of technical know-how. Don't write docs just for the sake of it; make sure it's meaningful.
 - Use `#pragma once` instead of `#ifndef` guards in header files.
 - Use only ASCII characters except in `.md` files.

@@ -245,9 +245,9 @@ FrameData MuscleCamera::wait_for_one_frame() {
     // block until the *next* frame.
     //
     // The server writes frame_count = -1 before producing anything and numbers
-    // real frames from 0 (see serve_frames), and last_frame_count_ starts at -1,
-    // so this loop blocks until the first real frame instead of returning the
-    // uninitialized buffer as a frame.
+    // real frames from 0 (see serve_frames), and last_frame_count_ starts at
+    // -1, so this loop blocks until the first real frame instead of returning
+    // the uninitialized buffer as a frame.
     while (frame_metadata_ptr_->frame_count == last_frame_count_) {
         pthread_cond_wait(cond_var_ptr_, mutex_ptr_);
     }
@@ -256,12 +256,12 @@ FrameData MuscleCamera::wait_for_one_frame() {
     uint64_t acquisition_time = frame_metadata_ptr_->acquisition_time;
 
     // Detect frames that were overwritten before we could read them. This is a
-    // single-slot handoff: the server memcpy's every frame into the same buffer,
-    // so if we fell behind, frame_count has advanced by more than one and the
-    // intervening frames are gone. Warn rather than fail -- the acquirer
-    // renumbers frames contiguously, so silent drops would otherwise misalign
-    // the muscle and behavior frame streams in a recording. (last == -1 is the
-    // initial state, before any frame has been returned.)
+    // single-slot handoff: the server memcpy's every frame into the same
+    // buffer, so if we fell behind, frame_count has advanced by more than one
+    // and the intervening frames are gone. Warn rather than fail -- the
+    // acquirer renumbers frames contiguously, so silent drops would otherwise
+    // misalign the muscle and behavior frame streams in a recording. (last ==
+    // -1 is the initial state, before any frame has been returned.)
     if (last_frame_count_ != -1 && frame_count != last_frame_count_ + 1) {
         spdlog::warn(
             "Muscle camera consumer fell behind: frame_count jumped from {} to "

@@ -86,7 +86,7 @@ void draw_muscle_image_roi(cv::Mat &image) {
         cv::Point(display_x0, display_y0),
         cv::Point(display_x1, display_y1),
         blue_color,
-        2); // thickness
+        /*thickness=*/2);
 }
 
 void on_mouse(int event, int x, int y, int flags, void *userdata) {
@@ -247,8 +247,8 @@ void align_camera(const std::filesystem::path &profile_dir) {
         muscle_image_acquirer,
         full_muscle_image_width,
         full_muscle_image_height,
-        0, // x_offset
-        0, // y_offset
+        /*x_offset=*/0,
+        /*y_offset=*/0,
         recorder_config,
         profile_dir,
         spdlog::get_level(),
@@ -272,8 +272,8 @@ void align_camera(const std::filesystem::path &profile_dir) {
     arduino_communication = initialize_triggering_with_default_params(
         recorder_config,
         muscle_num_lines_scanned,
-        1,     // sync ratio
-        true); // muscle_imaging_on
+        /*sync_ratio=*/1,
+        /*muscle_imaging_on=*/true);
 
     // Set up display windows
     setup_display_windows(recorder_config);

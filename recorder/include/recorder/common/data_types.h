@@ -4,8 +4,8 @@
 #include <opencv2/opencv.hpp>
 
 struct FrameData {
-    // Matches the acquirers' frame counters (signed long); -1 until the frame is
-    // assigned an id during recording.
+    // Matches the acquirers' frame counters (signed long); -1 until the frame
+    // is assigned an id during recording.
     long frame_id = -1;
     uint64_t acquisition_time = 0; // as returned by frame grabber
     uint64_t received_time = 0;    // as returned by frame grabber
