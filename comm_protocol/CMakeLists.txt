@@ -7,7 +7,7 @@
 #   cmake --build comm_protocol/build
 #   ctest --test-dir comm_protocol/build
 
-cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
 # True when this CMakeLists is the top of the build tree (standalone), false
 # when it is pulled in via add_subdirectory() by the recorder or another parent.
@@ -60,18 +60,14 @@ if(NOT TARGET ArduinoJson)
     # and cmake config into the source tree. We only consume it as a header-only
     # link dependency, so its install rules are never wanted. On older CMake we
     # omit the keyword (it would error) and accept the default behavior.
-    set(_arduinojson_exclude "")
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
-        set(_arduinojson_exclude EXCLUDE_FROM_ALL)
-    endif()
     FetchContent_Declare(
         ArduinoJson
         GIT_REPOSITORY https://github.com/bblanchon/ArduinoJson.git
         GIT_TAG v7.2.1
-        ${_arduinojson_exclude}
+        SYSTEM
+        EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(ArduinoJson)
-    unset(_arduinojson_exclude)
 endif()
 
 target_link_libraries(comm_protocol PUBLIC ArduinoJson)

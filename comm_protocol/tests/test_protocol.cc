@@ -17,25 +17,26 @@ namespace {
 /** A TriggerParams instance with values that satisfy every field constraint. */
 TriggerParams validParams() {
     TriggerParams p;
-    p.enableMuscle = false; // non-default, so round-trips must carry it
-    p.behExpTime = 1000;
-    p.muscEffExpTime = 2000;
-    p.behFrameRate = 100;   // must be >= 1
-    p.behMuscSyncRatio = 3; // must be >= 1
-    p.pcoCamRollingTime = 50;
-    p.pcoCamReadoutTime = 80;
+    p.enable_muscle = false; // non-default, so round-trips must carry it
+    p.beh_exp_time = 1000;
+    p.musc_eff_exp_time = 2000;
+    p.beh_frame_rate = 100;    // must be >= 1
+    p.beh_musc_sync_ratio = 3; // must be >= 1
+    p.pco_cam_rolling_time = 50;
+    p.pco_cam_readout_time = 80;
     return p;
 }
 
-/** Field-by-field comparison of two TriggerParams, with per-field diagnostics. */
+/** Field-by-field comparison of two TriggerParams, with per-field diagnostics.
+ */
 void expectParamsEqual(const TriggerParams &a, const TriggerParams &b) {
-    EXPECT_EQ(a.enableMuscle, b.enableMuscle);
-    EXPECT_EQ(a.behExpTime, b.behExpTime);
-    EXPECT_EQ(a.muscEffExpTime, b.muscEffExpTime);
-    EXPECT_EQ(a.behFrameRate, b.behFrameRate);
-    EXPECT_EQ(a.behMuscSyncRatio, b.behMuscSyncRatio);
-    EXPECT_EQ(a.pcoCamRollingTime, b.pcoCamRollingTime);
-    EXPECT_EQ(a.pcoCamReadoutTime, b.pcoCamReadoutTime);
+    EXPECT_EQ(a.enable_muscle, b.enable_muscle);
+    EXPECT_EQ(a.beh_exp_time, b.beh_exp_time);
+    EXPECT_EQ(a.musc_eff_exp_time, b.musc_eff_exp_time);
+    EXPECT_EQ(a.beh_frame_rate, b.beh_frame_rate);
+    EXPECT_EQ(a.beh_musc_sync_ratio, b.beh_musc_sync_ratio);
+    EXPECT_EQ(a.pco_cam_rolling_time, b.pco_cam_rolling_time);
+    EXPECT_EQ(a.pco_cam_readout_time, b.pco_cam_readout_time);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -43,39 +44,39 @@ void expectParamsEqual(const TriggerParams &a, const TriggerParams &b) {
 /* -------------------------------------------------------------------------- */
 
 TEST(OperationStep, Validity) {
-    // ON/OFF act on channel CH2 or CH3.
-    EXPECT_TRUE(OperationStep(30, OptoChannel::CH2, OpType::ON).isValid);
-    EXPECT_TRUE(OperationStep(0, OptoChannel::CH3, OpType::OFF).isValid);
-    EXPECT_FALSE(OperationStep(30, static_cast<OptoChannel>(1), OpType::ON)
-                     .isValid); // channel 1 reserved for IR LED
-    EXPECT_FALSE(OperationStep(30, static_cast<OptoChannel>(4), OpType::ON)
-                     .isValid); // out of range
-    EXPECT_FALSE(OperationStep(30, OptoChannel::ALL, OpType::OFF)
-                     .isValid); // ALL only for STOP
+    // ON/OFF act on channel ch2 or ch3.
+    EXPECT_TRUE(OperationStep(30, OptoChannel::ch2, OpType::on).is_valid);
+    EXPECT_TRUE(OperationStep(0, OptoChannel::ch3, OpType::off).is_valid);
+    EXPECT_FALSE(OperationStep(30, static_cast<OptoChannel>(1), OpType::on)
+                     .is_valid); // channel 1 reserved for IR LED
+    EXPECT_FALSE(OperationStep(30, static_cast<OptoChannel>(4), OpType::on)
+                     .is_valid); // out of range
+    EXPECT_FALSE(OperationStep(30, OptoChannel::all, OpType::off)
+                     .is_valid); // all only for stop
 
-    // STOP is global: channel ALL (-1). Any non-negative frameIdx is allowed.
-    EXPECT_TRUE(OperationStep(90, OptoChannel::ALL, OpType::STOP).isValid);
-    EXPECT_TRUE(OperationStep(0, OptoChannel::ALL, OpType::STOP).isValid);
-    EXPECT_TRUE(OperationStep(91, OptoChannel::ALL, OpType::STOP)
-                    .isValid); // frameIdx need not be a multiple of anything
-    EXPECT_FALSE(OperationStep(90, OptoChannel::CH2, OpType::STOP)
-                     .isValid); // channel must be ALL
+    // STOP is global: channel all (-1). Any non-negative frame_idx is allowed.
+    EXPECT_TRUE(OperationStep(90, OptoChannel::all, OpType::stop).is_valid);
+    EXPECT_TRUE(OperationStep(0, OptoChannel::all, OpType::stop).is_valid);
+    EXPECT_TRUE(OperationStep(91, OptoChannel::all, OpType::stop)
+                    .is_valid); // frame_idx need not be a multiple of anything
+    EXPECT_FALSE(OperationStep(90, OptoChannel::ch2, OpType::stop)
+                     .is_valid); // channel must be all
 
     // A default-constructed step is invalid (built from no fields).
-    EXPECT_FALSE(OperationStep().isValid);
+    EXPECT_FALSE(OperationStep().is_valid);
 }
 
 TEST(OperationStep, JsonRoundTrip) {
-    OperationStep step(30, OptoChannel::CH2, OpType::ON);
-    ASSERT_TRUE(step.isValid);
+    OperationStep step(30, OptoChannel::ch2, OpType::on);
+    ASSERT_TRUE(step.is_valid);
 
     JsonDocument doc;
     JsonObject obj = doc.to<JsonObject>();
-    step.toJson(obj);
+    step.to_json(obj);
 
     OperationStep parsed{JsonObjectConst(obj)};
-    ASSERT_TRUE(parsed.isValid);
-    EXPECT_EQ(parsed.frameIdx, step.frameIdx);
+    ASSERT_TRUE(parsed.is_valid);
+    EXPECT_EQ(parsed.frame_idx, step.frame_idx);
     EXPECT_EQ(parsed.channel, step.channel);
     EXPECT_EQ(parsed.op, step.op);
 }
@@ -88,7 +89,7 @@ TEST(OperationStep, ParseRejectsBadOp) {
     obj["op"] = "WIGGLE"; // not a known op
 
     OperationStep parsed{JsonObjectConst(obj)};
-    EXPECT_FALSE(parsed.isValid);
+    EXPECT_FALSE(parsed.is_valid);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -96,61 +97,61 @@ TEST(OperationStep, ParseRejectsBadOp) {
 /* -------------------------------------------------------------------------- */
 
 TEST(CommandBuilder, MakeStream) {
-    Command cmd = Command::makeStreamCommand(validParams());
-    EXPECT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::STREAM);
+    Command cmd = Command::make_stream_command(validParams());
+    EXPECT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::stream);
     expectParamsEqual(cmd.params, validParams());
 }
 
 TEST(CommandBuilder, MakeStopRecording) {
-    Command cmd = Command::makeStopRecordingCommand();
-    EXPECT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::STOP_RECORDING);
+    Command cmd = Command::make_stop_recording_command();
+    EXPECT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::stop_recording);
 }
 
 TEST(CommandBuilder, MakeLog) {
-    Command cmd = Command::makeLogCommand("hello world");
-    EXPECT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::LOG);
-    EXPECT_EQ(cmd.logMsg, "hello world");
+    Command cmd = Command::make_log_command("hello world");
+    EXPECT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::log);
+    EXPECT_EQ(cmd.log_msg, "hello world");
 }
 
 TEST(CommandBuilder, MakeReset) {
-    Command cmd = Command::makeResetCommand();
-    EXPECT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::RESET);
+    Command cmd = Command::make_reset_command();
+    EXPECT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::reset);
 }
 
 TEST(CommandBuilder, MakeStartRecordingValid) {
     std::deque<OperationStep> seq;
-    seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
-    seq.push_back(OperationStep(60, OptoChannel::CH3, OpType::OFF));
-    seq.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
+    seq.push_back(OperationStep(30, OptoChannel::ch2, OpType::on));
+    seq.push_back(OperationStep(60, OptoChannel::ch3, OpType::off));
+    seq.push_back(OperationStep(90, OptoChannel::all, OpType::stop));
 
-    Command cmd =
-        Command::makeStartRecordingCommand(validParams(), validParams(), seq);
-    EXPECT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::START_RECORDING);
-    EXPECT_EQ(cmd.opSequence.size(), 3u);
+    Command cmd = Command::make_start_recording_command(
+        validParams(), validParams(), seq);
+    EXPECT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::start_recording);
+    EXPECT_EQ(cmd.op_sequence.size(), 3u);
 }
 
 TEST(CommandBuilder, MakeStartRecordingRejectsInvalidStep) {
     std::deque<OperationStep> seq;
-    seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
+    seq.push_back(OperationStep(30, OptoChannel::ch2, OpType::on));
     seq.push_back(
-        OperationStep(60, OptoChannel::ALL, OpType::ON)); // ALL invalid for ON
+        OperationStep(60, OptoChannel::all, OpType::on)); // all invalid for on
 
-    Command cmd =
-        Command::makeStartRecordingCommand(validParams(), validParams(), seq);
-    EXPECT_FALSE(cmd.isValid);
+    Command cmd = Command::make_start_recording_command(
+        validParams(), validParams(), seq);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(CommandBuilder, MakeStartRecordingEmptySequence) {
-    // An open recording carries an empty opSequence and is still valid.
+    // An open recording carries an empty op_sequence and is still valid.
     Command cmd =
-        Command::makeStartRecordingCommand(validParams(), validParams(), {});
-    EXPECT_TRUE(cmd.isValid);
-    EXPECT_TRUE(cmd.opSequence.empty());
+        Command::make_start_recording_command(validParams(), validParams(), {});
+    EXPECT_TRUE(cmd.is_valid);
+    EXPECT_TRUE(cmd.op_sequence.empty());
 }
 
 /* -------------------------------------------------------------------------- */
@@ -158,76 +159,79 @@ TEST(CommandBuilder, MakeStartRecordingEmptySequence) {
 /* -------------------------------------------------------------------------- */
 
 TEST(RoundTrip, Stream) {
-    Command original = Command::makeStreamCommand(validParams());
-    std::string json = original.toString();
+    Command original = Command::make_stream_command(validParams());
+    std::string json = original.to_string();
     ASSERT_FALSE(json.empty());
 
     Command parsed = Command::parse(json);
-    ASSERT_TRUE(parsed.isValid);
-    EXPECT_EQ(parsed.cmdType, CmdType::STREAM);
+    ASSERT_TRUE(parsed.is_valid);
+    EXPECT_EQ(parsed.cmd_type, CmdType::stream);
     expectParamsEqual(parsed.params, original.params);
 }
 
 TEST(RoundTrip, StartRecording) {
     TriggerParams rec = validParams();
     TriggerParams revert = validParams();
-    revert.behFrameRate = 50;     // distinguish the two param blocks
-    revert.enableMuscle = true;   // rec/revert may carry different modes
+    revert.beh_frame_rate = 50;  // distinguish the two param blocks
+    revert.enable_muscle = true; // rec/revert may carry different modes
 
     std::deque<OperationStep> seq;
-    seq.push_back(OperationStep(30, OptoChannel::CH2, OpType::ON));
-    seq.push_back(OperationStep(90, OptoChannel::ALL, OpType::STOP));
+    seq.push_back(OperationStep(30, OptoChannel::ch2, OpType::on));
+    seq.push_back(OperationStep(90, OptoChannel::all, OpType::stop));
 
-    Command original = Command::makeStartRecordingCommand(rec, revert, seq);
-    std::string json = original.toString();
+    Command original = Command::make_start_recording_command(rec, revert, seq);
+    std::string json = original.to_string();
     ASSERT_FALSE(json.empty());
 
     Command parsed = Command::parse(json);
-    ASSERT_TRUE(parsed.isValid);
-    EXPECT_EQ(parsed.cmdType, CmdType::START_RECORDING);
-    expectParamsEqual(parsed.recParams, rec);
-    expectParamsEqual(parsed.revertToParams, revert);
-    EXPECT_NE(parsed.recParams.behFrameRate, parsed.revertToParams.behFrameRate);
-    EXPECT_NE(parsed.recParams.enableMuscle, parsed.revertToParams.enableMuscle);
+    ASSERT_TRUE(parsed.is_valid);
+    EXPECT_EQ(parsed.cmd_type, CmdType::start_recording);
+    expectParamsEqual(parsed.rec_params, rec);
+    expectParamsEqual(parsed.revert_to_params, revert);
+    EXPECT_NE(
+        parsed.rec_params.beh_frame_rate,
+        parsed.revert_to_params.beh_frame_rate);
+    EXPECT_NE(
+        parsed.rec_params.enable_muscle, parsed.revert_to_params.enable_muscle);
 
-    ASSERT_EQ(parsed.opSequence.size(), 2u);
-    EXPECT_EQ(parsed.opSequence[0].frameIdx, 30u);
-    EXPECT_EQ(parsed.opSequence[0].channel, OptoChannel::CH2);
-    EXPECT_EQ(parsed.opSequence[0].op, OpType::ON);
-    EXPECT_EQ(parsed.opSequence[1].frameIdx, 90u);
-    EXPECT_EQ(parsed.opSequence[1].channel, OptoChannel::ALL);
-    EXPECT_EQ(parsed.opSequence[1].op, OpType::STOP);
+    ASSERT_EQ(parsed.op_sequence.size(), 2u);
+    EXPECT_EQ(parsed.op_sequence[0].frame_idx, 30u);
+    EXPECT_EQ(parsed.op_sequence[0].channel, OptoChannel::ch2);
+    EXPECT_EQ(parsed.op_sequence[0].op, OpType::on);
+    EXPECT_EQ(parsed.op_sequence[1].frame_idx, 90u);
+    EXPECT_EQ(parsed.op_sequence[1].channel, OptoChannel::all);
+    EXPECT_EQ(parsed.op_sequence[1].op, OpType::stop);
 }
 
 TEST(RoundTrip, StopRecording) {
-    Command original = Command::makeStopRecordingCommand();
-    std::string json = original.toString();
+    Command original = Command::make_stop_recording_command();
+    std::string json = original.to_string();
     ASSERT_FALSE(json.empty());
 
     Command parsed = Command::parse(json);
-    ASSERT_TRUE(parsed.isValid);
-    EXPECT_EQ(parsed.cmdType, CmdType::STOP_RECORDING);
+    ASSERT_TRUE(parsed.is_valid);
+    EXPECT_EQ(parsed.cmd_type, CmdType::stop_recording);
 }
 
 TEST(RoundTrip, Reset) {
-    Command original = Command::makeResetCommand();
-    std::string json = original.toString();
+    Command original = Command::make_reset_command();
+    std::string json = original.to_string();
     ASSERT_FALSE(json.empty());
 
     Command parsed = Command::parse(json);
-    ASSERT_TRUE(parsed.isValid);
-    EXPECT_EQ(parsed.cmdType, CmdType::RESET);
+    ASSERT_TRUE(parsed.is_valid);
+    EXPECT_EQ(parsed.cmd_type, CmdType::reset);
 }
 
 TEST(RoundTrip, Log) {
-    Command original = Command::makeLogCommand("a log line");
-    std::string json = original.toString();
+    Command original = Command::make_log_command("a log line");
+    std::string json = original.to_string();
     ASSERT_FALSE(json.empty());
 
     Command parsed = Command::parse(json);
-    ASSERT_TRUE(parsed.isValid);
-    EXPECT_EQ(parsed.cmdType, CmdType::LOG);
-    EXPECT_EQ(parsed.logMsg, "a log line");
+    ASSERT_TRUE(parsed.is_valid);
+    EXPECT_EQ(parsed.cmd_type, CmdType::log);
+    EXPECT_EQ(parsed.log_msg, "a log line");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -236,34 +240,34 @@ TEST(RoundTrip, Log) {
 
 TEST(Parse, MalformedJson) {
     Command cmd = Command::parse("{not valid json");
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, UnknownCmdType) {
     Command cmd = Command::parse(R"({"cmdType":"NOPE"})");
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, LegacyRunIsRejected) {
     // RUN was replaced by STREAM/START_RECORDING: it must no longer parse.
     Command cmd = Command::parse(R"({"cmdType":"RUN"})");
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, MisspelledKeyIsRejected) {
     // The discriminator key is "cmdType", not the old "cmdTyp".
     Command cmd = Command::parse(R"({"cmdTyp":"LOG","msg":"x"})");
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, LogMissingMsg) {
     Command cmd = Command::parse(R"({"cmdType":"LOG"})");
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StreamMissingParams) {
     Command cmd = Command::parse(R"({"cmdType":"STREAM"})");
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StreamRejectsZeroFrameRate) {
@@ -273,7 +277,7 @@ TEST(Parse, StreamRejectsZeroFrameRate) {
         R"("muscEffExpTime":0,"behFrameRate":0,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StreamRejectsMissingField) {
@@ -283,7 +287,7 @@ TEST(Parse, StreamRejectsMissingField) {
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0}})";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StreamRejectsMissingEnableMuscle) {
@@ -293,7 +297,7 @@ TEST(Parse, StreamRejectsMissingEnableMuscle) {
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StreamRejectsNonBoolEnableMuscle) {
@@ -303,7 +307,7 @@ TEST(Parse, StreamRejectsNonBoolEnableMuscle) {
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StreamAcceptsMuscleDisabled) {
@@ -314,9 +318,9 @@ TEST(Parse, StreamAcceptsMuscleDisabled) {
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
         R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
     Command cmd = Command::parse(json);
-    ASSERT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::STREAM);
-    EXPECT_FALSE(cmd.params.enableMuscle);
+    ASSERT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::stream);
+    EXPECT_FALSE(cmd.params.enable_muscle);
 }
 
 TEST(Parse, StartRecordingMissingRevertParams) {
@@ -326,7 +330,7 @@ TEST(Parse, StartRecordingMissingRevertParams) {
         R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
         R"("pcoCamReadoutTime":0},"opSequence":[]})";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StartRecordingMissingOpSequence) {
@@ -338,7 +342,7 @@ TEST(Parse, StartRecordingMissingOpSequence) {
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params + "}";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StartRecordingRejectsBadStep) {
@@ -352,7 +356,7 @@ TEST(Parse, StartRecordingRejectsBadStep) {
                        R"(,"opSequence":[{"frameIdx":90,"channel":2,)"
                        R"("op":"STOP"}]})";
     Command cmd = Command::parse(json);
-    EXPECT_FALSE(cmd.isValid);
+    EXPECT_FALSE(cmd.is_valid);
 }
 
 TEST(Parse, StartRecordingAcceptsEmptyOpSequence) {
@@ -364,9 +368,9 @@ TEST(Parse, StartRecordingAcceptsEmptyOpSequence) {
                        R"(,"revertToParams":)" + params +
                        R"(,"opSequence":[]})";
     Command cmd = Command::parse(json);
-    ASSERT_TRUE(cmd.isValid);
-    EXPECT_EQ(cmd.cmdType, CmdType::START_RECORDING);
-    EXPECT_TRUE(cmd.opSequence.empty());
+    ASSERT_TRUE(cmd.is_valid);
+    EXPECT_EQ(cmd.cmd_type, CmdType::start_recording);
+    EXPECT_TRUE(cmd.op_sequence.empty());
 }
 
 } // namespace

@@ -9,33 +9,33 @@
  * corresponding pin when the cached state actually changes.
  *
  * There is a single set of physical outputs, so this is a singleton: access the
- * sole instance through DeviceIO::getInstance().
+ * sole instance through DeviceIO::get_instance().
  */
 class DeviceIO {
   public:
-    static DeviceIO &getInstance();
+    static DeviceIO &get_instance();
 
     DeviceIO(const DeviceIO &) = delete;
     DeviceIO &operator=(const DeviceIO &) = delete;
 
     // Behavior camera trigger and IR illumination LED.
-    void startBehCamTrigger();
-    void stopBehCamTrigger();
-    void turnOnBehLED();
-    void turnOffBehLED();
+    void start_beh_cam_trigger();
+    void stop_beh_cam_trigger();
+    void turn_on_beh_led();
+    void turn_off_beh_led();
 
     // Muscle camera trigger and blue excitation LED.
-    void startMuscCamTrigger();
-    void stopMuscCamTrigger();
-    bool isMuscCommonTime();
-    void turnOnMuscLED();
-    void turnOffMuscLED();
+    void start_musc_cam_trigger();
+    void stop_musc_cam_trigger();
+    bool is_musc_common_time();
+    void turn_on_musc_led();
+    void turn_off_musc_led();
 
-    // Optogenetics channels. `channel` is CH2 or CH3 for a single channel, or
-    // ALL to act on both at once. Returns false for an unknown channel.
-    bool turnOnOptoCh(OptoChannel channel);
-    bool turnOffOptoCh(OptoChannel channel);
-    bool isOptoChOn(OptoChannel channel);
+    // Optogenetics channels. `channel` is ch2 or ch3 for a single channel, or
+    // all to act on both at once. Returns false for an unknown channel.
+    bool turn_on_opto_ch(OptoChannel channel);
+    bool turn_off_opto_ch(OptoChannel channel);
+    bool is_opto_ch_on(OptoChannel channel);
 
     // Drive every output to its safe default (triggers stopped, LEDs and opto
     // channels off).
@@ -44,10 +44,10 @@ class DeviceIO {
   private:
     DeviceIO();
 
-    bool isBehCamTriggerOn_;
-    bool isBehLEDOn_;
-    bool isMuscCamTriggerOn_;
-    bool isMuscLEDOn_;
-    bool isOptoCh2On_;
-    bool isOptoCh3On_;
+    bool is_beh_cam_trigger_on_;
+    bool is_beh_led_on_;
+    bool is_musc_cam_trigger_on_;
+    bool is_musc_led_on_;
+    bool is_opto_ch2_on_;
+    bool is_opto_ch3_on_;
 };

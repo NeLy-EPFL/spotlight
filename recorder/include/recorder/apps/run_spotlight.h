@@ -14,6 +14,7 @@
 #include <thread>
 #include <vector>
 
+#include "recorder/apps/gui.h"
 #include "recorder/common/behavior_recording.h"
 #include "recorder/common/calibration.h"
 #include "recorder/common/cli.h"
@@ -22,10 +23,9 @@
 #include "recorder/common/tracking_control.h"
 #include "recorder/peripherals/arduino_communication.h"
 #include "recorder/peripherals/behavior_camera.h"
-#include "recorder/apps/gui.h"
 
 // Forward declarations
 class QApplication;
 
 // Program control functions
-bool quitProgram();
+bool quit_program();

@@ -2,118 +2,122 @@
 
 #include <algorithm>
 
-uint64_t getCurrentTimeMicroseconds() {
+uint64_t get_current_time_microseconds() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
                std::chrono::high_resolution_clock::now().time_since_epoch())
         .count();
 }
 
-cv::Mat makePseudoBGRImageFromThreeFrames(
-    const GroupOfThreeFrames &groupOfThreeFrames) {
+cv::Mat make_pseudo_bgr_image_from_three_frames(
+    const GroupOfThreeFrames &group_of_three_frames) {
     // frame0 is always valid (a group is only ever flushed with >= 1 frame).
     // For a partial final group the missing channels are filled with black.
-    const cv::Mat &referenceImage = groupOfThreeFrames.frame0.image;
-    cv::Mat blackImage =
-        cv::Mat::zeros(referenceImage.size(), referenceImage.type());
+    const cv::Mat &reference_image = group_of_three_frames.frame0.image;
+    cv::Mat black_image =
+        cv::Mat::zeros(reference_image.size(), reference_image.type());
     std::vector<cv::Mat> channels = {
-        groupOfThreeFrames.frame0.image,
-        groupOfThreeFrames.numValidFrames > 1 ? groupOfThreeFrames.frame1.image
-                                              : blackImage,
-        groupOfThreeFrames.numValidFrames > 2 ? groupOfThreeFrames.frame2.image
-                                              : blackImage};
-    cv::Mat pseudoBGRImage;
-    cv::merge(channels, pseudoBGRImage);
-    reorientBehaviorImage(pseudoBGRImage, pseudoBGRImage);
-    return pseudoBGRImage;
+        group_of_three_frames.frame0.image,
+        group_of_three_frames.num_valid_frames > 1
+            ? group_of_three_frames.frame1.image
+            : black_image,
+        group_of_three_frames.num_valid_frames > 2
+            ? group_of_three_frames.frame2.image
+            : black_image};
+    cv::Mat pseudo_bgr_image;
+    cv::merge(channels, pseudo_bgr_image);
+    reorient_behavior_image(pseudo_bgr_image, pseudo_bgr_image);
+    return pseudo_bgr_image;
 }
 
-void reorientBehaviorImage(const cv::Mat &sourceImage, cv::Mat &targetImage) {
-    cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
-    cv::flip(targetImage, targetImage, 1); // dim 1 is horizontal)
+void reorient_behavior_image(
+    const cv::Mat &source_image, cv::Mat &target_image) {
+    cv::rotate(source_image, target_image, cv::ROTATE_90_COUNTERCLOCKWISE);
+    cv::flip(target_image, target_image, 1); // dim 1 is horizontal)
 }
 
-void reorientMuscleImage(const cv::Mat &sourceImage, cv::Mat &targetImage) {
-    cv::rotate(sourceImage, targetImage, cv::ROTATE_90_COUNTERCLOCKWISE);
+void reorient_muscle_image(const cv::Mat &source_image, cv::Mat &target_image) {
+    cv::rotate(source_image, target_image, cv::ROTATE_90_COUNTERCLOCKWISE);
 }
 
-std::string makeMetadataStringFromThreeFrames(
-    const GroupOfThreeFrames &groupOfThreeFrames) {
-    std::string metadataString = "frame_id,acquired_time_us,received_time_us\n";
+std::string make_metadata_string_from_three_frames(
+    const GroupOfThreeFrames &group_of_three_frames) {
+    std::string metadata_string =
+        "frame_id,acquired_time_us,received_time_us\n";
     const FrameData frames[3] = {
-        groupOfThreeFrames.frame0,
-        groupOfThreeFrames.frame1,
-        groupOfThreeFrames.frame2};
+        group_of_three_frames.frame0,
+        group_of_three_frames.frame1,
+        group_of_three_frames.frame2};
     // Only log frames that were actually acquired: a partial final group leaves
     // its remaining (black) channels unlogged.
-    for (int i = 0; i < groupOfThreeFrames.numValidFrames; ++i) {
-        metadataString += fmt::format(
+    for (int i = 0; i < group_of_three_frames.num_valid_frames; ++i) {
+        metadata_string += fmt::format(
             "{},{},{}\n",
-            frames[i].frameId,
-            frames[i].acquisitionTime,
-            frames[i].receivedTime);
+            frames[i].frame_id,
+            frames[i].acquisition_time,
+            frames[i].received_time);
     }
-    return metadataString;
+    return metadata_string;
 }
 
-std::string getSerialPortName(
-    const std::string &deviceDescription,
-    const std::string &deviceManufacturer) {
-    std::vector<SerialPortInfo> allSerialPortInfo;
+std::string get_serial_port_name(
+    const std::string &device_description,
+    const std::string &device_manufacturer) {
+    std::vector<SerialPortInfo> all_serial_port_info;
 
     foreach (const QSerialPortInfo &port, QSerialPortInfo::availablePorts()) {
-        std::string portName = port.portName().toStdString();
+        std::string port_name = port.portName().toStdString();
         std::string description = port.description().toStdString();
         std::string manufacturer = port.manufacturer().toStdString();
-        if (description == deviceDescription &&
-            manufacturer == deviceManufacturer) {
+        if (description == device_description &&
+            manufacturer == device_manufacturer) {
             spdlog::info(
                 "Serial port found. "
                 "Port name: '{}', description: '{}', manufacturer: '{}'",
-                portName,
+                port_name,
                 description,
                 manufacturer);
-            return portName;
+            return port_name;
         }
-        allSerialPortInfo.push_back({portName, description, manufacturer});
+        all_serial_port_info.push_back({port_name, description, manufacturer});
     }
 
     spdlog::critical(
         "Serial port not found. "
         "I'm looking for manufacturer '{}', description '{}'. "
         "Available ports are:",
-        deviceManufacturer,
-        deviceDescription);
-    for (const SerialPortInfo &serialPortInfo : allSerialPortInfo) {
+        device_manufacturer,
+        device_description);
+    for (const SerialPortInfo &serial_port_info : all_serial_port_info) {
         spdlog::critical(
             "* Port name: '{}', description: '{}', manufacturer: '{}'",
-            serialPortInfo.portName,
-            serialPortInfo.description,
-            serialPortInfo.manufacturer);
+            serial_port_info.port_name,
+            serial_port_info.description,
+            serial_port_info.manufacturer);
     }
     throw std::runtime_error("Serial port not found.");
     return "";
 }
 
-int calculateBehaviorCameraPreviewWidth(
-    int behaviorCameraPreviewHeight,
-    int motionStageXRange,
-    int motionStageYRange) {
-    return behaviorCameraPreviewHeight *
-           (static_cast<float>(motionStageXRange) / motionStageYRange);
+int calculate_behavior_camera_preview_width(
+    int behavior_camera_preview_height,
+    int motion_stage_x_range,
+    int motion_stage_y_range) {
+    return behavior_camera_preview_height *
+           (static_cast<float>(motion_stage_x_range) / motion_stage_y_range);
 }
 
-fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder) {
-    fs::path processedDir;
+fs::path prepare_output_folder(const fs::path &directory, bool clear_folder) {
+    fs::path processed_dir;
 
     // Expand ~ to home directory
     if (!directory.empty() && directory.string().front() == '~') {
-        const char *homeDir = getenv("HOME");
-        if (homeDir) {
-            processedDir = fs::path(homeDir) / directory.string().substr(2);
+        const char *home_dir = getenv("HOME");
+        if (home_dir) {
+            processed_dir = fs::path(home_dir) / directory.string().substr(2);
             spdlog::info(
                 "Expanded ~ in directory path '{}' to '{}'",
                 directory.string(),
-                processedDir.string());
+                processed_dir.string());
         } else {
             spdlog::error(
                 "Failed to expand ~ in directory path '{}' because $HOME is "
@@ -122,51 +126,51 @@ fs::path prepareOutputFolder(const fs::path &directory, bool clearFolder) {
                 directory.string());
         }
     } else {
-        processedDir = directory;
+        processed_dir = directory;
     }
-    fs::path absoluteDir = fs::absolute(processedDir);
+    fs::path absolute_dir = fs::absolute(processed_dir);
 
     try {
-        fs::create_directories(absoluteDir);
+        fs::create_directories(absolute_dir);
         spdlog::info(
             "Created directory '{}' (if it didn't already exist)",
-            absoluteDir.string());
+            absolute_dir.string());
 
-        if (clearFolder) {
-            for (const auto &entry : fs::directory_iterator(absoluteDir)) {
+        if (clear_folder) {
+            for (const auto &entry : fs::directory_iterator(absolute_dir)) {
                 fs::remove_all(entry);
             }
             spdlog::info(
-                "Cleared content of directory '{}'", absoluteDir.string());
+                "Cleared content of directory '{}'", absolute_dir.string());
         }
     } catch (const fs::filesystem_error &e) {
         spdlog::error(
             "Failed to create directory '{}' or clear its content: {}",
-            absoluteDir.string(),
+            absolute_dir.string(),
             e.what());
         throw;
     }
 
-    return absoluteDir;
+    return absolute_dir;
 }
 
-size_t getMyThreadIdHash() {
-    std::thread::id myThreadId = std::this_thread::get_id();
-    size_t myThreadIdHash = std::hash<std::thread::id>{}(myThreadId);
-    return myThreadIdHash;
+size_t get_my_thread_id_hash() {
+    std::thread::id my_thread_id = std::this_thread::get_id();
+    size_t my_thread_id_hash = std::hash<std::thread::id>{}(my_thread_id);
+    return my_thread_id_hash;
 }
 
-std::string expandPath(const std::string &path) {
+std::string expand_path(const std::string &path) {
     // Check if the path starts with "~/"
     if (path.size() >= 2 && path[0] == '~' && path[1] == '/') {
         // Get the HOME environment variable
-        const char *homeDir = std::getenv("HOME");
+        const char *home_dir = std::getenv("HOME");
 
         // If HOME is available, replace "~/" with the home directory
-        if (homeDir) {
-            std::filesystem::path expandedPath =
-                std::filesystem::path(homeDir) / path.substr(2);
-            return expandedPath.string();
+        if (home_dir) {
+            std::filesystem::path expanded_path =
+                std::filesystem::path(home_dir) / path.substr(2);
+            return expanded_path.string();
         } else {
             spdlog::error(
                 "Failed to expand ~ in directory path '{}' because $HOME is "
@@ -180,28 +184,28 @@ std::string expandPath(const std::string &path) {
     return path;
 }
 
-void convert16BitTo8Bit(
-    const cv::Mat &sourceImage, cv::Mat &targetImage, int vmin, int vmax) {
+void convert16_bit_to8_bit(
+    const cv::Mat &source_image, cv::Mat &target_image, int vmin, int vmax) {
     // Linearly map the [vmin, vmax] window of the 16-bit image onto the 8-bit
     // range [0, 255]: pixels at or below vmin become black, pixels at or above
     // vmax become white. convertTo saturates out-of-range results, giving the
     // clamping for free.
     double alpha = 255.0 / std::max(1, vmax - vmin);
     double beta = -vmin * alpha;
-    sourceImage.convertTo(targetImage, CV_8U, alpha, beta);
+    source_image.convertTo(target_image, CV_8U, alpha, beta);
 }
 
 SaveDirectory::SaveDirectory(const std::string &directory) {
     std::lock_guard<std::mutex> lock(mutex_);
-    directory_ = expandPath(directory);
+    directory_ = expand_path(directory);
 }
 
-void SaveDirectory::setDirectory(const std::string &directory) {
+void SaveDirectory::set_directory(const std::string &directory) {
     std::lock_guard<std::mutex> lock(mutex_);
-    directory_ = expandPath(directory);
+    directory_ = expand_path(directory);
 }
 
-std::filesystem::path SaveDirectory::getDirectory() const {
+std::filesystem::path SaveDirectory::get_directory() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return directory_;
 }
@@ -221,14 +225,14 @@ void SaveDirectory::initialize() {
     }
 }
 
-LatestFrame::LatestFrame() : latestFrameData_({0, 0, 0, cv::Mat()}) {}
+LatestFrame::LatestFrame() : latest_frame_data_({0, 0, 0, cv::Mat()}) {}
 
-FrameData LatestFrame::getLatestFrameData() const {
-    std::lock_guard<std::mutex> lock(latestFrameMutex_);
-    return latestFrameData_;
+FrameData LatestFrame::get_latest_frame_data() const {
+    std::lock_guard<std::mutex> lock(latest_frame_mutex_);
+    return latest_frame_data_;
 }
 
-void LatestFrame::setLatestFrameData(const FrameData &frameData) {
-    std::lock_guard<std::mutex> lock(latestFrameMutex_);
-    latestFrameData_ = frameData;
+void LatestFrame::set_latest_frame_data(const FrameData &frame_data) {
+    std::lock_guard<std::mutex> lock(latest_frame_mutex_);
+    latest_frame_data_ = frame_data;
 }

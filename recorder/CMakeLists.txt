@@ -11,7 +11,7 @@
 # validated. The target/source composition mirrors the previous build (see git
 # history's CMakeLists_old.txt) so it can be pruned during the refactor.
 
-cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
 # True when this CMakeLists is the top of the build tree (standalone), false when
 # pulled in via add_subdirectory() by the umbrella CMakeLists.txt at the root.
@@ -65,7 +65,7 @@ find_library(ZABER_MOTION_LIB NAMES zaber-motion REQUIRED)
 
 # Frame grabber (Euresys).
 set(EGRABBER_INCLUDE_DIR "/opt/euresys/egrabber/include")
-include_directories(${EGRABBER_INCLUDE_DIR})
+include_directories(SYSTEM ${EGRABBER_INCLUDE_DIR})
 
 # PCO camera SDK (only the pco-camera-server target needs it). PCO_LINUX selects
 # the PCO headers' Linux code paths and is scoped to the pco-camera-server target

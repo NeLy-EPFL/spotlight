@@ -10,16 +10,16 @@
 
 #include <spdlog/spdlog.h>
 
-#include "recorder/peripherals/muscle_camera.h"
 #include "recorder/common/recorder_config.h"
 #include "recorder/common/utils.h"
+#include "recorder/peripherals/muscle_camera.h"
 
 struct MuscleRecordingState {
-    std::shared_ptr<MuscleCamera> muscleCamera = nullptr;
-    std::queue<FrameData> muscleImageQueue;
-    std::mutex muscleImageQueueMutex;
-    std::condition_variable muscleImageQueueCondVar;
-    std::shared_ptr<LatestFrame> latestFrameHolder;
+    std::shared_ptr<MuscleCamera> muscle_camera = nullptr;
+    std::queue<FrameData> muscle_image_queue;
+    std::mutex muscle_image_queue_mutex;
+    std::condition_variable muscle_image_queue_cond_var;
+    std::shared_ptr<LatestFrame> latest_frame_holder;
 };
 
 class MuscleCameraROI {
@@ -28,36 +28,36 @@ class MuscleCameraROI {
     int x1;
     int y0;
     int y1;
-    int xOffset;
-    int yOffset;
-    int imageWidth;
-    int imageHeight;
+    int x_offset;
+    int y_offset;
+    int image_width;
+    int image_height;
 
     MuscleCameraROI(int x0, int x1, int y0, int y1);
-    bool isWithinBound(int fullWidth, int fullHeight) const;
-    int toFile(const std::filesystem::path &path) const;
-    std::tuple<int, int> getCenterXY() const;
+    bool is_within_bound(int full_width, int full_height) const;
+    int to_file(const std::filesystem::path &path) const;
+    std::tuple<int, int> get_center_xy() const;
 };
 
 // Function declarations
-void muscleImageAcquirer(
-    unsigned int imageWidth,
-    unsigned int imageHeight,
-    unsigned int xOffset,
-    unsigned int yOffset,
-    const RecorderConfig &recorderConfig,
-    const std::string &profileDir,
-    spdlog::level::level_enum logLevel,
-    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-    std::shared_ptr<ProgramState> programState,
-    std::shared_ptr<ProgrammedStop> programmedRecordingStop);
+void muscle_image_acquirer(
+    unsigned int image_width,
+    unsigned int image_height,
+    unsigned int x_offset,
+    unsigned int y_offset,
+    const RecorderConfig &recorder_config,
+    const std::string &profile_dir,
+    spdlog::level::level_enum log_level,
+    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
+    std::shared_ptr<ProgramState> program_state,
+    std::shared_ptr<ProgrammedStop> programmed_recording_stop);
 
-void muscleImageSaver(
-    const RecorderConfig &recorderConfig,
-    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-    std::shared_ptr<SaveDirectory> saveDirectory,
-    std::shared_ptr<ProgramState> programState,
-    int tiffCompressionMethod = 5); // see below
+void muscle_image_saver(
+    const RecorderConfig &recorder_config,
+    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
+    std::shared_ptr<SaveDirectory> save_directory,
+    std::shared_ptr<ProgramState> program_state,
+    int tiff_compression_method = 5); // see below
 // TIFF compression methods:
 //   cv::IMWRITE_TIFF_COMPRESSION_NONE = 1 ,
 //   cv::IMWRITE_TIFF_COMPRESSION_LZW = 5 ,
@@ -65,8 +65,9 @@ void muscleImageSaver(
 //   cv::IMWRITE_TIFF_COMPRESSION_PACKBITS = 32773 ,
 //   ... see https://docs.opencv.org/4.x/d8/d6a/group__imgcodecs__flags.html
 
-void stopMuscleImageSaver(
-    std::shared_ptr<MuscleRecordingState> muscleRecordingState,
-    std::shared_ptr<ProgramState> programState);
+void stop_muscle_image_saver(
+    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
+    std::shared_ptr<ProgramState> program_state);
 
-MuscleCameraROI getMuscleCameraROI(const std::filesystem::path &roiFilePath);
+MuscleCameraROI
+get_muscle_camera_roi(const std::filesystem::path &roi_file_path);

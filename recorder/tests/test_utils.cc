@@ -25,7 +25,7 @@ struct Corners {
     int tl, tr, bl, br;
 };
 
-Corners cornersOf(const cv::Mat &m) {
+Corners corners_of(const cv::Mat &m) {
     return {
         m.at<uchar>(0, 0),
         m.at<uchar>(0, m.cols - 1),
@@ -35,7 +35,7 @@ Corners cornersOf(const cv::Mat &m) {
 
 // A 2x3 image (2 rows, 3 cols) with a distinct non-zero marker in each corner,
 // so a reorientation can be pinned by where each marker ends up.
-cv::Mat markedImage() {
+cv::Mat marked_image() {
     cv::Mat m = cv::Mat::zeros(2, 3, CV_8UC1);
     m.at<uchar>(0, 0) = 11; // top-left
     m.at<uchar>(0, 2) = 22; // top-right
@@ -46,7 +46,7 @@ cv::Mat markedImage() {
 
 TEST(Reorient, MuscleRotates90CounterClockwise) {
     cv::Mat dst;
-    reorientMuscleImage(markedImage(), dst);
+    reorient_muscle_image(marked_image(), dst);
 
     // A 90-degree rotation swaps the dimensions.
     EXPECT_EQ(dst.rows, 3);
@@ -54,7 +54,7 @@ TEST(Reorient, MuscleRotates90CounterClockwise) {
 
     // Counter-clockwise: the source top-right corner becomes the new top-left,
     // and the rest follow around the frame.
-    Corners c = cornersOf(dst);
+    Corners c = corners_of(dst);
     EXPECT_EQ(c.tl, 22); // from source top-right
     EXPECT_EQ(c.tr, 44); // from source bottom-right
     EXPECT_EQ(c.bl, 11); // from source top-left
@@ -63,14 +63,14 @@ TEST(Reorient, MuscleRotates90CounterClockwise) {
 
 TEST(Reorient, BehaviorRotatesThenMirrorsHorizontally) {
     cv::Mat dst;
-    reorientBehaviorImage(markedImage(), dst);
+    reorient_behavior_image(marked_image(), dst);
 
     EXPECT_EQ(dst.rows, 3);
     EXPECT_EQ(dst.cols, 2);
 
     // 90-degree CCW rotation followed by a horizontal flip leaves the
     // top-right and bottom-left corners in place and swaps the other diagonal.
-    Corners c = cornersOf(dst);
+    Corners c = corners_of(dst);
     EXPECT_EQ(c.tl, 44); // from source bottom-right
     EXPECT_EQ(c.tr, 22); // from source top-right
     EXPECT_EQ(c.bl, 33); // from source bottom-left
@@ -81,17 +81,18 @@ TEST(Reorient, BehaviorRotatesThenMirrorsHorizontally) {
 /* Pseudo-BGR packing                                                         */
 /* -------------------------------------------------------------------------- */
 
-GroupOfThreeFrames makeUniformGroup(int v0, int v1, int v2, int numValid) {
+GroupOfThreeFrames make_uniform_group(int v0, int v1, int v2, int num_valid) {
     GroupOfThreeFrames group;
     group.frame0.image = cv::Mat(4, 5, CV_8UC1, cv::Scalar(v0));
     group.frame1.image = cv::Mat(4, 5, CV_8UC1, cv::Scalar(v1));
     group.frame2.image = cv::Mat(4, 5, CV_8UC1, cv::Scalar(v2));
-    group.numValidFrames = numValid;
+    group.num_valid_frames = num_valid;
     return group;
 }
 
 TEST(PseudoBGR, PacksThreeFramesIntoChannelsInOrder) {
-    cv::Mat bgr = makePseudoBGRImageFromThreeFrames(makeUniformGroup(10, 20, 30, 3));
+    cv::Mat bgr = make_pseudo_bgr_image_from_three_frames(
+        make_uniform_group(10, 20, 30, 3));
 
     ASSERT_EQ(bgr.channels(), 3);
     // Reorientation swaps the dimensions but preserves pixel values.
@@ -109,7 +110,10 @@ TEST(PseudoBGR, PartialGroupBlacksOutMissingChannels) {
     // Only one valid frame: the other two channels must be black even though
     // frame1/frame2 carry data (a partial final group fills them with black).
     std::vector<cv::Mat> ch;
-    cv::split(makePseudoBGRImageFromThreeFrames(makeUniformGroup(10, 20, 30, 1)), ch);
+    cv::split(
+        make_pseudo_bgr_image_from_three_frames(
+            make_uniform_group(10, 20, 30, 1)),
+        ch);
 
     EXPECT_EQ(cv::countNonZero(ch[0] != 10), 0);
     EXPECT_EQ(cv::countNonZero(ch[1]), 0);
@@ -118,7 +122,10 @@ TEST(PseudoBGR, PartialGroupBlacksOutMissingChannels) {
 
 TEST(PseudoBGR, TwoFrameGroupKeepsOnlyThirdChannelBlack) {
     std::vector<cv::Mat> ch;
-    cv::split(makePseudoBGRImageFromThreeFrames(makeUniformGroup(10, 20, 30, 2)), ch);
+    cv::split(
+        make_pseudo_bgr_image_from_three_frames(
+            make_uniform_group(10, 20, 30, 2)),
+        ch);
 
     EXPECT_EQ(cv::countNonZero(ch[0] != 10), 0);
     EXPECT_EQ(cv::countNonZero(ch[1] != 20), 0);
@@ -129,15 +136,15 @@ TEST(PseudoBGR, TwoFrameGroupKeepsOnlyThirdChannelBlack) {
 /* Per-frame metadata                                                         */
 /* -------------------------------------------------------------------------- */
 
-FrameData makeFrame(unsigned int id, uint64_t acquired, uint64_t received) {
+FrameData make_frame(unsigned int id, uint64_t acquired, uint64_t received) {
     FrameData f;
-    f.frameId = id;
-    f.acquisitionTime = acquired;
-    f.receivedTime = received;
+    f.frame_id = id;
+    f.acquisition_time = acquired;
+    f.received_time = received;
     return f;
 }
 
-std::vector<std::string> splitLines(const std::string &s) {
+std::vector<std::string> split_lines(const std::string &s) {
     std::vector<std::string> lines;
     std::string line;
     std::istringstream stream(s);
@@ -149,13 +156,13 @@ std::vector<std::string> splitLines(const std::string &s) {
 
 TEST(Metadata, FullGroupLogsHeaderAndThreeRows) {
     GroupOfThreeFrames group;
-    group.frame0 = makeFrame(0, 100, 101);
-    group.frame1 = makeFrame(1, 200, 202);
-    group.frame2 = makeFrame(2, 300, 303);
-    group.numValidFrames = 3;
+    group.frame0 = make_frame(0, 100, 101);
+    group.frame1 = make_frame(1, 200, 202);
+    group.frame2 = make_frame(2, 300, 303);
+    group.num_valid_frames = 3;
 
     std::vector<std::string> lines =
-        splitLines(makeMetadataStringFromThreeFrames(group));
+        split_lines(make_metadata_string_from_three_frames(group));
     ASSERT_EQ(lines.size(), 4u); // header + 3 rows
     EXPECT_EQ(lines[0], "frame_id,acquired_time_us,received_time_us");
     EXPECT_EQ(lines[1], "0,100,101");
@@ -165,13 +172,13 @@ TEST(Metadata, FullGroupLogsHeaderAndThreeRows) {
 
 TEST(Metadata, PartialGroupOnlyLogsValidFrames) {
     GroupOfThreeFrames group;
-    group.frame0 = makeFrame(7, 700, 701);
-    group.frame1 = makeFrame(8, 800, 802); // not logged
-    group.frame2 = makeFrame(9, 900, 903); // not logged
-    group.numValidFrames = 1;
+    group.frame0 = make_frame(7, 700, 701);
+    group.frame1 = make_frame(8, 800, 802); // not logged
+    group.frame2 = make_frame(9, 900, 903); // not logged
+    group.num_valid_frames = 1;
 
     std::vector<std::string> lines =
-        splitLines(makeMetadataStringFromThreeFrames(group));
+        split_lines(make_metadata_string_from_three_frames(group));
     ASSERT_EQ(lines.size(), 2u); // header + 1 row
     EXPECT_EQ(lines[1], "7,700,701");
 }
@@ -181,10 +188,10 @@ TEST(Metadata, PartialGroupOnlyLogsValidFrames) {
 /* -------------------------------------------------------------------------- */
 
 TEST(PreviewWidth, ScalesHeightByStageAspectRatio) {
-    EXPECT_EQ(calculateBehaviorCameraPreviewWidth(100, 3, 2), 150);
-    EXPECT_EQ(calculateBehaviorCameraPreviewWidth(100, 2, 2), 100);
+    EXPECT_EQ(calculate_behavior_camera_preview_width(100, 3, 2), 150);
+    EXPECT_EQ(calculate_behavior_camera_preview_width(100, 2, 2), 100);
     // The float ratio is truncated toward zero when cast back to int.
-    EXPECT_EQ(calculateBehaviorCameraPreviewWidth(100, 2, 3), 66);
+    EXPECT_EQ(calculate_behavior_camera_preview_width(100, 2, 3), 66);
 }
 
 TEST(Convert16To8, MapsWindowOntoEightBitRangeWithClamping) {
@@ -195,21 +202,21 @@ TEST(Convert16To8, MapsWindowOntoEightBitRangeWithClamping) {
 
     cv::Mat dst;
     // Window [0, 1000] maps linearly: 500 lands at the midpoint, 1000 at white.
-    convert16BitTo8Bit(src, dst, /*vmin=*/0, /*vmax=*/1000);
+    convert16_bit_to8_bit(src, dst, /*vmin=*/0, /*vmax=*/1000);
     ASSERT_EQ(dst.type(), CV_8UC1);
     EXPECT_EQ(dst.at<uchar>(0, 1), 128); // round(500 * 255 / 1000)
     EXPECT_EQ(dst.at<uchar>(0, 2), 255);
 
     // Window [200, 800]: pixels at/below vmin are black, at/above vmax white.
-    convert16BitTo8Bit(src, dst, /*vmin=*/200, /*vmax=*/800);
+    convert16_bit_to8_bit(src, dst, /*vmin=*/200, /*vmax=*/800);
     EXPECT_EQ(dst.at<uchar>(0, 0), 0);   // 100 < vmin -> black
     EXPECT_EQ(dst.at<uchar>(0, 1), 128); // round((500 - 200) * 255 / 600)
     EXPECT_EQ(dst.at<uchar>(0, 2), 255); // 1000 > vmax -> white
 }
 
 TEST(CurrentTime, IsPositiveAndNonDecreasing) {
-    uint64_t t0 = getCurrentTimeMicroseconds();
-    uint64_t t1 = getCurrentTimeMicroseconds();
+    uint64_t t0 = get_current_time_microseconds();
+    uint64_t t1 = get_current_time_microseconds();
     EXPECT_GT(t0, 0u);
     EXPECT_GE(t1, t0);
 }
@@ -220,15 +227,15 @@ TEST(CurrentTime, IsPositiveAndNonDecreasing) {
 
 TEST(ExpandPath, ExpandsLeadingTilde) {
     EnvGuard home("HOME", "/home/tester");
-    EXPECT_EQ(expandPath("~/data/run1"), "/home/tester/data/run1");
+    EXPECT_EQ(expand_path("~/data/run1"), "/home/tester/data/run1");
 }
 
 TEST(ExpandPath, LeavesOtherPathsUntouched) {
     EnvGuard home("HOME", "/home/tester");
-    EXPECT_EQ(expandPath("/abs/path"), "/abs/path");
-    EXPECT_EQ(expandPath("relative/path"), "relative/path");
-    EXPECT_EQ(expandPath("~"), "~");                   // no trailing slash
-    EXPECT_EQ(expandPath("~user/path"), "~user/path"); // not the "~/" form
+    EXPECT_EQ(expand_path("/abs/path"), "/abs/path");
+    EXPECT_EQ(expand_path("relative/path"), "relative/path");
+    EXPECT_EQ(expand_path("~"), "~");                   // no trailing slash
+    EXPECT_EQ(expand_path("~user/path"), "~user/path"); // not the "~/" form
 }
 
 /* -------------------------------------------------------------------------- */
@@ -236,14 +243,14 @@ TEST(ExpandPath, LeavesOtherPathsUntouched) {
 /* -------------------------------------------------------------------------- */
 
 // NOTE: the experiment-parameters YAML writer used to be a free function
-// (writeExperimentParameters) and was unit-tested here. It now lives as a
+// (write_experiment_parameters) and was unit-tested here. It now lives as a
 // private MainGUIWindow method that reads the recording parameters directly off
 // the GUI widgets, so it is no longer reachable from these hardware-independent
 // tests. The two tests that covered it were removed with that refactor.
 
 TEST(PrepareOutputFolder, CreatesDirectoryAndReturnsAbsolutePath) {
     TempDir dir;
-    fs::path result = prepareOutputFolder(dir.file("nested/output"), false);
+    fs::path result = prepare_output_folder(dir.file("nested/output"), false);
     EXPECT_TRUE(fs::exists(result));
     EXPECT_TRUE(result.is_absolute());
 }
@@ -255,7 +262,7 @@ TEST(PrepareOutputFolder, ClearsExistingContentWhenAsked) {
     std::ofstream(target / "stale.txt") << "old";
     ASSERT_TRUE(fs::exists(target / "stale.txt"));
 
-    prepareOutputFolder(target, /*clearFolder=*/true);
+    prepare_output_folder(target, /*clear_folder=*/true);
     EXPECT_FALSE(fs::exists(target / "stale.txt"));
     EXPECT_TRUE(fs::exists(target));
 }
@@ -266,7 +273,7 @@ TEST(PrepareOutputFolder, KeepsContentWhenNotClearing) {
     fs::create_directories(target);
     std::ofstream(target / "keep.txt") << "data";
 
-    prepareOutputFolder(target, /*clearFolder=*/false);
+    prepare_output_folder(target, /*clear_folder=*/false);
     EXPECT_TRUE(fs::exists(target / "keep.txt"));
 }
 
@@ -275,10 +282,10 @@ TEST(SaveDirectory, InitializeCreatesRecordingSubdirectories) {
     fs::path root = dir.file("recording");
     fs::create_directories(root);
 
-    SaveDirectory saveDir(root.string());
-    EXPECT_EQ(saveDir.getDirectory(), root);
+    SaveDirectory save_dir(root.string());
+    EXPECT_EQ(save_dir.get_directory(), root);
 
-    saveDir.initialize();
+    save_dir.initialize();
     EXPECT_TRUE(fs::is_directory(root / "behavior_images"));
     EXPECT_TRUE(fs::is_directory(root / "muscle_images"));
     EXPECT_TRUE(fs::is_directory(root / "stage_position"));
@@ -288,18 +295,18 @@ TEST(SaveDirectory, InitializeCreatesRecordingSubdirectories) {
 TEST(SaveDirectory, ExpandsLeadingTildeInDirectory) {
     TempDir dir;
     EnvGuard home("HOME", dir.path().string());
-    SaveDirectory saveDir("~/myrun");
-    EXPECT_EQ(saveDir.getDirectory(), dir.path() / "myrun");
+    SaveDirectory save_dir("~/myrun");
+    EXPECT_EQ(save_dir.get_directory(), dir.path() / "myrun");
 }
 
 TEST(LatestFrame, RoundTripsLatestFrameData) {
     LatestFrame holder;
-    holder.setLatestFrameData(makeFrame(42, 123456, 123999));
+    holder.set_latest_frame_data(make_frame(42, 123456, 123999));
 
-    FrameData out = holder.getLatestFrameData();
-    EXPECT_EQ(out.frameId, 42u);
-    EXPECT_EQ(out.acquisitionTime, 123456u);
-    EXPECT_EQ(out.receivedTime, 123999u);
+    FrameData out = holder.get_latest_frame_data();
+    EXPECT_EQ(out.frame_id, 42u);
+    EXPECT_EQ(out.acquisition_time, 123456u);
+    EXPECT_EQ(out.received_time, 123999u);
 }
 
 } // namespace

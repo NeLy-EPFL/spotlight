@@ -5,7 +5,7 @@
 
 #include <Wire.h>
 
-const char *const StatusDisplay::labels_[StatusDisplay::numLines] = {
+const char *const StatusDisplay::labels_[StatusDisplay::num_lines] = {
     "Status",
     "Beh FPS",
     "Beh-mus ratio",
@@ -15,7 +15,7 @@ const char *const StatusDisplay::labels_[StatusDisplay::numLines] = {
 
 namespace {
 // Map a Status enum value to the text shown on the "Status" line.
-const char *statusText(StatusDisplay::Status status) {
+const char *status_text(StatusDisplay::Status status) {
     switch (status) {
     case StatusDisplay::Status::initializing:
         return "INITIALIZING";
@@ -23,9 +23,9 @@ const char *statusText(StatusDisplay::Status status) {
         return "PAUSED";
     case StatusDisplay::Status::streaming:
         return "STREAMING";
-    case StatusDisplay::Status::openRecording:
+    case StatusDisplay::Status::open_recording:
         return "OPEN RECORDING";
-    case StatusDisplay::Status::scheduledRecording:
+    case StatusDisplay::Status::scheduled_recording:
         return "SCHEDULED RECORDING";
     case StatusDisplay::Status::error:
         return "ERROR";
@@ -37,14 +37,14 @@ const char *statusText(StatusDisplay::Status status) {
 } // namespace
 
 StatusDisplay::StatusDisplay()
-    : display_(screenWidth, screenHeight, &Wire, resetPin) {
+    : display_(screen_width, screen_height, &Wire, reset_pin) {
     // Start in the pre-RUN special case: status "INITIALIZING", others blank.
     clear();
-    setStatus(Status::initializing);
+    set_status(Status::initializing);
 }
 
 bool StatusDisplay::begin() {
-    if (!display_.begin(SSD1306_SWITCHCAPVCC, i2cAddress)) {
+    if (!display_.begin(SSD1306_SWITCHCAPVCC, i2c_address)) {
         return false;
     }
     display_.setTextSize(1);
@@ -54,61 +54,63 @@ bool StatusDisplay::begin() {
     return true;
 }
 
-void StatusDisplay::setStatus(Status status) {
-    setValue(statusLine, statusText(status));
+void StatusDisplay::set_status(Status status) {
+    set_value(status_line, status_text(status));
 }
 
-void StatusDisplay::setBehFrameRate(unsigned long fps) {
-    std::snprintf(values_[behFrameRateLine], valueBufferSize, "%lu", fps);
+void StatusDisplay::set_beh_frame_rate(unsigned long fps) {
+    std::snprintf(values_[beh_frame_rate_line], value_buffer_size, "%lu", fps);
 }
 
-void StatusDisplay::setBehMuscSyncRatio(unsigned long ratio) {
-    std::snprintf(values_[behMuscRatioLine], valueBufferSize, "%lu:1", ratio);
+void StatusDisplay::set_beh_musc_sync_ratio(unsigned long ratio) {
+    std::snprintf(
+        values_[beh_musc_ratio_line], value_buffer_size, "%lu:1", ratio);
 }
 
-void StatusDisplay::setBehMuscRatioNA() {
-    setValue(behMuscRatioLine, "N/A");
+void StatusDisplay::set_beh_musc_ratio_na() {
+    set_value(beh_musc_ratio_line, "N/A");
 }
 
-void StatusDisplay::setBehExpTime(unsigned long us) {
-    std::snprintf(values_[behExpTimeLine], valueBufferSize, "%lu us", us);
+void StatusDisplay::set_beh_exp_time(unsigned long us) {
+    std::snprintf(values_[beh_exp_time_line], value_buffer_size, "%lu us", us);
 }
 
-void StatusDisplay::setMuscExpTime(unsigned long us) {
-    std::snprintf(values_[muscExpTimeLine], valueBufferSize, "%lu us", us);
+void StatusDisplay::set_musc_exp_time(unsigned long us) {
+    std::snprintf(values_[musc_exp_time_line], value_buffer_size, "%lu us", us);
 }
 
-void StatusDisplay::setMuscExpOff() {
-    setValue(muscExpTimeLine, "OFF");
+void StatusDisplay::set_musc_exp_off() {
+    set_value(musc_exp_time_line, "OFF");
 }
 
 void StatusDisplay::clear() {
-    for (uint8_t i = 0; i < numLines; ++i) {
+    for (uint8_t i = 0; i < num_lines; ++i) {
         values_[i][0] = '\0';
     }
 }
 
 void StatusDisplay::render() {
     display_.clearDisplay();
-    for (uint8_t i = 0; i < numLines; ++i) {
-        drawRow(i);
+    for (uint8_t i = 0; i < num_lines; ++i) {
+        draw_row(i);
     }
     display_.display();
 }
 
-void StatusDisplay::setValue(Line line, const char *text) {
-    std::strncpy(values_[line], text, valueBufferSize - 1);
-    values_[line][valueBufferSize - 1] = '\0';
+void StatusDisplay::set_value(Line line, const char *text) {
+    std::strncpy(values_[line], text, value_buffer_size - 1);
+    values_[line][value_buffer_size - 1] = '\0';
 }
 
-void StatusDisplay::drawRow(uint8_t index) {
+void StatusDisplay::draw_row(uint8_t index) {
     // The Status line is centred in the yellow band; the remaining lines fill
-    // the blue band below, numbered from 0 by their offset past statusLine.
+    // the blue band below, numbered from 0 by their offset past status_line.
     int16_t y;
-    if (index == statusLine) {
-        y = (statusBandHeight - charHeight) / 2;
+    if (index == status_line) {
+        y = (status_band_height - char_height) / 2;
     } else {
-        y = statusBandHeight + blueTopMargin + (index - statusLine - 1) * rowHeight;
+        y = status_band_height + blue_top_margin +
+            (index - status_line - 1) * row_height;
     }
 
     // Each line is "<label>: <value>", left-aligned. render() clears the panel

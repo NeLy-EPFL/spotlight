@@ -1,242 +1,245 @@
 #include "recorder/apps/shared_memory_utils.h"
 
-namespace PCOSharedMemory {
+namespace pco_shared_memory {
 
-void setupFrameData(
-    const std::string &shmFrameDataName,
-    const size_t frameBufferSize,
-    uint8_t *&frameDataPtr,
-    bool createNew) {
-    int shmFileDesc = -1;
+void setup_frame_data(
+    const std::string &shm_frame_data_name,
+    const size_t frame_buffer_size,
+    uint8_t *&frame_data_ptr,
+    bool create_new) {
+    int shm_file_desc = -1;
 
-    if (createNew) {
+    if (create_new) {
 
-        shmFileDesc = shm_open(
-            shmFrameDataName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
-        if (shmFileDesc == -1) {
-            std::string errorMessage =
+        shm_file_desc = shm_open(
+            shm_frame_data_name.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shm_file_desc == -1) {
+            std::string error_message =
                 "Failed to open shared memory for frame data: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
-        if (ftruncate(shmFileDesc, frameBufferSize) == -1) {
-            std::string errorMessage =
+        if (ftruncate(shm_file_desc, frame_buffer_size) == -1) {
+            std::string error_message =
                 "Failed to set size of shared memory for frame data: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
     }
 
     else {
-        shmFileDesc = shm_open(shmFrameDataName.c_str(), O_RDWR, 0666);
+        shm_file_desc = shm_open(shm_frame_data_name.c_str(), O_RDWR, 0666);
     }
 
-    frameDataPtr = (uint8_t *)mmap(
+    frame_data_ptr = (uint8_t *)mmap(
         nullptr,
-        frameBufferSize,
+        frame_buffer_size,
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
-        shmFileDesc,
+        shm_file_desc,
         0);
-    if (frameDataPtr == MAP_FAILED) {
-        std::string errorMessage =
+    if (frame_data_ptr == MAP_FAILED) {
+        std::string error_message =
             "Failed to map shared memory for frame data: " +
             std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     }
-    close(shmFileDesc);
+    close(shm_file_desc);
 }
 
-void setupShutterOpenTime(
-    const std::string &shmShutterOpenTimeName,
-    unsigned int *&shutterOpenTimePtr,
-    bool createNew) {
-    int shmFileDesc = -1;
-    size_t shutterOpenTimeSize = sizeof(unsigned int);
+void setup_shutter_open_time(
+    const std::string &shm_shutter_open_time_name,
+    unsigned int *&shutter_open_time_ptr,
+    bool create_new) {
+    int shm_file_desc = -1;
+    size_t shutter_open_time_size = sizeof(unsigned int);
 
-    if (createNew) {
-        shmFileDesc = shm_open(
-            shmShutterOpenTimeName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
-        if (shmFileDesc == -1) {
-            std::string errorMessage =
+    if (create_new) {
+        shm_file_desc = shm_open(
+            shm_shutter_open_time_name.c_str(),
+            O_CREAT | O_RDWR | O_TRUNC,
+            0666);
+        if (shm_file_desc == -1) {
+            std::string error_message =
                 "Failed to open shared memory for shutter-open time: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
-        if (ftruncate(shmFileDesc, shutterOpenTimeSize) == -1) {
-            std::string errorMessage =
+        if (ftruncate(shm_file_desc, shutter_open_time_size) == -1) {
+            std::string error_message =
                 "Failed to set size of shared memory for shutter-open "
                 "time: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
     } else {
-        shmFileDesc = shm_open(shmShutterOpenTimeName.c_str(), O_RDWR, 0666);
+        shm_file_desc =
+            shm_open(shm_shutter_open_time_name.c_str(), O_RDWR, 0666);
     }
 
-    shutterOpenTimePtr = (unsigned int *)mmap(
+    shutter_open_time_ptr = (unsigned int *)mmap(
         0,
-        shutterOpenTimeSize,
+        shutter_open_time_size,
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
-        shmFileDesc,
+        shm_file_desc,
         0);
-    if (shutterOpenTimePtr == MAP_FAILED) {
-        std::string errorMessage =
+    if (shutter_open_time_ptr == MAP_FAILED) {
+        std::string error_message =
             "Failed to map shared memory for shutter-open time: " +
             std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     }
-    close(shmFileDesc);
+    close(shm_file_desc);
 }
 
-void setupFrameMetadata(
-    const std::string &shmFrameMetadataName,
-    FrameMetadata *&frameMetadataPtr,
-    bool createNew) {
-    int shmFileDesc = -1;
+void setup_frame_metadata(
+    const std::string &shm_frame_metadata_name,
+    FrameMetadata *&frame_metadata_ptr,
+    bool create_new) {
+    int shm_file_desc = -1;
 
-    if (createNew) {
-        shmFileDesc = shm_open(
-            shmFrameMetadataName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
-        if (shmFileDesc == -1) {
-            std::string errorMessage =
+    if (create_new) {
+        shm_file_desc = shm_open(
+            shm_frame_metadata_name.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shm_file_desc == -1) {
+            std::string error_message =
                 "Failed to open shared memory for frame metadata: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
-        if (ftruncate(shmFileDesc, sizeof(FrameMetadata)) == -1) {
-            std::string errorMessage =
+        if (ftruncate(shm_file_desc, sizeof(FrameMetadata)) == -1) {
+            std::string error_message =
                 "Failed to set size of shared memory for frame metadata: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
     } else {
-        shmFileDesc = shm_open(shmFrameMetadataName.c_str(), O_RDWR, 0666);
+        shm_file_desc = shm_open(shm_frame_metadata_name.c_str(), O_RDWR, 0666);
     }
 
-    frameMetadataPtr = (FrameMetadata *)mmap(
+    frame_metadata_ptr = (FrameMetadata *)mmap(
         0,
         sizeof(FrameMetadata),
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
-        shmFileDesc,
+        shm_file_desc,
         0);
-    if (frameMetadataPtr == MAP_FAILED) {
-        std::string errorMessage =
+    if (frame_metadata_ptr == MAP_FAILED) {
+        std::string error_message =
             "Failed to map shared memory for frame metadata: " +
             std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     }
-    close(shmFileDesc);
+    close(shm_file_desc);
 }
 
-void setupMutex(
-    const std::string &shmMutexName,
-    pthread_mutex_t *&mutexPtr,
-    bool createNew) {
-    int shmFileDesc = -1;
+void setup_mutex(
+    const std::string &shm_mutex_name,
+    pthread_mutex_t *&mutex_ptr,
+    bool create_new) {
+    int shm_file_desc = -1;
 
-    if (createNew) {
-        shmFileDesc =
-            shm_open(shmMutexName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
-        if (shmFileDesc == -1) {
-            std::string errorMessage =
+    if (create_new) {
+        shm_file_desc =
+            shm_open(shm_mutex_name.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shm_file_desc == -1) {
+            std::string error_message =
                 "Failed to open shared memory for mutex: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
-        if (ftruncate(shmFileDesc, sizeof(pthread_mutex_t)) == -1) {
-            std::string errorMessage =
+        if (ftruncate(shm_file_desc, sizeof(pthread_mutex_t)) == -1) {
+            std::string error_message =
                 "Failed to set size of shared memory for mutex: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
     } else {
-        shmFileDesc = shm_open(shmMutexName.c_str(), O_RDWR, 0666);
+        shm_file_desc = shm_open(shm_mutex_name.c_str(), O_RDWR, 0666);
     }
 
-    mutexPtr = (pthread_mutex_t *)mmap(
+    mutex_ptr = (pthread_mutex_t *)mmap(
         0,
         sizeof(pthread_mutex_t),
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
-        shmFileDesc,
+        shm_file_desc,
         0);
-    if (mutexPtr == MAP_FAILED) {
-        std::string errorMessage = "Failed to map shared memory for mutex: " +
-                                   std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+    if (mutex_ptr == MAP_FAILED) {
+        std::string error_message = "Failed to map shared memory for mutex: " +
+                                    std::string(strerror(errno));
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     }
-    close(shmFileDesc);
+    close(shm_file_desc);
 
     // First-time init for mutex
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(mutexPtr, &attr);
+    pthread_mutex_init(mutex_ptr, &attr);
 }
 
-void setupConditionVariable(
-    const std::string &shmCondVarName,
-    pthread_cond_t *&condVarPtr,
-    bool createNew) {
-    int shmFileDesc = -1;
+void setup_condition_variable(
+    const std::string &shm_cond_var_name,
+    pthread_cond_t *&cond_var_ptr,
+    bool create_new) {
+    int shm_file_desc = -1;
 
-    if (createNew) {
-        shmFileDesc =
-            shm_open(shmCondVarName.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
-        if (shmFileDesc == -1) {
-            std::string errorMessage =
+    if (create_new) {
+        shm_file_desc = shm_open(
+            shm_cond_var_name.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+        if (shm_file_desc == -1) {
+            std::string error_message =
                 "Failed to open shared memory for frame count: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
-        if (ftruncate(shmFileDesc, sizeof(pthread_cond_t)) == -1) {
-            std::string errorMessage =
+        if (ftruncate(shm_file_desc, sizeof(pthread_cond_t)) == -1) {
+            std::string error_message =
                 "Failed to set size of shared memory for frame count: " +
                 std::string(strerror(errno));
-            spdlog::critical(errorMessage);
-            throw std::runtime_error(errorMessage);
+            spdlog::critical(error_message);
+            throw std::runtime_error(error_message);
         }
     } else {
-        shmFileDesc = shm_open(shmCondVarName.c_str(), O_RDWR, 0666);
+        shm_file_desc = shm_open(shm_cond_var_name.c_str(), O_RDWR, 0666);
     }
 
-    condVarPtr = (pthread_cond_t *)mmap(
+    cond_var_ptr = (pthread_cond_t *)mmap(
         0,
         sizeof(pthread_cond_t),
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
-        shmFileDesc,
+        shm_file_desc,
         0);
-    if (condVarPtr == MAP_FAILED) {
-        std::string errorMessage =
+    if (cond_var_ptr == MAP_FAILED) {
+        std::string error_message =
             "Failed to map shared memory for frame count: " +
             std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     }
-    close(shmFileDesc);
+    close(shm_file_desc);
 
     // First-time init for condition variable
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    int err = pthread_cond_init(condVarPtr, &attr);
+    int err = pthread_cond_init(cond_var_ptr, &attr);
     if (err != 0) {
         std::string msg = "Failed to initialize condition variable: " +
                           std::string(strerror(err));
@@ -244,4 +247,4 @@ void setupConditionVariable(
         throw std::runtime_error(msg);
     }
 }
-} // namespace PCOSharedMemory
+} // namespace pco_shared_memory

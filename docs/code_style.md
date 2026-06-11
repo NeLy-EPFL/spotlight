@@ -15,10 +15,25 @@ Conventions for contributing to this repository. The authoritative C++ formatter
 
 ## Formatting and naming
 
-- Use the style specified in `.clang-format`. Don't use `clang-tidy`.
-- Use snake_case for file names, with `.cc` and `.h` suffixes.
-- Use camelCase for variable names. For abbreviations, use all caps instead of capitalizing only the first letter (e.g. `blueLED` instead of `blueLed`). If the abbreviation is the first word, keep lower case (e.g. `ledPin`). Exception: for ID and IDX, use `Id` or `Idx`.
-- Private attribute names should end with an underscore, but not private functions.
+- Use the style specified in `.clang-format` and `.clang-tidy`.
+
+  **clang-format** (formatting): run periodically on all tracked source files from the repo root:
+  ```
+  git ls-files '*.cc' '*.h' | xargs clang-format -i
+  ```
+
+  **clang-tidy** (naming and code quality): requires a built `recorder/build` (for `compile_commands.json`; this also covers `comm_protocol`). Check:
+  ```
+  run-clang-tidy -quiet -p recorder/build '.*spotlight-control/(recorder|comm_protocol)/(src|tests)/.*'
+  ```
+  Apply fixes automatically:
+  ```
+  run-clang-tidy -quiet -fix -p recorder/build '.*spotlight-control/(recorder|comm_protocol)/(src|tests)/.*'
+  ```
+- Use snake_case for file names, function names, variable names, and enum values, with `.cc` and `.h` suffixes.
+- Use PascalCase for class, struct, enum, and type alias names (e.g. `RecorderConfig`, `FrameData`).
+- Private member variables end with a trailing underscore (e.g. `image_width_`). Public members and all functions have no suffix.
+- Namespaces are lowercase (e.g. `namespace config`).
 - Use Google style for documentation in header files: `//` comment lines, not `/* */` blocks.
 - Keep documentation complete but concise. Assume the user has a certain level of technical know-how. Don't write docs just for the sake of it; make sure it's meaningful.
 - Use `#pragma once` instead of `#ifndef` guards in header files.

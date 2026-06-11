@@ -14,8 +14,8 @@
 // on the board (uploaded by `pio test`, see the project README) only because
 // that is where the firmware toolchain and Stream live.
 
-#include <Arduino.h>
 #include <AUnit.h>
+#include <Arduino.h>
 
 #include <string>
 
@@ -25,7 +25,7 @@
 namespace {
 
 // See the note in test_device_io on the host-connection delay.
-constexpr unsigned long kTestHostConnectDelayMs = 20000;
+constexpr unsigned long test_host_connect_delay_ms = 20000;
 
 // Minimal readable Arduino Stream backed by an in-memory queue of bytes. The
 // test appends bytes with feed() (mimicking bytes arriving over the wire,
@@ -35,7 +35,9 @@ constexpr unsigned long kTestHostConnectDelayMs = 20000;
 class FakeStream : public Stream {
   public:
     // Queue more incoming bytes, as if they had just arrived on the port.
-    void feed(const std::string &bytes) { incoming_ += bytes; }
+    void feed(const std::string &bytes) {
+        incoming_ += bytes;
+    }
 
     int available() override {
         return static_cast<int>(incoming_.size() - pos_);
@@ -52,7 +54,9 @@ class FakeStream : public Stream {
         }
         return static_cast<unsigned char>(incoming_[pos_]);
     }
-    size_t write(uint8_t) override { return 1; }
+    size_t write(uint8_t) override {
+        return 1;
+    }
     using Print::write;
 
   private:
@@ -155,7 +159,7 @@ test(serialIo_dropsOversizedLineButKeepsFollowing) {
     // A line longer than the buffer must be discarded whole (never truncated
     // into a bogus "valid" message), and framing must recover for the next
     // line.
-    std::string oversized(config::incomingCmdBufferSize + 50, 'a');
+    std::string oversized(config::incoming_cmd_buffer_size + 50, 'a');
     stream.feed(oversized);
     stream.feed("\n");
     stream.feed("after\n");
@@ -169,9 +173,9 @@ test(serialIo_dropsOversizedLineButKeepsFollowing) {
 }
 
 void setup() {
-    Serial.begin(config::serialBaudRate);
+    Serial.begin(config::serial_baud_rate);
     // See the note in test_device_io on the host-connection delay.
-    delay(kTestHostConnectDelayMs);
+    delay(test_host_connect_delay_ms);
     aunit::TestRunner::setTimeout(30);
 }
 

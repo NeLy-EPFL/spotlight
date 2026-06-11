@@ -29,8 +29,12 @@ class TempDir {
     TempDir(const TempDir &) = delete;
     TempDir &operator=(const TempDir &) = delete;
 
-    const fs::path &path() const { return path_; }
-    fs::path file(const std::string &name) const { return path_ / name; }
+    const fs::path &path() const {
+        return path_;
+    }
+    fs::path file(const std::string &name) const {
+        return path_ / name;
+    }
 
   private:
     fs::path path_;

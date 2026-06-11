@@ -32,52 +32,52 @@
 #include "sc2_defs.h"
 // clang-format on
 
-#include "recorder/common/recorder_config.h"
 #include "recorder/apps/shared_memory_utils.h"
+#include "recorder/common/recorder_config.h"
 
-namespace PCOCameraServer {
+namespace pco_camera_server {
 struct CLIOptions {
-    std::string profileDir = "~/Spotlight/default/";
+    std::string profile_dir = "~/Spotlight/default/";
     unsigned int x0 = 1;
     unsigned int x1 = 2048;
     unsigned int y0 = 1;
     unsigned int y1 = 2048;
-    unsigned int delayUs = 0; // Delay after trigger in microseconds
-    spdlog::level::level_enum logLevel = spdlog::level::info;
+    unsigned int delay_us = 0; // Delay after trigger in microseconds
+    spdlog::level::level_enum log_level = spdlog::level::info;
 };
 
-std::atomic<bool> shutdownRequested(false);
+std::atomic<bool> shutdown_requested(false);
 
-void printHelp(const char *programName);
-spdlog::level::level_enum parseLogLevel(const std::string &level);
-CLIOptions parseCLI(int argc, char **argv);
+void print_help(const char *program_name);
+spdlog::level::level_enum parse_log_level(const std::string &level);
+CLIOptions parse_cli(int argc, char **argv);
 
-void signalHandler(int signal);
+void signal_handler(int signal);
 
-void setupPCOCamera(
+void setup_pco_camera(
     pco::Camera &camera,
-    unsigned int defaultShutterOpenTimeUs,
+    unsigned int default_shutter_open_time_us,
     unsigned int x0,
     unsigned int x1,
     unsigned int y0,
     unsigned int y1,
-    unsigned int delayUs,
-    unsigned int fullFrameWidth,
-    unsigned int fullFrameHeight);
+    unsigned int delay_us,
+    unsigned int full_frame_width,
+    unsigned int full_frame_height);
 
-void serveFrames(
-    const std::string &shmFrameDataName,
-    const size_t frameBufferSize,
-    const std::string &shmShutterOpenTimeName,
-    const std::string &shmFrameMetadataName,
-    const std::string &shmMutexName,
-    const std::string &shmCondVarName,
-    const unsigned int defaultShutterOpenTimeUs,
+void serve_frames(
+    const std::string &shm_frame_data_name,
+    const size_t frame_buffer_size,
+    const std::string &shm_shutter_open_time_name,
+    const std::string &shm_frame_metadata_name,
+    const std::string &shm_mutex_name,
+    const std::string &shm_cond_var_name,
+    const unsigned int default_shutter_open_time_us,
     const unsigned int x0,
     const unsigned int x1,
     const unsigned int y0,
     const unsigned int y1,
-    const unsigned int delayUs,
-    const unsigned int fullFrameWidth,
-    const unsigned int fullFrameHeight);
-} // namespace PCOCameraServer
+    const unsigned int delay_us,
+    const unsigned int full_frame_width,
+    const unsigned int full_frame_height);
+} // namespace pco_camera_server

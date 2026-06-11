@@ -12,35 +12,34 @@
 
 namespace zmASCII = zaber::motion::ascii;
 
-enum MotionAxis { X_AXIS, Y_AXIS };
+enum MotionAxis { x_axis, y_axis };
 
 class MotionControl {
   public:
-    MotionControl(const RecorderConfig &recorderConfig);
+    MotionControl(const RecorderConfig &recorder_config);
     ~MotionControl();
     void
-    moveAbsolute(MotionAxis axis, double position, bool wait, double velocity);
-    void moveRelative(
-        MotionAxis axis, double relativePosition, bool wait, double velocity);
+    move_absolute(MotionAxis axis, double position, bool wait, double velocity);
+    void move_relative(
+        MotionAxis axis, double relative_position, bool wait, double velocity);
     void home(MotionAxis axis, bool wait);
-    double getPosition(MotionAxis axis);
-    double getMinPosition(MotionAxis axis);
-    double getMaxPosition(MotionAxis axis);
-    void waitUntilIdle(MotionAxis axis);
-    bool checkIfIdle(MotionAxis axis);
+    double get_position(MotionAxis axis);
+    double get_min_position(MotionAxis axis);
+    double get_max_position(MotionAxis axis);
+    void wait_until_idle(MotionAxis axis);
+    bool check_if_idle(MotionAxis axis);
 
   private:
     // Push the explicit acceleration / ramp-time / max-speed settings from the
     // config onto both Zaber axes.
-    void applyMotionStageSettings(const RecorderConfig &recorderConfig);
+    void apply_motion_stage_settings(const RecorderConfig &recorder_config);
 
-    RecorderConfig recorderConfig_;
-    std::unordered_map<unsigned int, MotionAxis> serialNumberToAxisLookup_;
-    std::string serialPortName_;
+    RecorderConfig recorder_config_;
+    std::unordered_map<unsigned int, MotionAxis> serial_number_to_axis_lookup_;
+    std::string serial_port_name_;
     zmASCII::Connection connection_;
     std::unordered_map<MotionAxis, std::unique_ptr<zmASCII::Axis>>
-        axisPtrLookup_;
-    zaber::motion::Units lengthUnitEnum_;
-    zaber::motion::Units velocityUnitEnum_;
+        axis_ptr_lookup_;
+    zaber::motion::Units length_unit_enum_;
+    zaber::motion::Units velocity_unit_enum_;
 };
-

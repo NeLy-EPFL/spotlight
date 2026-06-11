@@ -38,7 +38,7 @@ class SerialIO {
     /** Read from an injected stream; used by the unit tests. */
     explicit SerialIO(Stream &stream);
 
-    /** Open the underlying USB serial port at config::serialBaudRate. */
+    /** Open the underlying USB serial port at config::serial_baud_rate. */
     void begin();
 
     /**
@@ -46,15 +46,16 @@ class SerialIO {
      *
      * Returns std::nullopt when no full line is available yet. The returned
      * string excludes the terminating newline. Blank lines are skipped, and a
-     * line longer than config::incomingCmdBufferSize is discarded rather than
-     * truncated (so a malformed/oversized message is never reported as valid).
+     * line longer than config::incoming_cmd_buffer_size is discarded rather
+     * than truncated (so a malformed/oversized message is never reported as
+     * valid).
      */
     std::optional<std::string> update();
 
   private:
     Stream &stream_;
-    char buffer_[config::incomingCmdBufferSize];
-    int bufferIdx_ = 0;
+    char buffer_[config::incoming_cmd_buffer_size];
+    int buffer_idx_ = 0;
     // Set once the current line overruns buffer_; the rest of the line (up to
     // the next newline) is then dropped instead of silently truncated.
     bool overflowed_ = false;

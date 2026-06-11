@@ -1,133 +1,133 @@
 #include "recorder/peripherals/motion_control.h"
 
 namespace {
-zaber::motion::Units getLengthUnitZaberEnum(const std::string &unitStr) {
-    if (unitStr == "mm") {
+zaber::motion::Units get_length_unit_zaber_enum(const std::string &unit_str) {
+    if (unit_str == "mm") {
         return zaber::motion::Units::LENGTH_MILLIMETRES;
     } else {
-        spdlog::critical("Length unit '{}' not supported", unitStr);
+        spdlog::critical("Length unit '{}' not supported", unit_str);
         throw std::runtime_error("Unsupported length unit.");
     }
 }
 
-zaber::motion::Units getVelocityUnitZaberEnum(const std::string &unitStr) {
-    if (unitStr == "mm/s") {
+zaber::motion::Units get_velocity_unit_zaber_enum(const std::string &unit_str) {
+    if (unit_str == "mm/s") {
         return zaber::motion::Units::VELOCITY_MILLIMETRES_PER_SECOND;
     } else {
-        spdlog::critical("Velocity unit '{}' not supported", unitStr);
+        spdlog::critical("Velocity unit '{}' not supported", unit_str);
         throw std::runtime_error("Unsupported velocity unit.");
     }
 }
 } // namespace
 
-MotionControl::MotionControl(const RecorderConfig &recorderConfig) {
+MotionControl::MotionControl(const RecorderConfig &recorder_config) {
     // Open the serial connection
-    std::string motionStageDeviceManufacturer =
-        recorderConfig.getParameter<std::string>(
+    std::string motion_stage_device_manufacturer =
+        recorder_config.get_parameter<std::string>(
             "motion_control", "motion_stage_device_manufacturer");
-    std::string motionStageDeviceDescription =
-        recorderConfig.getParameter<std::string>(
+    std::string motion_stage_device_description =
+        recorder_config.get_parameter<std::string>(
             "motion_control", "motion_stage_device_description");
-    // getSerialPortName(description, manufacturer): pass the arguments in that
-    // order (matching the function signature and the Arduino call site).
-    serialPortName_ = getSerialPortName(
-        motionStageDeviceDescription, motionStageDeviceManufacturer);
+    // get_serial_port_name(description, manufacturer): pass the arguments in
+    // that order (matching the function signature and the Arduino call site).
+    serial_port_name_ = get_serial_port_name(
+        motion_stage_device_description, motion_stage_device_manufacturer);
     connection_ =
-        zmASCII::Connection::openSerialPort("/dev/" + serialPortName_);
+        zmASCII::Connection::openSerialPort("/dev/" + serial_port_name_);
     connection_.enableAlerts();
 
     // Detect devices
-    std::vector<zmASCII::Device> deviceList = connection_.detectDevices();
+    std::vector<zmASCII::Device> device_list = connection_.detectDevices();
 
-    if (deviceList.size() != 1) {
+    if (device_list.size() != 1) {
         spdlog::critical(
             "Expected 1 Zaber device, but found {}. Note that multiple stages "
             "controlled by the same controller constitute a single device.",
-            deviceList.size());
+            device_list.size());
         throw std::runtime_error("Unexpected number of Zaber devices");
     }
 
-    zmASCII::Device device = deviceList[0];
-    int numAxis = device.getAxisCount();
+    zmASCII::Device device = device_list[0];
+    int num_axis = device.getAxisCount();
     spdlog::info(
         "One Zaber device found. Device ID: {}; name: {}; axis count: {}; "
         "serial no.: {}",
         device.getDeviceId(),
         device.getName(),
-        numAxis,
+        num_axis,
         device.getSerialNumber());
 
     // Configure axes
-    if (numAxis != 2) {
-        spdlog::critical("Expected 2 axes, found {}", numAxis);
+    if (num_axis != 2) {
+        spdlog::critical("Expected 2 axes, found {}", num_axis);
         throw std::runtime_error("Unexpected number of axes");
     }
 
-    int xAxisSerialNumber = recorderConfig.getParameter<int>(
+    int x_axis_serial_number = recorder_config.get_parameter<int>(
         "motion_control", "stage_serial_no_x_axis");
-    int yAxisSerialNumber = recorderConfig.getParameter<int>(
+    int y_axis_serial_number = recorder_config.get_parameter<int>(
         "motion_control", "stage_serial_no_y_axis");
-    serialNumberToAxisLookup_ = {
-        {xAxisSerialNumber, X_AXIS}, {yAxisSerialNumber, Y_AXIS}};
+    serial_number_to_axis_lookup_ = {
+        {x_axis_serial_number, x_axis}, {y_axis_serial_number, y_axis}};
 
-    axisPtrLookup_[X_AXIS] = nullptr;
-    axisPtrLookup_[Y_AXIS] = nullptr;
-    for (int i = 0; i < numAxis; i++) {
+    axis_ptr_lookup_[x_axis] = nullptr;
+    axis_ptr_lookup_[y_axis] = nullptr;
+    for (int i = 0; i < num_axis; i++) {
         zmASCII::Axis axis = device.getAxis(i + 1);
-        unsigned int serialNumber = axis.getPeripheralSerialNumber();
+        unsigned int serial_number = axis.getPeripheralSerialNumber();
         spdlog::info(
             "Axis {}: peripheral ID: {}; name: {}, serial no.: {}",
             i + 1,
             axis.getPeripheralId(),
             axis.getPeripheralName(),
-            serialNumber);
-        if (serialNumberToAxisLookup_.find(serialNumber) ==
-            serialNumberToAxisLookup_.end()) {
+            serial_number);
+        if (serial_number_to_axis_lookup_.find(serial_number) ==
+            serial_number_to_axis_lookup_.end()) {
             spdlog::critical(
                 "Motion stage serial number {} not mapped to any physically "
                 "meaningful axis (ie. X or Y). Check config file.",
-                serialNumber);
+                serial_number);
             throw std::runtime_error("Unknown serial number");
         } else {
-            axisPtrLookup_[serialNumberToAxisLookup_.at(serialNumber)] =
+            axis_ptr_lookup_[serial_number_to_axis_lookup_.at(serial_number)] =
                 std::make_unique<zmASCII::Axis>(std::move(axis));
         }
     }
-    if (axisPtrLookup_[X_AXIS] == nullptr ||
-        axisPtrLookup_[Y_AXIS] == nullptr) {
+    if (axis_ptr_lookup_[x_axis] == nullptr ||
+        axis_ptr_lookup_[y_axis] == nullptr) {
         spdlog::critical(
             "Failed to configure all axes. X axis OK? {}; Y axis OK? {}",
-            axisPtrLookup_[X_AXIS] != nullptr,
-            axisPtrLookup_[Y_AXIS] != nullptr);
+            axis_ptr_lookup_[x_axis] != nullptr,
+            axis_ptr_lookup_[y_axis] != nullptr);
         throw std::runtime_error("Failed to configure all axes");
     }
     spdlog::info("Motion stages assigned successfully");
 
-    recorderConfig_ = recorderConfig;
-    lengthUnitEnum_ =
-        getLengthUnitZaberEnum(recorderConfig.getParameter<std::string>(
+    recorder_config_ = recorder_config;
+    length_unit_enum_ =
+        get_length_unit_zaber_enum(recorder_config.get_parameter<std::string>(
             "motion_control", "length_unit"));
-    velocityUnitEnum_ =
-        getVelocityUnitZaberEnum(recorderConfig.getParameter<std::string>(
+    velocity_unit_enum_ =
+        get_velocity_unit_zaber_enum(recorder_config.get_parameter<std::string>(
             "motion_control", "velocity_unit"));
 
-    applyMotionStageSettings(recorderConfig);
+    apply_motion_stage_settings(recorder_config);
 }
 
-void MotionControl::applyMotionStageSettings(
-    const RecorderConfig &recorderConfig) {
+void MotionControl::apply_motion_stage_settings(
+    const RecorderConfig &recorder_config) {
     // The config keys carry their units in their names, so each setting is sent
     // with the matching Zaber unit (independent of the configured
     // length/velocity units used elsewhere).
-    double acceleration = recorderConfig.getParameter<double>(
+    double acceleration = recorder_config.get_parameter<double>(
         "motion_control", "acceleration_mm_per_s_sq");
-    double accelerationRampTimeMs = recorderConfig.getParameter<double>(
+    double acceleration_ramp_time_ms = recorder_config.get_parameter<double>(
         "motion_control", "acceleration_ramp_time_ms");
-    double maxSpeed = recorderConfig.getParameter<double>(
+    double max_speed = recorder_config.get_parameter<double>(
         "motion_control", "max_speed_mm_per_s");
 
-    for (MotionAxis axis : {X_AXIS, Y_AXIS}) {
-        zmASCII::AxisSettings settings = axisPtrLookup_[axis]->getSettings();
+    for (MotionAxis axis : {x_axis, y_axis}) {
+        zmASCII::AxisSettings settings = axis_ptr_lookup_[axis]->getSettings();
         // Set "accel" alongside the accel-only and decel-only settings so that
         // acceleration and deceleration are both pinned explicitly.
         settings.set(
@@ -144,11 +144,11 @@ void MotionControl::applyMotionStageSettings(
             zaber::motion::Units::ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED);
         settings.set(
             "motion.accel.ramptime",
-            accelerationRampTimeMs,
+            acceleration_ramp_time_ms,
             zaber::motion::Units::TIME_MILLISECONDS);
         settings.set(
             "maxspeed",
-            maxSpeed,
+            max_speed,
             zaber::motion::Units::VELOCITY_MILLIMETRES_PER_SECOND);
     }
     spdlog::info(
@@ -156,8 +156,8 @@ void MotionControl::applyMotionStageSettings(
         "(accel, motion.accelonly, motion.decelonly); ramp time = {} ms "
         "(motion.accel.ramptime); max speed = {} mm/s (maxspeed)",
         acceleration,
-        accelerationRampTimeMs,
-        maxSpeed);
+        acceleration_ramp_time_ms,
+        max_speed);
 }
 
 MotionControl::~MotionControl() {
@@ -165,40 +165,44 @@ MotionControl::~MotionControl() {
     spdlog::info("Motion stages connection closed");
 }
 
-void MotionControl::moveAbsolute(
+void MotionControl::move_absolute(
     MotionAxis axis, double position, bool wait, double velocity) {
-    axisPtrLookup_[axis]->moveAbsolute(
-        position, lengthUnitEnum_, wait, velocity, velocityUnitEnum_);
+    axis_ptr_lookup_[axis]->moveAbsolute(
+        position, length_unit_enum_, wait, velocity, velocity_unit_enum_);
 }
 
-void MotionControl::moveRelative(
-    MotionAxis axis, double relativePosition, bool wait, double velocity) {
-    axisPtrLookup_[axis]->moveRelative(
-        relativePosition, lengthUnitEnum_, wait, velocity, velocityUnitEnum_);
+void MotionControl::move_relative(
+    MotionAxis axis, double relative_position, bool wait, double velocity) {
+    axis_ptr_lookup_[axis]->moveRelative(
+        relative_position,
+        length_unit_enum_,
+        wait,
+        velocity,
+        velocity_unit_enum_);
 }
 
 void MotionControl::home(MotionAxis axis, bool wait) {
-    axisPtrLookup_[axis]->home(wait);
+    axis_ptr_lookup_[axis]->home(wait);
 }
 
-double MotionControl::getPosition(MotionAxis axis) {
-    return axisPtrLookup_[axis]->getPosition(lengthUnitEnum_);
+double MotionControl::get_position(MotionAxis axis) {
+    return axis_ptr_lookup_[axis]->getPosition(length_unit_enum_);
 }
 
-double MotionControl::getMinPosition(MotionAxis axis) {
-    return axisPtrLookup_[axis]->getSettings().get(
-        "limit.min", lengthUnitEnum_);
+double MotionControl::get_min_position(MotionAxis axis) {
+    return axis_ptr_lookup_[axis]->getSettings().get(
+        "limit.min", length_unit_enum_);
 }
 
-double MotionControl::getMaxPosition(MotionAxis axis) {
-    return axisPtrLookup_[axis]->getSettings().get(
-        "limit.max", lengthUnitEnum_);
+double MotionControl::get_max_position(MotionAxis axis) {
+    return axis_ptr_lookup_[axis]->getSettings().get(
+        "limit.max", length_unit_enum_);
 }
 
-void MotionControl::waitUntilIdle(MotionAxis axis) {
-    axisPtrLookup_[axis]->waitUntilIdle();
+void MotionControl::wait_until_idle(MotionAxis axis) {
+    axis_ptr_lookup_[axis]->waitUntilIdle();
 }
 
-bool MotionControl::checkIfIdle(MotionAxis axis) {
-    return !axisPtrLookup_[axis]->isBusy();
+bool MotionControl::check_if_idle(MotionAxis axis) {
+    return !axis_ptr_lookup_[axis]->isBusy();
 }

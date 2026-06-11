@@ -1,9 +1,9 @@
 #pragma once
 
-// Declares runArenaRegistrationScan(profileDir, arenaDir), which performs the
-// automated mapping-board scan. See run_arena_registration_scan_main.cc for the
-// full workflow description and docs/recorder/run_arena_registration_scan.md for
-// the output spec.
+// Declares run_arena_registration_scan(profile_dir, arena_dir), which performs
+// the automated mapping-board scan. See run_arena_registration_scan_main.cc for
+// the full workflow description and
+// docs/recorder/run_arena_registration_scan.md for the output spec.
 
 #include <filesystem>
 #include <string>
@@ -17,7 +17,6 @@
 #include "recorder/peripherals/behavior_camera.h"
 #include "recorder/peripherals/motion_control.h"
 
-void runArenaRegistrationScan(
-    const std::filesystem::path &profileDir,
-    const std::filesystem::path &arenaDir);
-
+void run_arena_registration_scan(
+    const std::filesystem::path &profile_dir,
+    const std::filesystem::path &arena_dir);

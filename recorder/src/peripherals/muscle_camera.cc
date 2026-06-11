@@ -7,8 +7,8 @@
 #include <thread>
 
 namespace {
-std::string logLevelToStr(spdlog::level::level_enum logLevel) {
-    switch (logLevel) {
+std::string log_level_to_str(spdlog::level::level_enum log_level) {
+    switch (log_level) {
     case spdlog::level::trace:
         return "trace";
     case spdlog::level::debug:
@@ -24,48 +24,49 @@ std::string logLevelToStr(spdlog::level::level_enum logLevel) {
     case spdlog::level::off:
         return "off";
     default:
-        spdlog::error("Unknown log level: {}. Using 'info'.", logLevel);
+        spdlog::error("Unknown log level: {}. Using 'info'.", log_level);
         return "info";
     }
 }
 } // namespace
 
 MuscleCamera::MuscleCamera(
-    int imageWidth,
-    int imageHeight,
-    int xOffset,
-    int yOffset,
-    double rollingShutterLineTimeUs,
-    double sensorReadoutTimeUs,
-    const RecorderConfig &recorderConfig,
-    const std::string &profileDir,
-    spdlog::level::level_enum logLevel)
+    int image_width,
+    int image_height,
+    int x_offset,
+    int y_offset,
+    double rolling_shutter_line_time_us,
+    double sensor_readout_time_us,
+    const RecorderConfig &recorder_config,
+    const std::string &profile_dir,
+    spdlog::level::level_enum log_level)
     // Member initializers are in declaration order (avoids -Wreorder).
-    : x0_(xOffset + 1), x1_(xOffset + imageWidth), y0_(yOffset + 1),
-      y1_(yOffset + imageHeight), imageWidth_(imageWidth),
-      imageHeight_(imageHeight),
-      rollingShutterLineTimeUs_(rollingShutterLineTimeUs),
-      sensorReadoutTimeUs_(sensorReadoutTimeUs), pcoCameraServerPID_(-1),
-      frameDataPtr_(nullptr), shutterOpenTimePtr_(nullptr),
-      frameMetadataPtr_(nullptr), mutexPtr_(nullptr), condVarPtr_(nullptr),
-      recorderConfig_(recorderConfig), lastFrameCount_(UINT_MAX) {
-    if (!isROIValid()) {
+    : x0_(x_offset + 1), x1_(x_offset + image_width), y0_(y_offset + 1),
+      y1_(y_offset + image_height), image_width_(image_width),
+      image_height_(image_height),
+      rolling_shutter_line_time_us_(rolling_shutter_line_time_us),
+      sensor_readout_time_us_(sensor_readout_time_us),
+      pco_camera_server_pid_(-1), frame_data_ptr_(nullptr),
+      shutter_open_time_ptr_(nullptr), frame_metadata_ptr_(nullptr),
+      mutex_ptr_(nullptr), cond_var_ptr_(nullptr),
+      recorder_config_(recorder_config), last_frame_count_(UINT_MAX) {
+    if (!is_roi_valid()) {
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
 
     // Capture our PID before forking so the child can detect (after arming its
     // parent-death signal below) whether we already died in the race window
     // between fork() and prctl().
-    pid_t parentPIDBeforeFork = getpid();
+    pid_t parent_pid_before_fork = getpid();
 
     pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
 
     if (pid < 0) {
-        std::string errorMessage =
+        std::string error_message =
             "Failed to fork process in order to start PCO camera server: " +
             std::string(strerror(errno));
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     } else if (pid == 0) {
         // Child process.
         //
@@ -80,22 +81,22 @@ MuscleCamera::MuscleCamera(
         prctl(PR_SET_PDEATHSIG, SIGTERM);
         // Close the race where the parent already died before the prctl() above
         // took effect: in that case exit now rather than becoming an orphan.
-        if (getppid() != parentPIDBeforeFork) {
+        if (getppid() != parent_pid_before_fork) {
             _exit(EXIT_FAILURE);
         }
 
         // Resolve pco-camera-server alongside the running recorder binary so we
         // always launch the matching build, rather than whatever happens to be
         // on $PATH.
-        std::filesystem::path serverPath =
+        std::filesystem::path server_path =
             std::filesystem::canonical("/proc/self/exe").parent_path() /
             "pco-camera-server";
 
         execl(
-            serverPath.c_str(),
+            server_path.c_str(),
             "pco-camera-server",
             "--profile-dir",
-            profileDir.c_str(),
+            profile_dir.c_str(),
             "--x-min",
             std::to_string(x0_).c_str(),
             "--x-max",
@@ -107,21 +108,21 @@ MuscleCamera::MuscleCamera(
             "--delay",
             "0", // sync delay is implemented in Arduino code, not here!
             "--verbosity",
-            logLevelToStr(logLevel).c_str(),
+            log_level_to_str(log_level).c_str(),
             (char *)nullptr);
 
         // If execl returns, it must have failed
-        std::string errorMessage = "Failed to execute PCO camera server at " +
-                                   serverPath.string() + ": " +
-                                   std::string(strerror(errno));
-        spdlog::critical(errorMessage);
+        std::string error_message = "Failed to execute PCO camera server at " +
+                                    server_path.string() + ": " +
+                                    std::string(strerror(errno));
+        spdlog::critical(error_message);
         exit(EXIT_FAILURE); // Exit child process
     } else {
         // Parent process
-        pcoCameraServerPID_ = pid;
+        pco_camera_server_pid_ = pid;
         spdlog::info(
             "PCO camera server started with process ID (PID): {}",
-            pcoCameraServerPID_);
+            pco_camera_server_pid_);
 
         // Wait for the camera server to initialize
         sleep(1); // sleep for 1 second
@@ -131,42 +132,47 @@ MuscleCamera::MuscleCamera(
 
         spdlog::info(
             "Muscle camera API: Setting up shared memory for frame data");
-        bool createNew = false;
+        bool create_new = false;
 
-        size_t frameBufferSize = imageWidth * imageHeight * 2; // CV_16UC1
-        std::string shmFrameDataName = recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_frame_data_name");
-        PCOSharedMemory::setupFrameData(
-            shmFrameDataName, frameBufferSize, frameDataPtr_, createNew);
+        size_t frame_buffer_size = image_width * image_height * 2; // CV_16UC1
+        std::string shm_frame_data_name =
+            recorder_config.get_parameter<std::string>(
+                "muscle_camera", "shared_frame_data_name");
+        pco_shared_memory::setup_frame_data(
+            shm_frame_data_name,
+            frame_buffer_size,
+            frame_data_ptr_,
+            create_new);
 
         spdlog::info(
             "Muscle camera API: Setting up shared memory for shutter-open "
             "time");
-        std::string shmShutterOpenTimeName =
-            recorderConfig.getParameter<std::string>(
+        std::string shm_shutter_open_time_name =
+            recorder_config.get_parameter<std::string>(
                 "muscle_camera", "shared_shutter_open_time_name");
-        PCOSharedMemory::setupShutterOpenTime(
-            shmShutterOpenTimeName, shutterOpenTimePtr_, createNew);
+        pco_shared_memory::setup_shutter_open_time(
+            shm_shutter_open_time_name, shutter_open_time_ptr_, create_new);
 
         spdlog::info(
             "Muscle camera API: Setting up shared memory for frame metadata");
-        std::string shmFrameMetadataName =
-            recorderConfig.getParameter<std::string>(
+        std::string shm_frame_metadata_name =
+            recorder_config.get_parameter<std::string>(
                 "muscle_camera", "shared_frame_metadata_name");
-        PCOSharedMemory::setupFrameMetadata(
-            shmFrameMetadataName, frameMetadataPtr_, createNew);
+        pco_shared_memory::setup_frame_metadata(
+            shm_frame_metadata_name, frame_metadata_ptr_, create_new);
 
         spdlog::info("Muscle camera API: Setting up shared memory for mutex");
-        std::string shmMutexName = recorderConfig.getParameter<std::string>(
+        std::string shm_mutex_name = recorder_config.get_parameter<std::string>(
             "muscle_camera", "shared_mutex_name");
-        PCOSharedMemory::setupMutex(shmMutexName, mutexPtr_, createNew);
+        pco_shared_memory::setup_mutex(shm_mutex_name, mutex_ptr_, create_new);
 
         spdlog::info(
             "Muscle camera API: Setting up shared memory for cond var");
-        std::string shmCondVarName = recorderConfig.getParameter<std::string>(
-            "muscle_camera", "shared_condition_variable_name");
-        PCOSharedMemory::setupConditionVariable(
-            shmCondVarName, condVarPtr_, createNew);
+        std::string shm_cond_var_name =
+            recorder_config.get_parameter<std::string>(
+                "muscle_camera", "shared_condition_variable_name");
+        pco_shared_memory::setup_condition_variable(
+            shm_cond_var_name, cond_var_ptr_, create_new);
         spdlog::info("Shared memory setup complete for PCO camera");
     }
 }
@@ -174,34 +180,35 @@ MuscleCamera::MuscleCamera(
 void MuscleCamera::stop() {
     // Terminate the PCO camera server process. This is bounded: an unresponsive
     // server can never block shutdown indefinitely, because we escalate to
-    // SIGKILL if it does not exit within the grace period. The process is reaped
-    // in both paths so it does not linger as a zombie.
+    // SIGKILL if it does not exit within the grace period. The process is
+    // reaped in both paths so it does not linger as a zombie.
     //
     // Idempotent: pcoCameraServerPID_ is cleared once reaped, so a later call
     // (e.g. an explicit stop() followed by the destructor) is a no-op.
-    if (pcoCameraServerPID_ <= 0) {
+    if (pco_camera_server_pid_ <= 0) {
         return;
     }
 
-    pid_t pid = pcoCameraServerPID_;
-    pcoCameraServerPID_ = -1;
+    pid_t pid = pco_camera_server_pid_;
+    pco_camera_server_pid_ = -1;
 
     kill(pid, SIGTERM);
 
     // Poll for graceful exit up to a bounded deadline before escalating. The
     // server checks its shutdown flag once per frame-wait timeout (0.1 s), so
     // it normally exits well within this window.
-    constexpr int gracePeriodMs = 3000;
-    constexpr int pollIntervalMs = 20;
+    constexpr int grace_period_ms = 3000;
+    constexpr int poll_interval_ms = 20;
     bool reaped = false;
-    for (int elapsedMs = 0; elapsedMs < gracePeriodMs;
-         elapsedMs += pollIntervalMs) {
+    for (int elapsed_ms = 0; elapsed_ms < grace_period_ms;
+         elapsed_ms += poll_interval_ms) {
         pid_t result = waitpid(pid, nullptr, WNOHANG);
         if (result == pid || (result == -1 && errno == ECHILD)) {
             reaped = true;
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(pollIntervalMs));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(poll_interval_ms));
     }
 
     if (!reaped) {
@@ -209,9 +216,10 @@ void MuscleCamera::stop() {
             "PCO camera server (PID {}) did not exit within {} ms of SIGTERM; "
             "escalating to SIGKILL.",
             pid,
-            gracePeriodMs);
+            grace_period_ms);
         kill(pid, SIGKILL);
-        // SIGKILL cannot be caught or ignored, so this blocking reap is bounded.
+        // SIGKILL cannot be caught or ignored, so this blocking reap is
+        // bounded.
         waitpid(pid, nullptr, 0);
     }
 
@@ -222,18 +230,18 @@ MuscleCamera::~MuscleCamera() {
     stop();
 }
 
-FrameData MuscleCamera::waitForOneFrame() {
+FrameData MuscleCamera::wait_for_one_frame() {
     while (true) {
         // Read data from shared memory
-        pthread_mutex_lock(mutexPtr_);
+        pthread_mutex_lock(mutex_ptr_);
         // spdlog::debug("Waiting for new frame...");
-        pthread_cond_wait(condVarPtr_, mutexPtr_);
+        pthread_cond_wait(cond_var_ptr_, mutex_ptr_);
         // spdlog::debug("New frame available");
-        unsigned int frameCount = frameMetadataPtr_->frameCount;
-        uint64_t acquisitionTime = frameMetadataPtr_->acquisitionTime;
+        unsigned int frame_count = frame_metadata_ptr_->frame_count;
+        uint64_t acquisition_time = frame_metadata_ptr_->acquisition_time;
 
-        if (frameCount == lastFrameCount_) {
-            pthread_mutex_unlock(mutexPtr_);
+        if (frame_count == last_frame_count_) {
+            pthread_mutex_unlock(mutex_ptr_);
             spdlog::warn(
                 "PCO camera API is waken up by the camera server, but no new "
                 "frame is available. This could be a spurious wakeup of the "
@@ -243,114 +251,116 @@ FrameData MuscleCamera::waitForOneFrame() {
         }
 
         // Copy the frame out of shared memory while still holding the lock. The
-        // cv::Mat below only wraps frameDataPtr_, which the camera server
-        // overwrites (memcpy) on every new frame; cloning under the lock takes a
-        // private copy before the server can begin writing the next frame, so
+        // cv::Mat below only wraps frame_data_ptr_, which the camera server
+        // overwrites (memcpy) on every new frame; cloning under the lock takes
+        // a private copy before the server can begin writing the next frame, so
         // the returned image can never be torn by a concurrent write.
         cv::Mat image =
-            cv::Mat(imageHeight_, imageWidth_, CV_16UC1, frameDataPtr_).clone();
-        pthread_mutex_unlock(mutexPtr_);
+            cv::Mat(image_height_, image_width_, CV_16UC1, frame_data_ptr_)
+                .clone();
+        pthread_mutex_unlock(mutex_ptr_);
 
         if (image.empty()) {
-            spdlog::error("muscleCamera API got an empty image");
+            spdlog::error("muscle_camera API got an empty image");
         }
 
-        lastFrameCount_ = frameCount;
-        FrameData frameData;
-        frameData.acquisitionTime = acquisitionTime;
-        frameData.receivedTime = getCurrentTimeMicroseconds();
-        frameData.image = image;
-        return frameData;
+        last_frame_count_ = frame_count;
+        FrameData frame_data;
+        frame_data.acquisition_time = acquisition_time;
+        frame_data.received_time = get_current_time_microseconds();
+        frame_data.image = image;
+        return frame_data;
     }
 }
 
-bool MuscleCamera::isROIValid() const {
-    int fullFrameWidth =
-        recorderConfig_.getParameter<int>("muscle_camera", "full_frame_width");
-    int fullFrameHeight =
-        recorderConfig_.getParameter<int>("muscle_camera", "full_frame_height");
-    if (x0_ < 1 || x1_ > fullFrameWidth || y0_ < 1 || y1_ > fullFrameHeight ||
-        x0_ >= x1_ || y0_ >= y1_ || imageWidth_ % 32 != 0 ||
-        imageHeight_ % 8 != 0 || imageWidth_ < 64 || imageHeight_ < 16) {
+bool MuscleCamera::is_roi_valid() const {
+    int full_frame_width = recorder_config_.get_parameter<int>(
+        "muscle_camera", "full_frame_width");
+    int full_frame_height = recorder_config_.get_parameter<int>(
+        "muscle_camera", "full_frame_height");
+    if (x0_ < 1 || x1_ > full_frame_width || y0_ < 1 ||
+        y1_ > full_frame_height || x0_ >= x1_ || y0_ >= y1_ ||
+        image_width_ % 32 != 0 || image_height_ % 8 != 0 || image_width_ < 64 ||
+        image_height_ < 16) {
         spdlog::critical(
             "Invalid ROI for muscle camera. The following conditions must be "
             "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
             "minimum size of the ROI is 64x16 pixels. The width must be a "
             "multiple of 32 and the height must be a multiple of 8.",
-            imageWidth_,
-            imageHeight_);
+            image_width_,
+            image_height_);
         return false;
     }
 
     return true;
 }
 
-void MuscleCamera::setNominalExposureUs(unsigned int exposureUs) {
-    if (shutterOpenTimePtr_ != nullptr) {
+void MuscleCamera::set_nominal_exposure_us(unsigned int exposure_us) {
+    if (shutter_open_time_ptr_ != nullptr) {
         // The PCO camera server polls this shared value in its acquisition loop
         // and applies it as the camera's nominal per-line exposure (see
-        // serveFrames() in pco_camera_server_main.cc). In continuous mode this
+        // serve_frames() in pco_camera_server_main.cc). In continuous mode this
         // also sets the free-run frame rate.
-        *shutterOpenTimePtr_ = exposureUs;
+        *shutter_open_time_ptr_ = exposure_us;
     } else {
         spdlog::error(
             "Cannot set exposure time. Shared memory pointer is null.");
     }
 }
 
-pid_t MuscleCamera::getCameraServerPID() const {
-    return pcoCameraServerPID_;
+pid_t MuscleCamera::get_camera_server_pid() const {
+    return pco_camera_server_pid_;
 }
 
-int MuscleCamera::getNumLinesScanned() const {
-    return imageHeight_;
+int MuscleCamera::get_num_lines_scanned() const {
+    return image_height_;
 }
 
-int roundToNearestValidMuscleCamHorizontal(int value) {
+int round_to_nearest_valid_muscle_cam_horizontal(int value) {
     int remainder = value % 32;
     return value - remainder + (remainder < 16 ? 0 : 32);
 }
 
-int roundToNearestValidMuscleCamVertical(int value) {
+int round_to_nearest_valid_muscle_cam_vertical(int value) {
     int remainder = value % 8;
     return value - remainder + (remainder < 4 ? 0 : 8);
 }
 
-bool MuscleTriggerTiming::computeParameters(
-    int muscleImageHeight,
-    double muscleCameraLineScanTimeUs,
-    int muscleCameraReadoutTimeUs) {
-    double muscleCameraFPS = behaviorCameraFPS_ / double(syncRatio_);
-    int muscleIntervalUs = 1000000 / muscleCameraFPS;
-    int rollingTimeUs = muscleImageHeight * muscleCameraLineScanTimeUs;
+bool MuscleTriggerTiming::compute_parameters(
+    int muscle_image_height,
+    double muscle_camera_line_scan_time_us,
+    int muscle_camera_readout_time_us) {
+    double muscle_camera_fps = behavior_camera_fps_ / double(sync_ratio_);
+    int muscle_interval_us = 1000000 / muscle_camera_fps;
+    int rolling_time_us = muscle_image_height * muscle_camera_line_scan_time_us;
 
     // Continuous rolling shutter (auto-sequence): the camera free-runs at
-    // 1/(nominalExposure + readout). Set the nominal per-line exposure so one
+    // 1/(nominal_exposure + readout). Set the nominal per-line exposure so one
     // frame fills the requested muscle interval, then split it into the rolling
     // time (line skew) and the common time (all lines exposing simultaneously).
     // The light-on window must fit inside the common time, leaving a
     // non-negative buffer:
-    //   nominalExposure = muscleInterval - readout = rollingTime + commonTime
-    //   commonTime      = lightOn + bufferTime
-    // Valid only if rollingTime + lightOn + readout <= muscleInterval. (Note the
-    // single rollingTime: triggered acquisition would need 2 * rollingTime, but
-    // continuous rolling has no idle line-reset time -- see
+    //   nominal_exposure = muscle_interval - readout = rolling_time +
+    //   common_time common_time      = light_on + buffer_time
+    // Valid only if rolling_time + light_on + readout <= muscle_interval. (Note
+    // the single rolling_time: triggered acquisition would need 2 *
+    // rolling_time, but continuous rolling has no idle line-reset time -- see
     // docs/data_acquisition.md.)
-    nominalExposureUs_ = muscleIntervalUs - muscleCameraReadoutTimeUs;
-    commonTimeUs_ = nominalExposureUs_ - rollingTimeUs;
-    bufferTimeUs_ = commonTimeUs_ - muscleLightOnTimeUs_;
-    if (bufferTimeUs_ < 0) {
+    nominal_exposure_us_ = muscle_interval_us - muscle_camera_readout_time_us;
+    common_time_us_ = nominal_exposure_us_ - rolling_time_us;
+    buffer_time_us_ = common_time_us_ - muscle_light_on_time_us_;
+    if (buffer_time_us_ < 0) {
         spdlog::critical(
             "Computed muscle camera parameters are invalid: "
-            "rollingTime + lightOn + readout must be <= muscleInterval. "
-            "rollingTimeUs = {}, "
-            "muscleCameraReadoutTimeUs = {}, "
-            "muscleLightOnTimeUs = {}, "
-            "muscleIntervalUs = {}",
-            rollingTimeUs,
-            muscleCameraReadoutTimeUs,
-            muscleLightOnTimeUs_,
-            muscleIntervalUs);
+            "rolling_time + light_on + readout must be <= muscle_interval. "
+            "rolling_time_us = {}, "
+            "muscle_camera_readout_time_us = {}, "
+            "muscle_light_on_time_us = {}, "
+            "muscle_interval_us = {}",
+            rolling_time_us,
+            muscle_camera_readout_time_us,
+            muscle_light_on_time_us_,
+            muscle_interval_us);
         return false; // Invalid configuration
     }
     return true;

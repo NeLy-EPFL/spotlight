@@ -12,12 +12,12 @@
 // second 2x2 block is the pixel block, and then there are two bias terms.
 class LinearMapper2x2to2 {
   public:
-    double w_X1toX, w_Y1toX, w_X2toX, w_Y2toX, biasX;
-    double w_X1toY, w_Y1toY, w_X2toY, w_Y2toY, biasY;
+    double w_x1_to_x, w_y1_to_x, w_x2_to_x, w_y2_to_x, bias_x;
+    double w_x1_to_y, w_y1_to_y, w_x2_to_y, w_y2_to_y, bias_y;
 
     LinearMapper2x2to2();
     // Expects canonical YAML format: x/y nodes each with x1/y1/x2/y2/bias keys.
-    LinearMapper2x2to2(const YAML::Node &calibrationNode);
+    LinearMapper2x2to2(const YAML::Node &calibration_node);
 
     std::tuple<double, double>
     map(double x1, double y1, double x2, double y2) const;
@@ -25,38 +25,38 @@ class LinearMapper2x2to2 {
 
 class CalibrationParams {
   public:
-    bool isDefined;
+    bool is_defined;
 
     CalibrationParams();
-    CalibrationParams(const std::string &calibrationFilePath);
+    CalibrationParams(const std::string &calibration_file_path);
     CalibrationParams(const CalibrationParams &) = delete;
     CalibrationParams &operator=(const CalibrationParams &) = delete;
 
-    LinearMapper2x2to2 &stageAndPixelToPhysical;
-    LinearMapper2x2to2 &stageAndPhysicalToPixel;
-    LinearMapper2x2to2 &physicalAndPixelToStage;
+    LinearMapper2x2to2 &stage_and_pixel_to_physical;
+    LinearMapper2x2to2 &stage_and_physical_to_pixel;
+    LinearMapper2x2to2 &physical_and_pixel_to_stage;
 
-    std::tuple<double, double> stagePosAndPixelPosToPhysicalPos(
-        double stagePosX,
-        double stagePosY,
-        int pixelPosRow,
-        int pixelPosCol) const;
-    std::tuple<int, int> stagePosAndPhysicalPosToPixelPos(
-        double stagePosX,
-        double stagePosY,
-        double physicalPosX,
-        double physicalPosY) const;
-    std::tuple<double, double> physicalPosAndPixelPosToStagePos(
-        double physicalPosX,
-        double physicalPosY,
-        int pixelPosRow,
-        int pixelPosCol) const;
+    std::tuple<double, double> stage_pos_and_pixel_pos_to_physical_pos(
+        double stage_pos_x,
+        double stage_pos_y,
+        int pixel_pos_row,
+        int pixel_pos_col) const;
+    std::tuple<int, int> stage_pos_and_physical_pos_to_pixel_pos(
+        double stage_pos_x,
+        double stage_pos_y,
+        double physical_pos_x,
+        double physical_pos_y) const;
+    std::tuple<double, double> physical_pos_and_pixel_pos_to_stage_pos(
+        double physical_pos_x,
+        double physical_pos_y,
+        int pixel_pos_row,
+        int pixel_pos_col) const;
 
-    void saveToFile(const std::string &yamlPath) const;
+    void save_to_file(const std::string &yaml_path) const;
 
   private:
     YAML::Node calibration_;
-    LinearMapper2x2to2 stageAndPixelToPhysical_;
-    LinearMapper2x2to2 stageAndPhysicalToPixel_;
-    LinearMapper2x2to2 physicalAndPixelToStage_;
+    LinearMapper2x2to2 stage_and_pixel_to_physical_;
+    LinearMapper2x2to2 stage_and_physical_to_pixel_;
+    LinearMapper2x2to2 physical_and_pixel_to_stage_;
 };

@@ -11,41 +11,42 @@
 #include "test_hardware_helpers.h"
 
 namespace {
-constexpr double kTestMoveDistanceMm = 0.05;
-constexpr double kTestVelocityMmPerS = 1.0;
-constexpr double kPositionToleranceMm = 0.01;
+constexpr double test_move_distance_mm = 0.05;
+constexpr double test_velocity_mm_per_s = 1.0;
+constexpr double position_tolerance_mm = 0.01;
 } // namespace
 
 TEST(MotionControlHardwareTest, InitConfigureDestroyMotionControl) {
-    REQUIRE_SPOTLIGHT_PROFILE_DIR(profileDir);
-    RecorderConfig config = loadRecorderConfig(profileDir);
+    REQUIRE_SPOTLIGHT_PROFILE_DIR(profile_dir);
+    RecorderConfig config = load_recorder_config(profile_dir);
 
     // Construction opens the serial port and configures both axes.
-    MotionControl motionControl(config);
+    MotionControl motion_control(config);
 
     // Verify both axes respond to position queries.
-    const double initialX = motionControl.getPosition(X_AXIS);
-    const double initialY = motionControl.getPosition(Y_AXIS);
-    EXPECT_FALSE(std::isnan(initialX));
-    EXPECT_FALSE(std::isnan(initialY));
+    const double initial_x = motion_control.get_position(X_AXIS);
+    const double initial_y = motion_control.get_position(Y_AXIS);
+    EXPECT_FALSE(std::isnan(initial_x));
+    EXPECT_FALSE(std::isnan(initial_y));
 
     // Move X axis by +0.05 mm and back, staying well within the 0.1 mm limit.
-    const double xMin = motionControl.getMinPosition(X_AXIS);
-    const double xMax = motionControl.getMaxPosition(X_AXIS);
-    ASSERT_GE(initialX - xMin, kTestMoveDistanceMm)
+    const double x_min = motion_control.get_min_position(X_AXIS);
+    const double x_max = motion_control.get_max_position(X_AXIS);
+    ASSERT_GE(initial_x - x_min, test_move_distance_mm)
         << "X axis is too close to the lower limit for a safe test move";
-    ASSERT_LE(initialX + kTestMoveDistanceMm, xMax)
+    ASSERT_LE(initial_x + test_move_distance_mm, x_max)
         << "X axis is too close to the upper limit for a safe test move";
 
-    motionControl.moveRelative(
-        X_AXIS, kTestMoveDistanceMm, /*wait=*/true, kTestVelocityMmPerS);
-    const double movedX = motionControl.getPosition(X_AXIS);
-    EXPECT_NEAR(movedX, initialX + kTestMoveDistanceMm, kPositionToleranceMm);
+    motion_control.move_relative(
+        X_AXIS, test_move_distance_mm, /*wait=*/true, test_velocity_mm_per_s);
+    const double moved_x = motion_control.get_position(X_AXIS);
+    EXPECT_NEAR(
+        moved_x, initial_x + test_move_distance_mm, position_tolerance_mm);
 
-    motionControl.moveRelative(
-        X_AXIS, -kTestMoveDistanceMm, /*wait=*/true, kTestVelocityMmPerS);
-    const double restoredX = motionControl.getPosition(X_AXIS);
-    EXPECT_NEAR(restoredX, initialX, kPositionToleranceMm);
+    motion_control.move_relative(
+        X_AXIS, -test_move_distance_mm, /*wait=*/true, test_velocity_mm_per_s);
+    const double restored_x = motion_control.get_position(X_AXIS);
+    EXPECT_NEAR(restored_x, initial_x, position_tolerance_mm);
 
     // Destructor closes the Zaber connection.
 }

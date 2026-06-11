@@ -11,7 +11,7 @@ SerialIO::SerialIO(Stream &stream) : stream_(stream) {}
 void SerialIO::begin() {
     // begin() always opens the production USB CDC port. A SerialIO built around
     // an injected (test) stream does not need it and never calls begin().
-    Serial.begin(config::serialBaudRate);
+    Serial.begin(config::serial_baud_rate);
 }
 
 std::optional<std::string> SerialIO::update() {
@@ -25,8 +25,8 @@ std::optional<std::string> SerialIO::update() {
 
         if (c == '\n') {
             bool overflowed = overflowed_;
-            int length = bufferIdx_;
-            bufferIdx_ = 0;
+            int length = buffer_idx_;
+            buffer_idx_ = 0;
             overflowed_ = false;
 
             // Drop oversized lines and ignore blank lines; only hand back a
@@ -37,9 +37,9 @@ std::optional<std::string> SerialIO::update() {
             return std::string(buffer_, length);
         }
 
-        if (bufferIdx_ < config::incomingCmdBufferSize - 1) {
-            buffer_[bufferIdx_] = c;
-            bufferIdx_++;
+        if (buffer_idx_ < config::incoming_cmd_buffer_size - 1) {
+            buffer_[buffer_idx_] = c;
+            buffer_idx_++;
         } else {
             overflowed_ = true;
         }

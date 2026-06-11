@@ -1,39 +1,39 @@
 #include "recorder/peripherals/behavior_camera.h"
 
 BehaviorCamera::BehaviorCamera(
-    unsigned int imageWidth,
-    unsigned int imageHeight,
-    unsigned int xOffset,
-    unsigned int yOffset,
-    const std::string &ioLine)
-    : imageWidth_(imageWidth), imageHeight_(imageHeight), xOffset_(xOffset),
-      yOffset_(yOffset), ioLine_(ioLine) {
+    unsigned int image_width,
+    unsigned int image_height,
+    unsigned int x_offset,
+    unsigned int y_offset,
+    const std::string &io_line)
+    : image_width_(image_width), image_height_(image_height),
+      x_offset_(x_offset), y_offset_(y_offset), io_line_(io_line) {
     spdlog::info("Running GenTL eGrabber discovery...");
-    Euresys::EGrabberDiscovery egrabberDiscovery(genTL_);
-    egrabberDiscovery.discover();
+    Euresys::EGrabberDiscovery egrabber_discovery(gen_tl_);
+    egrabber_discovery.discover();
     spdlog::info("GenTL eGrabber discovery completed");
 
     spdlog::info("Configuring camera...");
-    camera_ = egrabberDiscovery.cameras(0);
-    frameGrabberPtr_ = std::make_unique<Euresys::EGrabber<>>(camera_);
-    Euresys::EGrabberInfo frameGrabberInfo = camera_.grabbers[0];
-    std::string interfaceID = frameGrabberInfo.interfaceID;
-    std::string deviceID = frameGrabberInfo.deviceID;
-    std::string deviceVendorName = frameGrabberInfo.deviceVendorName;
-    std::string deviceModelName = frameGrabberInfo.deviceModelName;
+    camera_ = egrabber_discovery.cameras(0);
+    frame_grabber_ptr_ = std::make_unique<Euresys::EGrabber<>>(camera_);
+    Euresys::EGrabberInfo frame_grabber_info = camera_.grabbers[0];
+    std::string interface_id = frame_grabber_info.interfaceID;
+    std::string device_id = frame_grabber_info.deviceID;
+    std::string device_vendor_name = frame_grabber_info.deviceVendorName;
+    std::string device_model_name = frame_grabber_info.deviceModelName;
     spdlog::info(
         "Camera configured - interface ID: {}, device ID: {}, "
         "device vendor: {}, device model: {}",
-        interfaceID,
-        deviceID,
-        deviceVendorName,
-        deviceModelName);
+        interface_id,
+        device_id,
+        device_vendor_name,
+        device_model_name);
 
     configure();
 
-    formatConverterPtr_ = std::make_unique<Euresys::FormatConverter>(genTL_);
+    format_converter_ptr_ = std::make_unique<Euresys::FormatConverter>(gen_tl_);
 
-    cameraReadyFlag_.store(true);
+    camera_ready_flag_.store(true);
 }
 
 void BehaviorCamera::configure() {
@@ -59,43 +59,43 @@ void BehaviorCamera::configure() {
     spdlog::info("Applying base grabber configuration (euresys_config.js)...");
 
     // Negotiate Power-over-CoaXPress so the camera is powered over the link.
-    frameGrabberPtr_->execute<InterfaceModule>("CxpPoCxpAuto");
+    frame_grabber_ptr_->execute<InterfaceModule>("CxpPoCxpAuto");
 
     // Camera trigger + exposure. ExposureMode has to leave TriggerWidth before
     // the FrameStart trigger can be (re)configured and then be restored to
     // TriggerWidth; the guard is what makes a repeat call idempotent.
-    setStringAndCheck<RemoteModule>("TriggerSelector", "AcquisitionStart");
-    setStringAndCheck<RemoteModule>("TriggerMode", "On");
-    setStringAndCheck<RemoteModule>("TriggerSource", "CXPin");
-    setStringAndCheck<RemoteModule>("TriggerSelector", "FrameStart");
-    if (frameGrabberPtr_->getString<RemoteModule>("ExposureMode") ==
+    set_string_and_check<RemoteModule>("TriggerSelector", "AcquisitionStart");
+    set_string_and_check<RemoteModule>("TriggerMode", "On");
+    set_string_and_check<RemoteModule>("TriggerSource", "CXPin");
+    set_string_and_check<RemoteModule>("TriggerSelector", "FrameStart");
+    if (frame_grabber_ptr_->getString<RemoteModule>("ExposureMode") ==
         "TriggerWidth") {
-        setStringAndCheck<RemoteModule>("ExposureMode", "Off");
+        set_string_and_check<RemoteModule>("ExposureMode", "Off");
     }
-    setStringAndCheck<RemoteModule>("TriggerMode", "On");
-    setStringAndCheck<RemoteModule>("TriggerSource", "CXPin");
-    setStringAndCheck<RemoteModule>("ExposureMode", "TriggerWidth");
-    setStringAndCheck<RemoteModule>("LinkConfig", "CXP6_X4");
+    set_string_and_check<RemoteModule>("TriggerMode", "On");
+    set_string_and_check<RemoteModule>("TriggerSource", "CXPin");
+    set_string_and_check<RemoteModule>("ExposureMode", "TriggerWidth");
+    set_string_and_check<RemoteModule>("LinkConfig", "CXP6_X4");
 
     // Camera control method. "RG" is overridden to "EXTERNAL" below;
     // CycleTriggerSource is left as set here.
-    setStringAndCheck<DeviceModule>("CameraControlMethod", "RG");
-    setStringAndCheck<DeviceModule>("CycleTriggerSource", "Immediate");
+    set_string_and_check<DeviceModule>("CameraControlMethod", "RG");
+    set_string_and_check<DeviceModule>("CycleTriggerSource", "Immediate");
 
     // Strobe output lines. TTLIO12 is overridden to a trigger input below (it
     // carries the external frame trigger from the microcontroller).
-    setStringAndCheck<InterfaceModule>("LineSelector", "TTLIO11");
-    setStringAndCheck<InterfaceModule>("LineSource", "Device0Strobe");
-    setStringAndCheck<InterfaceModule>("LineMode", "Output");
-    setStringAndCheck<InterfaceModule>("LineSelector", "TTLIO12");
-    setStringAndCheck<InterfaceModule>("LineSource", "Device0Strobe");
-    setStringAndCheck<InterfaceModule>("LineMode", "Output");
+    set_string_and_check<InterfaceModule>("LineSelector", "TTLIO11");
+    set_string_and_check<InterfaceModule>("LineSource", "Device0Strobe");
+    set_string_and_check<InterfaceModule>("LineMode", "Output");
+    set_string_and_check<InterfaceModule>("LineSelector", "TTLIO12");
+    set_string_and_check<InterfaceModule>("LineSource", "Device0Strobe");
+    set_string_and_check<InterfaceModule>("LineMode", "Output");
     // Numeric features: set without the strict string read-back check, since
     // they read back in a different textual form (e.g. "2" -> "2.000000").
     spdlog::info("Setting LineSourceDivisionFactor to 4 and Gain to 2");
-    frameGrabberPtr_->setString<InterfaceModule>(
+    frame_grabber_ptr_->setString<InterfaceModule>(
         "LineSourceDivisionFactor", "4");
-    frameGrabberPtr_->setString<RemoteModule>("Gain", "2");
+    frame_grabber_ptr_->setString<RemoteModule>("Gain", "2");
 
     // =======================================================================
     // Sensor ROI from the recorder config (supersedes the script's hard-coded
@@ -104,20 +104,20 @@ void BehaviorCamera::configure() {
     // newSize + currentOffset exceeds the sensor bounds.
     // =======================================================================
     spdlog::info("Setting sensor OffsetX and OffsetY to 0, 0");
-    setIntegerAndCheck<RemoteModule>("OffsetX", 0);
-    setIntegerAndCheck<RemoteModule>("OffsetY", 0);
+    set_integer_and_check<RemoteModule>("OffsetX", 0);
+    set_integer_and_check<RemoteModule>("OffsetY", 0);
 
     spdlog::info(
         "Setting sensor ROI - width: {}, height: {}, "
-        "xOffset: {}, yOffset: {}",
-        imageWidth_,
-        imageHeight_,
-        xOffset_,
-        yOffset_);
-    setIntegerAndCheck<RemoteModule>("Width", imageWidth_);
-    setIntegerAndCheck<RemoteModule>("Height", imageHeight_);
-    setIntegerAndCheck<RemoteModule>("OffsetX", xOffset_);
-    setIntegerAndCheck<RemoteModule>("OffsetY", yOffset_);
+        "x_offset: {}, y_offset: {}",
+        image_width_,
+        image_height_,
+        x_offset_,
+        y_offset_);
+    set_integer_and_check<RemoteModule>("Width", image_width_);
+    set_integer_and_check<RemoteModule>("Height", image_height_);
+    set_integer_and_check<RemoteModule>("OffsetX", x_offset_);
+    set_integer_and_check<RemoteModule>("OffsetY", y_offset_);
     spdlog::info("Sensor ROI set");
 
     // =======================================================================
@@ -126,85 +126,86 @@ void BehaviorCamera::configure() {
     // `ioLine_` (TTLIO12) of the frame grabber.
     // =======================================================================
     spdlog::info("Configuring trigger-related settings...");
-    spdlog::info("Setting {} line as Input...", ioLine_);
-    setStringAndCheck<InterfaceModule>("LineSelector", ioLine_);
-    setStringAndCheck<InterfaceModule>("LineMode", "Input");
+    spdlog::info("Setting {} line as Input...", io_line_);
+    set_string_and_check<InterfaceModule>("LineSelector", io_line_);
+    set_string_and_check<InterfaceModule>("LineMode", "Input");
 
-    spdlog::info("Setting LIN1 to specified ioLine ({})...", ioLine_);
-    setStringAndCheck<InterfaceModule>("LineInputToolSelector", "LIN1");
-    setStringAndCheck<InterfaceModule>("LineInputToolSource", ioLine_);
+    spdlog::info("Setting LIN1 to specified ioLine ({})...", io_line_);
+    set_string_and_check<InterfaceModule>("LineInputToolSelector", "LIN1");
+    set_string_and_check<InterfaceModule>("LineInputToolSource", io_line_);
 
     spdlog::info("Setting CameraControlMethod to EXTERNAL...");
-    setStringAndCheck<DeviceModule>("CameraControlMethod", "EXTERNAL");
+    set_string_and_check<DeviceModule>("CameraControlMethod", "EXTERNAL");
 
     spdlog::info("Disabling trigger for AcquisitionStart/AcquisitionEnd...");
-    setStringAndCheck<RemoteModule>("TriggerSelector", "AcquisitionStart");
-    setStringAndCheck<RemoteModule>("TriggerMode", "Off");
-    setStringAndCheck<RemoteModule>("TriggerSelector", "AcquisitionEnd");
-    setStringAndCheck<RemoteModule>("TriggerMode", "Off");
+    set_string_and_check<RemoteModule>("TriggerSelector", "AcquisitionStart");
+    set_string_and_check<RemoteModule>("TriggerMode", "Off");
+    set_string_and_check<RemoteModule>("TriggerSelector", "AcquisitionEnd");
+    set_string_and_check<RemoteModule>("TriggerMode", "Off");
 
     spdlog::info("Enabling trigger for FrameStart, using CXPin as source...");
-    setStringAndCheck<RemoteModule>("TriggerSelector", "FrameStart");
+    set_string_and_check<RemoteModule>("TriggerSelector", "FrameStart");
     // TriggerMode must be "On" for FrameStart when CameraControlMethod is
     // EXTERNAL (the option is grayed out / forced on), so it is checked rather
     // than set here.
-    assert(frameGrabberPtr_->getString<RemoteModule>("TriggerMode") == "On");
-    setStringAndCheck<RemoteModule>("TriggerSource", "CXPin");
+    assert(frame_grabber_ptr_->getString<RemoteModule>("TriggerMode") == "On");
+    set_string_and_check<RemoteModule>("TriggerSource", "CXPin");
     spdlog::info("Trigger-related settings configured");
 
     spdlog::info("Setting LinkConfig to CXP6_X4...");
-    setStringAndCheck<RemoteModule>("LinkConfig", "CXP6_X4");
+    set_string_and_check<RemoteModule>("LinkConfig", "CXP6_X4");
     spdlog::info("LinkConfig set");
 }
 
 BehaviorCamera::~BehaviorCamera() {
     spdlog::debug("Behavior camera destructor called");
-    cameraReadyFlag_.store(false);
+    camera_ready_flag_.store(false);
 }
 
-void BehaviorCamera::start(size_t bufferSize) {
-    frameGrabberPtr_->reallocBuffers(bufferSize);
-    frameGrabberPtr_->start();
+void BehaviorCamera::start(size_t buffer_size) {
+    frame_grabber_ptr_->reallocBuffers(buffer_size);
+    frame_grabber_ptr_->start();
 }
 
 void BehaviorCamera::stop() {
-    frameGrabberPtr_->stop();
+    frame_grabber_ptr_->stop();
 }
 
-FrameData BehaviorCamera::waitForOneFrame() {
+FrameData BehaviorCamera::wait_for_one_frame() {
     // Getting the buffer is the main blocking call
-    Euresys::ScopedBuffer buffer(*frameGrabberPtr_);
+    Euresys::ScopedBuffer buffer(*frame_grabber_ptr_);
 
     // Get image data and metadata
-    uint64_t receivedTime = getCurrentTimeMicroseconds();
-    uint8_t *dataPtr = buffer.getInfo<uint8_t *>(Euresys::gc::BUFFER_INFO_BASE);
-    uint64_t grabberTimestamp =
+    uint64_t received_time = get_current_time_microseconds();
+    uint8_t *data_ptr =
+        buffer.getInfo<uint8_t *>(Euresys::gc::BUFFER_INFO_BASE);
+    uint64_t grabber_timestamp =
         buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
-    uint64_t acquisitionTime = grabberTimestamp / 1000;
+    uint64_t acquisition_time = grabber_timestamp / 1000;
 
     // Make FrameData object
-    FrameData frameData;
-    frameData.acquisitionTime = acquisitionTime;
-    frameData.receivedTime = receivedTime;
-    // Clone: dataPtr points into the grabber buffer owned by `buffer` (a
+    FrameData frame_data;
+    frame_data.acquisition_time = acquisition_time;
+    frame_data.received_time = received_time;
+    // Clone: data_ptr points into the grabber buffer owned by `buffer` (a
     // ScopedBuffer), which is requeued to the grabber when this function
     // returns. Without a copy the returned image would alias a buffer the
     // grabber may refill at any time.
-    frameData.image =
-        cv::Mat(imageHeight_, imageWidth_, CV_8UC1, dataPtr).clone();
-    return frameData;
+    frame_data.image =
+        cv::Mat(image_height_, image_width_, CV_8UC1, data_ptr).clone();
+    return frame_data;
 }
 
-bool BehaviorCamera::isReady() const {
-    return cameraReadyFlag_.load();
+bool BehaviorCamera::is_ready() const {
+    return camera_ready_flag_.load();
 }
 
 template <typename Module>
-bool BehaviorCamera::setIntegerAndCheck(const std::string &key, int value) {
+bool BehaviorCamera::set_integer_and_check(const std::string &key, int value) {
     spdlog::info("Setting GenICam integer parameter {} to {}", key, value);
-    frameGrabberPtr_->setInteger<Module>(key, value);
-    int retrievedValue = frameGrabberPtr_->getInteger<Module>(key);
-    if (retrievedValue != value) {
+    frame_grabber_ptr_->setInteger<Module>(key, value);
+    int retrieved_value = frame_grabber_ptr_->getInteger<Module>(key);
+    if (retrieved_value != value) {
         spdlog::error("Failed to set GenICam parameter {} to {}", key, value);
         return false;
     }
@@ -212,28 +213,31 @@ bool BehaviorCamera::setIntegerAndCheck(const std::string &key, int value) {
 }
 
 template <typename Module>
-bool BehaviorCamera::setStringAndCheck(
+bool BehaviorCamera::set_string_and_check(
     const std::string &key, const std::string &value) {
     spdlog::info("Setting GenICam string parameter {} to {}", key, value);
-    frameGrabberPtr_->setString<Module>(key, value);
-    std::string retrievedValue = frameGrabberPtr_->getString<Module>(key);
-    if (retrievedValue != value) {
+    frame_grabber_ptr_->setString<Module>(key, value);
+    std::string retrieved_value = frame_grabber_ptr_->getString<Module>(key);
+    if (retrieved_value != value) {
         spdlog::error("Failed to set GenICam parameter {} to {}", key, value);
         return false;
     }
     return true;
 }
 
-int roundToNearestValidBehaviorCamDimension(int value) {
+int round_to_nearest_valid_behavior_cam_dimension(int value) {
     int remainder = value % 64;
     return value - remainder + (remainder < 32 ? 0 : 64);
 }
 
-std::tuple<int, int> getCenteredOffsets(
-    int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight) {
-    int xOffset = roundToNearestValidBehaviorCamDimension(
-        (fullFrameWidth - imageWidth) / 2);
-    int yOffset = roundToNearestValidBehaviorCamDimension(
-        (fullFrameHeight - imageHeight) / 2);
-    return std::make_tuple(xOffset, yOffset);
+std::tuple<int, int> get_centered_offsets(
+    int image_width,
+    int image_height,
+    int full_frame_width,
+    int full_frame_height) {
+    int x_offset = round_to_nearest_valid_behavior_cam_dimension(
+        (full_frame_width - image_width) / 2);
+    int y_offset = round_to_nearest_valid_behavior_cam_dimension(
+        (full_frame_height - image_height) / 2);
+    return std::make_tuple(x_offset, y_offset);
 }

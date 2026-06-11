@@ -2,184 +2,189 @@
 
 #include "recorder/common/loop_monitors.h"
 
-void behaviorImageAcquirer(
-    const RecorderConfig &recorderConfig,
-    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<ProgramState> programState,
-    std::shared_ptr<ProgrammedStop> programmedRecordingStop) {
+void behavior_image_acquirer(
+    const RecorderConfig &recorder_config,
+    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
+    std::shared_ptr<ProgramState> program_state,
+    std::shared_ptr<ProgrammedStop> programmed_recording_stop) {
     spdlog::info("Behavior image acquirer thread started");
-    BehaviorCameraROI cameraROI = getBehaviorBehaviorCameraROI(recorderConfig);
+    BehaviorCameraROI camera_roi =
+        get_behavior_behavior_camera_roi(recorder_config);
 
-    std::string frameGrabberTriggerLine =
-        recorderConfig.getParameter<std::string>(
+    std::string frame_grabber_trigger_line =
+        recorder_config.get_parameter<std::string>(
             "behavior_camera", "frame_grabber_trigger_line");
-    behaviorRecordingState->behaviorCamera = std::make_shared<BehaviorCamera>(
-        cameraROI.imageWidth,
-        cameraROI.imageHeight,
-        cameraROI.xOffset,
-        cameraROI.yOffset,
-        frameGrabberTriggerLine);
+    behavior_recording_state->behavior_camera =
+        std::make_shared<BehaviorCamera>(
+            camera_roi.image_width,
+            camera_roi.image_height,
+            camera_roi.x_offset,
+            camera_roi.y_offset,
+            frame_grabber_trigger_line);
 
     spdlog::info("Behavior camera configured");
 
-    behaviorRecordingState->behaviorCamera->start();
+    behavior_recording_state->behavior_camera->start();
     spdlog::info("Behavior camera started");
 
-    FrameData frameDataBuffer[3];
-    size_t frameDataBufferIndex = 0;
-    long int currentFrameId = 0;
+    FrameData frame_data_buffer[3];
+    size_t frame_data_buffer_index = 0;
+    long int current_frame_id = 0;
 
-    bool wasRecording = false;
+    bool was_recording = false;
     // Set once this thread has acquired exactly the programmed number of frames
     // and stopped recording on its own, so subsequent frames are discarded
     // until the GUI tears the recording down.
-    bool reachedProgrammedStop = false;
+    bool reached_programmed_stop = false;
 
     // Flush a partial group of one or two buffered frames as a single
     // pseudo-BGR image (the missing channel(s) are saved black and are not
-    // logged in the CSV metadata; see makePseudoBGRImageFromThreeFrames and
-    // makeMetadataStringFromThreeFrames). Resets the buffer index.
-    auto flushPartialGroup = [&]() {
-        GroupOfThreeFrames partialGroup;
-        partialGroup.frame0 = frameDataBuffer[0];
-        if (frameDataBufferIndex > 1) {
-            partialGroup.frame1 = frameDataBuffer[1];
+    // logged in the CSV metadata; see make_pseudo_bgr_image_from_three_frames
+    // and make_metadata_string_from_three_frames). Resets the buffer index.
+    auto flush_partial_group = [&]() {
+        GroupOfThreeFrames partial_group;
+        partial_group.frame0 = frame_data_buffer[0];
+        if (frame_data_buffer_index > 1) {
+            partial_group.frame1 = frame_data_buffer[1];
         }
-        partialGroup.numValidFrames = static_cast<int>(frameDataBufferIndex);
+        partial_group.num_valid_frames =
+            static_cast<int>(frame_data_buffer_index);
         {
             std::lock_guard<std::mutex> lock(
-                behaviorRecordingState->behaviorImageQueueMutex);
-            behaviorRecordingState->behaviorImageQueue.push(partialGroup);
+                behavior_recording_state->behavior_image_queue_mutex);
+            behavior_recording_state->behavior_image_queue.push(partial_group);
         }
-        behaviorRecordingState->behaviorImageQueueCondVar.notify_one();
-        frameDataBufferIndex = 0;
+        behavior_recording_state->behavior_image_queue_cond_var.notify_one();
+        frame_data_buffer_index = 0;
     };
 
-    while (!programState->toQuit.load()) {
+    while (!program_state->to_quit.load()) {
         // Acquire image data
-        // // Benchmark here shows that the waitForOneFrame() function takes
-        // // on average (triggeringCyclePeriod - 150) us to complete. So we
-        // // have plenty of margin and can theoretically record at
+        // // Benchmark here shows that the wait_for_one_frame() function
+        // // takes on average (triggering_cycle_period - 150) us to complete.
+        // // So we have plenty of margin and can theoretically record at
         // // 1,000,000 / 200-ish = 5,000 fps.
-        // // uint64_t startTime = getCurrentTimeMicroseconds();
+        // // uint64_t start_time = get_current_time_microseconds();
         // spdlog::debug(
         //     "Behavior image acquirer thread waiting for one frame");
-        FrameData frameData =
-            behaviorRecordingState->behaviorCamera->waitForOneFrame();
+        FrameData frame_data =
+            behavior_recording_state->behavior_camera->wait_for_one_frame();
         // spdlog::debug(
         //     "Behavior image acquirer thread received one frame");
-        // uint64_t waitTime = getCurrentTimeMicroseconds() - startTime;
-        // spdlog::info("Behavior camera waited {} us", waitTime);
+        // uint64_t wait_time = get_current_time_microseconds() - start_time;
+        // spdlog::info("Behavior camera waited {} us", wait_time);
 
         // Update latest frame for live display
-        behaviorRecordingState->latestFrameHolder->setLatestFrameData(
-            frameData);
+        behavior_recording_state->latest_frame_holder->set_latest_frame_data(
+            frame_data);
 
-        bool isRecording = programState->isRecording.load();
+        bool is_recording = program_state->is_recording.load();
 
-        if (isRecording && !wasRecording) {
+        if (is_recording && !was_recording) {
             // Start of a new recording session: reset the counters.
-            frameDataBufferIndex = 0;
-            currentFrameId = 0;
-            reachedProgrammedStop = false;
+            frame_data_buffer_index = 0;
+            current_frame_id = 0;
+            reached_programmed_stop = false;
             spdlog::info("First behavior frame of the recording received");
         }
 
-        int numFramesExpected =
-            programmedRecordingStop->numBehaviorFramesExpected;
+        int num_frames_expected =
+            programmed_recording_stop->num_behavior_frames_expected;
 
-        if (isRecording && !reachedProgrammedStop) {
-            frameData.frameId = currentFrameId;
+        if (is_recording && !reached_programmed_stop) {
+            frame_data.frame_id = current_frame_id;
 
-            frameDataBuffer[frameDataBufferIndex++] = frameData;
+            frame_data_buffer[frame_data_buffer_index++] = frame_data;
 
-            if (frameDataBufferIndex == 3) {
+            if (frame_data_buffer_index == 3) {
                 // Add a full group of three frames to the queue.
-                GroupOfThreeFrames groupOfThreeFrames = {
-                    frameDataBuffer[0],
-                    frameDataBuffer[1],
-                    frameDataBuffer[2],
+                GroupOfThreeFrames group_of_three_frames = {
+                    frame_data_buffer[0],
+                    frame_data_buffer[1],
+                    frame_data_buffer[2],
                     3};
                 {
                     std::lock_guard<std::mutex> lock(
-                        behaviorRecordingState->behaviorImageQueueMutex);
-                    behaviorRecordingState->behaviorImageQueue.push(
-                        groupOfThreeFrames);
+                        behavior_recording_state->behavior_image_queue_mutex);
+                    behavior_recording_state->behavior_image_queue.push(
+                        group_of_three_frames);
                 }
-                behaviorRecordingState->behaviorImageQueueCondVar.notify_one();
+                behavior_recording_state->behavior_image_queue_cond_var
+                    .notify_one();
 
-                frameDataBufferIndex = 0;
+                frame_data_buffer_index = 0;
             }
 
-            // Stop exactly on the programmed frame count. Once the last expected
-            // frame has been acquired, flush any partial group and stop
-            // recording right here, rather than waiting for the GUI to tear the
-            // recording down (which would overrun by however many frames arrive
-            // during the GUI's poll latency). The GUI is notified via
-            // programmedStopReached so it can finalize the UI and revert the
-            // cameras to streaming.
-            if (numFramesExpected >= 0 &&
-                currentFrameId == numFramesExpected - 1) {
-                if (frameDataBufferIndex > 0) {
-                    flushPartialGroup();
+            // Stop exactly on the programmed frame count. Once the last
+            // expected frame has been acquired, flush any partial group and
+            // stop recording right here, rather than waiting for the GUI to
+            // tear the recording down (which would overrun by however many
+            // frames arrive during the GUI's poll latency). The GUI is notified
+            // via programmed_stop_reached so it can finalize the UI and revert
+            // the cameras to streaming.
+            if (num_frames_expected >= 0 &&
+                current_frame_id == num_frames_expected - 1) {
+                if (frame_data_buffer_index > 0) {
+                    flush_partial_group();
                 }
-                reachedProgrammedStop = true;
-                programmedRecordingStop->programmedStopReached.store(true);
+                reached_programmed_stop = true;
+                programmed_recording_stop->programmed_stop_reached.store(true);
                 spdlog::info(
-                    "Programmed stop reached after {} behavior frames. Behavior "
+                    "Programmed stop reached after {} behavior frames. "
+                    "Behavior "
                     "acquisition thread stopped recording and is telling the "
                     "GUI to finalize.",
-                    numFramesExpected);
+                    num_frames_expected);
             }
 
-            currentFrameId++;
+            current_frame_id++;
         } else {
-            if (wasRecording && !reachedProgrammedStop &&
-                frameDataBufferIndex > 0) {
+            if (was_recording && !reached_programmed_stop &&
+                frame_data_buffer_index > 0) {
                 // A user-initiated stop landed on a partial group of one or two
                 // frames; flush it. (A programmed stop has already flushed its
                 // own partial group above.)
-                flushPartialGroup();
+                flush_partial_group();
             }
 
-            if (!isRecording) {
+            if (!is_recording) {
                 // Not recording: any newly arrived frame is discarded (it is
                 // only used for the live preview above). Reset the counters for
                 // the next recording session.
-                frameDataBufferIndex = 0;
-                currentFrameId = 0;
-                reachedProgrammedStop = false;
+                frame_data_buffer_index = 0;
+                current_frame_id = 0;
+                reached_programmed_stop = false;
             }
         }
 
-        wasRecording = isRecording;
+        was_recording = is_recording;
     }
 
     // Stop behavior camera acquisition
     spdlog::info("Stopping acquisition on behavior camera");
-    behaviorRecordingState->behaviorCamera->stop();
+    behavior_recording_state->behavior_camera->stop();
     spdlog::info("Behavior camera acquisition stopped. "
                  "Behavior image acquirer thread reached its end");
 }
 
-void behaviorImageSaver(
-    const RecorderConfig &recorderConfig,
-    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<SaveDirectory> saveDirectory,
-    std::shared_ptr<ProgramState> programState) {
-    std::thread::id myThreadId = std::this_thread::get_id();
+void behavior_image_saver(
+    const RecorderConfig &recorder_config,
+    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
+    std::shared_ptr<SaveDirectory> save_directory,
+    std::shared_ptr<ProgramState> program_state) {
+    std::thread::id my_thread_id = std::this_thread::get_id();
     std::stringstream ss;
-    ss << myThreadId;
-    std::string threadIdString = ss.str();
+    ss << my_thread_id;
+    std::string thread_id_string = ss.str();
     spdlog::info(
-        "Behavior image saver thread started (thread ID {})", threadIdString);
+        "Behavior image saver thread started (thread ID {})", thread_id_string);
 
     // Define OpenCV JPEG saving parameters
-    std::vector<int> compressionParams;
-    compressionParams.push_back(cv::IMWRITE_JPEG_QUALITY);
-    compressionParams.push_back(100); // Maximum quality, minimal compression
-    compressionParams.push_back(cv::IMWRITE_JPEG_CHROMA_QUALITY);
-    compressionParams.push_back(100); // Maximum quality, minimal compression
+    std::vector<int> compression_params;
+    compression_params.push_back(cv::IMWRITE_JPEG_QUALITY);
+    compression_params.push_back(100); // Maximum quality, minimal compression
+    compression_params.push_back(cv::IMWRITE_JPEG_CHROMA_QUALITY);
+    compression_params.push_back(100); // Maximum quality, minimal compression
     // Unclear why OpenCV is built without this option. It should because I'm
     // on OpenCV 4.8 with libjpeg ver 80. This option directly specifies the
     // type of chroma subsampling used. This is about resolution of the chroma
@@ -188,109 +193,114 @@ void behaviorImageSaver(
     // compressionParams.push_back(cv::IMWRITE_JPEG_SAMPLING_FACTOR);
     // compressionParams.push_back(444); // Disable chroma subsampling (4:4:4)
 
-    int queueLength = -1;
+    int queue_length = -1;
 
-    SaverPerfTracker perfTracker(
-        "Behavior image saver thread", "group of three frames", threadIdString);
+    SaverPerfTracker perf_tracker(
+        "Behavior image saver thread",
+        "group of three frames",
+        thread_id_string);
 
-    while (!programState->toQuit.load()) {
-        GroupOfThreeFrames frameGroup;
+    while (!program_state->to_quit.load()) {
+        GroupOfThreeFrames frame_group;
         {
             std::unique_lock<std::mutex> lock(
-                behaviorRecordingState->behaviorImageQueueMutex);
-            behaviorRecordingState->behaviorImageQueueCondVar.wait(
-                lock, [&behaviorRecordingState, programState] {
-                    return !behaviorRecordingState->behaviorImageQueue
+                behavior_recording_state->behavior_image_queue_mutex);
+            behavior_recording_state->behavior_image_queue_cond_var.wait(
+                lock, [&behavior_recording_state, program_state] {
+                    return !behavior_recording_state->behavior_image_queue
                                 .empty() ||
-                           programState->toQuit.load();
+                           program_state->to_quit.load();
                 });
 
-            if (programState->toQuit.load()) {
+            if (program_state->to_quit.load()) {
                 spdlog::info(
                     "Behavior image saver thread is breaking out of loop.");
                 break;
             }
 
-            queueLength = behaviorRecordingState->behaviorImageQueue.size();
-            frameGroup = behaviorRecordingState->behaviorImageQueue.front();
-            behaviorRecordingState->behaviorImageQueue.pop();
+            queue_length =
+                behavior_recording_state->behavior_image_queue.size();
+            frame_group =
+                behavior_recording_state->behavior_image_queue.front();
+            behavior_recording_state->behavior_image_queue.pop();
         }
 
-        perfTracker.updateRecordingState(programState->isRecording.load());
+        perf_tracker.update_recording_state(program_state->is_recording.load());
 
-        uint64_t startTime = getCurrentTimeMicroseconds();
+        uint64_t start_time = get_current_time_microseconds();
 
-        std::string filenameStem =
-            "behavior_frame_" + fmt::format("{:09}", frameGroup.frame0.frameId);
-        std::filesystem::path behaviorSaveDir =
-            std::filesystem::path(saveDirectory->getDirectory()) /
+        std::string filename_stem =
+            "behavior_frame_" +
+            fmt::format("{:09}", frame_group.frame0.frame_id);
+        std::filesystem::path behavior_save_dir =
+            std::filesystem::path(save_directory->get_directory()) /
             "behavior_images";
 
         // Save three frames as a single pseudo-BGR image
-        std::string filename = behaviorSaveDir / (filenameStem + ".jpg");
-        cv::Mat image = makePseudoBGRImageFromThreeFrames(frameGroup);
-        cv::imwrite(filename, image, compressionParams);
+        std::string filename = behavior_save_dir / (filename_stem + ".jpg");
+        cv::Mat image = make_pseudo_bgr_image_from_three_frames(frame_group);
+        cv::imwrite(filename, image, compression_params);
 
         // Save metadata
-        std::string metadataFilename =
-            behaviorSaveDir / (filenameStem + ".csv");
-        std::ofstream metadataFile(metadataFilename);
-        metadataFile << makeMetadataStringFromThreeFrames(frameGroup);
-        metadataFile.close();
+        std::string metadata_filename =
+            behavior_save_dir / (filename_stem + ".csv");
+        std::ofstream metadata_file(metadata_filename);
+        metadata_file << make_metadata_string_from_three_frames(frame_group);
+        metadata_file.close();
 
-        perfTracker.recordSave(
-            getCurrentTimeMicroseconds() - startTime, queueLength);
+        perf_tracker.record_save(
+            get_current_time_microseconds() - start_time, queue_length);
     }
     spdlog::info("Behavior image saver thread stopped");
 }
 
-void stopBehaviorImageSaver(
-    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<ProgramState> programState) {
-    if (!programState->toQuit.load()) {
-        spdlog::critical("stopBehaviorImageSaver() called but toQuit is "
+void stop_behavior_image_saver(
+    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
+    std::shared_ptr<ProgramState> program_state) {
+    if (!program_state->to_quit.load()) {
+        spdlog::critical("stop_behavior_image_saver() called but to_quit is "
                          "not set to true. This shouldn't happen.");
         throw std::runtime_error(
-            "stopBehaviorImageSaver() called but toQuit is "
+            "stop_behavior_image_saver() called but to_quit is "
             "not set to true. This shouldn't happen.");
     } else {
-        behaviorRecordingState->behaviorImageQueueCondVar.notify_all();
+        behavior_recording_state->behavior_image_queue_cond_var.notify_all();
     }
 }
 
 BehaviorCameraROI
-getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig) {
-    int imageWidth = roundToNearestValidBehaviorCamDimension(
-        recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
-    int imageHeight = roundToNearestValidBehaviorCamDimension(
-        recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
-    int fullFrameWidth =
-        recorderConfig.getParameter<int>("behavior_camera", "full_frame_width");
-    int fullFrameHeight = recorderConfig.getParameter<int>(
+get_behavior_behavior_camera_roi(const RecorderConfig &recorder_config) {
+    int image_width = round_to_nearest_valid_behavior_cam_dimension(
+        recorder_config.get_parameter<int>("behavior_camera", "roi_width"));
+    int image_height = round_to_nearest_valid_behavior_cam_dimension(
+        recorder_config.get_parameter<int>("behavior_camera", "roi_height"));
+    int full_frame_width = recorder_config.get_parameter<int>(
+        "behavior_camera", "full_frame_width");
+    int full_frame_height = recorder_config.get_parameter<int>(
         "behavior_camera", "full_frame_height");
 
-    if (imageWidth < 0 || imageHeight < 0 || fullFrameWidth < 0 ||
-        fullFrameHeight < 0 || imageWidth > fullFrameWidth ||
-        imageHeight > fullFrameHeight) {
-        std::string errorMessage = fmt::format(
+    if (image_width < 0 || image_height < 0 || full_frame_width < 0 ||
+        full_frame_height < 0 || image_width > full_frame_width ||
+        image_height > full_frame_height) {
+        std::string error_message = fmt::format(
             "Invalid camera ROI or full frame size: "
-            "imageWidth = {}, imageHeight = {}, "
-            "fullFrameWidth = {}, fullFrameHeight = {}",
-            imageWidth,
-            imageHeight,
-            fullFrameWidth,
-            fullFrameHeight);
-        spdlog::critical(errorMessage);
-        throw std::runtime_error(errorMessage);
+            "image_width = {}, image_height = {}, "
+            "full_frame_width = {}, full_frame_height = {}",
+            image_width,
+            image_height,
+            full_frame_width,
+            full_frame_height);
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
     }
 
-    auto [xOffset, yOffset] = getCenteredOffsets(
-        imageWidth, imageHeight, fullFrameWidth, fullFrameHeight);
+    auto [x_offset, y_offset] = get_centered_offsets(
+        image_width, image_height, full_frame_width, full_frame_height);
 
-    BehaviorCameraROI cameraROI = {
-        (unsigned int)imageWidth,
-        (unsigned int)imageHeight,
-        (unsigned int)xOffset,
-        (unsigned int)yOffset};
-    return cameraROI;
+    BehaviorCameraROI camera_roi = {
+        (unsigned int)image_width,
+        (unsigned int)image_height,
+        (unsigned int)x_offset,
+        (unsigned int)y_offset};
+    return camera_roi;
 }

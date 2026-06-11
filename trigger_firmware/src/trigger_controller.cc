@@ -8,7 +8,7 @@
 
 #include "trigger_firmware/config.h"
 
-TriggerController::TriggerController() : device_(DeviceIO::getInstance()) {}
+TriggerController::TriggerController() : device_(DeviceIO::get_instance()) {}
 
 void TriggerController::begin() {
     serial_.begin();
@@ -21,45 +21,45 @@ void TriggerController::begin() {
 
     // The physical on/off switch grounds the pin when engaged, so a LOW reading
     // means "paused". Sample it once so the startup status is correct.
-    pinMode(config::onOffSwitchPin, INPUT_PULLUP);
-    paused_ = digitalRead(config::onOffSwitchPin) == LOW;
+    pinMode(config::on_off_switch_pin, INPUT_PULLUP);
+    paused_ = digitalRead(config::on_off_switch_pin) == LOW;
 
     // Draws the initial "INITIALIZING" screen. A missing panel (begin() ==
     // false) is non-fatal: triggering does not depend on the display.
     display_.begin();
 
     // Light the status LED to match the initial "INITIALIZING" state (yellow).
-    statusLed_.begin();
+    status_led_.begin();
 
     // Stream immediately with the default parameters so the behavior camera is
-    // running before the host sends its first STREAM command. This overrides the
-    // "INITIALIZING" status drawn above with "STREAMING".
-    TriggerParams defaultParams;
-    defaultParams.enableMuscle = config::defaultEnableMuscle;
-    defaultParams.behFrameRate = config::defaultBehFrameRate;
-    defaultParams.behExpTime = config::defaultBehExpTime;
-    startStreaming(defaultParams);
+    // running before the host sends its first STREAM command. This overrides
+    // the "INITIALIZING" status drawn above with "STREAMING".
+    TriggerParams default_params;
+    default_params.enable_muscle = config::default_enable_muscle;
+    default_params.beh_frame_rate = config::default_beh_frame_rate;
+    default_params.beh_exp_time = config::default_beh_exp_time;
+    start_streaming(default_params);
 }
 
 void TriggerController::update() {
-    pollPauseSwitch();
+    poll_pause_switch();
 
     std::optional<std::string> line = serial_.update();
     if (line) {
         Command cmd = Command::parse(*line);
-        if (cmd.isValid) {
-            handleCommand(cmd);
+        if (cmd.is_valid) {
+            handle_command(cmd);
         } else {
-            enterError("ignored malformed command");
+            enter_error("ignored malformed command");
         }
     }
 
-    if (isActive()) {
-        runTriggers(micros());
-        // runTriggers() may latch the error state (e.g. on overrun); re-check
+    if (is_active()) {
+        run_triggers(micros());
+        // run_triggers() may latch the error state (e.g. on overrun); re-check
         // before stepping the operation sequence.
-        if (isActive() && mode_ == Mode::scheduledRecording) {
-            processOpSequence();
+        if (is_active() && mode_ == Mode::scheduled_recording) {
+            process_op_sequence();
         }
     }
 }
@@ -68,83 +68,82 @@ void TriggerController::update() {
 /* Command handling                                                           */
 /* -------------------------------------------------------------------------- */
 
-void TriggerController::handleCommand(const Command &cmd) {
-    switch (cmd.cmdType) {
-    case CmdType::STREAM:
-        handleStream(cmd);
+void TriggerController::handle_command(const Command &cmd) {
+    switch (cmd.cmd_type) {
+    case CmdType::stream:
+        handle_stream(cmd);
         break;
-    case CmdType::START_RECORDING:
-        handleStartRecording(cmd);
+    case CmdType::start_recording:
+        handle_start_recording(cmd);
         break;
-    case CmdType::STOP_RECORDING:
-        handleStopRecording();
+    case CmdType::stop_recording:
+        handle_stop_recording();
         break;
-    case CmdType::LOG:
-        handleLog(cmd);
+    case CmdType::log:
+        handle_log(cmd);
         break;
-    case CmdType::RESET:
-        handleReset();
+    case CmdType::reset:
+        handle_reset();
         break;
     }
 }
 
-void TriggerController::handleStream(const Command &cmd) {
-    if (!checkParamsTiming(cmd.params)) {
-        enterError(
-            "STREAM rejected: camera exposure not shorter than frame "
-            "period");
+void TriggerController::handle_stream(const Command &cmd) {
+    if (!check_params_timing(cmd.params)) {
+        enter_error("STREAM rejected: camera exposure not shorter than frame "
+                    "period");
         return;
     }
-    startStreaming(cmd.params);
+    start_streaming(cmd.params);
 }
 
-void TriggerController::startStreaming(const TriggerParams &params) {
+void TriggerController::start_streaming(const TriggerParams &params) {
     error_ = false;
-    applyParams(params);
-    opSequence_.clear();
-    device_.turnOffOptoCh(OptoChannel::ALL);
+    apply_params(params);
+    op_sequence_.clear();
+    device_.turn_off_opto_ch(OptoChannel::all);
     mode_ = Mode::streaming;
     configured_ = true;
-    resetTiming();
-    refreshStatus();
+    reset_timing();
+    refresh_status();
 }
 
-void TriggerController::handleStartRecording(const Command &cmd) {
+void TriggerController::handle_start_recording(const Command &cmd) {
     // Both the recording and the revert-to parameters must be timing-valid:
     // the latter is applied unchecked when the recording ends.
-    if (!checkParamsTiming(cmd.recParams) ||
-        !checkParamsTiming(cmd.revertToParams)) {
-        enterError(
+    if (!check_params_timing(cmd.rec_params) ||
+        !check_params_timing(cmd.revert_to_params)) {
+        enter_error(
             "START_RECORDING rejected: camera exposure not shorter than "
             "frame period");
         return;
     }
     error_ = false;
-    applyParams(cmd.recParams);
-    revertToParams_ = cmd.revertToParams;
-    opSequence_ = cmd.opSequence;
+    apply_params(cmd.rec_params);
+    revert_to_params_ = cmd.revert_to_params;
+    op_sequence_ = cmd.op_sequence;
     configured_ = true;
 
     // Let frames acquired with the previous parameters drain out of the camera
-    // buffers before the recorded session begins (see camFlushTimeUs).
+    // buffers before the recorded session begins (see cam_flush_time_us).
     device_.reset();
-    delayMicroseconds(camFlushTimeUs);
+    delayMicroseconds(cam_flush_time_us);
 
     mode_ =
-        opSequence_.empty() ? Mode::openRecording : Mode::scheduledRecording;
-    resetTiming();
-    refreshStatus();
+        op_sequence_.empty() ? Mode::open_recording : Mode::scheduled_recording;
+    reset_timing();
+    refresh_status();
 }
 
-void TriggerController::handleStopRecording() {
-    if (mode_ == Mode::openRecording) {
-        revertToStreaming();
+void TriggerController::handle_stop_recording() {
+    if (mode_ == Mode::open_recording) {
+        revert_to_streaming();
         return;
     }
-    // A scheduled recording ends via its opSequence STOP step, never via an
+    // A scheduled recording ends via its op_sequence STOP step, never via an
     // external STOP_RECORDING; one arriving mid-schedule is a protocol error.
-    if (mode_ == Mode::scheduledRecording) {
-        enterError("STOP_RECORDING received during a scheduled recording");
+    if (mode_ == Mode::scheduled_recording) {
+        enter_error("STOP_RECORDING received during a scheduled recording");
         return;
     }
     // Otherwise there is no recording to end (streaming, or before any
@@ -154,23 +153,23 @@ void TriggerController::handleStopRecording() {
                    "received with no open recording");
 }
 
-void TriggerController::handleLog(const Command &cmd) {
+void TriggerController::handle_log(const Command &cmd) {
     Serial.print("Triggering controller received log message: ");
-    Serial.println(cmd.logMsg.c_str());
+    Serial.println(cmd.log_msg.c_str());
 }
 
-void TriggerController::handleReset() {
-    // Software reset requested by the host: reboot the MCU so it comes back from
-    // a clean, known state, exactly as if the physical reset button were pressed.
-    // Drop every output first, then show "RESETTING" (with all parameter lines
-    // blank) on the OLED and status LED so the reset is visible. esp_restart()
-    // does not return; on the next boot begin() re-initializes everything and
-    // resumes default streaming.
+void TriggerController::handle_reset() {
+    // Software reset requested by the host: reboot the MCU so it comes back
+    // from a clean, known state, exactly as if the physical reset button were
+    // pressed. Drop every output first, then show "RESETTING" (with all
+    // parameter lines blank) on the OLED and status LED so the reset is
+    // visible. esp_restart() does not return; on the next boot begin()
+    // re-initializes everything and resumes default streaming.
     device_.reset();
     display_.clear();
-    display_.setStatus(StatusDisplay::Status::resetting);
+    display_.set_status(StatusDisplay::Status::resetting);
     display_.render();
-    statusLed_.setStatus(StatusDisplay::Status::resetting);
+    status_led_.set_status(StatusDisplay::Status::resetting);
 
     Serial.println("Triggering controller resetting (esp_restart)");
     Serial.flush(); // let the message leave the USB TX buffer before rebooting
@@ -182,216 +181,221 @@ void TriggerController::handleReset() {
 /* Timing engine                                                              */
 /* -------------------------------------------------------------------------- */
 
-void TriggerController::runTriggers(unsigned long nowUs) {
-    if (muscleEnabled_) {
-        runMuscleSyncedTriggers(nowUs);
+void TriggerController::run_triggers(unsigned long now_us) {
+    if (muscle_enabled_) {
+        run_muscle_synced_triggers(now_us);
     } else {
-        runFreeRunningTriggers(nowUs);
+        run_free_running_triggers(now_us);
     }
 }
 
-void TriggerController::runMuscleSyncedTriggers(unsigned long nowUs) {
+void TriggerController::run_muscle_synced_triggers(unsigned long now_us) {
     // Detect the onset of the muscle camera's common time (signal HIGH). Each
     // onset starts a new sync group whose first behavior frame is locked to it.
-    bool common = device_.isMuscCommonTime();
-    bool onset = common && !prevCommonTime_;
-    prevCommonTime_ = common;
+    bool common = device_.is_musc_common_time();
+    bool onset = common && !prev_common_time_;
+    prev_common_time_ = common;
 
     // A fresh common-time onset while still mid-group means the muscle camera
     // started its next frame before this group's behavior frames finished: the
     // configured behavior frame rate cannot keep up with the muscle camera.
-    if (onset && !awaitingMuscEdge_) {
-        enterError(
+    if (onset && !awaiting_musc_edge_) {
+        enter_error(
             "muscle-frame overrun: behavior frames did not finish before "
             "the next muscle frame");
         return;
     }
 
-    if (awaitingMuscEdge_ && onset) {
-        groupStartUs_ = nowUs;
-        frameInGroup_ = 0;
-        awaitingMuscEdge_ = false;
+    if (awaiting_musc_edge_ && onset) {
+        group_start_us_ = now_us;
+        frame_in_group_ = 0;
+        awaiting_musc_edge_ = false;
     }
 
     // Start the next behavior frame of the group once it is due. Frame i of a
-    // group is scheduled at groupStart + i * behPeriod on the controller clock.
-    if (!awaitingMuscEdge_ && !behFrameActive_ && frameInGroup_ < syncRatio_ &&
-        (nowUs - groupStartUs_) >=
-            static_cast<unsigned long>(frameInGroup_) * behPeriodUs_) {
-        device_.startBehCamTrigger();
-        device_.turnOnBehLED();
-        behFrameActive_ = true;
-        behFrameStartUs_ = nowUs;
+    // group is scheduled at group_start + i * beh_period on the controller
+    // clock.
+    if (!awaiting_musc_edge_ && !beh_frame_active_ &&
+        frame_in_group_ < sync_ratio_ &&
+        (now_us - group_start_us_) >=
+            static_cast<unsigned long>(frame_in_group_) * beh_period_us_) {
+        device_.start_beh_cam_trigger();
+        device_.turn_on_beh_led();
+        beh_frame_active_ = true;
+        beh_frame_start_us_ = now_us;
 
         // The 0th frame of every group coincides with the muscle common time,
         // so the blue excitation LED is pulsed only then.
-        if (frameInGroup_ == 0) {
-            device_.turnOnMuscLED();
-            muscLEDActive_ = true;
-            muscLEDStartUs_ = nowUs;
+        if (frame_in_group_ == 0) {
+            device_.turn_on_musc_led();
+            musc_led_active_ = true;
+            musc_led_start_us_ = now_us;
         }
 
-        ++frameInGroup_;
-        ++behFrameCount_;
-        if (frameInGroup_ >= syncRatio_) {
-            awaitingMuscEdge_ = true; // group complete; await the next onset
+        ++frame_in_group_;
+        ++beh_frame_count_;
+        if (frame_in_group_ >= sync_ratio_) {
+            awaiting_musc_edge_ = true; // group complete; await the next onset
         }
     }
 
     // Close the behavior shutter (and IR LED) after the exposure time.
-    if (behFrameActive_ && (nowUs - behFrameStartUs_) >= behExpUs_) {
-        device_.stopBehCamTrigger();
-        device_.turnOffBehLED();
-        behFrameActive_ = false;
+    if (beh_frame_active_ && (now_us - beh_frame_start_us_) >= beh_exp_us_) {
+        device_.stop_beh_cam_trigger();
+        device_.turn_off_beh_led();
+        beh_frame_active_ = false;
     }
 
     // Turn the blue excitation LED off after the muscle effective exposure.
-    if (muscLEDActive_ && (nowUs - muscLEDStartUs_) >= muscExpUs_) {
-        device_.turnOffMuscLED();
-        muscLEDActive_ = false;
+    if (musc_led_active_ && (now_us - musc_led_start_us_) >= musc_exp_us_) {
+        device_.turn_off_musc_led();
+        musc_led_active_ = false;
     }
 }
 
-void TriggerController::runFreeRunningTriggers(unsigned long nowUs) {
+void TriggerController::run_free_running_triggers(unsigned long now_us) {
     // Free-running mode: the muscle camera is ignored, so there is no
     // common-time signal, no sync group, and no blue excitation LED. Behavior
-    // frames are scheduled purely on the controller's own clock at behPeriodUs_.
+    // frames are scheduled purely on the controller's own clock at
+    // beh_period_us_.
 
-    // Start the next behavior frame once it is due. nextBehFrameUs_ holds the
-    // scheduled micros() time of the next frame and is advanced by one period as
-    // each frame starts; the signed-difference test is wraparound-safe.
-    if (!behFrameActive_ &&
-        static_cast<long>(nowUs - nextBehFrameUs_) >= 0) {
-        device_.startBehCamTrigger();
-        device_.turnOnBehLED();
-        behFrameActive_ = true;
-        behFrameStartUs_ = nowUs;
-        nextBehFrameUs_ += behPeriodUs_;
-        ++behFrameCount_;
+    // Start the next behavior frame once it is due. next_beh_frame_us_ holds
+    // the scheduled micros() time of the next frame and is advanced by one
+    // period as each frame starts; the signed-difference test is
+    // wraparound-safe.
+    if (!beh_frame_active_ &&
+        static_cast<long>(now_us - next_beh_frame_us_) >= 0) {
+        device_.start_beh_cam_trigger();
+        device_.turn_on_beh_led();
+        beh_frame_active_ = true;
+        beh_frame_start_us_ = now_us;
+        next_beh_frame_us_ += beh_period_us_;
+        ++beh_frame_count_;
     }
 
-    // Close the behavior shutter (and IR LED) after the exposure time. behExpUs_
-    // is guaranteed shorter than behPeriodUs_, so the frame always closes before
-    // the next one is due.
-    if (behFrameActive_ && (nowUs - behFrameStartUs_) >= behExpUs_) {
-        device_.stopBehCamTrigger();
-        device_.turnOffBehLED();
-        behFrameActive_ = false;
+    // Close the behavior shutter (and IR LED) after the exposure time.
+    // beh_exp_us_ is guaranteed shorter than beh_period_us_, so the frame
+    // always closes before the next one is due.
+    if (beh_frame_active_ && (now_us - beh_frame_start_us_) >= beh_exp_us_) {
+        device_.stop_beh_cam_trigger();
+        device_.turn_off_beh_led();
+        beh_frame_active_ = false;
     }
 }
 
-void TriggerController::processOpSequence() {
-    while (!opSequence_.empty()) {
-        const OperationStep &step = opSequence_.front();
-        if (step.frameIdx > behFrameCount_) {
+void TriggerController::process_op_sequence() {
+    while (!op_sequence_.empty()) {
+        const OperationStep &step = op_sequence_.front();
+        if (step.frame_idx > beh_frame_count_) {
             break; // this step's frame has not been reached yet
         }
 
-        if (step.op == OpType::STOP) {
+        if (step.op == OpType::stop) {
             // Let the frame in progress finish before reverting, so the last
             // recorded frame is complete.
-            if (behFrameActive_) {
+            if (beh_frame_active_) {
                 break;
             }
-            revertToStreaming();
-            return; // mode and opSequence_ have changed
+            revert_to_streaming();
+            return; // mode and op_sequence_ have changed
         }
 
-        if (step.op == OpType::ON) {
-            device_.turnOnOptoCh(step.channel);
+        if (step.op == OpType::on) {
+            device_.turn_on_opto_ch(step.channel);
         } else {
-            device_.turnOffOptoCh(step.channel);
+            device_.turn_off_opto_ch(step.channel);
         }
-        opSequence_.pop_front();
+        op_sequence_.pop_front();
     }
 }
 
-void TriggerController::revertToStreaming() {
+void TriggerController::revert_to_streaming() {
     error_ = false; // reverting establishes a known-good streaming state
-    applyParams(revertToParams_);
-    opSequence_.clear();
-    device_.turnOffOptoCh(OptoChannel::ALL);
+    apply_params(revert_to_params_);
+    op_sequence_.clear();
+    device_.turn_off_opto_ch(OptoChannel::all);
     mode_ = Mode::streaming;
-    resetTiming();
-    refreshStatus();
+    reset_timing();
+    refresh_status();
 }
 
-void TriggerController::resetTiming() {
-    awaitingMuscEdge_ = true;
+void TriggerController::reset_timing() {
+    awaiting_musc_edge_ = true;
     // Seed the edge detector with the current level so a common time already in
     // progress does not count as a fresh onset.
-    prevCommonTime_ = device_.isMuscCommonTime();
-    frameInGroup_ = 0;
-    groupStartUs_ = micros();
+    prev_common_time_ = device_.is_musc_common_time();
+    frame_in_group_ = 0;
+    group_start_us_ = micros();
     // Free-running mode: schedule the first behavior frame immediately.
-    nextBehFrameUs_ = groupStartUs_;
-    behFrameActive_ = false;
-    muscLEDActive_ = false;
-    behFrameCount_ = 0;
+    next_beh_frame_us_ = group_start_us_;
+    beh_frame_active_ = false;
+    musc_led_active_ = false;
+    beh_frame_count_ = 0;
 
     // Drop any output left mid-pulse to a known state.
-    device_.stopBehCamTrigger();
-    device_.turnOffBehLED();
-    device_.turnOffMuscLED();
+    device_.stop_beh_cam_trigger();
+    device_.turn_off_beh_led();
+    device_.turn_off_musc_led();
 }
 
-void TriggerController::applyParams(const TriggerParams &params) {
+void TriggerController::apply_params(const TriggerParams &params) {
     params_ = params;
-    muscleEnabled_ = params_.enableMuscle;           // selects the timing path
-    behPeriodUs_ = 1000000UL / params_.behFrameRate; // behFrameRate >= 1
-    syncRatio_ = params_.behMuscSyncRatio;           // >= 1
-    behExpUs_ = params_.behExpTime;
-    muscExpUs_ = params_.muscEffExpTime;
+    muscle_enabled_ = params_.enable_muscle; // selects the timing path
+    beh_period_us_ = 1000000UL / params_.beh_frame_rate; // beh_frame_rate >= 1
+    sync_ratio_ = params_.beh_musc_sync_ratio;           // >= 1
+    beh_exp_us_ = params_.beh_exp_time;
+    musc_exp_us_ = params_.musc_eff_exp_time;
 }
 
-bool TriggerController::checkParamsTiming(const TriggerParams &params) const {
-    // behFrameRate and behMuscSyncRatio are guaranteed >= 1 by the protocol.
-    unsigned long behPeriodUs = 1000000UL / params.behFrameRate;
-    if (params.behExpTime >= behPeriodUs) {
+bool TriggerController::check_params_timing(const TriggerParams &params) const {
+    // beh_frame_rate and beh_musc_sync_ratio are guaranteed >= 1 by the
+    // protocol.
+    unsigned long beh_period_us = 1000000UL / params.beh_frame_rate;
+    if (params.beh_exp_time >= beh_period_us) {
         return false;
     }
     // In free-running mode the muscle camera is unused, so only the behavior
     // timing is constrained.
-    if (!params.enableMuscle) {
+    if (!params.enable_muscle) {
         return true;
     }
     // One muscle frame spans a whole sync group of behavior frames.
-    unsigned long muscPeriodUs =
-        behPeriodUs * static_cast<unsigned long>(params.behMuscSyncRatio);
-    return params.muscEffExpTime < muscPeriodUs;
+    unsigned long musc_period_us =
+        beh_period_us * static_cast<unsigned long>(params.beh_musc_sync_ratio);
+    return params.musc_eff_exp_time < musc_period_us;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Pause switch and display                                                   */
 /* -------------------------------------------------------------------------- */
 
-void TriggerController::pollPauseSwitch() {
-    bool pausedNow = digitalRead(config::onOffSwitchPin) == LOW;
-    if (pausedNow == paused_) {
+void TriggerController::poll_pause_switch() {
+    bool paused_now = digitalRead(config::on_off_switch_pin) == LOW;
+    if (paused_now == paused_) {
         return;
     }
-    paused_ = pausedNow;
+    paused_ = paused_now;
     if (paused_) {
         device_.reset(); // drop every output while paused
     } else {
-        resetTiming(); // resume cleanly on the next common-time onset
+        reset_timing(); // resume cleanly on the next common-time onset
     }
-    refreshStatus();
+    refresh_status();
 }
 
-void TriggerController::enterError(const char *reason) {
+void TriggerController::enter_error(const char *reason) {
     error_ = true;
     device_.reset(); // drop every output; stay in error until reconfigured
     Serial.print("Triggering controller error: ");
     Serial.println(reason);
-    refreshStatus();
+    refresh_status();
 }
 
-bool TriggerController::isActive() const {
+bool TriggerController::is_active() const {
     return configured_ && !paused_ && !error_;
 }
 
-StatusDisplay::Status TriggerController::currentStatus() const {
+StatusDisplay::Status TriggerController::current_status() const {
     if (error_) {
         return StatusDisplay::Status::error;
     }
@@ -404,30 +408,31 @@ StatusDisplay::Status TriggerController::currentStatus() const {
     switch (mode_) {
     case Mode::streaming:
         return StatusDisplay::Status::streaming;
-    case Mode::openRecording:
-        return StatusDisplay::Status::openRecording;
-    case Mode::scheduledRecording:
-        return StatusDisplay::Status::scheduledRecording;
+    case Mode::open_recording:
+        return StatusDisplay::Status::open_recording;
+    case Mode::scheduled_recording:
+        return StatusDisplay::Status::scheduled_recording;
     }
     return StatusDisplay::Status::error;
 }
 
-void TriggerController::refreshStatus() {
-    StatusDisplay::Status status = currentStatus();
-    display_.setStatus(status);
+void TriggerController::refresh_status() {
+    StatusDisplay::Status status = current_status();
+    display_.set_status(status);
     if (configured_) {
-        display_.setBehFrameRate(params_.behFrameRate);
-        display_.setBehExpTime(params_.behExpTime);
-        // The sync ratio and muscle exposure are meaningless when muscle imaging
-        // is disabled (the behavior camera free-runs), so show "N/A"/"OFF".
-        if (params_.enableMuscle) {
-            display_.setBehMuscSyncRatio(params_.behMuscSyncRatio);
-            display_.setMuscExpTime(params_.muscEffExpTime);
+        display_.set_beh_frame_rate(params_.beh_frame_rate);
+        display_.set_beh_exp_time(params_.beh_exp_time);
+        // The sync ratio and muscle exposure are meaningless when muscle
+        // imaging is disabled (the behavior camera free-runs), so show
+        // "N/A"/"OFF".
+        if (params_.enable_muscle) {
+            display_.set_beh_musc_sync_ratio(params_.beh_musc_sync_ratio);
+            display_.set_musc_exp_time(params_.musc_eff_exp_time);
         } else {
-            display_.setBehMuscRatioNA();
-            display_.setMuscExpOff();
+            display_.set_beh_musc_ratio_na();
+            display_.set_musc_exp_off();
         }
     }
     display_.render();
-    statusLed_.setStatus(status);
+    status_led_.set_status(status);
 }

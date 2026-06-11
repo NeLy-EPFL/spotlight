@@ -8,31 +8,31 @@
 
 #include <spdlog/spdlog.h>
 
-namespace PCOSharedMemory {
+namespace pco_shared_memory {
 struct FrameMetadata {
-    unsigned int frameCount = 0;
-    uint64_t acquisitionTime = 0;
+    unsigned int frame_count = 0;
+    uint64_t acquisition_time = 0;
 };
 
-void setupFrameData(
-    const std::string &shmFrameDataName,
-    const size_t frameBufferSize,
-    uint8_t *&frameDataPtr,
-    bool createNew);
-void setupShutterOpenTime(
-    const std::string &shmShutterOpenTimeName,
-    unsigned int *&shutterOpenTimePtr,
-    bool createNew);
-void setupFrameMetadata(
-    const std::string &shmFrameMetadataName,
-    FrameMetadata *&frameMetadataPtr,
-    bool createNew);
-void setupMutex(
-    const std::string &shmMutexName,
-    pthread_mutex_t *&mutexPtr,
-    bool createNew);
-void setupConditionVariable(
-    const std::string &shmCondVarName,
-    pthread_cond_t *&condVarPtr,
-    bool createNew);
-} // namespace PCOSharedMemory
+void setup_frame_data(
+    const std::string &shm_frame_data_name,
+    const size_t frame_buffer_size,
+    uint8_t *&frame_data_ptr,
+    bool create_new);
+void setup_shutter_open_time(
+    const std::string &shm_shutter_open_time_name,
+    unsigned int *&shutter_open_time_ptr,
+    bool create_new);
+void setup_frame_metadata(
+    const std::string &shm_frame_metadata_name,
+    FrameMetadata *&frame_metadata_ptr,
+    bool create_new);
+void setup_mutex(
+    const std::string &shm_mutex_name,
+    pthread_mutex_t *&mutex_ptr,
+    bool create_new);
+void setup_condition_variable(
+    const std::string &shm_cond_var_name,
+    pthread_cond_t *&cond_var_ptr,
+    bool create_new);
+} // namespace pco_shared_memory

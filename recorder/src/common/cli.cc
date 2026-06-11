@@ -1,8 +1,8 @@
 #include "recorder/common/cli.h"
 
-void printHelp(const char *programName) {
+void print_help(const char *program_name) {
     // clang-format off
-    std::cout << "Usage: " << programName << " [OPTIONS]\n"
+    std::cout << "Usage: " << program_name << " [OPTIONS]\n"
               << "Options:\n"
               << "  -h, --help                 Display this help message\n"
               << "  -p, --profile-dir PATH     Path to profile directory (required)\n"
@@ -13,7 +13,7 @@ void printHelp(const char *programName) {
     // clang-format on
 }
 
-spdlog::level::level_enum parseLogLevel(const std::string &level) {
+spdlog::level::level_enum parse_log_level(const std::string &level) {
     if (level == "trace")
         return spdlog::level::trace;
     if (level == "debug")
@@ -33,33 +33,33 @@ spdlog::level::level_enum parseLogLevel(const std::string &level) {
     return spdlog::level::info;
 }
 
-CLIOptions parseCLI(int argc, char **argv) {
+CLIOptions parse_cli(int argc, char **argv) {
     CLIOptions options;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
         if (arg == "-h" || arg == "--help") {
-            printHelp(argv[0]);
+            print_help(argv[0]);
             std::exit(0);
         } else if (arg == "-v" || arg == "--verbose") {
-            options.logLevel = spdlog::level::debug;
+            options.log_level = spdlog::level::debug;
         } else if (arg == "--verbosity" && i + 1 < argc) {
-            options.logLevel = parseLogLevel(argv[++i]);
+            options.log_level = parse_log_level(argv[++i]);
         } else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc) {
-            options.profileDir = argv[++i];
+            options.profile_dir = argv[++i];
         } else if ((arg == "-a" || arg == "--arena") && i + 1 < argc) {
-            options.arenaDir = argv[++i];
+            options.arena_dir = argv[++i];
         } else {
             std::cerr << "Unknown option: " << arg << std::endl;
-            printHelp(argv[0]);
+            print_help(argv[0]);
             std::exit(1);
         }
     }
 
-    if (options.profileDir.empty()) {
+    if (options.profile_dir.empty()) {
         std::cerr << "Error: -p/--profile-dir is required.\n";
-        printHelp(argv[0]);
+        print_help(argv[0]);
         std::exit(1);
     }
 

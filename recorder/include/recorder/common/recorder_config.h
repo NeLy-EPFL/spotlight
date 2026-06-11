@@ -12,17 +12,17 @@
 
 class RecorderConfig {
   public:
-    bool isDefined;
+    bool is_defined;
 
     RecorderConfig();
-    RecorderConfig(const std::string &yamlPath);
+    RecorderConfig(const std::string &yaml_path);
 
     // Add const qualifier to make it usable with const objects
     template <typename T>
-    T getParameter(
+    T get_parameter(
         const std::string &section, const std::string &parameter) const;
 
-    void saveToFile(const std::string &yamlPath) const;
+    void save_to_file(const std::string &yaml_path) const;
 
   private:
     YAML::Node parameters_;
@@ -30,9 +30,9 @@ class RecorderConfig {
 
 // Template implementation must be in the header file
 template <typename T>
-T RecorderConfig::getParameter(
+T RecorderConfig::get_parameter(
     const std::string &section, const std::string &parameter) const {
-    if (!isDefined) {
+    if (!is_defined) {
         throw std::runtime_error("Parameters are not loaded yet.");
     }
 

@@ -113,10 +113,10 @@ and at least **64×16 px**.
 > [!IMPORTANT]
 > `x0`/`y0` are 1-indexed, but do **not** add 1 to `x1`/`y1`:
 > ```c++
-> config.roi.x0 = xOffset + 1;             // correct
-> config.roi.y0 = yOffset + 1;             // correct
-> config.roi.x1 = xOffset + imageWidth;    // correct (do NOT use +1)
-> config.roi.y1 = yOffset + imageHeight;   // correct (do NOT use +1)
+> config.roi.x0 = x_offset + 1;              // correct
+> config.roi.y0 = y_offset + 1;              // correct
+> config.roi.x1 = x_offset + image_width;    // correct (do NOT use +1)
+> config.roi.y1 = y_offset + image_height;   // correct (do NOT use +1)
 > ```
 > (Reference: pco.panda 4.2 User Manual, Appendix A1.1.)
 

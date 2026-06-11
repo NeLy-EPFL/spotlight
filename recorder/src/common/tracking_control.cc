@@ -4,16 +4,17 @@
 
 // Shared global variables and sysnchronization primitives
 namespace {
-std::mutex requestMutex;
-std::condition_variable requestCondVar;
-std::mutex responseMutex;
-std::condition_variable responseCondVar;
-std::queue<MotionStageRequest> requestQueue;
-std::map<int, MotionStageResponse> responseMap;
+std::mutex request_mutex;
+std::condition_variable request_cond_var;
+std::mutex response_mutex;
+std::condition_variable response_cond_var;
+std::queue<MotionStageRequest> request_queue;
+std::map<int, MotionStageResponse> response_map;
 
-std::ofstream initializeMotionStageLogFile(const std::string &saveDirectory) {
+std::ofstream
+initialize_motion_stage_log_file(const std::string &save_directory) {
     std::filesystem::path filename =
-        fs::path(saveDirectory) / "stage_position" / "stage_position.csv";
+        fs::path(save_directory) / "stage_position" / "stage_position.csv";
 
     // Remove the file if it exists (otherwise we'd be appending to it)
     if (std::filesystem::exists(filename)) {
@@ -22,140 +23,144 @@ std::ofstream initializeMotionStageLogFile(const std::string &saveDirectory) {
             "Removed existing motion stage log file: {}", filename.string());
     }
 
-    std::ofstream logFile((filename).string(), std::ios_base::app);
-    if (!logFile.is_open()) {
+    std::ofstream log_file((filename).string(), std::ios_base::app);
+    if (!log_file.is_open()) {
         spdlog::error(
             "Failed to open motion stage log file: {}", filename.string());
     } else {
         spdlog::info("Opened motion stage log file: {}", filename.string());
     }
-    logFile << "timestamp_us,x_pos_mm,y_pos_mm\n";
-    return logFile;
+    log_file << "timestamp_us,x_pos_mm,y_pos_mm\n";
+    return log_file;
 }
 
-double calculateDistance(double x1, double y1, double x2, double y2) {
+double calculate_distance(double x1, double y1, double x2, double y2) {
     return std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2));
 }
 
-int imageBinarizeThreshold;
+int image_binarize_threshold;
 
-double softwareXMinMm = -std::numeric_limits<double>::infinity();
-double softwareXMaxMm = std::numeric_limits<double>::infinity();
-double softwareYMinMm = -std::numeric_limits<double>::infinity();
-double softwareYMaxMm = std::numeric_limits<double>::infinity();
+double software_x_min_mm = -std::numeric_limits<double>::infinity();
+double software_x_max_mm = std::numeric_limits<double>::infinity();
+double software_y_min_mm = -std::numeric_limits<double>::infinity();
+double software_y_max_mm = std::numeric_limits<double>::infinity();
 } // namespace
 
-void motionControlRequestHandler(
-    const RecorderConfig &recorderConfig,
-    std::shared_ptr<TrackingControlState> trackingControlState,
-    std::shared_ptr<ProgramState> programState) {
-    MotionControl motionControl(recorderConfig);
+void motion_control_request_handler(
+    const RecorderConfig &recorder_config,
+    std::shared_ptr<TrackingControlState> tracking_control_state,
+    std::shared_ptr<ProgramState> program_state) {
+    MotionControl motion_control(recorder_config);
 
     // Query the stages' soft travel limits once at init so that we can
     // clamp target positions and avoid BADDATA rejections from the
     // controller.
-    const double xMinMm = motionControl.getMinPosition(X_AXIS);
-    const double xMaxMm = motionControl.getMaxPosition(X_AXIS);
-    const double yMinMm = motionControl.getMinPosition(Y_AXIS);
-    const double yMaxMm = motionControl.getMaxPosition(Y_AXIS);
+    const double x_min_mm = motion_control.get_min_position(x_axis);
+    const double x_max_mm = motion_control.get_max_position(x_axis);
+    const double y_min_mm = motion_control.get_min_position(y_axis);
+    const double y_max_mm = motion_control.get_max_position(y_axis);
     spdlog::info(
         "Motion stage travel limits: X=[{:.3f}, {:.3f}] mm, "
         "Y=[{:.3f}, {:.3f}] mm",
-        xMinMm,
-        xMaxMm,
-        yMinMm,
-        yMaxMm);
+        x_min_mm,
+        x_max_mm,
+        y_min_mm,
+        y_max_mm);
 
-    trackingControlState->motionControlHandlerReady.store(true);
+    tracking_control_state->motion_control_handler_ready.store(true);
 
-    while (!programState->toQuit.load()) {
-        MotionStageRequest myRequest;
+    while (!program_state->to_quit.load()) {
+        MotionStageRequest my_request;
         // Wait for a request
         {
-            std::unique_lock<std::mutex> lock(requestMutex);
-            requestCondVar.wait(lock, [programState] {
-                return !requestQueue.empty() || programState->toQuit.load();
+            std::unique_lock<std::mutex> lock(request_mutex);
+            request_cond_var.wait(lock, [program_state] {
+                return !request_queue.empty() || program_state->to_quit.load();
             });
 
             // If there's still work to do, finish it even if told to stop
-            if (!requestQueue.empty()) {
-                myRequest = requestQueue.front();
-                requestQueue.pop();
+            if (!request_queue.empty()) {
+                my_request = request_queue.front();
+                request_queue.pop();
             } else {
-                // Only way to reach here is if toQuit is true
-                assert(programState->toQuit.load());
+                // Only way to reach here is if to_quit is true
+                assert(program_state->to_quit.load());
                 spdlog::info("Motion stage request handler thread "
                              "is breaking out of loop.");
                 break;
             }
         }
 
-        MotionStageResponse myResponse;
-        if (myRequest.requestType == GET_CURRENT_POSITION) {
-            MotionStagePosition currentPosition = {
-                motionControl.getPosition(X_AXIS),
-                motionControl.getPosition(Y_AXIS),
-                ABSOLUTE};
-            myResponse.position = currentPosition;
-        } else if (myRequest.requestType == SET_TARGET_POSITION) {
-            bool waitForCompletion = false;
-            if (myRequest.position.positionType == ABSOLUTE) {
-                double targetX =
-                    std::clamp(myRequest.position.xPosMm, xMinMm, xMaxMm);
-                double targetY =
-                    std::clamp(myRequest.position.yPosMm, yMinMm, yMaxMm);
-                if (targetX != myRequest.position.xPosMm ||
-                    targetY != myRequest.position.yPosMm) {
+        MotionStageResponse my_response;
+        if (my_request.request_type == get_current_position) {
+            MotionStagePosition current_position = {
+                motion_control.get_position(x_axis),
+                motion_control.get_position(y_axis),
+                absolute};
+            my_response.position = current_position;
+        } else if (my_request.request_type == set_target_position) {
+            bool wait_for_completion = false;
+            if (my_request.position.position_type == absolute) {
+                double target_x = std::clamp(
+                    my_request.position.x_pos_mm, x_min_mm, x_max_mm);
+                double target_y = std::clamp(
+                    my_request.position.y_pos_mm, y_min_mm, y_max_mm);
+                if (target_x != my_request.position.x_pos_mm ||
+                    target_y != my_request.position.y_pos_mm) {
                     spdlog::warn(
                         "Target stage position ({:.3f}, {:.3f}) mm clamped "
                         "to ({:.3f}, {:.3f}) mm to stay within travel "
                         "limits X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
-                        myRequest.position.xPosMm,
-                        myRequest.position.yPosMm,
-                        targetX,
-                        targetY,
-                        xMinMm,
-                        xMaxMm,
-                        yMinMm,
-                        yMaxMm);
+                        my_request.position.x_pos_mm,
+                        my_request.position.y_pos_mm,
+                        target_x,
+                        target_y,
+                        x_min_mm,
+                        x_max_mm,
+                        y_min_mm,
+                        y_max_mm);
                 }
-                motionControl.moveAbsolute(
-                    X_AXIS, targetX, waitForCompletion, myRequest.velocity);
-                motionControl.moveAbsolute(
-                    Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
+                motion_control.move_absolute(
+                    x_axis, target_x, wait_for_completion, my_request.velocity);
+                motion_control.move_absolute(
+                    y_axis, target_y, wait_for_completion, my_request.velocity);
             } else {
                 // Convert the relative request to an absolute target so we
                 // can clamp against the travel limits before issuing the
                 // move.
-                double currentX = motionControl.getPosition(X_AXIS);
-                double currentY = motionControl.getPosition(Y_AXIS);
-                double targetX = std::clamp(
-                    currentX + myRequest.position.xPosMm, xMinMm, xMaxMm);
-                double targetY = std::clamp(
-                    currentY + myRequest.position.yPosMm, yMinMm, yMaxMm);
-                motionControl.moveAbsolute(
-                    X_AXIS, targetX, waitForCompletion, myRequest.velocity);
-                motionControl.moveAbsolute(
-                    Y_AXIS, targetY, waitForCompletion, myRequest.velocity);
+                double current_x = motion_control.get_position(x_axis);
+                double current_y = motion_control.get_position(y_axis);
+                double target_x = std::clamp(
+                    current_x + my_request.position.x_pos_mm,
+                    x_min_mm,
+                    x_max_mm);
+                double target_y = std::clamp(
+                    current_y + my_request.position.y_pos_mm,
+                    y_min_mm,
+                    y_max_mm);
+                motion_control.move_absolute(
+                    x_axis, target_x, wait_for_completion, my_request.velocity);
+                motion_control.move_absolute(
+                    y_axis, target_y, wait_for_completion, my_request.velocity);
             }
-            myResponse.setSuccess = true;
-        } else if (myRequest.requestType == WAIT_UNTIL_IDLE) {
-            motionControl.waitUntilIdle(X_AXIS);
-            motionControl.waitUntilIdle(Y_AXIS);
-            myResponse.isIdle = true;
-        } else if (myRequest.requestType == CHECK_IF_IDLE) {
-            myResponse.isIdle = motionControl.checkIfIdle(X_AXIS) &&
-                                motionControl.checkIfIdle(Y_AXIS);
-        } else if (myRequest.requestType == START_HOMING) {
-            bool waitForCompletion = false;
-            motionControl.home(X_AXIS, waitForCompletion);
-            motionControl.home(Y_AXIS, waitForCompletion);
-            myResponse.setSuccess = true;
+            my_response.set_success = true;
+        } else if (my_request.request_type == wait_until_idle) {
+            motion_control.wait_until_idle(x_axis);
+            motion_control.wait_until_idle(y_axis);
+            my_response.is_idle = true;
+        } else if (my_request.request_type == check_if_idle) {
+            my_response.is_idle = motion_control.check_if_idle(x_axis) &&
+                                  motion_control.check_if_idle(y_axis);
+        } else if (my_request.request_type == start_homing) {
+            bool wait_for_completion = false;
+            motion_control.home(x_axis, wait_for_completion);
+            motion_control.home(y_axis, wait_for_completion);
+            my_response.set_success = true;
         } else {
             spdlog::critical(
                 "Motion stage request handler thread received unknown "
                 "request type: {}",
-                static_cast<int>(myRequest.requestType));
+                static_cast<int>(my_request.request_type));
             throw std::runtime_error(
                 "Motion stage request handler thread received unknown "
                 "request type.");
@@ -163,65 +168,67 @@ void motionControlRequestHandler(
 
         // Send response back
         {
-            std::lock_guard<std::mutex> lock(responseMutex);
-            responseMap[myRequest.clientIdHash] = myResponse;
+            std::lock_guard<std::mutex> lock(response_mutex);
+            response_map[my_request.client_id_hash] = my_response;
         }
-        responseCondVar.notify_all();
+        response_cond_var.notify_all();
     }
     spdlog::info("Motion stage request handler thread stopped.");
 }
 
 // Run one automatic-tracking update: grab the latest behavior image, locate
 // the fly, and move the stage to re-center it if it has drifted far enough.
-void updateTrackingTarget(
-    const RecorderConfig &recorderConfig,
-    ActiveAreaMask &activeAreaMask,
-    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<TrackingControlState> trackingControlState,
-    const CalibrationParams &behaviorCamCalibrationParams,
-    float trackingDistanceThresholdMm,
-    float defaultVelocity) {
-    cv::Mat myBehaviorImage =
-        behaviorRecordingState->latestFrameHolder->getLatestFrameData().image;
-    reorientBehaviorImage(myBehaviorImage, myBehaviorImage);
-    cv::Mat activeAreaMaskCurrView = activeAreaMask.warpToCurrentView(
-        myBehaviorImage, getCurrentMotionStagePosition());
+void update_tracking_target(
+    const RecorderConfig &recorder_config,
+    ActiveAreaMask &active_area_mask,
+    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
+    std::shared_ptr<TrackingControlState> tracking_control_state,
+    const CalibrationParams &behavior_cam_calibration_params,
+    float tracking_distance_threshold_mm,
+    float default_velocity) {
+    cv::Mat my_behavior_image =
+        behavior_recording_state->latest_frame_holder->get_latest_frame_data()
+            .image;
+    reorient_behavior_image(my_behavior_image, my_behavior_image);
+    cv::Mat active_area_mask_curr_view = active_area_mask.warp_to_current_view(
+        my_behavior_image, get_current_motion_stage_position());
 
-    MotionStagePosition myMotionStagePosition;
+    MotionStagePosition my_motion_stage_position;
     {
         std::lock_guard<std::mutex> lock(
-            trackingControlState->latestMotionStagePositionMutex);
-        myMotionStagePosition =
-            trackingControlState->latestMotionStagePosition;
+            tracking_control_state->latest_motion_stage_position_mutex);
+        my_motion_stage_position =
+            tracking_control_state->latest_motion_stage_position;
     }
 
-    bool isFound = false;
-    double physicalPosX = 0;
-    double physicalPosY = 0;
-    if (behaviorRecordingState->behaviorCamera &&
-        behaviorRecordingState->behaviorCamera->isReady()) {
-        std::tie(isFound, physicalPosX, physicalPosY) =
-            calculateFlyPositionAbsoluteMm(
-                myBehaviorImage,
-                myMotionStagePosition,
-                activeAreaMaskCurrView,
-                behaviorCamCalibrationParams,
-                recorderConfig);
+    bool is_found = false;
+    double physical_pos_x = 0;
+    double physical_pos_y = 0;
+    if (behavior_recording_state->behavior_camera &&
+        behavior_recording_state->behavior_camera->is_ready()) {
+        std::tie(is_found, physical_pos_x, physical_pos_y) =
+            calculate_fly_position_absolute_mm(
+                my_behavior_image,
+                my_motion_stage_position,
+                active_area_mask_curr_view,
+                behavior_cam_calibration_params,
+                recorder_config);
     }
 
-    if (isFound) {
-        auto [currentPhysicalPosX, currentPhysicalPosY] =
-            behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
-                myMotionStagePosition.xPosMm,
-                myMotionStagePosition.yPosMm,
-                myBehaviorImage.rows / 2,
-                myBehaviorImage.cols / 2);
+    if (is_found) {
+        auto [current_physical_pos_x, current_physical_pos_y] =
+            behavior_cam_calibration_params
+                .stage_pos_and_pixel_pos_to_physical_pos(
+                    my_motion_stage_position.x_pos_mm,
+                    my_motion_stage_position.y_pos_mm,
+                    my_behavior_image.rows / 2,
+                    my_behavior_image.cols / 2);
 
-        double distanceToTarget = calculateDistance(
-            physicalPosX,
-            physicalPosY,
-            currentPhysicalPosX,
-            currentPhysicalPosY);
+        double distance_to_target = calculate_distance(
+            physical_pos_x,
+            physical_pos_y,
+            current_physical_pos_x,
+            current_physical_pos_y);
 
         // Only move the stage once the fly has drifted far enough from
         // the center of the view. Holding still when it is already close
@@ -229,137 +236,142 @@ void updateTrackingTarget(
         // mechanical resonance. (Don't `continue` here: that would skip
         // the end-of-cycle sleep below and busy-loop the thread, which
         // also floods the motion-control request queue.)
-        if (distanceToTarget >= trackingDistanceThresholdMm) {
+        if (distance_to_target >= tracking_distance_threshold_mm) {
             // X stage should move in the OPPOSITE direction: the arena
             // is facing downward, so the +x direction of the arena is
             // the opposite of the +x direction of the stage.
-            double dx = -1 * (physicalPosX - currentPhysicalPosX);
-            double dy = physicalPosY - currentPhysicalPosY;
-            MotionStagePosition targetMotionStagePosition = {
-                myMotionStagePosition.xPosMm + dx,
-                myMotionStagePosition.yPosMm + dy,
-                ABSOLUTE};
-            setTargetMotionStagePosition(
-                targetMotionStagePosition, defaultVelocity);
+            double dx = -1 * (physical_pos_x - current_physical_pos_x);
+            double dy = physical_pos_y - current_physical_pos_y;
+            MotionStagePosition target_motion_stage_position = {
+                my_motion_stage_position.x_pos_mm + dx,
+                my_motion_stage_position.y_pos_mm + dy,
+                absolute};
+            set_target_motion_stage_position(
+                target_motion_stage_position, default_velocity);
         }
     }
 }
 
-void trackingController(
-    const RecorderConfig &recorderConfig,
-    ActiveAreaMask &activeAreaMask,
-    std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<TrackingControlState> trackingControlState,
-    const CalibrationParams &behaviorCamCalibrationParams,
-    std::shared_ptr<ProgramState> programState) {
-    size_t retryCount = 0;
-    while (!trackingControlState->motionControlHandlerReady.load()) {
+void tracking_controller(
+    const RecorderConfig &recorder_config,
+    ActiveAreaMask &active_area_mask,
+    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
+    std::shared_ptr<TrackingControlState> tracking_control_state,
+    const CalibrationParams &behavior_cam_calibration_params,
+    std::shared_ptr<ProgramState> program_state) {
+    size_t retry_count = 0;
+    while (!tracking_control_state->motion_control_handler_ready.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        retryCount++;
-        if (retryCount % 10 == 0) {
+        retry_count++;
+        if (retry_count % 10 == 0) {
             spdlog::warn("Motion control handler is not ready.");
         }
     }
 
-    const int trackingUpdateFrequency =
-        recorderConfig.getParameter<int>("tracking", "update_frequency_hz");
-    LoopRateLimiter rateLimiter(
-        "Tracking controller thread", trackingUpdateFrequency);
+    const int tracking_update_frequency =
+        recorder_config.get_parameter<int>("tracking", "update_frequency_hz");
+    LoopRateLimiter rate_limiter(
+        "Tracking controller thread", tracking_update_frequency);
 
-    const float trackingDistanceThresholdMm =
-        recorderConfig.getParameter<float>(
+    const float tracking_distance_threshold_mm =
+        recorder_config.get_parameter<float>(
             "tracking", "distance_threshold_for_moving_mm");
 
-    const float defaultVelocity = recorderConfig.getParameter<float>(
+    const float default_velocity = recorder_config.get_parameter<float>(
         "motion_control", "default_velocity_mm_per_s");
 
-    imageBinarizeThreshold = recorderConfig.getParameter<int>(
+    image_binarize_threshold = recorder_config.get_parameter<int>(
         "tracking", "image_binarize_threshold");
 
-    while (!programState->toQuit.load()) {
-        rateLimiter.startCycle();
+    while (!program_state->to_quit.load()) {
+        rate_limiter.start_cycle();
 
-        if (!trackingControlState->trackingOn.load()) {
+        if (!tracking_control_state->tracking_on.load()) {
             // Nothing to do here
-        } else if (!trackingControlState->shouldOverrideTracking.load()) {
-            updateTrackingTarget(
-                recorderConfig,
-                activeAreaMask,
-                behaviorRecordingState,
-                trackingControlState,
-                behaviorCamCalibrationParams,
-                trackingDistanceThresholdMm,
-                defaultVelocity);
+        } else if (!tracking_control_state->should_override_tracking.load()) {
+            update_tracking_target(
+                recorder_config,
+                active_area_mask,
+                behavior_recording_state,
+                tracking_control_state,
+                behavior_cam_calibration_params,
+                tracking_distance_threshold_mm,
+                default_velocity);
         } else {
             // spdlog::debug("Tracking controller is overriding tracking.");
-            MotionStagePosition currentPos = getCurrentMotionStagePosition();
-            double distanceToTarget = calculateDistance(
-                trackingControlState->overridingPosX.load(),
-                trackingControlState->overridingPosY.load(),
-                currentPos.xPosMm,
-                currentPos.yPosMm);
+            MotionStagePosition current_pos =
+                get_current_motion_stage_position();
+            double distance_to_target = calculate_distance(
+                tracking_control_state->overriding_pos_x.load(),
+                tracking_control_state->overriding_pos_y.load(),
+                current_pos.x_pos_mm,
+                current_pos.y_pos_mm);
 
-            if (distanceToTarget < trackingDistanceThresholdMm &&
-                checkIfMotionStageIdle()) {
+            if (distance_to_target < tracking_distance_threshold_mm &&
+                check_if_motion_stage_idle()) {
                 // Reached the click-to-move target; hand control back to
                 // automatic tracking. (Don't `continue`: fall through to the
                 // end-of-cycle sleep below so the thread doesn't busy-loop.)
-                trackingControlState->shouldOverrideTracking.store(false);
+                tracking_control_state->should_override_tracking.store(false);
             } else {
-                MotionStagePosition targetPos = {
-                    trackingControlState->overridingPosX.load(),
-                    trackingControlState->overridingPosY.load(),
-                    ABSOLUTE};
-                setTargetMotionStagePosition(targetPos, defaultVelocity);
+                MotionStagePosition target_pos = {
+                    tracking_control_state->overriding_pos_x.load(),
+                    tracking_control_state->overriding_pos_y.load(),
+                    absolute};
+                set_target_motion_stage_position(target_pos, default_velocity);
             }
         }
-        rateLimiter.sleepUntilNextCycle();
+        rate_limiter.sleep_until_next_cycle();
     }
 }
 
 ActiveAreaMask::ActiveAreaMask(
-    const std::string &arenaSpecDir,
-    double boundaryMarginMm,
-    LinearMapper2x2to2 &stageAndPixelToPhysical)
-    : stageAndPixelToPhysical(stageAndPixelToPhysical) {
+    const std::string &arena_spec_dir,
+    double boundary_margin_mm,
+    LinearMapper2x2to2 &stage_and_pixel_to_physical)
+    : stage_and_pixel_to_physical(stage_and_pixel_to_physical) {
     // Load arena metadata
-    fs::path metadataPath = fs::path(arenaSpecDir) / "metadata.yaml";
-    YAML::Node metadata = YAML::LoadFile(metadataPath.string());
+    fs::path metadata_path = fs::path(arena_spec_dir) / "metadata.yaml";
+    YAML::Node metadata = YAML::LoadFile(metadata_path.string());
     if (!metadata["unit"] || metadata["unit"].as<std::string>() != "mm") {
         throw std::runtime_error(
-            "Arena metadata unit is not 'mm': " + metadataPath.string());
+            "Arena metadata unit is not 'mm': " + metadata_path.string());
     }
-    auto arenaDim = metadata["arena_dim"].as<std::vector<double>>();
-    arenaWidthMm = arenaDim[0];
-    arenaHeightMm = arenaDim[1];
-    resolutionMmPerPixel =
+    auto arena_dim = metadata["arena_dim"].as<std::vector<double>>();
+    arena_width_mm = arena_dim[0];
+    arena_height_mm = arena_dim[1];
+    resolution_mm_per_pixel =
         metadata["active_area_raster_resolution"].as<double>();
 
     // Load rasterized active area mask
-    fs::path maskPath = fs::path(arenaSpecDir) / "active_area.png";
-    fullArenaMask = cv::imread(maskPath.string(), cv::IMREAD_GRAYSCALE);
-    if (fullArenaMask.empty()) {
+    fs::path mask_path = fs::path(arena_spec_dir) / "active_area.png";
+    full_arena_mask = cv::imread(mask_path.string(), cv::IMREAD_GRAYSCALE);
+    if (full_arena_mask.empty()) {
         throw std::runtime_error(
-            "Failed to load active area mask from: " + maskPath.string());
+            "Failed to load active area mask from: " + mask_path.string());
     }
-    int expectCols = static_cast<int>(arenaWidthMm / resolutionMmPerPixel);
-    int expectRows = static_cast<int>(arenaHeightMm / resolutionMmPerPixel);
-    if (fullArenaMask.cols != expectCols || fullArenaMask.rows != expectRows) {
+    int expect_cols =
+        static_cast<int>(arena_width_mm / resolution_mm_per_pixel);
+    int expect_rows =
+        static_cast<int>(arena_height_mm / resolution_mm_per_pixel);
+    if (full_arena_mask.cols != expect_cols ||
+        full_arena_mask.rows != expect_rows) {
         throw std::runtime_error(
-            "Active area mask has incorrect dimensions: " + maskPath.string());
+            "Active area mask has incorrect dimensions: " + mask_path.string());
     }
 
     // Shrink active area mask by boundary margin
-    int boundaryMarginPixels =
-        static_cast<int>(boundaryMarginMm / resolutionMmPerPixel);
-    cv::Mat erosionKernel = cv::getStructuringElement(
+    int boundary_margin_pixels =
+        static_cast<int>(boundary_margin_mm / resolution_mm_per_pixel);
+    cv::Mat erosion_kernel = cv::getStructuringElement(
         cv::MORPH_ELLIPSE,
-        cv::Size(2 * boundaryMarginPixels + 1, 2 * boundaryMarginPixels + 1),
-        cv::Point(boundaryMarginPixels, boundaryMarginPixels));
+        cv::Size(
+            2 * boundary_margin_pixels + 1, 2 * boundary_margin_pixels + 1),
+        cv::Point(boundary_margin_pixels, boundary_margin_pixels));
     cv::erode(
-        fullArenaMask,
-        fullArenaMask,
-        erosionKernel,
+        full_arena_mask,
+        full_arena_mask,
+        erosion_kernel,
         cv::Point(-1, -1), // anchor (default)
         1,                 // iterations (default)
         // Set border value to 0 so that the erosion treats arena walls as
@@ -373,150 +385,152 @@ ActiveAreaMask::ActiveAreaMask(
     // With WARP_INVERSE_MAP, warpAffine uses this matrix as:
     //   mask_col = M[0,0]*cam_col + M[0,1]*cam_row + M[0,2]
     //   mask_row = M[1,0]*cam_col + M[1,1]*cam_row + M[1,2]
-    // which is exactly (stageAndPixelToPhysical(stage=0, pixel) / R).
-    transformMatrixAtZeroStagePos_ =
-        (cv::Mat_<double>(2, 3) << stageAndPixelToPhysical.w_X2toX,
-         stageAndPixelToPhysical.w_Y2toX,
-         stageAndPixelToPhysical.biasX,
-         stageAndPixelToPhysical.w_X2toY,
-         stageAndPixelToPhysical.w_Y2toY,
-         stageAndPixelToPhysical.biasY);
-    transformMatrixAtZeroStagePos_ /= resolutionMmPerPixel;
+    // which is exactly (stage_and_pixel_to_physical(stage=0, pixel) / R).
+    transform_matrix_at_zero_stage_pos_ =
+        (cv::Mat_<double>(2, 3) << stage_and_pixel_to_physical.w_x2_to_x,
+         stage_and_pixel_to_physical.w_y2_to_x,
+         stage_and_pixel_to_physical.bias_x,
+         stage_and_pixel_to_physical.w_x2_to_y,
+         stage_and_pixel_to_physical.w_y2_to_y,
+         stage_and_pixel_to_physical.bias_y);
+    transform_matrix_at_zero_stage_pos_ /= resolution_mm_per_pixel;
 }
 
-cv::Mat ActiveAreaMask::warpToCurrentView(
-    const cv::Mat &currentImage, MotionStagePosition stagePos) const {
+cv::Mat ActiveAreaMask::warp_to_current_view(
+    const cv::Mat &current_image, MotionStagePosition stage_pos) const {
     // Add contribution of non-zero stage position to the transformation matrix
-    double xOffset =
-        (stageAndPixelToPhysical.w_X1toX * stagePos.xPosMm +
-         stageAndPixelToPhysical.w_Y1toX * stagePos.yPosMm);
-    double yOffset =
-        (stageAndPixelToPhysical.w_X1toY * stagePos.xPosMm +
-         stageAndPixelToPhysical.w_Y1toY * stagePos.yPosMm);
-    cv::Mat transformMatrix = transformMatrixAtZeroStagePos_.clone();
-    transformMatrix.at<double>(0, 2) += xOffset / resolutionMmPerPixel;
-    transformMatrix.at<double>(1, 2) += yOffset / resolutionMmPerPixel;
+    double x_offset =
+        (stage_and_pixel_to_physical.w_x1_to_x * stage_pos.x_pos_mm +
+         stage_and_pixel_to_physical.w_y1_to_x * stage_pos.y_pos_mm);
+    double y_offset =
+        (stage_and_pixel_to_physical.w_x1_to_y * stage_pos.x_pos_mm +
+         stage_and_pixel_to_physical.w_y1_to_y * stage_pos.y_pos_mm);
+    cv::Mat transform_matrix = transform_matrix_at_zero_stage_pos_.clone();
+    transform_matrix.at<double>(0, 2) += x_offset / resolution_mm_per_pixel;
+    transform_matrix.at<double>(1, 2) += y_offset / resolution_mm_per_pixel;
 
     // Apply affine transform
-    cv::Mat warpedMask;
+    cv::Mat warped_mask;
     cv::warpAffine(
-        fullArenaMask,
-        warpedMask,
-        transformMatrix,
-        currentImage.size(),
+        full_arena_mask,
+        warped_mask,
+        transform_matrix,
+        current_image.size(),
         cv::WARP_INVERSE_MAP | cv::INTER_NEAREST,
         cv::BORDER_CONSTANT,
         cv::Scalar(0));
-    return warpedMask;
+    return warped_mask;
 }
 
-void motionStagePositionLogger(
-    const RecorderConfig &recorderConfig,
-    std::shared_ptr<TrackingControlState> trackingControlState,
-    std::shared_ptr<SaveDirectory> saveDirectory,
-    std::shared_ptr<ProgramState> programState) {
-    const int positionLoggingFreq = recorderConfig.getParameter<int>(
+void motion_stage_position_logger(
+    const RecorderConfig &recorder_config,
+    std::shared_ptr<TrackingControlState> tracking_control_state,
+    std::shared_ptr<SaveDirectory> save_directory,
+    std::shared_ptr<ProgramState> program_state) {
+    const int position_logging_freq = recorder_config.get_parameter<int>(
         "motion_control", "position_logging_frequency_hz");
-    LoopRateLimiter rateLimiter(
-        "Motion stage position logging thread", positionLoggingFreq);
+    LoopRateLimiter rate_limiter(
+        "Motion stage position logging thread", position_logging_freq);
 
-    std::ofstream logFile;
-    bool wasRecordingLastIter = false;
+    std::ofstream log_file;
+    bool was_recording_last_iter = false;
 
-    while (!programState->toQuit.load()) {
-        rateLimiter.startCycle();
+    while (!program_state->to_quit.load()) {
+        rate_limiter.start_cycle();
 
         // Get current position
-        uint64_t startTime = getCurrentTimeMicroseconds();
-        MotionStagePosition currentPosition = getCurrentMotionStagePosition();
+        uint64_t start_time = get_current_time_microseconds();
+        MotionStagePosition current_position =
+            get_current_motion_stage_position();
 
         // Update latest position for other threads
         {
             std::lock_guard<std::mutex> lock(
-                trackingControlState->latestMotionStagePositionMutex);
-            trackingControlState->latestMotionStagePosition = currentPosition;
+                tracking_control_state->latest_motion_stage_position_mutex);
+            tracking_control_state->latest_motion_stage_position =
+                current_position;
         }
 
         // Log position
-        if (programState->isRecording.load()) {
-            if (!wasRecordingLastIter) {
+        if (program_state->is_recording.load()) {
+            if (!was_recording_last_iter) {
                 // This is the start of a new recording. We need to initalize
                 // the log file.
-                logFile =
-                    initializeMotionStageLogFile(saveDirectory->getDirectory());
+                log_file = initialize_motion_stage_log_file(
+                    save_directory->get_directory());
                 spdlog::info(
                     "Stage position log file initialized under {}. "
                     "Stage position logging starts now.",
-                    saveDirectory->getDirectory().c_str());
+                    save_directory->get_directory().c_str());
             }
 
-            logFile << startTime << "," << currentPosition.xPosMm << ","
-                    << currentPosition.yPosMm << "\n";
-            logFile.flush();
+            log_file << start_time << "," << current_position.x_pos_mm << ","
+                     << current_position.y_pos_mm << "\n";
+            log_file.flush();
 
-            wasRecordingLastIter = true;
+            was_recording_last_iter = true;
         } else {
-            if (wasRecordingLastIter) {
-                assert(logFile.is_open());
+            if (was_recording_last_iter) {
+                assert(log_file.is_open());
                 spdlog::info(
                     "Stage position logging stopped. Closing log file.");
-                logFile.close();
+                log_file.close();
             }
-            assert(!logFile.is_open());
-            wasRecordingLastIter = false;
+            assert(!log_file.is_open());
+            was_recording_last_iter = false;
         }
 
-        rateLimiter.sleepUntilNextCycle();
+        rate_limiter.sleep_until_next_cycle();
     }
     spdlog::info("Motion stage position logging thread stopped.");
 }
 
-std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    const cv::Mat &behaviorImage,
-    MotionStagePosition stagePosition,
-    const cv::Mat &activeAreaMaskCurrView,
-    const CalibrationParams &behaviorCamCalibrationParams,
-    const RecorderConfig &recorderConfig) {
-    bool isFound = false;
-    double physicalPosXMm = 0;
-    double physicalPosYMm = 0;
+std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
+    const cv::Mat &behavior_image,
+    MotionStagePosition stage_position,
+    const cv::Mat &active_area_mask_curr_view,
+    const CalibrationParams &behavior_cam_calibration_params,
+    const RecorderConfig &recorder_config) {
+    bool is_found = false;
+    double physical_pos_x_mm = 0;
+    double physical_pos_y_mm = 0;
 
-    if (behaviorImage.empty()) {
+    if (behavior_image.empty()) {
         spdlog::warn(
             "Input behavior image is empty. It's normal if this happens "
             "only one or two times at the start of recording.");
-        return {isFound, physicalPosXMm, physicalPosYMm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
     }
-    if (!behaviorCamCalibrationParams.isDefined) {
+    if (!behavior_cam_calibration_params.is_defined) {
         // Cannot map pixel positions to physical positions because the
         // calibration model has not been defined yet
-        return {isFound, physicalPosXMm, physicalPosYMm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
     }
 
     // Zero out pixels that fall outside the active arena area.
-    cv::Mat blackedOutImage =
-        cv::Mat::zeros(behaviorImage.size(), behaviorImage.type());
-    behaviorImage.copyTo(blackedOutImage, activeAreaMaskCurrView);
+    cv::Mat blacked_out_image =
+        cv::Mat::zeros(behavior_image.size(), behavior_image.type());
+    behavior_image.copyTo(blacked_out_image, active_area_mask_curr_view);
 
-    assert(blackedOutImage.channels() == 1);
+    assert(blacked_out_image.channels() == 1);
 
     // Threshold the image at a cutout of 100
     // spdlog::debug("Thresholding");
-    cv::Mat binaryImage;
+    cv::Mat binary_image;
     cv::threshold(
-        blackedOutImage,
-        binaryImage,
-        imageBinarizeThreshold,
+        blacked_out_image,
+        binary_image,
+        image_binarize_threshold,
         255,
         cv::THRESH_BINARY);
-    if (binaryImage.empty()) {
+    if (binary_image.empty()) {
         spdlog::error("Binary image after thresholding is empty");
-        return {isFound, physicalPosXMm, physicalPosYMm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
     }
-    // display binaryImage for debugging
-    // cv::imshow("binaryImage", binaryImage);
-    if (cv::countNonZero(binaryImage) == 0) {
-        return {isFound, physicalPosXMm, physicalPosYMm};
+    // display binary_image for debugging
+    // cv::imshow("binary_image", binary_image);
+    if (cv::countNonZero(binary_image) == 0) {
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
     }
 
     // Apply morphological opening and closing with a smaller kernel
@@ -524,50 +538,50 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
 
     // spdlog::debug("Applying morphological opening");
-    cv::Mat openedImage;
-    cv::morphologyEx(binaryImage, openedImage, cv::MORPH_OPEN, kernel);
+    cv::Mat opened_image;
+    cv::morphologyEx(binary_image, opened_image, cv::MORPH_OPEN, kernel);
 
     // spdlog::debug("Applying morphological closing");
-    cv::Mat morphedImage;
-    cv::morphologyEx(openedImage, morphedImage, cv::MORPH_CLOSE, kernel);
+    cv::Mat morphed_image;
+    cv::morphologyEx(opened_image, morphed_image, cv::MORPH_CLOSE, kernel);
 
     // spdlog::debug("Finding connected components");
     cv::Mat labels, stats, centroids;
-    int numLabels = cv::connectedComponentsWithStats(
-        morphedImage, labels, stats, centroids);
+    int num_labels = cv::connectedComponentsWithStats(
+        morphed_image, labels, stats, centroids);
 
     // Find the largest connected component (excluding the background which is
     // label 0).
     // spdlog::debug("Finding the largest connected component");
-    int maxArea = 0;
-    int maxLabel = 0;
-    for (int i = 1; i < numLabels; i++) {
+    int max_area = 0;
+    int max_label = 0;
+    for (int i = 1; i < num_labels; i++) {
         int area = stats.at<int>(i, cv::CC_STAT_AREA);
-        if (area > maxArea) {
-            maxArea = area;
-            maxLabel = i;
+        if (area > max_area) {
+            max_area = area;
+            max_label = i;
         }
     }
 
     // If the largest connected component is large enough, this is the fly
 
-    int minFlySizeSqPixels =
-        recorderConfig.getParameter<int>("tracking", "min_fly_size_sq_pixels");
-    if (maxLabel > 0 && maxArea > minFlySizeSqPixels) {
+    int min_fly_size_sq_pixels = recorder_config.get_parameter<int>(
+        "tracking", "min_fly_size_sq_pixels");
+    if (max_label > 0 && max_area > min_fly_size_sq_pixels) {
         // spdlog::debug(
         //     "Getting the center of mass of the largest connected component");
-        double centerOfMassCol = centroids.at<double>(maxLabel, 0); // x
-        double centerOfMassRow = centroids.at<double>(maxLabel, 1); // y
+        double center_of_mass_col = centroids.at<double>(max_label, 0); // x
+        double center_of_mass_row = centroids.at<double>(max_label, 1); // y
 
-        auto [x, y] =
-            behaviorCamCalibrationParams.stagePosAndPixelPosToPhysicalPos(
-                stagePosition.xPosMm,
-                stagePosition.yPosMm,
-                centerOfMassRow,
-                centerOfMassCol);
-        isFound = true;
-        physicalPosXMm = x;
-        physicalPosYMm = y;
+        auto [x, y] = behavior_cam_calibration_params
+                          .stage_pos_and_pixel_pos_to_physical_pos(
+                              stage_position.x_pos_mm,
+                              stage_position.y_pos_mm,
+                              center_of_mass_row,
+                              center_of_mass_col);
+        is_found = true;
+        physical_pos_x_mm = x;
+        physical_pos_y_mm = y;
 
         // spdlog::debug(
         //     "Fly found at pixel ({:.2f}, {:.2f}), physical ({:.2f}, {:.2f})",
@@ -575,115 +589,115 @@ std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
         // );
     }
 
-    return std::make_tuple(isFound, physicalPosXMm, physicalPosYMm);
+    return std::make_tuple(is_found, physical_pos_x_mm, physical_pos_y_mm);
 }
 
-MotionStagePosition getCurrentMotionStagePosition() {
-    size_t myThreadIdHash = getMyThreadIdHash();
+MotionStagePosition get_current_motion_stage_position() {
+    size_t my_thread_id_hash = get_my_thread_id_hash();
 
     // Push request
-    MotionStageRequest myRequest;
-    myRequest.clientIdHash = myThreadIdHash;
-    myRequest.requestType = GET_CURRENT_POSITION;
+    MotionStageRequest my_request;
+    my_request.client_id_hash = my_thread_id_hash;
+    my_request.request_type = get_current_position;
     {
-        std::lock_guard<std::mutex> lock(requestMutex);
-        requestQueue.push(myRequest);
+        std::lock_guard<std::mutex> lock(request_mutex);
+        request_queue.push(my_request);
     }
-    requestCondVar.notify_one();
+    request_cond_var.notify_one();
 
     // Wait for response
-    MotionStageResponse myResponse;
+    MotionStageResponse my_response;
     {
-        std::unique_lock<std::mutex> lock(responseMutex);
-        responseCondVar.wait(lock, [myThreadIdHash] {
-            return responseMap.find(myThreadIdHash) != responseMap.end();
+        std::unique_lock<std::mutex> lock(response_mutex);
+        response_cond_var.wait(lock, [my_thread_id_hash] {
+            return response_map.find(my_thread_id_hash) != response_map.end();
         });
-        myResponse = responseMap[myThreadIdHash];
-        responseMap.erase(myThreadIdHash);
+        my_response = response_map[my_thread_id_hash];
+        response_map.erase(my_thread_id_hash);
     }
-    return myResponse.position;
+    return my_response.position;
 }
 
-void setTargetMotionStagePosition(
-    MotionStagePosition targetPosition, float velocity) {
-    if (targetPosition.positionType == ABSOLUTE) {
-        double clampedX =
-            std::clamp(targetPosition.xPosMm, softwareXMinMm, softwareXMaxMm);
-        double clampedY =
-            std::clamp(targetPosition.yPosMm, softwareYMinMm, softwareYMaxMm);
-        if (clampedX != targetPosition.xPosMm ||
-            clampedY != targetPosition.yPosMm) {
+void set_target_motion_stage_position(
+    MotionStagePosition target_position, float velocity) {
+    if (target_position.position_type == absolute) {
+        double clamped_x = std::clamp(
+            target_position.x_pos_mm, software_x_min_mm, software_x_max_mm);
+        double clamped_y = std::clamp(
+            target_position.y_pos_mm, software_y_min_mm, software_y_max_mm);
+        if (clamped_x != target_position.x_pos_mm ||
+            clamped_y != target_position.y_pos_mm) {
             spdlog::warn(
                 "Target stage position ({:.3f}, {:.3f}) mm clamped to "
                 "({:.3f}, {:.3f}) mm by software motion stage limits "
                 "X=[{:.3f}, {:.3f}], Y=[{:.3f}, {:.3f}].",
-                targetPosition.xPosMm,
-                targetPosition.yPosMm,
-                clampedX,
-                clampedY,
-                softwareXMinMm,
-                softwareXMaxMm,
-                softwareYMinMm,
-                softwareYMaxMm);
+                target_position.x_pos_mm,
+                target_position.y_pos_mm,
+                clamped_x,
+                clamped_y,
+                software_x_min_mm,
+                software_x_max_mm,
+                software_y_min_mm,
+                software_y_max_mm);
         }
-        targetPosition.xPosMm = clampedX;
-        targetPosition.yPosMm = clampedY;
+        target_position.x_pos_mm = clamped_x;
+        target_position.y_pos_mm = clamped_y;
     }
 
-    size_t myThreadIdHash = getMyThreadIdHash();
+    size_t my_thread_id_hash = get_my_thread_id_hash();
 
     // Push request
-    MotionStageRequest myRequest;
-    myRequest.clientIdHash = myThreadIdHash;
-    myRequest.requestType = SET_TARGET_POSITION;
-    myRequest.position = targetPosition;
-    myRequest.velocity = velocity;
+    MotionStageRequest my_request;
+    my_request.client_id_hash = my_thread_id_hash;
+    my_request.request_type = set_target_position;
+    my_request.position = target_position;
+    my_request.velocity = velocity;
     {
-        std::lock_guard<std::mutex> lock(requestMutex);
-        requestQueue.push(myRequest);
+        std::lock_guard<std::mutex> lock(request_mutex);
+        request_queue.push(my_request);
     }
-    requestCondVar.notify_one();
+    request_cond_var.notify_one();
 
     // Wait for response
-    MotionStageResponse myResponse;
+    MotionStageResponse my_response;
     {
-        std::unique_lock<std::mutex> lock(responseMutex);
-        responseCondVar.wait(lock, [myThreadIdHash] {
-            return responseMap.find(myThreadIdHash) != responseMap.end();
+        std::unique_lock<std::mutex> lock(response_mutex);
+        response_cond_var.wait(lock, [my_thread_id_hash] {
+            return response_map.find(my_thread_id_hash) != response_map.end();
         });
-        myResponse = responseMap[myThreadIdHash];
-        responseMap.erase(myThreadIdHash);
+        my_response = response_map[my_thread_id_hash];
+        response_map.erase(my_thread_id_hash);
     }
-    if (!myResponse.setSuccess) {
+    if (!my_response.set_success) {
         spdlog::critical("Failed to set target motion stage position.");
         throw std::runtime_error("Failed to set target motion stage position.");
     }
 }
 
-void waitUntilMotionStageIdleSync() {
-    size_t myThreadIdHash = getMyThreadIdHash();
+void wait_until_motion_stage_idle_sync() {
+    size_t my_thread_id_hash = get_my_thread_id_hash();
 
     // Push request
-    MotionStageRequest myRequest;
-    myRequest.clientIdHash = myThreadIdHash;
-    myRequest.requestType = WAIT_UNTIL_IDLE;
+    MotionStageRequest my_request;
+    my_request.client_id_hash = my_thread_id_hash;
+    my_request.request_type = wait_until_idle;
     {
-        std::lock_guard<std::mutex> lock(requestMutex);
-        requestQueue.push(myRequest);
+        std::lock_guard<std::mutex> lock(request_mutex);
+        request_queue.push(my_request);
     }
-    requestCondVar.notify_one();
+    request_cond_var.notify_one();
 
     // Wait for response
-    MotionStageResponse myResponse;
+    MotionStageResponse my_response;
     {
-        std::unique_lock<std::mutex> lock(responseMutex);
-        responseCondVar.wait(lock, [myThreadIdHash] {
-            return responseMap.find(myThreadIdHash) != responseMap.end();
+        std::unique_lock<std::mutex> lock(response_mutex);
+        response_cond_var.wait(lock, [my_thread_id_hash] {
+            return response_map.find(my_thread_id_hash) != response_map.end();
         });
-        myResponse = responseMap[myThreadIdHash];
-        responseMap.erase(myThreadIdHash);
+        my_response = response_map[my_thread_id_hash];
+        response_map.erase(my_thread_id_hash);
     }
-    if (!myResponse.isIdle) {
+    if (!my_response.is_idle) {
         spdlog::critical(
             "Motion stage request handler thread responed to WAIT_UNTIL_IDLE "
             "request, but the stages are not idle.");
@@ -702,91 +716,92 @@ void waitUntilMotionStageIdleSync() {
  * requests to read form / write to the hardware, so other threads who need to
  * interface with the motion stages can still do it.
  */
-void waitUntilMotionStageIdleAsync() {
-    while (!checkIfMotionStageIdle()) {
+void wait_until_motion_stage_idle_async() {
+    while (!check_if_motion_stage_idle()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 }
 
-bool checkIfMotionStageIdle() {
-    size_t myThreadIdHash = getMyThreadIdHash();
+bool check_if_motion_stage_idle() {
+    size_t my_thread_id_hash = get_my_thread_id_hash();
 
     // Push request
-    MotionStageRequest myRequest;
-    myRequest.clientIdHash = myThreadIdHash;
-    myRequest.requestType = CHECK_IF_IDLE;
+    MotionStageRequest my_request;
+    my_request.client_id_hash = my_thread_id_hash;
+    my_request.request_type = check_if_idle;
     {
-        std::lock_guard<std::mutex> lock(requestMutex);
-        requestQueue.push(myRequest);
+        std::lock_guard<std::mutex> lock(request_mutex);
+        request_queue.push(my_request);
     }
-    requestCondVar.notify_one();
+    request_cond_var.notify_one();
 
     // Wait for response
-    MotionStageResponse myResponse;
+    MotionStageResponse my_response;
     {
-        std::unique_lock<std::mutex> lock(responseMutex);
-        responseCondVar.wait(lock, [myThreadIdHash] {
-            return responseMap.find(myThreadIdHash) != responseMap.end();
+        std::unique_lock<std::mutex> lock(response_mutex);
+        response_cond_var.wait(lock, [my_thread_id_hash] {
+            return response_map.find(my_thread_id_hash) != response_map.end();
         });
-        myResponse = responseMap[myThreadIdHash];
-        responseMap.erase(myThreadIdHash);
+        my_response = response_map[my_thread_id_hash];
+        response_map.erase(my_thread_id_hash);
     }
-    return myResponse.isIdle;
+    return my_response.is_idle;
 }
 
-void startHomingMotionStage() {
-    size_t myThreadIdHash = getMyThreadIdHash();
+void start_homing_motion_stage() {
+    size_t my_thread_id_hash = get_my_thread_id_hash();
 
     // Push request
-    MotionStageRequest myRequest;
-    myRequest.clientIdHash = myThreadIdHash;
-    myRequest.requestType = START_HOMING;
+    MotionStageRequest my_request;
+    my_request.client_id_hash = my_thread_id_hash;
+    my_request.request_type = start_homing;
     {
-        std::lock_guard<std::mutex> lock(requestMutex);
-        requestQueue.push(myRequest);
+        std::lock_guard<std::mutex> lock(request_mutex);
+        request_queue.push(my_request);
     }
-    requestCondVar.notify_one();
+    request_cond_var.notify_one();
 
     // Wait for response
-    MotionStageResponse myResponse;
+    MotionStageResponse my_response;
     {
-        std::unique_lock<std::mutex> lock(responseMutex);
-        responseCondVar.wait(lock, [myThreadIdHash] {
-            return responseMap.find(myThreadIdHash) != responseMap.end();
+        std::unique_lock<std::mutex> lock(response_mutex);
+        response_cond_var.wait(lock, [my_thread_id_hash] {
+            return response_map.find(my_thread_id_hash) != response_map.end();
         });
-        myResponse = responseMap[myThreadIdHash];
-        responseMap.erase(myThreadIdHash);
+        my_response = response_map[my_thread_id_hash];
+        response_map.erase(my_thread_id_hash);
     }
-    if (!myResponse.setSuccess) {
+    if (!my_response.set_success) {
         spdlog::critical("Failed to start homing motion stage.");
         throw std::runtime_error("Failed to start homing motion stage.");
     }
 }
 
-void setMotionStageLimits(
-    double xMinMm, double xMaxMm, double yMinMm, double yMaxMm) {
-    softwareXMinMm = xMinMm;
-    softwareXMaxMm = xMaxMm;
-    softwareYMinMm = yMinMm;
-    softwareYMaxMm = yMaxMm;
+void set_motion_stage_limits(
+    double x_min_mm, double x_max_mm, double y_min_mm, double y_max_mm) {
+    software_x_min_mm = x_min_mm;
+    software_x_max_mm = x_max_mm;
+    software_y_min_mm = y_min_mm;
+    software_y_max_mm = y_max_mm;
     spdlog::info(
         "Software motion stage limits set: X=[{:.3f}, {:.3f}], "
         "Y=[{:.3f}, {:.3f}] mm",
-        xMinMm,
-        xMaxMm,
-        yMinMm,
-        yMaxMm);
+        x_min_mm,
+        x_max_mm,
+        y_min_mm,
+        y_max_mm);
 }
 
-void stopMotionControlRequestHandler(
-    std::shared_ptr<ProgramState> programState) {
-    if (!programState->toQuit.load()) {
-        spdlog::critical("stopMotionControlRequestHandler() called but toQuit "
-                         "is not set to true. This shouldn't happen.");
+void stop_motion_control_request_handler(
+    std::shared_ptr<ProgramState> program_state) {
+    if (!program_state->to_quit.load()) {
+        spdlog::critical(
+            "stop_motion_control_request_handler() called but to_quit "
+            "is not set to true. This shouldn't happen.");
         throw std::runtime_error(
-            "stopMotionControlRequestHandler() called but toQuit "
+            "stop_motion_control_request_handler() called but to_quit "
             "is not set to true. This shouldn't happen.");
     } else {
-        requestCondVar.notify_one();
+        request_cond_var.notify_one();
     }
 }

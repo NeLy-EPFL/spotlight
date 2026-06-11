@@ -22,24 +22,25 @@
  * For each row, the x is:
  *   - For "Status":
  *     - "PAUSED" when the pause override is on (via physical on/off switch)
- *     - "STREAMING" after every command where recording/isRecording is false
- *     - "OPEN RECORDING" after every command where recording/isRecording is
- *       true and recording/opSequence is empty
- *     - "SCHEDULED RECORDING" after every command where recording/isRecording
- *       is true and recording/opSequence is nonempty
+ *     - "STREAMING" after every command where recording/is_recording is false
+ *     - "OPEN RECORDING" after every command where recording/is_recording is
+ *       true and recording/op_sequence is empty
+ *     - "SCHEDULED RECORDING" after every command where recording/is_recording
+ *       is true and recording/op_sequence is nonempty
  *     - "ERROR" if the controller is in an error state
  *     - "RESETTING" briefly, after a RESET command, just before the controller
  *       reboots (all other lines blank)
- *   - For "Beh FPS": the behFrameRate parameter of the most recent RUN
+ *   - For "Beh FPS": the beh_frame_rate parameter of the most recent RUN
  *     command
- *   - For "Beh-mus ratio": the behMuscSyncRatio parameter of the most recent RUN
- *     command, followed by ":1"; or "N/A" when that command had enableMuscle
- *     false (muscle imaging disabled, so the ratio is meaningless)
- *   - For "Beh exp": the behExpTime parameter of the most recent RUN
+ *   - For "Beh-mus ratio": the beh_musc_sync_ratio parameter of the most recent
+ *     RUN command, followed by ":1"; or "N/A" when that command had
+ *     enable_muscle false (muscle imaging disabled, so the ratio is
+ * meaningless)
+ *   - For "Beh exp": the beh_exp_time parameter of the most recent RUN
  *     command, followed by " us"
- *   - For "Mus exp": the muscEffExpTime parameter of the most recent
+ *   - For "Mus exp": the musc_eff_exp_time parameter of the most recent
  *     RUN command, followed by " us"; or "OFF" when that command had
- *     enableMuscle false (muscle imaging disabled)
+ *     enable_muscle false (muscle imaging disabled)
  * The Status line should occupy the top 16 pixels (which are in yellow), and
  * the rest should occupy the bottom 48 pixels (which are in blue).
  *
@@ -58,8 +59,8 @@ class StatusDisplay {
         initializing,
         paused,
         streaming,
-        openRecording,
-        scheduledRecording,
+        open_recording,
+        scheduled_recording,
         error,
         resetting,
     };
@@ -75,20 +76,21 @@ class StatusDisplay {
 
     // Per-line value setters. Each only updates the cached text for its line;
     // call render() afterwards to push the changes to the panel.
-    void setStatus(Status status);
-    void setBehFrameRate(unsigned long fps);
-    void setBehMuscSyncRatio(unsigned long ratio);
+    void set_status(Status status);
+    void set_beh_frame_rate(unsigned long fps);
+    void set_beh_musc_sync_ratio(unsigned long ratio);
     /** Show "N/A" on the "Beh-mus ratio" line (muscle imaging disabled). */
-    void setBehMuscRatioNA();
-    void setBehExpTime(unsigned long us);
-    void setMuscExpTime(unsigned long us);
+    void set_beh_musc_ratio_na();
+    void set_beh_exp_time(unsigned long us);
+    void set_musc_exp_time(unsigned long us);
     /** Show "OFF" on the "Mus exp" line (muscle imaging disabled). */
-    void setMuscExpOff();
+    void set_musc_exp_off();
 
     /**
      * Blank every line (the status line and all parameter lines). Only touches
-     * the in-memory cache; call render() to push the cleared state to the panel.
-     * Used on a software reset, where the status is then set to "RESETTING".
+     * the in-memory cache; call render() to push the cleared state to the
+     * panel. Used on a software reset, where the status is then set to
+     * "RESETTING".
      */
     void clear();
 
@@ -96,39 +98,40 @@ class StatusDisplay {
     void render();
 
   private:
-    // Lines in top-to-bottom display order. numLines doubles as the line count.
+    // Lines in top-to-bottom display order. num_lines doubles as the line
+    // count.
     enum Line {
-        statusLine,
-        behFrameRateLine,
-        behMuscRatioLine,
-        behExpTimeLine,
-        muscExpTimeLine,
-        numLines,
+        status_line,
+        beh_frame_rate_line,
+        beh_musc_ratio_line,
+        beh_exp_time_line,
+        musc_exp_time_line,
+        num_lines,
     };
 
-    static constexpr uint8_t screenWidth = 128;
-    static constexpr uint8_t screenHeight = 64;
-    static constexpr int8_t resetPin = -1;      // no dedicated reset pin
-    static constexpr uint8_t i2cAddress = 0x3C; // Midas MDOB128064WV-YBI
-    static constexpr uint8_t charHeight = 8; // default GFX font at size 1
+    static constexpr uint8_t screen_width = 128;
+    static constexpr uint8_t screen_height = 64;
+    static constexpr int8_t reset_pin = -1;      // no dedicated reset pin
+    static constexpr uint8_t i2c_address = 0x3C; // Midas MDOB128064WV-YBI
+    static constexpr uint8_t char_height = 8;    // default GFX font at size 1
     // The panel is physically two-tone: the top 16 px are yellow and the
     // bottom 48 px are blue. The Status line sits alone in the yellow band
     // (vertically centred); the four RUN-parameter lines share the blue band,
     // spaced at a 12 px pitch starting 2 px below the seam (16 + 2 + 3 * 12 =
     // 54, leaving the 8 px font room within the 64 px panel).
-    static constexpr uint8_t statusBandHeight = 16;
-    static constexpr uint8_t rowHeight = 12;
-    static constexpr uint8_t blueTopMargin = 2;
-    static constexpr size_t valueBufferSize = 24;
+    static constexpr uint8_t status_band_height = 16;
+    static constexpr uint8_t row_height = 12;
+    static constexpr uint8_t blue_top_margin = 2;
+    static constexpr size_t value_buffer_size = 24;
 
     // Fixed labels, indexed by Line.
-    static const char *const labels_[numLines];
+    static const char *const labels_[num_lines];
 
     Adafruit_SSD1306 display_;
-    char values_[numLines][valueBufferSize];
+    char values_[num_lines][value_buffer_size];
 
     // Copy text into the cache for one line (truncating if necessary).
-    void setValue(Line line, const char *text);
+    void set_value(Line line, const char *text);
     // Draw one label/value row at its fixed vertical position.
-    void drawRow(uint8_t index);
+    void draw_row(uint8_t index);
 };

@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-DeviceIO &DeviceIO::getInstance() {
+DeviceIO &DeviceIO::get_instance() {
     static DeviceIO instance;
     return instance;
 }
@@ -13,150 +13,150 @@ DeviceIO::DeviceIO() {
     // status line is the only input (its level reports the common time). It is
     // read with an internal pull-down so that when the PCO Status Expos output
     // is undriven (camera off/booting, output disabled, or cable unplugged) the
-    // line reads LOW ("no common time"): the controller simply waits rather than
-    // seeing spurious onsets. The PCO output is push-pull 3.3 V LVTTL when
+    // line reads LOW ("no common time"): the controller simply waits rather
+    // than seeing spurious onsets. The PCO output is push-pull 3.3 V LVTTL when
     // active, so the weak pull-down does not fight it.
-    pinMode(config::behCamPin, OUTPUT);
-    pinMode(config::irLEDPin, OUTPUT);
-    pinMode(config::muscCamTriggerPin, OUTPUT);
-    pinMode(config::muscCamStatusPin, INPUT_PULLDOWN);
-    pinMode(config::blueLEDPin, OUTPUT);
-    pinMode(config::optoCh2Pin, OUTPUT);
-    pinMode(config::optoCh3Pin, OUTPUT);
+    pinMode(config::beh_cam_pin, OUTPUT);
+    pinMode(config::ir_led_pin, OUTPUT);
+    pinMode(config::musc_cam_trigger_pin, OUTPUT);
+    pinMode(config::musc_cam_status_pin, INPUT_PULLDOWN);
+    pinMode(config::blue_led_pin, OUTPUT);
+    pinMode(config::opto_ch2_pin, OUTPUT);
+    pinMode(config::opto_ch3_pin, OUTPUT);
 
     reset();
 }
 
 void DeviceIO::reset() {
-    isBehCamTriggerOn_ = true;
-    stopBehCamTrigger();
+    is_beh_cam_trigger_on_ = true;
+    stop_beh_cam_trigger();
 
-    isBehLEDOn_ = true;
-    turnOffBehLED();
+    is_beh_led_on_ = true;
+    turn_off_beh_led();
 
-    isMuscCamTriggerOn_ = true;
-    stopMuscCamTrigger();
+    is_musc_cam_trigger_on_ = true;
+    stop_musc_cam_trigger();
 
-    isMuscLEDOn_ = true;
-    turnOffMuscLED();
+    is_musc_led_on_ = true;
+    turn_off_musc_led();
 
-    isOptoCh2On_ = true;
-    isOptoCh3On_ = true;
-    turnOffOptoCh(OptoChannel::ALL);
+    is_opto_ch2_on_ = true;
+    is_opto_ch3_on_ = true;
+    turn_off_opto_ch(OptoChannel::all);
 }
 
-void DeviceIO::startBehCamTrigger() {
-    if (!isBehCamTriggerOn_) {
-        digitalWrite(config::behCamPin, HIGH);
-        isBehCamTriggerOn_ = true;
+void DeviceIO::start_beh_cam_trigger() {
+    if (!is_beh_cam_trigger_on_) {
+        digitalWrite(config::beh_cam_pin, HIGH);
+        is_beh_cam_trigger_on_ = true;
     }
 }
 
-void DeviceIO::stopBehCamTrigger() {
-    if (isBehCamTriggerOn_) {
-        digitalWrite(config::behCamPin, LOW);
-        isBehCamTriggerOn_ = false;
+void DeviceIO::stop_beh_cam_trigger() {
+    if (is_beh_cam_trigger_on_) {
+        digitalWrite(config::beh_cam_pin, LOW);
+        is_beh_cam_trigger_on_ = false;
     }
 }
 
-void DeviceIO::turnOnBehLED() {
-    if (!isBehLEDOn_) {
-        digitalWrite(config::irLEDPin, HIGH);
-        isBehLEDOn_ = true;
+void DeviceIO::turn_on_beh_led() {
+    if (!is_beh_led_on_) {
+        digitalWrite(config::ir_led_pin, HIGH);
+        is_beh_led_on_ = true;
     }
 }
 
-void DeviceIO::turnOffBehLED() {
-    if (isBehLEDOn_) {
-        digitalWrite(config::irLEDPin, LOW);
-        isBehLEDOn_ = false;
+void DeviceIO::turn_off_beh_led() {
+    if (is_beh_led_on_) {
+        digitalWrite(config::ir_led_pin, LOW);
+        is_beh_led_on_ = false;
     }
 }
 
-void DeviceIO::startMuscCamTrigger() {
-    if (!isMuscCamTriggerOn_) {
-        digitalWrite(config::muscCamTriggerPin, HIGH);
-        isMuscCamTriggerOn_ = true;
+void DeviceIO::start_musc_cam_trigger() {
+    if (!is_musc_cam_trigger_on_) {
+        digitalWrite(config::musc_cam_trigger_pin, HIGH);
+        is_musc_cam_trigger_on_ = true;
     }
 }
 
-void DeviceIO::stopMuscCamTrigger() {
-    if (isMuscCamTriggerOn_) {
-        digitalWrite(config::muscCamTriggerPin, LOW);
-        isMuscCamTriggerOn_ = false;
+void DeviceIO::stop_musc_cam_trigger() {
+    if (is_musc_cam_trigger_on_) {
+        digitalWrite(config::musc_cam_trigger_pin, LOW);
+        is_musc_cam_trigger_on_ = false;
     }
 }
 
-bool DeviceIO::isMuscCommonTime() {
-    return digitalRead(config::muscCamStatusPin) == HIGH;
+bool DeviceIO::is_musc_common_time() {
+    return digitalRead(config::musc_cam_status_pin) == HIGH;
 }
 
-void DeviceIO::turnOnMuscLED() {
-    if (!isMuscLEDOn_) {
-        digitalWrite(config::blueLEDPin, HIGH);
-        isMuscLEDOn_ = true;
+void DeviceIO::turn_on_musc_led() {
+    if (!is_musc_led_on_) {
+        digitalWrite(config::blue_led_pin, HIGH);
+        is_musc_led_on_ = true;
     }
 }
 
-void DeviceIO::turnOffMuscLED() {
-    if (isMuscLEDOn_) {
-        digitalWrite(config::blueLEDPin, LOW);
-        isMuscLEDOn_ = false;
+void DeviceIO::turn_off_musc_led() {
+    if (is_musc_led_on_) {
+        digitalWrite(config::blue_led_pin, LOW);
+        is_musc_led_on_ = false;
     }
 }
 
-bool DeviceIO::turnOnOptoCh(OptoChannel channel) {
+bool DeviceIO::turn_on_opto_ch(OptoChannel channel) {
     switch (channel) {
-    case OptoChannel::CH2:
-        if (!isOptoCh2On_) {
-            digitalWrite(config::optoCh2Pin, HIGH);
-            isOptoCh2On_ = true;
+    case OptoChannel::ch2:
+        if (!is_opto_ch2_on_) {
+            digitalWrite(config::opto_ch2_pin, HIGH);
+            is_opto_ch2_on_ = true;
         }
         return true;
-    case OptoChannel::CH3:
-        if (!isOptoCh3On_) {
-            digitalWrite(config::optoCh3Pin, HIGH);
-            isOptoCh3On_ = true;
+    case OptoChannel::ch3:
+        if (!is_opto_ch3_on_) {
+            digitalWrite(config::opto_ch3_pin, HIGH);
+            is_opto_ch3_on_ = true;
         }
         return true;
-    case OptoChannel::ALL:
-        turnOnOptoCh(OptoChannel::CH2);
-        turnOnOptoCh(OptoChannel::CH3);
+    case OptoChannel::all:
+        turn_on_opto_ch(OptoChannel::ch2);
+        turn_on_opto_ch(OptoChannel::ch3);
         return true;
     }
     return false;
 }
 
-bool DeviceIO::turnOffOptoCh(OptoChannel channel) {
+bool DeviceIO::turn_off_opto_ch(OptoChannel channel) {
     switch (channel) {
-    case OptoChannel::CH2:
-        if (isOptoCh2On_) {
-            digitalWrite(config::optoCh2Pin, LOW);
-            isOptoCh2On_ = false;
+    case OptoChannel::ch2:
+        if (is_opto_ch2_on_) {
+            digitalWrite(config::opto_ch2_pin, LOW);
+            is_opto_ch2_on_ = false;
         }
         return true;
-    case OptoChannel::CH3:
-        if (isOptoCh3On_) {
-            digitalWrite(config::optoCh3Pin, LOW);
-            isOptoCh3On_ = false;
+    case OptoChannel::ch3:
+        if (is_opto_ch3_on_) {
+            digitalWrite(config::opto_ch3_pin, LOW);
+            is_opto_ch3_on_ = false;
         }
         return true;
-    case OptoChannel::ALL:
-        turnOffOptoCh(OptoChannel::CH2);
-        turnOffOptoCh(OptoChannel::CH3);
+    case OptoChannel::all:
+        turn_off_opto_ch(OptoChannel::ch2);
+        turn_off_opto_ch(OptoChannel::ch3);
         return true;
     }
     return false;
 }
 
-bool DeviceIO::isOptoChOn(OptoChannel channel) {
+bool DeviceIO::is_opto_ch_on(OptoChannel channel) {
     switch (channel) {
-    case OptoChannel::CH2:
-        return isOptoCh2On_;
-    case OptoChannel::CH3:
-        return isOptoCh3On_;
-    case OptoChannel::ALL:
-        return isOptoCh2On_ && isOptoCh3On_;
+    case OptoChannel::ch2:
+        return is_opto_ch2_on_;
+    case OptoChannel::ch3:
+        return is_opto_ch3_on_;
+    case OptoChannel::all:
+        return is_opto_ch2_on_ && is_opto_ch3_on_;
     }
     return false;
 }

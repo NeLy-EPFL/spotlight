@@ -18,29 +18,29 @@
 class BehaviorCamera {
   public:
     BehaviorCamera(
-        unsigned int imageWidth,
-        unsigned int imageHeight,
-        unsigned int xOffset,
-        unsigned int yOffset,
-        const std::string &ioLine);
+        unsigned int image_width,
+        unsigned int image_height,
+        unsigned int x_offset,
+        unsigned int y_offset,
+        const std::string &io_line);
     ~BehaviorCamera();
-    void start(size_t bufferSize = 40);
+    void start(size_t buffer_size = 40);
     void stop();
-    FrameData waitForOneFrame();
-    bool isReady() const;
+    FrameData wait_for_one_frame();
+    bool is_ready() const;
 
   private:
-    Euresys::EGenTL genTL_;
+    Euresys::EGenTL gen_tl_;
     Euresys::EGrabberCameraInfo camera_;
-    std::unique_ptr<Euresys::EGrabber<>> frameGrabberPtr_;
-    std::unique_ptr<Euresys::FormatConverter> formatConverterPtr_;
-    int imageWidth_;
-    int imageHeight_;
-    int xOffset_;
-    int yOffset_;
-    std::string ioLine_;
-    int currentFPS_;
-    std::atomic<bool> cameraReadyFlag_{false};
+    std::unique_ptr<Euresys::EGrabber<>> frame_grabber_ptr_;
+    std::unique_ptr<Euresys::FormatConverter> format_converter_ptr_;
+    int image_width_;
+    int image_height_;
+    int x_offset_;
+    int y_offset_;
+    std::string io_line_;
+    int current_fps_;
+    std::atomic<bool> camera_ready_flag_{false};
 
     // Apply the full GenICam configuration to the grabber and camera: the ROI
     // and external-trigger setup plus the base configuration ported from
@@ -48,14 +48,16 @@ class BehaviorCamera {
     void configure();
 
     template <typename Module>
-    bool setIntegerAndCheck(const std::string &key, int value);
+    bool set_integer_and_check(const std::string &key, int value);
 
     template <typename Module>
-    bool setStringAndCheck(const std::string &key, const std::string &value);
+    bool set_string_and_check(const std::string &key, const std::string &value);
 };
 
-int roundToNearestValidBehaviorCamDimension(int value);
+int round_to_nearest_valid_behavior_cam_dimension(int value);
 
-std::tuple<int, int> getCenteredOffsets(
-    int imageWidth, int imageHeight, int fullFrameWidth, int fullFrameHeight);
-
+std::tuple<int, int> get_centered_offsets(
+    int image_width,
+    int image_height,
+    int full_frame_width,
+    int full_frame_height);

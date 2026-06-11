@@ -54,7 +54,7 @@ The muscle (PCO) camera runs as a **separate process**:
   variable).
 - `MuscleCamera` (`src/peripherals/muscle_camera.cc`) `fork()`+`execl()`s
   `pco-camera-server` on construction and maps the shared-memory regions.
-  `waitForOneFrame()` blocks on the shared condition variable and returns the
+  `wait_for_one_frame()` blocks on the shared condition variable and returns the
   latest frame; `stop()` sends `SIGTERM` to the server; the destructor waits for
   it to exit.
 
@@ -62,7 +62,7 @@ The separate process keeps the PCO SDK (and the `PCO_LINUX` Windows-compat shims
 it injects into the global namespace) completely isolated from the Qt/Euresys
 stack, and means a crash in the PCO SDK cannot destabilize the GUI process.
 
-On shutdown, `quitProgram()` calls `stop()` on both cameras (releasing the Euresys
+On shutdown, `quit_program()` calls `stop()` on both cameras (releasing the Euresys
 grabber and terminating the PCO server) before calling `std::exit()`.
 
 ## Trigger microcontroller
