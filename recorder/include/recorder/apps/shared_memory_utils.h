@@ -10,7 +10,10 @@
 
 namespace pco_shared_memory {
 struct FrameMetadata {
-    unsigned int frame_count = 0;
+    // Index of the published frame, counting real frames from 0. The server
+    // sets this to -1 before the first frame so the consumer can tell "no frame
+    // published yet" apart from "frame 0" (signed, matching FrameData::frame_id).
+    long frame_count = -1;
     uint64_t acquisition_time = 0;
 };
 

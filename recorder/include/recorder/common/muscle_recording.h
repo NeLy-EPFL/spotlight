@@ -15,7 +15,10 @@
 #include "recorder/peripherals/muscle_camera.h"
 
 struct MuscleRecordingState {
-    std::shared_ptr<MuscleCamera> muscle_camera = nullptr;
+    // Published by the acquirer thread once the camera is constructed and read
+    // by several other threads (GUI, init wait loop, shutdown). atomic so that
+    // publication and reads are not a data race; load()/store() it.
+    std::atomic<std::shared_ptr<MuscleCamera>> muscle_camera;
     std::queue<FrameData> muscle_image_queue;
     std::mutex muscle_image_queue_mutex;
     std::condition_variable muscle_image_queue_cond_var;

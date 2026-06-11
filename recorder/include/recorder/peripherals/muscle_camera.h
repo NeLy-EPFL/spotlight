@@ -111,7 +111,9 @@ class MuscleCamera {
     pthread_mutex_t *mutex_ptr_;
     pthread_cond_t *cond_var_ptr_;
     const RecorderConfig &recorder_config_;
-    unsigned int last_frame_count_;
+    // Index of the last frame returned, or -1 before any has been returned
+    // (matches the server's FrameMetadata::frame_count sentinel).
+    long last_frame_count_;
 
     bool is_roi_valid() const;
 };

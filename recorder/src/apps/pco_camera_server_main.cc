@@ -260,6 +260,12 @@ void serve_frames(
     // Set default exposure time and initial frame count
     spdlog::info("Setting default exposure time in shared memory");
     *shutter_open_time_ptr = default_shutter_open_time_us;
+    // Mark "no frame published yet" before the (slow) camera setup below, so the
+    // consumer (MuscleCamera::wait_for_one_frame) never mistakes the
+    // zero-filled buffer for frame 0. Done here, right after the region is
+    // created, so it is in place well before the consumer maps it. Real frames
+    // are numbered from 0.
+    frame_metadata_ptr->frame_count = -1;
 
     // Initialize PCO camera
     spdlog::info("Setting up PCO camera");
@@ -280,7 +286,7 @@ void serve_frames(
     pco::Image pco_image;
     cv::Mat cv_image;
     bool is_first_frame = true;
-    unsigned int frame_count = 0;
+    long frame_count = 0;
 
     // Start camera acquisition
     spdlog::info("Starting PCO camera acquisition");

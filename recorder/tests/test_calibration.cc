@@ -137,7 +137,10 @@ TEST(CalibrationParams, MapsStageAndPixelToPhysical) {
     ASSERT_TRUE(params.is_defined);
 
     auto [px, py] = params.stage_pos_and_pixel_pos_to_physical_pos(
-        /*stageX=*/5, /*stageY=*/7, /*row=*/40, /*col=*/60);
+        5, // stage_x
+        7, // stage_y
+        40, // row
+        60); // col
     EXPECT_DOUBLE_EQ(px, 5 + 0.5 * 60 + 100); // 135
     EXPECT_DOUBLE_EQ(py, 7 + 0.5 * 40 + 200); // 227
 }

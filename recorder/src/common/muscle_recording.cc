@@ -106,7 +106,7 @@ void muscle_image_acquirer(
         "muscle_camera", "rolling_shutter_line_time_us");
     double sensor_readout_time_us = recorder_config.get_parameter<double>(
         "muscle_camera", "sensor_readout_time_us");
-    muscle_recording_state->muscle_camera = std::make_shared<MuscleCamera>(
+    auto muscle_camera = std::make_shared<MuscleCamera>(
         image_width,
         image_height,
         x_offset,
@@ -116,6 +116,9 @@ void muscle_image_acquirer(
         recorder_config,
         profile_dir,
         log_level);
+    // Publish for the other threads; keep a local handle for this thread's hot
+    // loop so it doesn't pay an atomic load per frame.
+    muscle_recording_state->muscle_camera.store(muscle_camera);
 
     spdlog::info("Muscle camera configured. Entering frame grabbing loop...");
     long int current_frame_id = 0;
@@ -125,8 +128,7 @@ void muscle_image_acquirer(
     bool reached_programmed_stop = false;
 
     while (!program_state->to_quit.load()) {
-        FrameData frame_data =
-            muscle_recording_state->muscle_camera->wait_for_one_frame();
+        FrameData frame_data = muscle_camera->wait_for_one_frame();
         if (frame_data.image.empty()) {
             spdlog::error("muscle_image_acquirer thread got an empty image");
         }

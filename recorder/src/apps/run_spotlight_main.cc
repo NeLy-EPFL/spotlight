@@ -24,26 +24,28 @@ std::shared_ptr<BehaviorRecordingState> behavior_recording_state;
 std::shared_ptr<MuscleRecordingState> muscle_recording_state;
 std::shared_ptr<ArduinoCommunication> arduino_communication;
 
+// Set by the SIGINT handler. The handler must stay async-signal-safe, so it
+// only flips this flag; a QTimer on the GUI thread (see run_spotlight_main)
+// polls it and performs the actual teardown via quit_program().
+volatile std::sig_atomic_t sigint_received = 0;
+
 // Stage range (mm) covering the arena, for the motion-stage preview widget.
 struct StageRange {
     double min_x_mm, max_x_mm, min_y_mm, max_y_mm;
 };
 
+// Compute the stage range covering the arena, for the motion-stage preview
+// widget. Read arena dimensions from <arena_dir>/metadata.yaml, then invert the
+// calibration model at the image center to find which stage position
+// corresponds to each of the four arena corners. The computed limits are
+// clipped to [0, physical_range_limit_mm].
+//
+// Side effect: registers the clipped limits as software motion stage limits via
+// set_motion_stage_limits() so set_target_motion_stage_position() clamps.
 StageRange compute_stage_range_from_arena(
     const std::filesystem::path &arena_dir,
     const RecorderConfig &recorder_config,
-    const CalibrationParams &behavior_cam_calibration_params)
-/**
- * Compute the stage range covering the arena, for the motion-stage preview
- * widget. Read arena dimensions from <arenaDir>/metadata.yaml, then invert the
- * calibration model at the image center to find which stage position
- * corresponds to each of the four arena corners. The computed limits are
- * clipped to [0, physical_range_limit_mm].
- *
- * Side effect: registers the clipped limits as software motion stage limits via
- * set_motion_stage_limits() so set_target_motion_stage_position() clamps.
- */
-{
+    const CalibrationParams &behavior_cam_calibration_params) {
     std::filesystem::path arena_metadata_path = arena_dir / "metadata.yaml";
     if (!std::filesystem::exists(arena_metadata_path)) {
         std::string error_message = fmt::format(
@@ -124,52 +126,43 @@ StageRange compute_stage_range_from_arena(
     return {stage_min_x_mm, stage_max_x_mm, stage_min_y_mm, stage_max_y_mm};
 }
 
-void join_if_joinable(std::thread &thread, const char *name)
-/**
- * Join `thread` if it is joinable, logging before and after.
- */
-{
-    spdlog::debug("Waiting for {} to finish", name);
-    if (thread.joinable()) {
-        thread.join();
-    }
-    spdlog::debug("{} finished", name);
-}
 } // namespace
 
-bool quit_program()
-/**
- * Quit gracefully by explicitly stopping acquisition on the behavior
- * camera* and telling saver threads that the work is done.
- *
- * * Without stopping acquisition explicitly, the frame grabber will
- * think the device is still busy the next time we run the program.
- */
-{
-    spdlog::info("SIGINT received. Initiating graceful shutdown");
+// Quit by explicitly stopping acquisition on the behavior camera* and
+// terminating the PCO server, then telling the saver and control threads that
+// the work is done, and finally std::exit()-ing.
+//
+// * Without stopping acquisition explicitly, the frame grabber will think the
+// device is still busy the next time we run the program.
+//
+// Teardown ends in std::exit() rather than joining the worker threads: some of
+// them are intentionally parked in blocking waits (e.g. the muscle acquirer in
+// pthread_cond_wait once its server is gone), and the critical hardware -- the
+// Euresys grabber and the PCO server -- is already released above, so the
+// remaining threads are safely reaped by process exit. This runs on the GUI
+// thread (from closeEvent or the SIGINT poll timer), never directly from the
+// signal handler.
+bool quit_program() {
+    spdlog::info("Initiating shutdown");
 
     program_state->to_quit.store(true);
 
     // Stop behavior camera acquisition
-    if (behavior_recording_state->behavior_camera) {
+    if (std::shared_ptr<BehaviorCamera> behavior_camera =
+            behavior_recording_state->behavior_camera.load()) {
         spdlog::info("Stopping acquisition on behavior camera");
-        behavior_recording_state->behavior_camera->stop();
+        behavior_camera->stop();
     }
 
     // Terminate PCO camera server. stop() is bounded (SIGTERM, then SIGKILL
     // after a grace period), so an unresponsive server can never block the
-    // shutdown indefinitely.
-    //
-    // We deliberately do NOT reset muscleRecordingState->muscleCamera here: the
-    // muscle acquirer thread dereferences that shared_ptr without taking its
-    // own copy, so destroying the MuscleCamera now would be a use-after-free.
-    // Once the server is gone the acquirer blocks forever in
-    // wait_for_one_frame()'s pthread_cond_wait, but it is abandoned at
-    // std::exit() below, with the MuscleCamera object left alive and valid
-    // until the process exits.
-    if (muscle_recording_state->muscle_camera) {
+    // shutdown indefinitely. Once the server is gone the muscle acquirer blocks
+    // forever in wait_for_one_frame()'s pthread_cond_wait; that thread is
+    // abandoned at std::exit() below.
+    if (std::shared_ptr<MuscleCamera> muscle_camera =
+            muscle_recording_state->muscle_camera.load()) {
         spdlog::info("Stopping acquisition on muscle camera");
-        muscle_recording_state->muscle_camera->stop();
+        muscle_camera->stop();
     }
 
     // Tell motion control request handler thread to stop
@@ -191,7 +184,9 @@ bool quit_program()
 }
 
 int run_spotlight_main(int argc, char **argv) {
-    std::signal(SIGINT, [](int) { quit_program(); });
+    // Keep the handler async-signal-safe: only set a flag. The poll timer
+    // installed below runs the real teardown on the GUI thread.
+    std::signal(SIGINT, [](int) { sigint_received = 1; });
 
     // Parse command line arguments
     CLIOptions options = parse_cli(argc, argv);
@@ -357,7 +352,7 @@ int run_spotlight_main(int argc, char **argv) {
         programmed_recording_stop);
     spdlog::info("Muscle camera acquisition thread started");
     size_t retry_count = 0;
-    while (!muscle_recording_state->muscle_camera) {
+    while (!muscle_recording_state->muscle_camera.load()) {
         // Wait for the muscle camera to be initialized
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         spdlog::warn("Waiting for muscle camera to be initialized...");
@@ -415,30 +410,25 @@ int run_spotlight_main(int argc, char **argv) {
     main_gui_window = &local_main_gui_window;
     main_gui_window->show();
 
-    int result = application->exec();
+    // Poll the SIGINT flag on the GUI thread and tear down when it is set.
+    // (The handler itself only sets the flag, to stay async-signal-safe.)
+    QTimer sigint_poll_timer;
+    QObject::connect(&sigint_poll_timer, &QTimer::timeout, []() {
+        if (sigint_received) {
+            spdlog::info("SIGINT received; shutting down.");
+            quit_program();
+        }
+    });
+    sigint_poll_timer.start(100); // ms
 
-    // Wait for threads to finish
-    join_if_joinable(
-        behavior_image_acquirer_thread, "behavior image acquirer thread");
-
-    for (auto &thread : behavior_image_saver_threads) {
-        join_if_joinable(thread, "one of the behavior image saver threads");
-    }
-
-    join_if_joinable(
-        muscle_image_acquirer_thread, "muscle image acquirer thread");
-
-    for (auto &thread : muscle_image_saver_threads) {
-        join_if_joinable(thread, "one of the muscle image saver threads");
-    }
-
-    join_if_joinable(motion_control_io_thread, "motion control IO thread");
-    join_if_joinable(
-        motion_stage_position_logger_thread,
-        "motion stage position logger thread");
-    join_if_joinable(tracking_controller_thread, "tracking controller thread");
-
-    return result;
+    // exec() does not return: teardown goes through quit_program() (from the
+    // GUI close handler or the SIGINT poll timer above), which std::exit()s.
+    // The worker threads -- declared above as joinable locals -- are
+    // intentionally reaped by that process exit rather than joined here, since
+    // some of them sit in blocking waits the recorder does not interrupt (see
+    // quit_program). std::exit() does not unwind the stack, so those locals'
+    // destructors never run.
+    return application->exec();
 }
 
 int main(int argc, char **argv) {

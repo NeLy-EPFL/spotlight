@@ -14,17 +14,19 @@ void behavior_image_acquirer(
     std::string frame_grabber_trigger_line =
         recorder_config.get_parameter<std::string>(
             "behavior_camera", "frame_grabber_trigger_line");
-    behavior_recording_state->behavior_camera =
-        std::make_shared<BehaviorCamera>(
-            camera_roi.image_width,
-            camera_roi.image_height,
-            camera_roi.x_offset,
-            camera_roi.y_offset,
-            frame_grabber_trigger_line);
+    auto behavior_camera = std::make_shared<BehaviorCamera>(
+        camera_roi.image_width,
+        camera_roi.image_height,
+        camera_roi.x_offset,
+        camera_roi.y_offset,
+        frame_grabber_trigger_line);
+    // Publish for the other threads; keep a local handle for this thread's hot
+    // loop so it doesn't pay an atomic load per frame.
+    behavior_recording_state->behavior_camera.store(behavior_camera);
 
     spdlog::info("Behavior camera configured");
 
-    behavior_recording_state->behavior_camera->start();
+    behavior_camera->start();
     spdlog::info("Behavior camera started");
 
     FrameData frame_data_buffer[3];
@@ -67,8 +69,7 @@ void behavior_image_acquirer(
         // // uint64_t start_time = get_current_time_microseconds();
         // spdlog::debug(
         //     "Behavior image acquirer thread waiting for one frame");
-        FrameData frame_data =
-            behavior_recording_state->behavior_camera->wait_for_one_frame();
+        FrameData frame_data = behavior_camera->wait_for_one_frame();
         // spdlog::debug(
         //     "Behavior image acquirer thread received one frame");
         // uint64_t wait_time = get_current_time_microseconds() - start_time;
@@ -162,7 +163,7 @@ void behavior_image_acquirer(
 
     // Stop behavior camera acquisition
     spdlog::info("Stopping acquisition on behavior camera");
-    behavior_recording_state->behavior_camera->stop();
+    behavior_camera->stop();
     spdlog::info("Behavior camera acquisition stopped. "
                  "Behavior image acquirer thread reached its end");
 }

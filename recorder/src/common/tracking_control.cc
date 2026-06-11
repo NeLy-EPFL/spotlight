@@ -204,8 +204,9 @@ void update_tracking_target(
     bool is_found = false;
     double physical_pos_x = 0;
     double physical_pos_y = 0;
-    if (behavior_recording_state->behavior_camera &&
-        behavior_recording_state->behavior_camera->is_ready()) {
+    std::shared_ptr<BehaviorCamera> behavior_camera =
+        behavior_recording_state->behavior_camera.load();
+    if (behavior_camera && behavior_camera->is_ready()) {
         std::tie(is_found, physical_pos_x, physical_pos_y) =
             calculate_fly_position_absolute_mm(
                 my_behavior_image,

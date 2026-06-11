@@ -8,7 +8,6 @@
 #include <tuple>
 
 #include <EGrabber.h>
-#include <FormatConverter.h>
 #include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
 
@@ -33,13 +32,11 @@ class BehaviorCamera {
     Euresys::EGenTL gen_tl_;
     Euresys::EGrabberCameraInfo camera_;
     std::unique_ptr<Euresys::EGrabber<>> frame_grabber_ptr_;
-    std::unique_ptr<Euresys::FormatConverter> format_converter_ptr_;
     int image_width_;
     int image_height_;
     int x_offset_;
     int y_offset_;
     std::string io_line_;
-    int current_fps_;
     std::atomic<bool> camera_ready_flag_{false};
 
     // Apply the full GenICam configuration to the grabber and camera: the ROI

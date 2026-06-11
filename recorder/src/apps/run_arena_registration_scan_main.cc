@@ -44,18 +44,14 @@ std::shared_ptr<ProgramState> program_state = nullptr;
 std::unique_ptr<ArduinoCommunication> arduino_communication = nullptr;
 std::shared_ptr<BehaviorRecordingState> behavior_recording_state = nullptr;
 
-void quit_program() {
-    spdlog::info("SIGINT received. Initiating graceful shutdown");
-    if (program_state)
-        program_state->to_quit.store(true);
-    if (arduino_communication) {
-        // The new protocol has no "stop triggering" command; switch the blue
-        // excitation light off, then close the link.
-        arduino_communication->stop_excitation();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        arduino_communication->stop_communication();
-    }
-    std::exit(0);
+// Set by the SIGINT handler. The handler stays async-signal-safe (it only flips
+// this flag and re-arms the default disposition); the interactive loops below
+// poll it and exit through the normal shutdown path, which releases the camera
+// and the trigger link cleanly.
+volatile std::sig_atomic_t interrupt_requested = 0;
+
+bool quit_requested() {
+    return interrupt_requested != 0;
 }
 
 // Single decode attempt at a given shrink factor.
@@ -156,6 +152,10 @@ bool live_alignment_preview(
         "data matrix, then press ENTER.");
 
     while (true) {
+        if (quit_requested()) {
+            spdlog::info("Interrupt requested. Exiting live preview.");
+            return false;
+        }
         FrameData frame_data = behavior_recording_state->latest_frame_holder
                                    ->get_latest_frame_data();
         if (frame_data.image.empty()) {
@@ -338,6 +338,10 @@ void scan_all_apriltags(
     std::vector<int> jpeg_params = {cv::IMWRITE_JPEG_QUALITY, 100};
 
     for (auto &[tag_id, tag_node] : sorted_tags) {
+        if (quit_requested()) {
+            spdlog::info("Interrupt requested. Stopping AprilTag scan.");
+            break;
+        }
         auto tag_center = tag_node["center"].as<std::vector<double>>();
         double target_x = arena_x_sign * tag_center[0] + offset_x;
         double target_y = arena_y_sign * tag_center[1] + offset_y;
@@ -464,8 +468,12 @@ void run_arena_registration_scan(
 
     // Wait for camera ready
     size_t retry_count = 0;
-    while (!behavior_recording_state->behavior_camera ||
-           !behavior_recording_state->behavior_camera->is_ready()) {
+    while (true) {
+        std::shared_ptr<BehaviorCamera> behavior_camera =
+            behavior_recording_state->behavior_camera.load();
+        if (behavior_camera && behavior_camera->is_ready()) {
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (++retry_count % 20 == 0)
             spdlog::warn("Waiting for behavior camera to initialize...");
@@ -492,9 +500,10 @@ void run_arena_registration_scan(
     auto shutdown = [&]() {
         program_state->to_quit.store(true);
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        if (behavior_recording_state->behavior_camera) {
-            behavior_recording_state->behavior_camera->stop();
-            behavior_recording_state->behavior_camera = nullptr;
+        if (std::shared_ptr<BehaviorCamera> behavior_camera =
+                behavior_recording_state->behavior_camera.load()) {
+            behavior_camera->stop();
+            behavior_recording_state->behavior_camera.store(nullptr);
         }
         if (behavior_thread.joinable())
             behavior_thread.join();
@@ -556,7 +565,13 @@ void run_arena_registration_scan(
 }
 
 int main(int argc, char **argv) {
-    std::signal(SIGINT, [](int) { quit_program(); });
+    // Keep the handler async-signal-safe: only set a flag (polled by the
+    // interactive loops) and re-arm the default disposition so a second Ctrl-C
+    // hard-kills if a loop is not currently running.
+    std::signal(SIGINT, [](int) {
+        interrupt_requested = 1;
+        std::signal(SIGINT, SIG_DFL);
+    });
 
     // Parse CLI
     std::string profile_dir_str = "~/Spotlight/default/";

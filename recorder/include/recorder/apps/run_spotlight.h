@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QApplication>
+#include <QTimer>
 #include <atomic>
 #include <condition_variable>
 #include <csignal>

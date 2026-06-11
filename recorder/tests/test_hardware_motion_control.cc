@@ -24,28 +24,28 @@ TEST(MotionControlHardwareTest, InitConfigureDestroyMotionControl) {
     MotionControl motion_control(config);
 
     // Verify both axes respond to position queries.
-    const double initial_x = motion_control.get_position(X_AXIS);
-    const double initial_y = motion_control.get_position(Y_AXIS);
+    const double initial_x = motion_control.get_position(x_axis);
+    const double initial_y = motion_control.get_position(y_axis);
     EXPECT_FALSE(std::isnan(initial_x));
     EXPECT_FALSE(std::isnan(initial_y));
 
     // Move X axis by +0.05 mm and back, staying well within the 0.1 mm limit.
-    const double x_min = motion_control.get_min_position(X_AXIS);
-    const double x_max = motion_control.get_max_position(X_AXIS);
+    const double x_min = motion_control.get_min_position(x_axis);
+    const double x_max = motion_control.get_max_position(x_axis);
     ASSERT_GE(initial_x - x_min, test_move_distance_mm)
         << "X axis is too close to the lower limit for a safe test move";
     ASSERT_LE(initial_x + test_move_distance_mm, x_max)
         << "X axis is too close to the upper limit for a safe test move";
 
     motion_control.move_relative(
-        X_AXIS, test_move_distance_mm, /*wait=*/true, test_velocity_mm_per_s);
-    const double moved_x = motion_control.get_position(X_AXIS);
+        x_axis, test_move_distance_mm, /*wait=*/true, test_velocity_mm_per_s);
+    const double moved_x = motion_control.get_position(x_axis);
     EXPECT_NEAR(
         moved_x, initial_x + test_move_distance_mm, position_tolerance_mm);
 
     motion_control.move_relative(
-        X_AXIS, -test_move_distance_mm, /*wait=*/true, test_velocity_mm_per_s);
-    const double restored_x = motion_control.get_position(X_AXIS);
+        x_axis, -test_move_distance_mm, /*wait=*/true, test_velocity_mm_per_s);
+    const double restored_x = motion_control.get_position(x_axis);
     EXPECT_NEAR(restored_x, initial_x, position_tolerance_mm);
 
     // Destructor closes the Zaber connection.

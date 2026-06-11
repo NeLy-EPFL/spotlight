@@ -49,7 +49,9 @@ MuscleCamera::MuscleCamera(
       pco_camera_server_pid_(-1), frame_data_ptr_(nullptr),
       shutter_open_time_ptr_(nullptr), frame_metadata_ptr_(nullptr),
       mutex_ptr_(nullptr), cond_var_ptr_(nullptr),
-      recorder_config_(recorder_config), last_frame_count_(UINT_MAX) {
+      recorder_config_(recorder_config),
+      // -1 = "no frame returned yet"; the server numbers real frames from 0.
+      last_frame_count_(-1) {
     if (!is_roi_valid()) {
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
@@ -231,46 +233,63 @@ MuscleCamera::~MuscleCamera() {
 }
 
 FrameData MuscleCamera::wait_for_one_frame() {
-    while (true) {
-        // Read data from shared memory
-        pthread_mutex_lock(mutex_ptr_);
-        // spdlog::debug("Waiting for new frame...");
+    pthread_mutex_lock(mutex_ptr_);
+
+    // Wait until a frame newer than the last one we returned is published.
+    // Looping on this predicate (rather than waiting unconditionally) is what
+    // makes the handoff correct: a spurious wakeup simply re-waits, and -- more
+    // importantly -- a signal delivered by the server in the window between our
+    // previous unlock and this wait is never lost, because the predicate
+    // already reflects the bumped frame_count. POSIX condition variables do not
+    // latch, so without this check that signal would be missed and we would
+    // block until the *next* frame.
+    //
+    // The server writes frame_count = -1 before producing anything and numbers
+    // real frames from 0 (see serve_frames), and last_frame_count_ starts at -1,
+    // so this loop blocks until the first real frame instead of returning the
+    // uninitialized buffer as a frame.
+    while (frame_metadata_ptr_->frame_count == last_frame_count_) {
         pthread_cond_wait(cond_var_ptr_, mutex_ptr_);
-        // spdlog::debug("New frame available");
-        unsigned int frame_count = frame_metadata_ptr_->frame_count;
-        uint64_t acquisition_time = frame_metadata_ptr_->acquisition_time;
-
-        if (frame_count == last_frame_count_) {
-            pthread_mutex_unlock(mutex_ptr_);
-            spdlog::warn(
-                "PCO camera API is waken up by the camera server, but no new "
-                "frame is available. This could be a spurious wakeup of the "
-                "condition variable (very rare), but more likely it indicates "
-                "a problem in shared memory or synchronization primitives.");
-            continue;
-        }
-
-        // Copy the frame out of shared memory while still holding the lock. The
-        // cv::Mat below only wraps frame_data_ptr_, which the camera server
-        // overwrites (memcpy) on every new frame; cloning under the lock takes
-        // a private copy before the server can begin writing the next frame, so
-        // the returned image can never be torn by a concurrent write.
-        cv::Mat image =
-            cv::Mat(image_height_, image_width_, CV_16UC1, frame_data_ptr_)
-                .clone();
-        pthread_mutex_unlock(mutex_ptr_);
-
-        if (image.empty()) {
-            spdlog::error("muscle_camera API got an empty image");
-        }
-
-        last_frame_count_ = frame_count;
-        FrameData frame_data;
-        frame_data.acquisition_time = acquisition_time;
-        frame_data.received_time = get_current_time_microseconds();
-        frame_data.image = image;
-        return frame_data;
     }
+
+    long frame_count = frame_metadata_ptr_->frame_count;
+    uint64_t acquisition_time = frame_metadata_ptr_->acquisition_time;
+
+    // Detect frames that were overwritten before we could read them. This is a
+    // single-slot handoff: the server memcpy's every frame into the same buffer,
+    // so if we fell behind, frame_count has advanced by more than one and the
+    // intervening frames are gone. Warn rather than fail -- the acquirer
+    // renumbers frames contiguously, so silent drops would otherwise misalign
+    // the muscle and behavior frame streams in a recording. (last == -1 is the
+    // initial state, before any frame has been returned.)
+    if (last_frame_count_ != -1 && frame_count != last_frame_count_ + 1) {
+        spdlog::warn(
+            "Muscle camera consumer fell behind: frame_count jumped from {} to "
+            "{} ({} frame(s) dropped before they could be read).",
+            last_frame_count_,
+            frame_count,
+            frame_count - last_frame_count_ - 1);
+    }
+
+    // Copy the frame out of shared memory while still holding the lock. The
+    // cv::Mat below only wraps frame_data_ptr_, which the camera server
+    // overwrites (memcpy) on every new frame; cloning under the lock takes a
+    // private copy before the server can begin writing the next frame, so the
+    // returned image can never be torn by a concurrent write.
+    cv::Mat image =
+        cv::Mat(image_height_, image_width_, CV_16UC1, frame_data_ptr_).clone();
+    pthread_mutex_unlock(mutex_ptr_);
+
+    if (image.empty()) {
+        spdlog::error("muscle_camera API got an empty image");
+    }
+
+    last_frame_count_ = frame_count;
+    FrameData frame_data;
+    frame_data.acquisition_time = acquisition_time;
+    frame_data.received_time = get_current_time_microseconds();
+    frame_data.image = image;
+    return frame_data;
 }
 
 bool MuscleCamera::is_roi_valid() const {

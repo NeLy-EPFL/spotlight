@@ -259,7 +259,7 @@ void align_camera(const std::filesystem::path &profile_dir) {
 
     // Start Arduino triggering interface set default triggering parameters
     size_t retry_count = 0;
-    while (!muscle_recording_state->muscle_camera) {
+    while (!muscle_recording_state->muscle_camera.load()) {
         spdlog::debug("Waiting for muscle camera to be ready");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         retry_count++;
@@ -268,7 +268,7 @@ void align_camera(const std::filesystem::path &profile_dir) {
         }
     }
     int muscle_num_lines_scanned =
-        muscle_recording_state->muscle_camera->get_num_lines_scanned();
+        muscle_recording_state->muscle_camera.load()->get_num_lines_scanned();
     arduino_communication = initialize_triggering_with_default_params(
         recorder_config,
         muscle_num_lines_scanned,
@@ -361,13 +361,14 @@ void align_camera(const std::filesystem::path &profile_dir) {
     program_state->to_quit.store(true);
     // Give some time for acquisition threads to break out of loop
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (behavior_recording_state->behavior_camera) {
+    if (std::shared_ptr<BehaviorCamera> behavior_camera =
+            behavior_recording_state->behavior_camera.load()) {
         spdlog::info("Stopping acquisition on behavior camera");
-        behavior_recording_state->behavior_camera->stop();
+        behavior_camera->stop();
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        behavior_recording_state->behavior_camera = nullptr;
+        behavior_recording_state->behavior_camera.store(nullptr);
     }
-    muscle_recording_state->muscle_camera = nullptr;
+    muscle_recording_state->muscle_camera.store(nullptr);
     behavior_image_acquirer_thread.join();
     muscle_image_acquirer_thread.join();
     spdlog::info("Behavior camera acquisition thread stopped");

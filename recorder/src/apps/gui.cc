@@ -454,7 +454,7 @@ void MainGUIWindow::load_recording_parameters() {
     // controller derives the muscle trigger delay from these (the rolling time
     // is the time to scan all lines of the muscle ROI).
     pco_cam_rolling_time_us_ = static_cast<unsigned int>(
-        muscle_recording_state_->muscle_camera->get_num_lines_scanned() *
+        muscle_recording_state_->muscle_camera.load()->get_num_lines_scanned() *
         rolling_shutter_line_time_us);
     pco_cam_readout_time_us_ =
         static_cast<unsigned int>(muscle_cam_readout_time_us);
@@ -818,7 +818,7 @@ void MainGUIWindow::setup_programmed_stop_timer() {
     connect(programmed_stop_check_timer, &QTimer::timeout, this, [this]() {
         if (programmed_recording_stop_->programmed_stop_reached.load()) {
             spdlog::info("Protocol stop reached. Finalizing recording.");
-            end_recording(/*reachedProgrammedEnd=*/true);
+            end_recording(true);
             programmed_recording_stop_->num_behavior_frames_expected = -1;
             programmed_recording_stop_->num_muscle_frames_expected = -1;
             programmed_recording_stop_->programmed_stop_reached.store(
@@ -880,7 +880,8 @@ bool MainGUIWindow::validate_and_prepare_recording(
         int muscle_cam_readout_time_us = recorder_config_.get_parameter<double>(
             "muscle_camera", "sensor_readout_time_us");
         if (!muscle_trigger_timing.compute_parameters(
-                muscle_recording_state_->muscle_camera->get_num_lines_scanned(),
+                muscle_recording_state_->muscle_camera.load()
+                    ->get_num_lines_scanned(),
                 rolling_shutter_line_time_us,
                 muscle_cam_readout_time_us)) {
             QMessageBox::critical(
@@ -903,8 +904,9 @@ bool MainGUIWindow::validate_and_prepare_recording(
 
 void MainGUIWindow::start_recording() {
     // Check if behavior camera has been initialized
-    if (!behavior_recording_state_->behavior_camera ||
-        !behavior_recording_state_->behavior_camera->is_ready()) {
+    std::shared_ptr<BehaviorCamera> behavior_camera =
+        behavior_recording_state_->behavior_camera.load();
+    if (!behavior_camera || !behavior_camera->is_ready()) {
         spdlog::error("Behavior camera not ready. Cannot start recording.");
         // Make a pop-up error window
         QMessageBox::critical(
@@ -940,7 +942,7 @@ void MainGUIWindow::start_recording() {
     // them. The controller's cam_flush_time_us delay covers the transient while
     // the new exposure takes effect.
     if (muscle_imaging_check_box_->isChecked()) {
-        muscle_recording_state_->muscle_camera->set_nominal_exposure_us(
+        muscle_recording_state_->muscle_camera.load()->set_nominal_exposure_us(
             static_cast<unsigned int>(muscle_nominal_exposure_us));
     }
 
@@ -1089,7 +1091,7 @@ void MainGUIWindow::write_behavior_calibration_parameters() {
 
 void MainGUIWindow::stop_recording() {
     // Slot for the Stop button: a user-initiated stop.
-    end_recording(/*reachedProgrammedEnd=*/false);
+    end_recording(false);
 }
 
 void MainGUIWindow::end_recording(bool reached_programmed_end) {
@@ -1149,7 +1151,7 @@ void MainGUIWindow::push_muscle_camera_exposure(
             pco_cam_readout_time_us_);
         return;
     }
-    muscle_recording_state_->muscle_camera->set_nominal_exposure_us(
+    muscle_recording_state_->muscle_camera.load()->set_nominal_exposure_us(
         static_cast<unsigned int>(exposure_us));
 }
 
@@ -1358,20 +1360,17 @@ void MainGUIWindow::update_muscle_image_display() {
     muscle_image_display_label_->setPixmap(pixmap);
 }
 
+// Parse the experiment-protocol text field into an opSequence. The text is a
+// ";"-separated list of steps, each "frameIdx/channel/op":
+//   - "<n>/ch2/on", "<n>/ch3/off": toggle an optogenetics channel
+//   - "<n>/x/stop": end the recording and revert to streaming
+// An empty string (or a single ";") denotes an open recording with no
+// programmed steps. If any steps are given, the protocol must contain exactly
+// one "<n>/x/stop" step and it must be the very last step. Returns the number
+// of steps, or -1 on a malformed string.
 int parse_protocol_string(
     const std::string &protocol_text_field_string,
-    std::deque<OperationStep> &op_sequence)
-/**
- * Parse the experiment-protocol text field into an opSequence. The text is a
- * ";"-separated list of steps, each "frameIdx/channel/op":
- *   - "<n>/ch2/on", "<n>/ch3/off": toggle an optogenetics channel
- *   - "<n>/x/stop": end the recording and revert to streaming
- * An empty string (or a single ";") denotes an open recording with no
- * programmed steps. If any steps are given, the protocol must contain exactly
- * one "<n>/x/stop" step and it must be the very last step. Returns the number
- * of steps, or -1 on a malformed string.
- */
-{
+    std::deque<OperationStep> &op_sequence) {
     op_sequence.clear();
 
     auto report_error = []() {

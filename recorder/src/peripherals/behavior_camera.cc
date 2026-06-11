@@ -31,8 +31,6 @@ BehaviorCamera::BehaviorCamera(
 
     configure();
 
-    format_converter_ptr_ = std::make_unique<Euresys::FormatConverter>(gen_tl_);
-
     camera_ready_flag_.store(true);
 }
 
