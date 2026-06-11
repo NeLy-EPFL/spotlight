@@ -83,7 +83,7 @@ void setup_shutter_open_time(
     }
 
     shutter_open_time_ptr = (unsigned int *)mmap(
-        0,
+        nullptr,
         shutter_open_time_size,
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
@@ -127,7 +127,7 @@ void setup_frame_metadata(
     }
 
     frame_metadata_ptr = (FrameMetadata *)mmap(
-        0,
+        nullptr,
         sizeof(FrameMetadata),
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
@@ -171,7 +171,7 @@ void setup_mutex(
     }
 
     mutex_ptr = (pthread_mutex_t *)mmap(
-        0,
+        nullptr,
         sizeof(pthread_mutex_t),
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
@@ -220,7 +220,7 @@ void setup_condition_variable(
     }
 
     cond_var_ptr = (pthread_cond_t *)mmap(
-        0,
+        nullptr,
         sizeof(pthread_cond_t),
         PROT_READ | PROT_WRITE,
         MAP_SHARED,

@@ -48,8 +48,8 @@ double software_y_max_mm = std::numeric_limits<double>::infinity();
 
 void motion_control_request_handler(
     const RecorderConfig &recorder_config,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
-    std::shared_ptr<ProgramState> program_state) {
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
+    const std::shared_ptr<ProgramState>& program_state) {
     MotionControl motion_control(recorder_config);
 
     // Query the stages' soft travel limits once at init so that we can
@@ -181,8 +181,8 @@ void motion_control_request_handler(
 void update_tracking_target(
     const RecorderConfig &recorder_config,
     ActiveAreaMask &active_area_mask,
-    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
+    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
     const CalibrationParams &behavior_cam_calibration_params,
     float tracking_distance_threshold_mm,
     float default_velocity) {
@@ -255,10 +255,10 @@ void update_tracking_target(
 void tracking_controller(
     const RecorderConfig &recorder_config,
     ActiveAreaMask &active_area_mask,
-    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
+    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
     const CalibrationParams &behavior_cam_calibration_params,
-    std::shared_ptr<ProgramState> program_state) {
+    const std::shared_ptr<ProgramState>& program_state) {
     size_t retry_count = 0;
     while (!tracking_control_state->motion_control_handler_ready.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -424,9 +424,9 @@ cv::Mat ActiveAreaMask::warp_to_current_view(
 
 void motion_stage_position_logger(
     const RecorderConfig &recorder_config,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
-    std::shared_ptr<SaveDirectory> save_directory,
-    std::shared_ptr<ProgramState> program_state) {
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
+    const std::shared_ptr<SaveDirectory>& save_directory,
+    const std::shared_ptr<ProgramState>& program_state) {
     const int position_logging_freq = recorder_config.get_parameter<int>(
         "motion_control", "position_logging_frequency_hz");
     LoopRateLimiter rate_limiter(
@@ -793,7 +793,7 @@ void set_motion_stage_limits(
 }
 
 void stop_motion_control_request_handler(
-    std::shared_ptr<ProgramState> program_state) {
+    const std::shared_ptr<ProgramState>& program_state) {
     if (!program_state->to_quit.load()) {
         spdlog::critical(
             "stop_motion_control_request_handler() called but to_quit "

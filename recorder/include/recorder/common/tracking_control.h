@@ -53,24 +53,24 @@ struct TrackingControlState {
 // Hardware controller thread
 void motion_control_request_handler(
     const RecorderConfig &recorder_config,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
+    const std::shared_ptr<ProgramState>& program_state);
 
 // Tracking thread
 void tracking_controller(
     const RecorderConfig &recorder_config,
     ActiveAreaMask &active_area_mask,
-    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
+    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
     const CalibrationParams &behavior_cam_calibration_params,
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<ProgramState>& program_state);
 
 // Position logging thread
 void motion_stage_position_logger(
     const RecorderConfig &recorder_config,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
-    std::shared_ptr<SaveDirectory> save_directory,
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<TrackingControlState>& tracking_control_state,
+    const std::shared_ptr<SaveDirectory>& save_directory,
+    const std::shared_ptr<ProgramState>& program_state);
 
 // Global API functions
 // Aside from get_current_motion_stage_position(), they are all async.
@@ -84,7 +84,7 @@ void wait_until_motion_stage_idle_async();
 bool check_if_motion_stage_idle();
 void start_homing_motion_stage();
 void stop_motion_control_request_handler(
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<ProgramState>& program_state);
 
 // High-level helper functions
 std::tuple<bool, double, double> calculate_fly_position_absolute_mm(

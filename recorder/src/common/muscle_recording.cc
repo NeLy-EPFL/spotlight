@@ -96,9 +96,9 @@ void muscle_image_acquirer(
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level,
-    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<ProgramState> program_state,
-    std::shared_ptr<ProgrammedStop> programmed_recording_stop) {
+    const std::shared_ptr<MuscleRecordingState>& muscle_recording_state,
+    const std::shared_ptr<ProgramState>& program_state,
+    const std::shared_ptr<ProgrammedStop>& programmed_recording_stop) {
     spdlog::info("Muscle image acquirer thread started");
 
     // Create muscle camera
@@ -173,8 +173,8 @@ void muscle_image_acquirer(
 void muscle_image_saver(
     const RecorderConfig &recorder_config,
     std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<SaveDirectory> save_directory,
-    std::shared_ptr<ProgramState> program_state,
+    const std::shared_ptr<SaveDirectory>& save_directory,
+    const std::shared_ptr<ProgramState>& program_state,
     int tiff_compression_method) {
     std::thread::id my_thread_id = std::this_thread::get_id();
     std::stringstream ss;
@@ -257,8 +257,8 @@ void muscle_image_saver(
 }
 
 void stop_muscle_image_saver(
-    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<ProgramState> program_state) {
+    const std::shared_ptr<MuscleRecordingState>& muscle_recording_state,
+    const std::shared_ptr<ProgramState>& program_state) {
     if (!program_state->to_quit.load()) {
         spdlog::critical("stop_muscle_image_saver() called but to_quit is "
                          "not set to true. This shouldn't happen.");

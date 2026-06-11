@@ -31,13 +31,13 @@ get_behavior_behavior_camera_roi(const RecorderConfig &recorder_config);
 void behavior_image_acquirer(
     const RecorderConfig &recorder_config,
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<ProgramState> program_state,
-    std::shared_ptr<ProgrammedStop> programmed_recording_stop);
+    const std::shared_ptr<ProgramState>& program_state,
+    const std::shared_ptr<ProgrammedStop>& programmed_recording_stop);
 void behavior_image_saver(
     const RecorderConfig &recorder_config,
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<SaveDirectory> save_directory,
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<SaveDirectory>& save_directory,
+    const std::shared_ptr<ProgramState>& program_state);
 void stop_behavior_image_saver(
-    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<BehaviorRecordingState>& behavior_recording_state,
+    const std::shared_ptr<ProgramState>& program_state);

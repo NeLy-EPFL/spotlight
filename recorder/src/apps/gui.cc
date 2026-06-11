@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 #include <yaml-cpp/yaml.h>
 
@@ -215,7 +216,7 @@ MotionControlWidget::MotionControlWidget(
     double min_y_absolute_mm,
     double max_y_absolute_mm,
     QWidget *parent)
-    : QWidget(parent), tracking_control_state_(tracking_control_state) {
+    : QWidget(parent), tracking_control_state_(std::move(tracking_control_state)) {
     // Stage bounds are derived externally (in run_spotlight_main) from the
     // arena dimensions and the fitted calibration model, then passed in here.
     min_x_absolute_mm_ = min_x_absolute_mm;
@@ -353,14 +354,14 @@ MainGUIWindow::MainGUIWindow(
     double stage_max_y_mm,
     QWidget *parent)
     : QWidget(parent), recorder_config_(recorder_config),
-      behavior_recording_state_(behavior_recording_state),
-      muscle_recording_state_(muscle_recording_state),
-      tracking_control_state_(tracking_control_state),
+      behavior_recording_state_(std::move(behavior_recording_state)),
+      muscle_recording_state_(std::move(muscle_recording_state)),
+      tracking_control_state_(std::move(tracking_control_state)),
       behavior_cam_calibration_params_(behavior_cam_calibration_params),
-      save_directory_(save_directory),
-      arduino_communication_(arduino_communication),
-      program_state_(program_state),
-      programmed_recording_stop_(programmed_recording_stop),
+      save_directory_(std::move(save_directory)),
+      arduino_communication_(std::move(arduino_communication)),
+      program_state_(std::move(program_state)),
+      programmed_recording_stop_(std::move(programmed_recording_stop)),
       active_area_mask_(active_area_mask), stage_min_x_mm_(stage_min_x_mm),
       stage_max_x_mm_(stage_max_x_mm), stage_min_y_mm_(stage_min_y_mm),
       stage_max_y_mm_(stage_max_y_mm) {

@@ -48,15 +48,15 @@ void muscle_image_acquirer(
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level,
-    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<ProgramState> program_state,
-    std::shared_ptr<ProgrammedStop> programmed_recording_stop);
+    const std::shared_ptr<MuscleRecordingState>& muscle_recording_state,
+    const std::shared_ptr<ProgramState>& program_state,
+    const std::shared_ptr<ProgrammedStop>& programmed_recording_stop);
 
 void muscle_image_saver(
     const RecorderConfig &recorder_config,
     std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<SaveDirectory> save_directory,
-    std::shared_ptr<ProgramState> program_state,
+    const std::shared_ptr<SaveDirectory>& save_directory,
+    const std::shared_ptr<ProgramState>& program_state,
     int tiff_compression_method = 5); // see below
 // TIFF compression methods:
 //   cv::IMWRITE_TIFF_COMPRESSION_NONE = 1 ,
@@ -66,8 +66,8 @@ void muscle_image_saver(
 //   ... see https://docs.opencv.org/4.x/d8/d6a/group__imgcodecs__flags.html
 
 void stop_muscle_image_saver(
-    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<ProgramState> program_state);
+    const std::shared_ptr<MuscleRecordingState>& muscle_recording_state,
+    const std::shared_ptr<ProgramState>& program_state);
 
 MuscleCameraROI
 get_muscle_camera_roi(const std::filesystem::path &roi_file_path);

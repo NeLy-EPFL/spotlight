@@ -119,7 +119,7 @@ std::string read_data_matrix(const cv::Mat &gray8u) {
 
 // Block until a frame with a received_time different from after_time arrives.
 FrameData wait_for_next_frame(
-    std::shared_ptr<LatestFrame> latest_frame_holder, uint64_t after_time) {
+    const std::shared_ptr<LatestFrame>& latest_frame_holder, uint64_t after_time) {
     FrameData frame;
     do {
         frame = latest_frame_holder->get_latest_frame_data();
