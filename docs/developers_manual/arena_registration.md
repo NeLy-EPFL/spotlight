@@ -9,28 +9,14 @@ followed by a fit ([`fit-arena-registration`](../python-tools/fit_arena_registra
 Python).
 
 > [!IMPORTANT]
-> **Prerequisites**
-> - Read [Profiles and arenas](profiles_and_arenas.md) and set up the arena
->   directory (it must contain `metadata.yaml`, `mapping_board.pdf`,
->   `active_area.png`).
-> - Build the recorder ([Building and installing](../setup/building.md)).
->   `run-arena-registration-scan` additionally needs `libdmtx`
->   (`sudo apt install libdmtx-dev`).
-> - Install the Python tools (`spotlight-tools`).
+> **Prerequisite:** install [`spotlight-tools`](https://github.com/NeLy-EPFL/spotlight-tools).
 
 ## Procedure
 
-### Step 1 — Generate and print the mapping board
-
-Generate the mapping board for your arena (`mapping_board.pdf`) — see
-[Profiles and arenas → Generate the arena config assets](profiles_and_arenas.md#step-2--generate-the-arena-config-assets).
-Print it at **100% scale** (no fit-to-page), cut along the outer border, and place
-it in the arena with the printed side facing the camera.
-
-### Step 2 — Run the registration scan
+### Step 1 — Run the registration scan
 
 ```bash
-./run-arena-registration-scan \
+run-arena-registration-scan \
     -p ~/Spotlight/profiles/default \
     -a ~/Spotlight/arenas/arena146
 ```
@@ -48,7 +34,7 @@ The scan takes a few minutes (8 AprilTags × 10 frames for arena146). See the
 [`run-arena-registration-scan` page](../recorder/run_arena_registration_scan.md) for
 details and the exact output format.
 
-### Step 3 — Fit the registration model
+### Step 2 — Fit the registration model
 
 ```bash
 fit-arena-registration -a ~/Spotlight/arenas/arena146
@@ -62,7 +48,7 @@ R² ≈ 1.0 (see [Quality targets](#quality-targets)). See the
 [`fit-arena-registration` page](../python-tools/fit_arena_registration.md) for
 options.
 
-### Step 4 — Verify with the recorder
+### Step 3 — Verify with the recorder
 
 ```bash
 ./run-spotlight \

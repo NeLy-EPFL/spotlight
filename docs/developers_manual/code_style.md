@@ -11,7 +11,7 @@ Conventions for contributing to this repository. The authoritative C++ formatter
   (`trigger_firmware`). `recorder` and `trigger_firmware` compile on their own;
   `comm_protocol` is a library included by both but can also be configured
   standalone to build and run its unit tests. See
-  [Building and installing](setup/building.md).
+  [Installation & compilation](installation_compilation.md) and [Unit testing](unit_testing.md).
 
 ## Formatting and naming
 

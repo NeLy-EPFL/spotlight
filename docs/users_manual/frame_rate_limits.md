@@ -1,4 +1,4 @@
-# Camera frame-rate limits
+# Frame rate limits
 
 Reference calculations for the maximum achievable frame rates of the two cameras.
 See [Data acquisition](data_acquisition.md) for how the muscle camera's

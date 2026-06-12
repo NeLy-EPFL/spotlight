@@ -8,13 +8,13 @@ There are five types of commands: `STREAM`, `START_RECORDING`, `STOP_RECORDING`,
 {
     "cmdType": "STREAM",  // fixed literal string
     "params": {
-        "enableMuscle": ..., // boolean; false => behavior-only (see below)
+        "enableMuscle": ..., // boolean
         "behExpTime": ...,  // non-negative integer
-        "muscEffExpTime": ...,  // non-negative integer (muscle-only)
+        "muscEffExpTime": ...,  // non-negative integer (ignored when enableMuscle is false)
         "behFrameRate": ...,  // positive integer
-        "behMuscSyncRatio": ...,  // positive integer (muscle-only)
-        "pcoCamRollingTime": ...,  // non-negative integer (muscle-only)
-        "pcoCamReadoutTime": ...  // non-negative integer (muscle-only)
+        "behMuscSyncRatio": ...,  // positive integer (ignored when enableMuscle is false)
+        "pcoCamRollingTime": ...,  // non-negative integer (ignored when enableMuscle is false)
+        "pcoCamReadoutTime": ...  // non-negative integer (ignored when enableMuscle is false)
     }
 }
 ```
@@ -34,8 +34,8 @@ The muscle-only fields must still be present and well-formed even when `enableMu
 ```json
 {
     "cmdType": "START_RECORDING",
-    "recParams": {...},  // same as params in STREAM (carries enableMuscle)
-    "revertToParams": {...},  // same as params in STREAM (carries enableMuscle)
+    "recParams": {...},  // same as params in STREAM
+    "revertToParams": {...},  // same as params in STREAM
     "opSequence": [  // list of variable length (empty list allowed)
         {
             "frameIdx": ...,  // non-negative integer

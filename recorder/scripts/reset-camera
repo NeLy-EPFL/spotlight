@@ -40,7 +40,7 @@ confirm() {
     fi
 }
 
-power_cycle_behavior_cam() {
+reset_behavior_cam() {
     require lspci
 
     mapfile -t matches < <(lspci -D | grep -F "$BEHAVIOR_CAM_SUBSTR" || true)
@@ -60,7 +60,7 @@ power_cycle_behavior_cam() {
     echo "Done."
 }
 
-power_cycle_muscle_cam() {
+reset_muscle_cam() {
     # It's better to power cycle the muscle USB camera using uhubctl, but the
     # camera is directly plugged into the motherboard's native USB ports, which
     # do not support per-port power switching. Instead, we are disabling and
@@ -126,9 +126,9 @@ power_cycle_muscle_cam() {
 }
 
 if [[ "${1:-}" == "behavior" ]]; then
-    power_cycle_behavior_cam
+    reset_behavior_cam
 elif [[ "${1:-}" == "muscle" ]]; then
-    power_cycle_muscle_cam
+    reset_muscle_cam
 else
     die "Invalid argument. Usage: reset-camera <behavior|muscle>"
 fi
