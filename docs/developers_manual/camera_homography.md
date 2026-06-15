@@ -20,7 +20,7 @@ behavior camera to stage/arena coordinates and is unaffected.
 
 - `run-homography-scan` (recorder, C++): capture ChArUco board images for both
   cameras. *Not yet implemented; not built.*
-- A Python tool in `spotlight-tools` to fit the homography matrices from the scan.
+- A Python tool in `tools/` to fit the homography matrices from the scan.
   *Not yet implemented.*
 
 Until this is implemented, the recorder no longer writes a

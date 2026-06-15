@@ -12,8 +12,8 @@ Offline Python tools for the Spotlight recording system:
 
 ```bash
 # Install (uv recommended)
-cd spotlight-tools/
-uv pip install -e .
+cd tools/
+uv sync
 
 # Run the registration scan (C++ side) first, then fit the model:
 fit-arena-registration -a ~/Spotlight/arenas/arena146
