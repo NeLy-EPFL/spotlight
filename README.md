@@ -3,7 +3,7 @@
 This repository contains the control software for the Spotlight system presented in [Wang-Chen et al. (2026), Precise kinematic and muscle recording in freely behaving flies enabled by closed-loop tracking and annotation-free pose estimation
 ](https://go.epfl.ch/spotlight-poseforge). The firmware for the triggering microcontroller is also included.
 
-This codebase is entirely implemented in C++. A set of tools for calibration, postprocessing, etc. is implemented in Python. These tools are available in [a separate repository](https://github.com/NeLy-EPFL/spotlight-tools). The C++ codebase contains three parts:
+This codebase is entirely implemented in C++. A set of tools for calibration, postprocessing, etc. is implemented in Python and lives in [`tools/`](tools/). The C++ codebase contains three parts:
 
 - **`recorder/`:** The main recorder software that runs on the recording computer.
     - The recorder contains three user-facing programs (`align-cameras`, `run-arena-registration-scan`, and `run-spotlight`); a fourth, `run-homography-scan`, is planned but not yet implemented (see [`docs/configuration/camera_homography.md`](docs/configuration/camera_homography.md)):

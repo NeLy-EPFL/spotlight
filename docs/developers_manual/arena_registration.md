@@ -9,7 +9,7 @@ followed by a fit ([`fit-arena-registration`](../python-tools/fit_arena_registra
 Python).
 
 > [!IMPORTANT]
-> **Prerequisite:** install [`spotlight-tools`](https://github.com/NeLy-EPFL/spotlight-tools).
+> **Prerequisite:** install `spotlight-tools` from [`tools/`](../../tools/) (run `uv sync` inside that directory).
 
 ## Procedure
 

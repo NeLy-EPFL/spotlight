@@ -1,4 +1,4 @@
-"""Config loader for the spotlight-tools package (config/tools_config.yaml)."""
+"""Config loader for the spotlight-tools package (assets/tools_config.yaml)."""
 
 import yaml
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 def load_spotlight_tools_config() -> dict:
     spotlight_package_dir = Path(spotlight_tools.__path__[0]).expanduser()
-    config_path = spotlight_package_dir.parent.parent / "config/tools_config.yaml"
+    config_path = spotlight_package_dir / "assets/tools_config.yaml"
     if not config_path.exists():
         raise FileNotFoundError(
             f"Configuration file {config_path} does not exist. Make sure the "
