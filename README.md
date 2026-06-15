@@ -14,6 +14,10 @@ This codebase is entirely implemented in C++. A set of tools for calibration, po
     - The behavior (Euresys) camera is driven **in-process** by its acquirer thread. The muscle (PCO) camera runs as a **separate process**, `pco-camera-server` (`src/apps/pco_camera_server_main.cc`): the `MuscleCamera` class (`src/peripherals/muscle_camera.cc`) `fork()`+`execl()`s the server, which opens the PCO panda 4.2 and publishes each frame over shared memory; `MuscleCamera::wait_for_one_frame()` blocks on a shared condition variable for the latest frame. Keeping the PCO SDK in its own process isolates the `PCO_LINUX` Windows-compatibility shims (`BOOL`, `WORD`, `DWORD`, `HANDLE`, ...) that its headers inject into the global namespace, confines the PCO link/runtime dependencies to one binary, and ensures a crash in the PCO SDK cannot destabilize the GUI process. See [`docs/architecture.md`](docs/architecture.md) for details. (An in-process refactor of the muscle camera was attempted and abandoned; the separate-process design is the one in use.)
 - **`trigger_firmware/`**: The embedded code that runs on the triggering microcontroller.
 - **`comm_protocol/`**: A JSON-based protocol for serial communication between the recorder and the microcontroller implemented as a light library.
+
+The repository also contains the KiCad design files for the trigger circuit board:
+
+- **`trigger_hardware/`**: KiCad schematic and PCB layout for the triggering microcontroller circuit board.
     - This library is meant to be included by both the recorder and the microcontroller. Therefore, it needs to be especially efficient. It must avoid using exceptions to respect the linear workflow on the microcontroller.
     - Serializers and deserializers are included in this library.
 
