@@ -186,8 +186,8 @@ EOF
     alias fit-arena-registration="fit-arena-registration -a $arena_dir"
     
     cowsay -W80 -f "$COWFILE" << EOT
-The following command-line tool are now available to you,
-with no additional command-line arguments required:
+The following command-line programs are now available to you,
+with no additional arguments required:
 
 align-cameras
 
