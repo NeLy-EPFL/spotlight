@@ -2,15 +2,14 @@
 
 **Tl;dr: run `source init-spotlight.sh` and follow on-screen instructions.** This activates the Python virtual environment for `spotlight-tools` and remembers which profile and arena directories to use.
 
-> [!Note]
-> Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spotlight` with arguments specifying the profile and arena directories: e.g., `run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146`. Activate the Python virtual environment manually for `spotlight-tools` before running `fit-arena-registration`.
+Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spotlight` with arguments specifying the profile and arena directories: e.g., `run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146`. Activate the Python virtual environment manually for `spotlight-tools` before running `fit-arena-registration`.
 
 ---
 
 ## Step 1: Align cameras
 
-> [!NOTE]
-> Muscle imaging only. Skip if you are not doing muscle imaging.
+> [!IMPORTANT]
+> Muscle imaging only. Skip this step if you are recording behavior only.
 
 Aligns the behavior camera, muscle camera FOVs, and the blue excitation light spot. Redo this step if cameras or the LED are physically moved.
 
@@ -27,7 +26,7 @@ Aligns the behavior camera, muscle camera FOVs, and the blue excitation light sp
 ## Step 2: Run arena registration scan and fit arena registration model
 
 > [!IMPORTANT]
-> **Prerequisite:** `mapping_board.pdf` printed at 100% scale and placed in the arena. See [Arenas](custom_arena.md).
+> Prerequisite: `mapping_board.pdf` must be printed at 100% scale and placed in the arena. See [Arenas](custom_arena.md).
 
 Calibrates the mapping between camera pixels, stage positions, and physical arena coordinates. Redo if the arena or camera setup changes.
 
