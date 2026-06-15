@@ -41,6 +41,13 @@ reset-camera muscle     # disable + re-enable the PCO camera's USB link
 Note, however, that **this does not replace hardware power cycling**.
 
 
+## Total behavior frames no longer needs to be a multiple of 3
+
+The total number of behavior frames in the recording no longer needs to be a multiple of 3. In case where the remainder is 1 or 2, the the last two or one channel of the pseudo-RGB behavior image is black, and the associated metadata CSV file contains only information for the frames that exist. Note that the more reliable way to detect whether the last pseudo-RGB image contains empty channels is to check the number of lines in the metadata file, as the empty channels will not be completely dark due to JPEG compression.
+
+Accordingly, the frame index in the experiment protocol string no longer needs to be a multiple of 3.
+
+
 > [!NOTE]
 > 
 > The following improvements are not exposed to the user.

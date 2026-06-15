@@ -183,6 +183,8 @@ EOF
     alias run-arena-registration-scan="$RECORDER_BIN_PATH/run-arena-registration-scan -p $profile_dir -a $arena_dir"
     alias run-spotlight="$RECORDER_BIN_PATH/run-spotlight -p $profile_dir -a $arena_dir"
     alias reset-camera="$RECORDER_BIN_PATH/reset-camera"
+    alias fit-arena-registration="fit-arena-registration -a $arena_dir"
+
 
     print
     print "Setup complete. Aliases align-cameras, run-arena-registration-scan,"
