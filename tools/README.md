@@ -16,7 +16,7 @@ cd tools/
 uv sync
 
 # Run the registration scan (C++ side) first, then fit the model:
-fit-arena-registration -a ~/Spotlight/arenas/arena146
+fit-arena-registration -a ~/Spotlight/arenas/arena146x146
 
 # Post-process a recording:
 postprocess-recording --recording-dir ~/data/spotlight/20250613-fly1b-002/ --with-muscle
@@ -29,6 +29,6 @@ postprocess-recording --recording-dir ~/data/spotlight/20250613-fly1b-002/ --wit
 | `fit-arena-registration` | `scripts/fit_arena_registration.py` | Fit registration model from scan images. |
 | `postprocess-recording` | `scripts/postprocess_recording.py` | Full postprocessing pipeline. |
 | `visualize-stage-trajectory` | `scripts/visualize_stage_trajectory.py` | Plot stage XY path. |
-| *(run directly)* | `scripts/arena/make_arena146_config.py` | Regenerate arena146 assets from `arena146_spec.pdf`. |
+| *(run directly)* | `scripts/arena/make_arena146x146_config.py` | Regenerate arena146x146 assets from `arena_spec.pdf`. |
 
 See the [wiki](https://github.com/NeLy-EPFL/spotlight-control/wiki) for the full procedure.

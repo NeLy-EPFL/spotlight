@@ -2,7 +2,7 @@
 spotlight_tools.calibration -- legacy ArUco-based calibration (still used by postprocessing).
 
 This package implements the original ArUco board scanning and linear mapper
-that was used before the arena146 AprilTag registration pipeline. It is
+that was used before the arena146x146 AprilTag registration pipeline. It is
 retained because postprocessing/muscle.py still depends on
 SpotlightPositionMapper and BehaviorMuscleCrossMapper to warp muscle frames
 into the behavior camera coordinate system.

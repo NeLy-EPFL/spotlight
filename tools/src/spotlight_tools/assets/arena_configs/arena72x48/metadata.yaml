@@ -1,0 +1,151 @@
+checksum: 7a448c23
+arena_dim:
+- 48.0
+- 72.0
+datamatrix_pos:
+  topleft:
+  - 20.5
+  - 32.5
+  topright:
+  - 27.5
+  - 32.5
+  bottomleft:
+  - 20.5
+  - 39.5
+  bottomright:
+  - 27.5
+  - 39.5
+  center:
+  - 24.0
+  - 36.0
+apriltag_positions:
+  0:
+    topleft:
+    - 6.5
+    - 34.5
+    topright:
+    - 9.5
+    - 34.5
+    bottomleft:
+    - 6.5
+    - 37.5
+    bottomright:
+    - 9.5
+    - 37.5
+    center:
+    - 8.0
+    - 36.0
+  1:
+    topleft:
+    - 6.5
+    - 6.5
+    topright:
+    - 9.5
+    - 6.5
+    bottomleft:
+    - 6.5
+    - 9.5
+    bottomright:
+    - 9.5
+    - 9.5
+    center:
+    - 8.0
+    - 8.0
+  2:
+    topleft:
+    - 22.5
+    - 6.5
+    topright:
+    - 25.5
+    - 6.5
+    bottomleft:
+    - 22.5
+    - 9.5
+    bottomright:
+    - 25.5
+    - 9.5
+    center:
+    - 24.0
+    - 8.0
+  3:
+    topleft:
+    - 38.5
+    - 6.5
+    topright:
+    - 41.5
+    - 6.5
+    bottomleft:
+    - 38.5
+    - 9.5
+    bottomright:
+    - 41.5
+    - 9.5
+    center:
+    - 40.0
+    - 8.0
+  4:
+    topleft:
+    - 38.5
+    - 34.5
+    topright:
+    - 41.5
+    - 34.5
+    bottomleft:
+    - 38.5
+    - 37.5
+    bottomright:
+    - 41.5
+    - 37.5
+    center:
+    - 40.0
+    - 36.0
+  5:
+    topleft:
+    - 38.5
+    - 62.5
+    topright:
+    - 41.5
+    - 62.5
+    bottomleft:
+    - 38.5
+    - 65.5
+    bottomright:
+    - 41.5
+    - 65.5
+    center:
+    - 40.0
+    - 64.0
+  6:
+    topleft:
+    - 22.5
+    - 62.5
+    topright:
+    - 25.5
+    - 62.5
+    bottomleft:
+    - 22.5
+    - 65.5
+    bottomright:
+    - 25.5
+    - 65.5
+    center:
+    - 24.0
+    - 64.0
+  7:
+    topleft:
+    - 6.5
+    - 62.5
+    topright:
+    - 9.5
+    - 62.5
+    bottomleft:
+    - 6.5
+    - 65.5
+    bottomright:
+    - 9.5
+    - 65.5
+    center:
+    - 8.0
+    - 64.0
+active_area_raster_resolution: 0.1
+unit: mm

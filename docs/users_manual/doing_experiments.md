@@ -1,8 +1,8 @@
 # Doing experiments
 
-**Tl;dr: run `source init-spotlight.sh` and follow on-screen instructions.** This activates the Python virtual environment for `spotlight-tools` and remembers which profile and arena directories to use.
+**Tl;dr: run `source init-spotlight.sh` and follow on-screen instructions.** This activates the Python virtual environment for the tools in `tools/` and remembers which profile and arena directories to use.
 
-Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spotlight` with arguments specifying the profile and arena directories: e.g., `run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146`. Activate the Python virtual environment manually for `spotlight-tools` before running `fit-arena-registration`.
+Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spotlight` with arguments specifying the profile and arena directories: e.g., `run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146x146`. Activate the Python virtual environment manually (`tools/`) before running `fit-arena-registration`.
 
 ---
 
@@ -30,7 +30,7 @@ Aligns the behavior camera, muscle camera FOVs, and the blue excitation light sp
 
 Calibrates the mapping between camera pixels, stage positions, and physical arena coordinates. Redo if the arena or camera setup changes.
 
-1. Run `run-arena-registration-scan`. A live preview opens with crosshairs. Move the stages so the DataMatrix barcode (center of the board) is roughly centered under the crosshairs, then press **ENTER**. The program verifies the board matches the arena metadata, then automatically visits each AprilTag (a few minutes for arena146).
+1. Run `run-arena-registration-scan`. A live preview opens with crosshairs. Move the stages so the DataMatrix barcode (center of the board) is roughly centered under the crosshairs, then press **ENTER**. The program verifies the board matches the arena metadata, then automatically visits each AprilTag (a few minutes for arena146x146).
 2. Fit the registration model by running `fit-arena-registration`. This writes `model/calibration_result.yaml` and `model/diagnostics.png` to the arena directory. Check the diagnostics: a good fit has RMSE ≲ 0.1 mm and R² ≈ 1.0. See [Arena registration](../developers_manual/arena_registration.md) for details.
 
 
