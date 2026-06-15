@@ -160,18 +160,18 @@ EOF
 
     cowsay -f "$COWFILE" "Who would use Spotlight must answer me these questions three, ere the other side they see."
 
-    echo ""
-    echo "WHAT IS YOUR NAME?"
+    print
+    print "WHAT IS YOUR NAME?"
     profile_dir=$(select_dir "$PROFILES_BASEDIR" "$DEFAULT_PROFILE" "profile") || return 1
     print "Using profile: $profile_dir"
 
-    echo ""
-    echo "WHAT IS YOUR QUEST?"
+    print
+    print "WHAT IS YOUR QUEST?"
     arena_dir=$(select_dir "$ARENAS_BASEDIR" "$DEFAULT_ARENA" "arena") || return 1
     print "Using arena: $arena_dir"
 
     # Monty Python joke
-    echo ""
+    print
     read -r "color?What is your favorite color? [default: blue] "
     [[ ${color:-blue} == yellow ]] && {
         print -u2 "Error: wrong color, ahhhhhh"
@@ -184,12 +184,7 @@ EOF
     alias run-spotlight="$RECORDER_BIN_PATH/run-spotlight -p $profile_dir -a $arena_dir"
     alias reset-camera="$RECORDER_BIN_PATH/reset-camera"
     alias fit-arena-registration="fit-arena-registration -a $arena_dir"
-
-
-    print
-    print "Setup complete. Aliases align-cameras, run-arena-registration-scan,"
-    print "run-spotlight, and reset-camera are now active in this shell."
-
+    
     cowsay -W80 -f "$COWFILE" << EOT
 The following command-line tool are now available to you,
 with no additional command-line arguments required:
