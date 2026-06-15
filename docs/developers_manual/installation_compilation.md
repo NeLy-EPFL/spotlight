@@ -1,14 +1,12 @@
 # Installation & compilation
 
-## Step 1: Clone Git repositories
+## Step 1: Clone Git repository
 
 ```bash
-# Clone C++ and embedded codebase
 git clone git@github.com:NeLy-EPFL/spotlight-control.git
-
-# Clone Python tools
-git clone git@github.com:NeLy-EPFL/spotlight-tools.git
 ```
+
+The Python tools (`tools/`) are part of this repository — no separate clone needed.
 
 ## Step 2: Build recorder programs
 
@@ -45,10 +43,10 @@ pio run -d trigger_firmware -t upload
 cd ..
 ```
 
-## Step 4: Install `spotlight-tools`
+## Step 4: Install Python tools
 
 ```bash
-cd spotlight-tools
+cd tools
 uv sync  # see https://docs.astral.sh/uv/ if uv is not installed
 cd ..
 ```

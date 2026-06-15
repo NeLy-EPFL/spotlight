@@ -3,7 +3,7 @@
 This repository contains the control software for the Spotlight system presented in [Wang-Chen et al. (2026), Precise kinematic and muscle recording in freely behaving flies enabled by closed-loop tracking and annotation-free pose estimation
 ](https://go.epfl.ch/spotlight-poseforge). The firmware for the triggering microcontroller is also included.
 
-This codebase is entirely implemented in C++. A set of tools for calibration, postprocessing, etc. is implemented in Python. These tools are available in [a separate repository](https://github.com/NeLy-EPFL/spotlight-tools). The C++ codebase contains three parts:
+This codebase is entirely implemented in C++. A set of tools for calibration, postprocessing, etc. is implemented in Python. These tools are available in the `tools/` subdirectory of this repository. The C++ codebase contains three parts:
 
 - **`recorder/`:** The main recorder software that runs on the recording computer.
     - The recorder contains three user-facing programs (`align-cameras`, `run-arena-registration-scan`, and `run-spotlight`); a fourth, `run-homography-scan`, is planned but not yet implemented (see [`docs/configuration/camera_homography.md`](docs/configuration/camera_homography.md)):
@@ -15,8 +15,9 @@ This codebase is entirely implemented in C++. A set of tools for calibration, po
 - **`trigger_firmware/`**: The embedded code that runs on the triggering microcontroller.
 - **`comm_protocol/`**: A JSON-based protocol for serial communication between the recorder and the microcontroller implemented as a light library.
 
-The repository also contains the KiCad design files for the trigger circuit board:
+The repository also contains:
 
+- **`tools/`**: Offline Python tools for calibration and postprocessing (`fit-arena-registration`, `postprocess-recording`, etc.). See `tools/README.md`.
 - **`trigger_hardware/`**: KiCad schematic and PCB layout for the triggering microcontroller circuit board.
     - This library is meant to be included by both the recorder and the microcontroller. Therefore, it needs to be especially efficient. It must avoid using exceptions to respect the linear workflow on the microcontroller.
     - Serializers and deserializers are included in this library.

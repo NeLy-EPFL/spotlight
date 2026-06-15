@@ -69,6 +69,6 @@ pio test -d trigger_firmware -f test_protocol --without-building --without-uploa
 cd ..
 ```
 
-## Python codebase (`spotlight-tools`)
+## Python codebase (`tools/`)
 
 TODO
