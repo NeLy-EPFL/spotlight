@@ -18,6 +18,11 @@ batch_scripts/
 outputs/
 notebooks/
 
+# For KiCAD stuff
+*-backups/
+fp-info-cache
+*.kicad_prl
+gerber/
 
 # Created by https://www.toptal.com/developers/gitignore/api/c++,git,vim,cmake,linux,macos,windows,platformio,visualstudiocode,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,git,vim,cmake,linux,macos,windows,platformio,visualstudiocode,python
