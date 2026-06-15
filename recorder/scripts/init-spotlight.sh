@@ -42,7 +42,7 @@ COWFILE="default"
 PROFILES_BASEDIR="$HOME/Spotlight/profiles"
 DEFAULT_PROFILE="$PROFILES_BASEDIR/default"
 ARENAS_BASEDIR="$HOME/Spotlight/arenas"
-DEFAULT_ARENA="$ARENAS_BASEDIR/arena146"
+DEFAULT_ARENA="$ARENAS_BASEDIR/arena146x146"
 
 # Binaries that the aliases below depend on, expected directly under
 # RECORDER_BIN_PATH. "fit-arena-registration" is checked separately below,

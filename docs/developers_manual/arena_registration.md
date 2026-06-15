@@ -9,7 +9,7 @@ followed by a fit ([`fit-arena-registration`](../python-tools/fit_arena_registra
 Python).
 
 > [!IMPORTANT]
-> **Prerequisite:** install [`spotlight-tools`](https://github.com/NeLy-EPFL/spotlight-tools).
+> **Prerequisite:** install the Python tools in `tools/` (see [Installation](installation_compilation.md), Step 4).
 
 ## Procedure
 
@@ -18,7 +18,7 @@ Python).
 ```bash
 run-arena-registration-scan \
     -p ~/Spotlight/profiles/default \
-    -a ~/Spotlight/arenas/arena146
+    -a ~/Spotlight/arenas/arena146x146
 ```
 
 1. A live behavior-camera preview opens with crosshairs. Move the stages so the
@@ -28,16 +28,16 @@ run-arena-registration-scan \
    `metadata.yaml`. A mismatch (e.g. the wrong board in the arena) aborts with an
    error.
 3. The stage automatically visits each AprilTag, acquires 10 frames per tag, and
-   writes everything to `~/Spotlight/arenas/arena146/mapping_scan/`.
+   writes everything to `~/Spotlight/arenas/arena146x146/mapping_scan/`.
 
-The scan takes a few minutes (8 AprilTags × 10 frames for arena146). See the
+The scan takes a few minutes (8 AprilTags × 10 frames for arena146x146). See the
 [`run-arena-registration-scan` page](../recorder/run_arena_registration_scan.md) for
 details and the exact output format.
 
 ### Step 2 — Fit the registration model
 
 ```bash
-fit-arena-registration -a ~/Spotlight/arenas/arena146
+fit-arena-registration -a ~/Spotlight/arenas/arena146x146
 ```
 
 This writes `model/calibration_result.yaml`, `model/calibration_points.csv`, and
@@ -53,7 +53,7 @@ options.
 ```bash
 ./run-spotlight \
     -p ~/Spotlight/profiles/default \
-    -a ~/Spotlight/arenas/arena146
+    -a ~/Spotlight/arenas/arena146x146
 ```
 
 `run-spotlight` reads `model/calibration_result.yaml` and `metadata.yaml` from the
@@ -76,10 +76,10 @@ Registration establishes two mappings for the behavior camera:
 
 ### Strategy
 
-1. **Arena spec.** The arena PDF (`arena146_spec.pdf`) encodes the physical
+1. **Arena spec.** The arena PDF (`arena_spec.pdf`) encodes the physical
    (arena-space) positions of all AprilTag corners and the DataMatrix center, in
    mm. `ArenaConfig` parses this and writes `metadata.yaml`.
-2. **Mapping board.** `make_arena146_config.py` generates a printable
+2. **Mapping board.** `make_arena146x146_config.py` generates a printable
    `mapping_board.pdf` with AprilTag markers at the spec's locations, plus a
    DataMatrix barcode encoding an 8-character checksum of the full spec.
 3. **Registration scan.** `run-arena-registration-scan`:
@@ -129,7 +129,7 @@ spatial pattern.
 The previous pipeline used an ArUco board scanned on a dense grid, detected with
 OpenCV, and fitted per-camera. The current pipeline uses:
 
-- a sparse set of AprilTag markers (8 for arena146) at known positions in the PDF
+- a sparse set of AprilTag markers (8 for arena146x146) at known positions in the PDF
   spec;
 - `pupil_apriltags` for detection (more robust than `cv2.aruco` for tag16h5);
 - per-burst MAD filtering to exploit the repeated measurements per tag;
