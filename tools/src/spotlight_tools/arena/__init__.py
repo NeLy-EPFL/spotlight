@@ -2,7 +2,7 @@
 spotlight_tools.arena -- arena configuration and registration fitting.
 
 ArenaConfig
-    Parses a PDF arena spec (arena146_spec.pdf) to extract AprilTag and
+    Parses a PDF arena spec (arena_spec.pdf) to extract AprilTag and
     DataMatrix positions, rasterise the active-area mask, and write the
     three derived assets (mapping_board.pdf, active_area.png, metadata.yaml)
     to the arena directory.

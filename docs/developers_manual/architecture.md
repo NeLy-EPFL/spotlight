@@ -83,5 +83,4 @@ recorder and the firmware. See [comm_protocol.md](comm_protocol.md) and
 - `trigger_firmware/` — the microcontroller firmware (PlatformIO).
 - `comm_protocol/` — the shared JSON protocol library (CMake; included by both of
   the above).
-
-The offline Python tools are in [`tools/`](../../tools/) within this repository.
+- `tools/` — the offline Python tools (`fit-arena-registration`, `postprocess-recording`, etc.).
