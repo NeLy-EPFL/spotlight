@@ -10,4 +10,6 @@ The software in this repository orchestrates the following hardware:
 - Two additional light control channels provided by the CCS PD3-3024-3-EI(A) controller for optogenetic stimulation. The controller allows for three channels, the first one being occupied by the IR LED. A vibrator can also be connected to the CCS controller in place of an LED to provide mechanical stimulation to the fly.
 - Microcontroller to provide TTL signals to trigger cameras for frame capture and light controllers for strobing (Arduino Nano ESP32). The computer that the recorder software runs on sends commands to the triggering microcontroller via serial IO (USB).
 
+The KiCad schematic and PCB layout for the trigger circuit board are in [`trigger_hardware/`](../../trigger_hardware/).
+
 For discussion on camera frame rates, see [Frame rate limits](../users_manual/frame_rate_limits.md).
