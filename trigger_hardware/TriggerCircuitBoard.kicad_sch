@@ -4613,10 +4613,6 @@
 		(uuid "dcf46353-6ded-459f-a118-661162a17ca0")
 	)
 	(no_connect
-		(at 52.07 64.77)
-		(uuid "6bee0123-593a-4b3a-afb0-18c8af83e554")
-	)
-	(no_connect
 		(at 259.08 38.1)
 		(uuid "6fd23e28-5855-4fc3-8c4a-5b7e612b2255")
 	)
@@ -5559,6 +5555,16 @@
 			(justify right bottom)
 		)
 		(uuid "62184eaf-2d54-460d-8ad9-8ff83704ca27")
+	)
+	(label "VIN"
+		(at 52.07 64.77 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "62ab3a54-1f7b-425a-9867-e878aefeecea")
 	)
 	(label "CCS_Ch1_LVTTL"
 		(at 90.17 158.75 180)
