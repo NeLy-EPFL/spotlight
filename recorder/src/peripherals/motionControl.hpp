@@ -2,44 +2,35 @@
 #define MOTION_CONTROL_HPP
 
 #include <iostream>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
-#include <zaber/motion/ascii.h>
 #include <spdlog/spdlog.h>
+#include <zaber/motion/ascii.h>
 
 #include "../common/recorderConfig.hpp"
 #include "../common/utils.hpp"
 
 namespace zmASCII = zaber::motion::ascii;
 
-enum MotionAxis
-{
-    X_AXIS,
-    Y_AXIS
-};
+enum MotionAxis { X_AXIS, Y_AXIS };
 
-class MotionControl
-{
-public:
+class MotionControl {
+  public:
     MotionControl(const RecorderConfig &recorderConfig);
     ~MotionControl();
-    void moveAbsolute(
-        MotionAxis axis,
-        double position,
-        bool wait,
-        double velocity);
+    void
+    moveAbsolute(MotionAxis axis, double position, bool wait, double velocity);
     void moveRelative(
-        MotionAxis axis,
-        double relativePosition,
-        bool wait,
-        double velocity);
+        MotionAxis axis, double relativePosition, bool wait, double velocity);
     void home(MotionAxis axis, bool wait);
     double getPosition(MotionAxis axis);
+    double getMinPosition(MotionAxis axis);
+    double getMaxPosition(MotionAxis axis);
     void waitUntilIdle(MotionAxis axis);
     bool checkIfIdle(MotionAxis axis);
 
-private:
+  private:
     RecorderConfig recorderConfig_;
     std::unordered_map<unsigned int, MotionAxis> serialNumberToAxisLookup_;
     std::string serialPortName_;

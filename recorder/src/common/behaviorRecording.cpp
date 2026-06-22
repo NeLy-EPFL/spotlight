@@ -4,20 +4,19 @@ void behaviorImageAcquirer(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<ProgramState> programState,
-    std::shared_ptr<ProgrammedStop> programmedRecordingStop)
-{
+    std::shared_ptr<ProgrammedStop> programmedRecordingStop) {
     spdlog::info("Behavior image acquirer thread started");
     BehaviorCameraROI cameraROI = getBehaviorBehaviorCameraROI(recorderConfig);
 
     std::string frameGrabberTriggerLine =
-        recorderConfig.getParameter<std::string>("behavior_camera",
-                                                 "frame_grabber_trigger_line");
-    behaviorRecordingState->behaviorCamera =
-        std::make_shared<BehaviorCamera>(cameraROI.imageWidth,
-                                         cameraROI.imageHeight,
-                                         cameraROI.xOffset,
-                                         cameraROI.yOffset,
-                                         frameGrabberTriggerLine);
+        recorderConfig.getParameter<std::string>(
+            "behavior_camera", "frame_grabber_trigger_line");
+    behaviorRecordingState->behaviorCamera = std::make_shared<BehaviorCamera>(
+        cameraROI.imageWidth,
+        cameraROI.imageHeight,
+        cameraROI.xOffset,
+        cameraROI.yOffset,
+        frameGrabberTriggerLine);
 
     spdlog::info("Behavior camera configured");
 
@@ -30,8 +29,7 @@ void behaviorImageAcquirer(
 
     bool isFristFrameRecorded = true;
 
-    while (!programState->toQuit.load())
-    {
+    while (!programState->toQuit.load()) {
         // Acquire image data
         // // Benchmark here shows that the waitForOneFrame() function takes
         // // on average (triggeringCyclePeriod - 150) us to complete. So we
@@ -48,14 +46,11 @@ void behaviorImageAcquirer(
         // spdlog::info("Behavior camera waited {} us", waitTime);
 
         // Update latest frame for live display
-        behaviorRecordingState
-            ->latestFrameHolder
-            ->setLatestFrameData(frameData);
+        behaviorRecordingState->latestFrameHolder->setLatestFrameData(
+            frameData);
 
-        if (programState->isRecording.load())
-        {
-            if (isFristFrameRecorded)
-            {
+        if (programState->isRecording.load()) {
+            if (isFristFrameRecorded) {
                 // Reset these to 0 in preparation for the upcoming recording
                 // session
                 frameDataBufferIndex = 0;
@@ -67,13 +62,10 @@ void behaviorImageAcquirer(
 
             frameDataBuffer[frameDataBufferIndex++] = frameData;
 
-            if (frameDataBufferIndex == 3)
-            {
+            if (frameDataBufferIndex == 3) {
                 // Add to queue
                 GroupOfThreeFrames groupOfThreeFrames = {
-                    frameDataBuffer[0],
-                    frameDataBuffer[1],
-                    frameDataBuffer[2]};
+                    frameDataBuffer[0], frameDataBuffer[1], frameDataBuffer[2]};
                 {
                     std::lock_guard<std::mutex> lock(
                         behaviorRecordingState->behaviorImageQueueMutex);
@@ -86,20 +78,17 @@ void behaviorImageAcquirer(
             }
 
             // Whether we've reached a programmed stop
-            int numFramesExpected = programmedRecordingStop->numBehaviorFramesExpected;
+            int numFramesExpected =
+                programmedRecordingStop->numBehaviorFramesExpected;
             if (currentFrameId == numFramesExpected - 1 &&
-                numFramesExpected >= 0)
-            {
-                programmedRecordingStop
-                    ->hasEndedFlagForGUI.store(true);
+                numFramesExpected >= 0) {
+                programmedRecordingStop->hasEndedFlagForGUI.store(true);
                 spdlog::info("Programmed stop reached. Behavior acquisition "
                              "thread is telling GUI to stopping recording.");
             }
 
             currentFrameId++;
-        }
-        else
-        {
+        } else {
             // Reset these to 0 in preparation for the next recording session
             frameDataBufferIndex = 0;
             currentFrameId = 0;
@@ -117,14 +106,13 @@ void behaviorImageSaver(
     const RecorderConfig &recorderConfig,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<SaveDirectory> saveDirectory,
-    std::shared_ptr<ProgramState> programState)
-{
+    std::shared_ptr<ProgramState> programState) {
     std::thread::id myThreadId = std::this_thread::get_id();
     std::stringstream ss;
     ss << myThreadId;
     std::string threadIdString = ss.str();
-    spdlog::info("Behavior image saver thread started (thread ID {})",
-                 threadIdString);
+    spdlog::info(
+        "Behavior image saver thread started (thread ID {})", threadIdString);
 
     // Define OpenCV JPEG saving parameters
     std::vector<int> compressionParams;
@@ -146,19 +134,19 @@ void behaviorImageSaver(
     int performanceLoggingInterval = recorderConfig.getParameter<int>(
         "behavior_camera", "saving_performance_logging_interval");
 
-    while (!programState->toQuit.load())
-    {
+    while (!programState->toQuit.load()) {
         GroupOfThreeFrames frameGroup;
         {
             std::unique_lock<std::mutex> lock(
                 behaviorRecordingState->behaviorImageQueueMutex);
             behaviorRecordingState->behaviorImageQueueCondVar.wait(
-                lock, [&behaviorRecordingState, programState]
-                { return !behaviorRecordingState->behaviorImageQueue.empty() ||
-                         programState->toQuit.load(); });
+                lock, [&behaviorRecordingState, programState] {
+                    return !behaviorRecordingState->behaviorImageQueue
+                                .empty() ||
+                           programState->toQuit.load();
+                });
 
-            if (programState->toQuit.load())
-            {
+            if (programState->toQuit.load()) {
                 spdlog::info(
                     "Behavior image saver thread is breaking out of loop.");
                 break;
@@ -172,8 +160,7 @@ void behaviorImageSaver(
         uint64_t startTime = getCurrentTimeMicroseconds();
 
         std::string filenameStem =
-            "behavior_frame_" +
-            fmt::format("{:09}", frameGroup.frame0.frameId);
+            "behavior_frame_" + fmt::format("{:09}", frameGroup.frame0.frameId);
         std::filesystem::path behaviorSaveDir =
             std::filesystem::path(saveDirectory->getDirectory()) /
             "behavior_images";
@@ -191,13 +178,14 @@ void behaviorImageSaver(
         metadataFile.close();
 
         uint64_t walltime = getCurrentTimeMicroseconds() - startTime;
-        if (frameCount % performanceLoggingInterval == 0)
-        {
+        if (frameCount % performanceLoggingInterval == 0) {
             spdlog::info(
                 "Behavior image saver thread (thread ID {}) reporting: "
                 "{} frames in queue; "
                 "it took {} us to save a group of three frames",
-                threadIdString, queueLength, walltime);
+                threadIdString,
+                queueLength,
+                walltime);
         }
         frameCount++;
     }
@@ -206,59 +194,51 @@ void behaviorImageSaver(
 
 void stopBehaviorImageSaver(
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
-    std::shared_ptr<ProgramState> programState)
-{
-    if (!programState->toQuit.load())
-    {
-        spdlog::critical(
-            "stopBehaviorImageSaver() called but toQuit is "
-            "not set to true. This shouldn't happen.");
+    std::shared_ptr<ProgramState> programState) {
+    if (!programState->toQuit.load()) {
+        spdlog::critical("stopBehaviorImageSaver() called but toQuit is "
+                         "not set to true. This shouldn't happen.");
         throw std::runtime_error(
             "stopBehaviorImageSaver() called but toQuit is "
             "not set to true. This shouldn't happen.");
-    }
-    else
-    {
+    } else {
         behaviorRecordingState->behaviorImageQueueCondVar.notify_all();
     }
 }
 
-BehaviorCameraROI getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig)
-{
+BehaviorCameraROI
+getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig) {
     int imageWidth = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_width"));
     int imageHeight = roundToNearestValidBehaviorCamDimension(
         recorderConfig.getParameter<int>("behavior_camera", "roi_height"));
-    int fullFrameWidth = recorderConfig.getParameter<int>(
-        "behavior_camera", "full_frame_width");
+    int fullFrameWidth =
+        recorderConfig.getParameter<int>("behavior_camera", "full_frame_width");
     int fullFrameHeight = recorderConfig.getParameter<int>(
         "behavior_camera", "full_frame_height");
 
-    if (imageWidth < 0 ||
-        imageHeight < 0 ||
-        fullFrameWidth < 0 ||
-        fullFrameHeight < 0 ||
-        imageWidth > fullFrameWidth ||
-        imageHeight > fullFrameHeight)
-    {
-        std::string errorMessage =
-            fmt::format(
-                "Invalid camera ROI or full frame size: "
-                "imageWidth = {}, imageHeight = {}, "
-                "fullFrameWidth = {}, fullFrameHeight = {}",
-                imageWidth, imageHeight, fullFrameWidth, fullFrameHeight);
+    if (imageWidth < 0 || imageHeight < 0 || fullFrameWidth < 0 ||
+        fullFrameHeight < 0 || imageWidth > fullFrameWidth ||
+        imageHeight > fullFrameHeight) {
+        std::string errorMessage = fmt::format(
+            "Invalid camera ROI or full frame size: "
+            "imageWidth = {}, imageHeight = {}, "
+            "fullFrameWidth = {}, fullFrameHeight = {}",
+            imageWidth,
+            imageHeight,
+            fullFrameWidth,
+            fullFrameHeight);
         spdlog::critical(errorMessage);
         throw std::runtime_error(errorMessage);
     }
 
-    auto [xOffset, yOffset] = getCenteredOffsets(imageWidth,
-                                                 imageHeight,
-                                                 fullFrameWidth,
-                                                 fullFrameHeight);
+    auto [xOffset, yOffset] = getCenteredOffsets(
+        imageWidth, imageHeight, fullFrameWidth, fullFrameHeight);
 
-    BehaviorCameraROI cameraROI = {(unsigned int)imageWidth,
-                           (unsigned int)imageHeight,
-                           (unsigned int)xOffset,
-                           (unsigned int)yOffset};
+    BehaviorCameraROI cameraROI = {
+        (unsigned int)imageWidth,
+        (unsigned int)imageHeight,
+        (unsigned int)xOffset,
+        (unsigned int)yOffset};
     return cameraROI;
 }

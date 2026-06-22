@@ -1,12 +1,12 @@
 #ifndef MUSCLE_RECORDING_HPP
 #define MUSCLE_RECORDING_HPP
 
+#include <atomic>
+#include <condition_variable>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <queue>
-#include <condition_variable>
-#include <atomic>
-#include <fstream>
 #include <tuple>
 
 #include <spdlog/spdlog.h>
@@ -15,8 +15,7 @@
 #include "recorderConfig.hpp"
 #include "utils.hpp"
 
-struct MuscleRecordingState
-{
+struct MuscleRecordingState {
     std::shared_ptr<MuscleCamera> muscleCamera = nullptr;
     std::queue<FrameData> muscleImageQueue;
     std::mutex muscleImageQueueMutex;
@@ -24,9 +23,8 @@ struct MuscleRecordingState
     std::shared_ptr<LatestFrame> latestFrameHolder;
 };
 
-class MuscleCameraROI
-{
-public:
+class MuscleCameraROI {
+  public:
     int x0;
     int x1;
     int y0;

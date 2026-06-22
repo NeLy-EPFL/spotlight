@@ -1,12 +1,12 @@
 #ifndef BEHAVIOR_CAMERA_HPP
 #define BEHAVIOR_CAMERA_HPP
 
+#include <cassert>
+#include <csignal>
+#include <functional>
 #include <iostream>
 #include <string>
-#include <cassert>
-#include <functional>
 #include <tuple>
-#include <csignal>
 
 #include <EGrabber.h>
 #include <FormatConverter.h>
@@ -16,9 +16,8 @@
 #include "../common/dataTypes.hpp"
 #include "../common/utils.hpp"
 
-class BehaviorCamera
-{
-public:
+class BehaviorCamera {
+  public:
     BehaviorCamera(
         unsigned int imageWidth,
         unsigned int imageHeight,
@@ -31,7 +30,7 @@ public:
     FrameData waitForOneFrame();
     bool isReady() const;
 
-private:
+  private:
     Euresys::EGenTL genTL_;
     Euresys::EGrabberCameraInfo camera_;
     std::unique_ptr<Euresys::EGrabber<>> frameGrabberPtr_;

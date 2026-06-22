@@ -1,24 +1,23 @@
 #ifndef BEHAVIOR_RECORDING_HPP
 #define BEHAVIOR_RECORDING_HPP
 
+#include <atomic>
+#include <condition_variable>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <queue>
-#include <condition_variable>
-#include <atomic>
-#include <fstream>
-#include <filesystem>
 #include <set>
 
 #include <spdlog/spdlog.h>
 
 #include "../peripherals/behaviorCamera.hpp"
+#include "dataTypes.hpp"
 #include "recorderConfig.hpp"
 #include "utils.hpp"
-#include "dataTypes.hpp"
 
-struct BehaviorRecordingState
-{
+struct BehaviorRecordingState {
     std::shared_ptr<BehaviorCamera> behaviorCamera = nullptr;
     std::queue<GroupOfThreeFrames> behaviorImageQueue;
     std::mutex behaviorImageQueueMutex;
@@ -26,8 +25,8 @@ struct BehaviorRecordingState
     std::shared_ptr<LatestFrame> latestFrameHolder;
 };
 
-BehaviorCameraROI getBehaviorBehaviorCameraROI(
-    const RecorderConfig &recorderConfig);
+BehaviorCameraROI
+getBehaviorBehaviorCameraROI(const RecorderConfig &recorderConfig);
 
 // Function declarations
 void behaviorImageAcquirer(

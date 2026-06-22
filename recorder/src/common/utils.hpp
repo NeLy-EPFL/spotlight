@@ -1,36 +1,36 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include <iostream>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <mutex>
 
-#include <opencv2/opencv.hpp>
 #include <QSerialPort>
 #include <QSerialPortInfo>
-#include <yaml-cpp/yaml.h>
+#include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
+#include <yaml-cpp/yaml.h>
 
 #include "dataTypes.hpp"
-#include "fileFormatVersions.hpp"
 
 namespace fs = std::filesystem;
 
 uint64_t getCurrentTimeMicroseconds();
 
-void reorientBehaviorImage(cv::Mat &sourceImage, cv::Mat &targetImage);
-void reorientMuscleImage(cv::Mat &sourceImage, cv::Mat &targetImage);
-cv::Mat makePseudoBGRImageFromThreeFrames(
-    const GroupOfThreeFrames &groupOfThreeFrames);
-std::string makeMetadataStringFromThreeFrames(
-    const GroupOfThreeFrames &groupOfThreeFrames);
+void reorientBehaviorImage(const cv::Mat &sourceImage, cv::Mat &targetImage);
+void reorientMuscleImage(const cv::Mat &sourceImage, cv::Mat &targetImage);
+cv::Mat
+makePseudoBGRImageFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
+std::string
+makeMetadataStringFromThreeFrames(const GroupOfThreeFrames &groupOfThreeFrames);
 
-std::string getSerialPortName(std::string deviceDescription,
-                              std::string deviceManufacturer);
+std::string getSerialPortName(
+    const std::string &deviceDescription,
+    const std::string &deviceManufacturer);
 
 int calculateBehaviorCameraPreviewWidth(
     int behaviorCameraPreviewHeight,
@@ -43,14 +43,11 @@ size_t getMyThreadIdHash();
 
 std::string expandPath(const std::string &path);
 
-void convert16BitTo8Bit(cv::Mat &sourceImage,
-                        cv::Mat &targetImage,
-                        int scale,
-                        int offset);
+void convert16BitTo8Bit(
+    const cv::Mat &sourceImage, cv::Mat &targetImage, int scale, int offset);
 
-int calculateMuscleShutterOpenTime(int numLinesScanned,
-                                   float rollingShutterLineTimeUs,
-                                   int exposureTimeUs);
+int calculateMuscleShutterOpenTime(
+    int numLinesScanned, float rollingShutterLineTimeUs, int exposureTimeUs);
 
 void writeExperimentParameters(
     const std::filesystem::path &outputPath,
@@ -61,27 +58,25 @@ void writeExperimentParameters(
     float muscle_exposure_time_ms,
     const std::string &experiment_protocol);
 
-class SaveDirectory
-{
-public:
-    SaveDirectory(std::string directory);
-    void setDirectory(std::string directory);
+class SaveDirectory {
+  public:
+    SaveDirectory(const std::string &directory);
+    void setDirectory(const std::string &directory);
     std::filesystem::path getDirectory();
     void initialize();
 
-private:
+  private:
     std::mutex mutex_;
     fs::path directory_;
 };
 
-class LatestFrame
-{
-public:
+class LatestFrame {
+  public:
     LatestFrame();
     FrameData getLatestFrameData();
-    void setLatestFrameData(FrameData frameData);
+    void setLatestFrameData(const FrameData &frameData);
 
-private:
+  private:
     FrameData latestFrameData_;
     std::mutex latestFrameMutex_;
 };

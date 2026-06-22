@@ -9,16 +9,15 @@
 #include <spdlog/spdlog.h>
 #include <yaml-cpp/yaml.h>
 
+#include "../common/behaviorRecording.hpp"
+#include "../common/cli.hpp"
+#include "../common/dataTypes.hpp"
+#include "../common/muscleRecording.hpp"
+#include "../common/recorderConfig.hpp"
+#include "../common/utils.hpp"
+#include "../peripherals/arduinoCommunication.hpp"
 #include "../peripherals/behaviorCamera.hpp"
 #include "../peripherals/muscleCamera.hpp"
-#include "../peripherals/arduinoCommunication.hpp"
-#include "../common/behaviorRecording.hpp"
-#include "../common/muscleRecording.hpp"
-#include "../common/utils.hpp"
-#include "../common/recorderConfig.hpp"
-#include "../common/dataTypes.hpp"
-#include "../common/cli.hpp"
-#include "../common/fileFormatVersions.hpp"
 
 void alignCamera(std::filesystem::path profileDir);
 

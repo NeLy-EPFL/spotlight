@@ -57,8 +57,7 @@ set(PCOCAMERA_SOURCES
 file(GLOB PCO_CAMERA_SERVER_SOURCES
     "src/pcoCameraServer/*.cpp"
     "src/pcoCameraServer/*.hpp"
-    "src/common/recorderConfig.*"
-    "src/common/fileFormatVersions.*")
+    "src/common/recorderConfig.*")
 add_executable(pco-camera-server ${PCO_CAMERA_SERVER_SOURCES} ${PCOCAMERA_SOURCES})
 target_include_directories(pco-camera-server PUBLIC ${PCO_INCLUDE_DIR} ${PCO_CAMERA_DIR})
 target_link_directories(pco-camera-server PUBLIC ${PCO_LIB_DIR})
@@ -89,30 +88,6 @@ target_link_libraries(run-spotlight spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-spotlight yaml-cpp)
 set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
 
-# Compile calibration tool
-file(GLOB RUN_CALIBRATION_SOURCES
-    "src/runCalibrationScan/runCalibration_main.cpp"
-    "src/runCalibrationScan/runCalibration.hpp"
-    "src/peripherals/behaviorCamera.*"
-    "src/peripherals/muscleCamera.*"
-    "src/peripherals/motionControl.*"
-    "src/peripherals/arduinoCommunication.*"
-    "src/peripherals/experimentProtocol.*"
-    "src/pcoCameraServer/sharedMemoryUtils.*"
-    "src/common/cli.*"
-    "src/common/recorderConfig.*"
-    "src/common/behaviorRecording.*"
-    "src/common/muscleRecording.*"
-    "src/common/utils.*"
-    "src/common/fileFormatVersions.*")
-add_executable(run-calibration-scan ${RUN_CALIBRATION_SOURCES})
-# target_link_libraries(run-calibration-scan pthread rt dl)
-target_link_libraries(run-calibration-scan Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(run-calibration-scan ${OpenCV_LIBS})
-target_link_libraries(run-calibration-scan ${ZABER_MOTION_LIB})
-target_link_libraries(run-calibration-scan spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-target_link_libraries(run-calibration-scan yaml-cpp)
-
 # Compile camera alignment tool
 file(GLOB ALIGN_CAMERAS_SOURCES
     "src/alignCameras/*.cpp"
@@ -127,8 +102,7 @@ file(GLOB ALIGN_CAMERAS_SOURCES
     "src/common/recorderConfig.*"
     "src/common/utils.*"
     "src/common/cli.*"
-    "src/common/dataTypes.hpp"
-    "src/common/fileFormatVersions.*")
+    "src/common/dataTypes.hpp")
 add_executable(align-cameras ${ALIGN_CAMERAS_SOURCES})
 target_link_libraries(align-cameras PRIVATE pthread rt dl)
 target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)
@@ -137,7 +111,36 @@ target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws
 target_link_libraries(align-cameras PRIVATE yaml-cpp)
 set_target_properties(align-cameras PROPERTIES AUTOMOC ON)
 
+# Compile arena registration scan tool
+find_library(DMTX_LIB NAMES dmtx REQUIRED)
+file(GLOB RUN_ARENA_REGISTRATION_SCAN_SOURCES
+    "src/runArenaRegistrationScan/runArenaRegistrationScan_main.cpp"
+    "src/runArenaRegistrationScan/runArenaRegistrationScan.hpp"
+    "src/peripherals/behaviorCamera.*"
+    "src/peripherals/motionControl.*"
+    "src/peripherals/arduinoCommunication.*"
+    "src/peripherals/experimentProtocol.*"
+    "src/pcoCameraServer/sharedMemoryUtils.*"
+    "src/common/cli.*"
+    "src/common/recorderConfig.*"
+    "src/common/behaviorRecording.*"
+    "src/common/utils.*")
+add_executable(run-arena-registration-scan ${RUN_ARENA_REGISTRATION_SCAN_SOURCES})
+target_link_libraries(run-arena-registration-scan Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(run-arena-registration-scan ${OpenCV_LIBS})
+target_link_libraries(run-arena-registration-scan ${ZABER_MOTION_LIB})
+target_link_libraries(run-arena-registration-scan spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-arena-registration-scan yaml-cpp)
+target_link_libraries(run-arena-registration-scan ${DMTX_LIB})
+
 # Install compiled binaries to the bin folder
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
-install(TARGETS pco-camera-server run-spotlight run-calibration-scan align-cameras
-        RUNTIME DESTINATION bin)
+install(
+    TARGETS
+        pco-camera-server
+        run-spotlight
+        align-cameras
+        run-arena-registration-scan
+    RUNTIME DESTINATION
+        bin
+)

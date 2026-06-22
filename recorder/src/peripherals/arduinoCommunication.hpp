@@ -1,29 +1,27 @@
 #ifndef ARDUINO_COMMUNICATION_HPP
 #define ARDUINO_COMMUNICATION_HPP
 
-#include <string>
-#include <vector>
-#include <thread>
-#include <queue>
-#include <mutex>
 #include <condition_variable>
+#include <mutex>
+#include <queue>
+#include <string>
+#include <thread>
+#include <vector>
 
-#include <QSerialPort>
-#include <QSerialPortInfo>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QSerialPort>
+#include <QSerialPortInfo>
 #include <spdlog/spdlog.h>
 
-#include "experimentProtocol.hpp"
-#include "../common/recorderConfig.hpp"
 #include "../common/dataTypes.hpp"
+#include "../common/recorderConfig.hpp"
 #include "../common/utils.hpp"
+#include "experimentProtocol.hpp"
 
-class ArduinoCommunication
-{
-public:
-    ArduinoCommunication(const std::string &portName = "",
-                         int baudRate = 9600);
+class ArduinoCommunication {
+  public:
+    ArduinoCommunication(const std::string &portName = "", int baudRate = 9600);
     ~ArduinoCommunication();
 
     void setBehaviorRecordingFPS(int fps);
@@ -35,7 +33,7 @@ public:
     void stopRecording();
     void stopCommunication();
 
-private:
+  private:
     QSerialPort *serialPort_;
     std::atomic<bool> stopCommunication_ = false;
     std::thread arduinoCommThread_;

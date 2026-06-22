@@ -1,28 +1,47 @@
 #ifndef TRACKING_CONTROL_HPP
 #define TRACKING_CONTROL_HPP
 
-#include <iostream>
-#include <mutex>
-#include <condition_variable>
+#include <algorithm>
 #include <atomic>
-#include <queue>
-#include <future>
-#include <thread>
-#include <limits>
+#include <condition_variable>
 #include <filesystem>
+#include <future>
+#include <iostream>
+#include <limits>
+#include <mutex>
+#include <queue>
 #include <set>
+#include <thread>
 #include <tuple>
 
 #include <spdlog/spdlog.h>
 
 #include "../peripherals/motionControl.hpp"
-#include "utils.hpp"
 #include "behaviorRecording.hpp"
 #include "calibration.hpp"
 #include "recorderConfig.hpp"
+#include "utils.hpp"
 
-struct TrackingControlState
-{
+class ActiveAreaMask {
+  public:
+    cv::Mat fullArenaMask;
+    double resolutionMmPerPixel;
+    double arenaWidthMm;
+    double arenaHeightMm;
+    LinearMapper2x2to2 &stageAndPixelToPhysical;
+
+    ActiveAreaMask(
+        const std::string &arenaSpecDir,
+        double boundaryMarginMm,
+        LinearMapper2x2to2 &stageAndPixelToPhysical);
+    cv::Mat warpToCurrentView(
+        const cv::Mat &currentImage, MotionStagePosition stagePos) const;
+
+  private:
+    cv::Mat transformMatrixAtZeroStagePos_;
+};
+
+struct TrackingControlState {
     std::atomic<bool> motionControlHandlerReady = false;
     MotionStagePosition latestMotionStagePosition;
     std::mutex latestMotionStagePositionMutex;
@@ -41,9 +60,10 @@ void motionControlRequestHandler(
 // Tracking thread
 void trackingController(
     const RecorderConfig &recorderConfig,
+    ActiveAreaMask &activeAreaMask,
     std::shared_ptr<BehaviorRecordingState> behaviorRecordingState,
     std::shared_ptr<TrackingControlState> trackingControlState,
-    CalibrationParams &behaviorCamCalibrationParams,
+    const CalibrationParams &behaviorCamCalibrationParams,
     std::shared_ptr<ProgramState> programState);
 
 // Position logging thread
@@ -56,24 +76,23 @@ void motionStagePositionLogger(
 // Global API functions
 // Aside from getCurrentMotionStagePosition(), they are all async.
 MotionStagePosition getCurrentMotionStagePosition();
-void setTargetMotionStagePosition(MotionStagePosition targetPosition,
-                                  float velocity);
+void setTargetMotionStagePosition(
+    MotionStagePosition targetPosition, float velocity);
+void setMotionStageLimits(
+    double xMinMm, double xMaxMm, double yMinMm, double yMaxMm);
 void waitUntilMotionStageIdleSync();
 void waitUntilMotionStageIdleAsync();
 bool checkIfMotionStageIdle();
 void startHomingMotionStage();
-void stopMotionControlRequestHandler(std::shared_ptr<ProgramState> programState);
+void stopMotionControlRequestHandler(
+    std::shared_ptr<ProgramState> programState);
 
 // High-level helper functions
 std::tuple<bool, double, double> calculateFlyPositionAbsoluteMm(
-    cv::Mat behaviorImage,
+    const cv::Mat &behaviorImage,
     MotionStagePosition stagePosition,
-    CalibrationParams &behaviorCamCalibrationParams,
+    const cv::Mat &activeAreaMaskCurrView,
+    const CalibrationParams &behaviorCamCalibrationParams,
     const RecorderConfig &recorderConfig);
-
-cv::Mat blackoutOutside(cv::Mat image,
-                        MotionStagePosition stagePos,
-                        CalibrationParams &behaviorCamCalibrationParams,
-                        const RecorderConfig &recorderConfig);
 
 #endif // TRACKING_CONTROL_HPP
