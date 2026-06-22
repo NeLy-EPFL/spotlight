@@ -1,0 +1,6 @@
+{
+    "name": "comm_protocol",
+    "dependencies": {
+        "bblanchon/ArduinoJson": "^7"
+    }
+}

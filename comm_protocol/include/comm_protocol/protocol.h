@@ -1,0 +1,162 @@
+#pragma once
+
+#include <deque>
+#include <string>
+
+#include <ArduinoJson.h>
+
+// Serial (USB) communication protocol between the recorder (host computer) and
+// the Arduino Nano ESP32 trigger controller, as specified in
+// docs/comm_protocol.md.
+//
+// Every message is a single compact JSON object discriminated by a top-level
+// "cmdType" field, which is one of the fixed literals "STREAM",
+// "START_RECORDING", "STOP_RECORDING", "LOG", or "RESET":
+//
+//   STREAM          - live preview; carries "params".
+//   START_RECORDING - begin recording; carries "recParams", "revertToParams",
+//                     and an "opSequence" array (possibly empty).
+//   STOP_RECORDING  - end an open recording; carries no payload.
+//   LOG             - carries a free-form "msg" string to be echoed.
+//   RESET           - reboot the controller (esp_restart() on the MCU, i.e. the
+//                     equivalent of pressing the physical reset button);
+//                     carries no payload.
+//
+// The classes below parse and serialize these messages. They are meant to
+// compile and run unchanged on both a desktop computer and the ESP32:
+//   - no exceptions are used for control flow; parsing and construction report
+//     failure through the `is_valid` flag (so a bad message never unwinds the
+//     stack on the MCU),
+//   - ArduinoJson handles the low-level tokenizing and number formatting.
+
+// The command kinds carried over the serial link.
+enum class CmdType {
+    stream,
+    start_recording,
+    stop_recording,
+    log,
+    reset,
+};
+
+// Optogenetics operation applied to a channel at a given frame.
+enum class OpType {
+    on,
+    off,
+    stop,
+};
+
+// Optogenetics channel. CH2 and CH3 are the controllable channels (channel 1
+// is reserved for the IR LED). ALL (-1) denotes a global operation and is used
+// with STOP, which reverts the controller to streaming.
+enum class OptoChannel {
+    all = -1,
+    ch2 = 2,
+    ch3 = 3,
+};
+
+// One entry of a START_RECORDING command's "opSequence" list: after the
+// `frame_idx`-th behavior frame, apply operation `op` on optogenetics
+// `channel`.
+//
+//   - frame_idx: non-negative behavior-frame index
+//   - channel: CH2 or CH3 when op is ON/OFF; ALL (-1) when op is STOP
+//   - op: ON, OFF, or STOP
+//
+// `is_valid` is false when the step was built from fields that violate the
+// rules above or parsed from a malformed JSON object.
+class OperationStep {
+  public:
+    unsigned long frame_idx = 0;
+    OptoChannel channel = OptoChannel::all;
+    OpType op = OpType::stop;
+    bool is_valid = false;
+
+    OperationStep() = default;
+    OperationStep(unsigned long frame_idx, OptoChannel channel, OpType op);
+
+    // Parse from one JSON object of the opSequence array.
+    explicit OperationStep(JsonObjectConst obj);
+
+    // Write this step into an (empty) JSON object.
+    void to_json(JsonObject obj) const;
+};
+
+// Decoded "params" object (controller configuration). The same shape is used
+// for STREAM's "params" and START_RECORDING's "recParams"/"revertToParams".
+struct TriggerParams {
+    // When true, the controller locks behavior acquisition to the free-running
+    // muscle (PCO) camera's common-time signal and pulses the blue excitation
+    // LED. When false, the muscle camera is ignored entirely: the controller
+    // free-runs the behavior camera on its own clock at behFrameRate, never
+    // pulses the blue LED, and the muscle-only fields below (muscEffExpTime,
+    // behMuscSyncRatio, pcoCamRollingTime, pcoCamReadoutTime) are unused.
+    bool enable_muscle = true;
+    unsigned int beh_exp_time = 0;         // behavior cam exposure time (us)
+    unsigned int musc_eff_exp_time = 0;    // muscle cam effective exposure (us)
+    unsigned int beh_frame_rate = 1;       // behavior cam frame rate (fps), > 0
+    unsigned int beh_musc_sync_ratio = 1;  // beh frames per muscle frame, > 0
+    unsigned int pco_cam_rolling_time = 0; // PCO sensor rolling time (us)
+    unsigned int pco_cam_readout_time = 0; // PCO total readout time (us)
+};
+
+// A full protocol message.
+//
+// Build one with the make_*_command() factories and serialize with to_string();
+// decode an incoming line with parse(). `is_valid` is false when a message
+// could not be parsed or is malformed, in which case the decoded fields are
+// meaningless. Which fields are meaningful depends on `cmd_type`:
+//
+//   STREAM          -> params
+//   START_RECORDING -> rec_params, revert_to_params, op_sequence
+//   STOP_RECORDING  -> (none)
+//   LOG             -> log_msg
+//   RESET           -> (none)
+class Command {
+  public:
+    CmdType cmd_type = CmdType::stream;
+
+    TriggerParams params;           // STREAM
+    TriggerParams rec_params;       // START_RECORDING: params while recording
+    TriggerParams revert_to_params; // START_RECORDING: params after recording
+    std::deque<OperationStep> op_sequence; // START_RECORDING: empty => open
+    std::string log_msg;                   // LOG
+
+    bool is_valid = false;
+
+    Command() = default;
+
+    // Build a STREAM command.
+    static Command make_stream_command(const TriggerParams &params);
+
+    // Build a START_RECORDING command (validates every op_sequence step).
+    static Command make_start_recording_command(
+        const TriggerParams &rec_params,
+        const TriggerParams &revert_to_params,
+        const std::deque<OperationStep> &op_sequence);
+
+    // Build a STOP_RECORDING command.
+    static Command make_stop_recording_command();
+
+    // Build a LOG command carrying a free-form message.
+    static Command make_log_command(const std::string &message);
+
+    // Build a RESET command (reboots the controller; carries no payload).
+    static Command make_reset_command();
+
+    // Parse a single JSON message string; check isValid on the result.
+    static Command parse(const std::string &json_str);
+
+    // Serialize to a compact JSON string (empty string if !isValid).
+    std::string to_string() const;
+};
+
+// Time to wait after receiving a START_RECORDING command before the trigger
+// logic starts. This allows pending frames in the camera buffers to be flushed
+// out, so the recorded session doesn't start with frames acquired using stale
+// parameters.
+//
+// On the recorder side, the program should ignore frames received **during a
+// fraction (e.g., 0.8x) of this time** after sending the command. If the ignore
+// period is too long, the first few frames of the recording will be incorrectly
+// dropped.
+inline constexpr unsigned long cam_flush_time_us = 100000;

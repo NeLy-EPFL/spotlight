@@ -1,0 +1,31 @@
+---
+Checks: >-
+  -*,
+  readability-identifier-naming,
+  modernize-use-nullptr,
+  bugprone-use-after-move,
+  performance-unnecessary-value-param,
+  readability-redundant-member-init
+HeaderFilterRegex: '.*/spotlight-control/(recorder|comm_protocol)/(src|include|tests)/.*'
+CheckOptions:
+  # Functions and methods: snake_case
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.MethodCase: lower_case
+  # Parameters: snake_case
+  readability-identifier-naming.ParameterCase: lower_case
+  # Variables: snake_case (VariableCase is the fallback for all variable kinds)
+  readability-identifier-naming.VariableCase: lower_case
+  # Member variables: snake_case, private members get trailing underscore
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: _
+  # Enum constants: snake_case
+  readability-identifier-naming.EnumConstantCase: lower_case
+  # Types: PascalCase (unchanged from current convention)
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  # Namespaces: lowercase
+  readability-identifier-naming.NamespaceCase: lower_case

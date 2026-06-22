@@ -1,0 +1,7 @@
+pose2d:
+  sleap_model_dir: "~/data/sleap/models/spotlight_3pt_20251023/models/251024_023711.single_instance.n=900"
+  num_keypoints: 3
+  keypoint_names:
+    N: neck
+    Th: thorax
+    Ab: abdomen tip
