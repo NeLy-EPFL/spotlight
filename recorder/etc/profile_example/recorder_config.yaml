@@ -51,6 +51,13 @@ motion_control:
   acceleration_ramp_time_ms: 50
   max_speed_mm_per_s: 40
 
+homography:
+  scan_x_center_mm: 75.0     # center of scan region (stage coordinates)
+  scan_y_center_mm: 75.0
+  scan_range_mm: 20.0        # half-width: scans center ± range on each axis
+  scan_stride_mm: 10.0       # step between grid positions
+  scan_settling_frames: 5    # frames to drop after stage stops before capturing
+
 tracking:
   update_frequency_hz: 30
   distance_threshold_for_moving_mm: 0.3

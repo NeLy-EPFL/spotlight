@@ -24,7 +24,7 @@ from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from matplotlib.colors import Normalize
 from matplotlib.collections import LineCollection
-from matplotlib import cm
+from matplotlib import colormaps
 from pathlib import Path
 from joblib import Parallel, delayed
 
@@ -69,7 +69,7 @@ def visualize_stage_trajectory(
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
     colormap_name = "gnuplot"
-    cmap = cm.get_cmap(colormap_name)
+    cmap = colormaps[colormap_name]
 
     times = behavior_frame_metadata_df["received_time_us"].values / 1e6  # us->s
     times = times - times[0]  # normalize to start at 0

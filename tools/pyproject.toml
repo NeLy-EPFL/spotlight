@@ -47,6 +47,7 @@ dependencies = [
 fit-arena-registration = "spotlight_tools.cli.fit_arena_registration:main"
 postprocess-recording = "spotlight_tools.cli.postprocess_recording:main"
 visualize-stage-trajectory = "spotlight_tools.cli.visualize_stage_trajectory:main"
+fit-homography = "spotlight_tools.cli.fit_homography:main"
 
 [build-system]
 requires = ["setuptools>=78", "wheel"]

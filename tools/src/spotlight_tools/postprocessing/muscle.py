@@ -303,14 +303,17 @@ def _get_stage_pos_df_at_muscle_frames(
 ) -> pd.DataFrame:
     stage_pos_df_at_behavior_frames = pd.read_csv(interpolated_stage_pos_path)
     stage_pos_df_at_muscle_frames = stage_pos_df_at_behavior_frames[
-        behavior_muscle_sync_ratio::behavior_muscle_sync_ratio
-    ]
-    assert (
-        match_muscle_frameid_to_behavior_frameid(
-            0, sync_ratio=behavior_muscle_sync_ratio
-        )
-        == stage_pos_df_at_muscle_frames.iloc[0]["behavior_frame_id"]
-    ), "Muscle-to-behavior frame ID mapping mismatch."
+        (stage_pos_df_at_behavior_frames["behavior_frame_id"] % behavior_muscle_sync_ratio == 0) &
+        (stage_pos_df_at_behavior_frames["behavior_frame_id"] > 0)
+    ].reset_index(drop=True)
+    
+    if len(stage_pos_df_at_muscle_frames) > 0:
+        assert (
+            match_muscle_frameid_to_behavior_frameid(
+                0, sync_ratio=behavior_muscle_sync_ratio
+            )
+            == stage_pos_df_at_muscle_frames.iloc[0]["behavior_frame_id"]
+        ), "Muscle-to-behavior frame ID mapping mismatch."
     return stage_pos_df_at_muscle_frames
 
 
@@ -367,7 +370,7 @@ def _load_alignment_transform_metadata(
     with h5py.File(behavior_alignment_metadata_path, "r") as f:
         transforms_ds = f["transform_matrices"]
         alignment_transforms = transforms_ds[
-            behavior_muscle_sync_ratio::behavior_muscle_sync_ratio, :, :
+            ::behavior_muscle_sync_ratio, :, :
         ]
         output_dim = transforms_ds.attrs["output_dim"]
     return alignment_transforms, output_dim

@@ -211,6 +211,30 @@ target_link_libraries(run-arena-registration-scan yaml-cpp)
 target_link_libraries(run-arena-registration-scan ${DMTX_LIB})
 target_link_libraries(run-arena-registration-scan comm_protocol)
 
+# --- run-charuco-homography-scan ---------------------------------------------
+# Grid scan that captures paired behavior+muscle images for homography fitting.
+add_executable(run-charuco-homography-scan
+    src/apps/run_charuco_homography_scan_main.cc
+    src/apps/shared_memory_utils.cc
+    src/peripherals/behavior_camera.cc
+    src/peripherals/muscle_camera.cc
+    src/peripherals/motion_control.cc
+    src/peripherals/arduino_communication.cc
+    src/common/cli.cc
+    src/common/recorder_config.cc
+    src/common/behavior_recording.cc
+    src/common/muscle_recording.cc
+    src/common/loop_monitors.cc
+    src/common/utils.cc)
+target_include_directories(run-charuco-homography-scan PRIVATE ${RECORDER_INCLUDE_DIR})
+target_link_libraries(run-charuco-homography-scan PRIVATE pthread rt dl)
+target_link_libraries(run-charuco-homography-scan PRIVATE Qt6::Widgets Qt6::SerialPort)
+target_link_libraries(run-charuco-homography-scan PRIVATE ${OpenCV_LIBS})
+target_link_libraries(run-charuco-homography-scan PRIVATE ${ZABER_MOTION_LIB})
+target_link_libraries(run-charuco-homography-scan PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-charuco-homography-scan PRIVATE yaml-cpp)
+target_link_libraries(run-charuco-homography-scan PRIVATE comm_protocol)
+
 # --- Unit tests --------------------------------------------------------------
 # Two test executables (see tests/CMakeLists.txt):
 #
@@ -245,6 +269,7 @@ install(
         run-spotlight
         align-cameras
         run-arena-registration-scan
+        run-charuco-homography-scan
     RUNTIME DESTINATION
         bin
 )

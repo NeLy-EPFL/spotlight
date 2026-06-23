@@ -393,6 +393,7 @@ int run_spotlight_main(int argc, char **argv) {
     // Create and show GUI
     MainGUIWindow local_main_gui_window(
         recorder_config,
+        profile_dir,
         behavior_recording_state,
         muscle_recording_state,
         tracking_control_state,
