@@ -40,7 +40,6 @@ def postprocess_recording_data(
     missing_muscle_frames_tolerance: int = 3,
     num_workers: int = -1,
     log_level: str = "INFO",
-    use_homography: bool = False,
 ) -> None:
     """High-level post-processing pipeline for a single Spotlight recording.
 
@@ -102,13 +101,6 @@ def postprocess_recording_data(
         num_workers (int): Number of parallel workers (-1 for all available cores).
         log_level (str): Logging level for the processing pipeline. Options are:
             "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL". Default is "INFO".
-        use_homography (bool): If True, use homography transformation for muscle-to-behavior
-            alignment instead of the stage-dependent affine transformation from Spotlight
-            calibration. This requires a homography calibration to have been performed.
-            Default is False.
-        homography_path (Path | str | None): Path to homography calibration YAML file.
-            If None and use_homography is True, will look for homography_result.yaml in
-            the standard profile calibration location. Default is None.
     """
     # Set up logging with the specified level
     numeric_level = getattr(logging, log_level.upper(), None)
@@ -141,9 +133,7 @@ def postprocess_recording_data(
     )
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     metadata_dir = recording_dir / "metadata/"
-    muscle_calib_path = metadata_dir / "calibration_parameters_muscle.yaml"
     homography_path = metadata_dir / "homography_parameters.yaml"
-    behavior_calib_path = metadata_dir / "calibration_parameters_behavior.yaml"
     experiment_parameters_path = metadata_dir / "experiment_parameters.yaml"
     if with_muscle:
         raw_muscle_images_dir = recording_dir / "muscle_images/"
@@ -205,23 +195,18 @@ def postprocess_recording_data(
     # 2. Apply the same alignment transforms used for behavior frames
     if with_muscle:
         logger.info("Mapping muscle frames to behavior frames...")
-        if homography_path is not None:
-            homography_path = Path(homography_path)
         warp_all_muscle_frames_to_behavior(
-            muscle_calib_path=muscle_calib_path,
-            behavior_calib_path=behavior_calib_path,
             experiment_parameters_path=experiment_parameters_path,
             processed_behavior_frame_metadata_path=behavior_frames_metadata_path,
             raw_muscle_images_dir=raw_muscle_images_dir,
             transformed_muscle_images_output_dir=processed_muscle_frames_dir,
             muscle_metadata_output_path=muscle_frames_metadata_path,
+            homography_path=homography_path,
             align_fly=align_fly,
             behavior_alignment_metadata_path=alignment_metadata_path,
             processed_behavior_video_path=processed_behavior_video_path,
             missing_muscle_frames_tolerance=missing_muscle_frames_tolerance,
             num_workers=num_workers,
-            use_homography=use_homography,
-            homography_path=homography_path,
         )
 
     # Generate visualizations (if requested)

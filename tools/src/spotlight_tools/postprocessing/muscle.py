@@ -20,13 +20,24 @@ import h5py
 from joblib import Parallel, delayed
 from pathlib import Path
 
-from spotlight_tools.calibration import (
-    SpotlightPositionMapper,
-    BehaviorMuscleCrossMapper,
-    HomographyMapper,
-)
+from spotlight_tools.calibration import HomographyMapper
 from spotlight_tools.common.video import get_video_info
 from spotlight_tools.postprocessing.io import check_output_path_against_alignment_flag
+
+
+# Muscle<->behavior frame correspondence. Once the orphan muscle frames captured
+# before the excitation LED turned on are skipped (see
+# _count_leading_orphan_muscle_frames) and the survivors are re-indexed 0-based,
+# (re-indexed) muscle frame N corresponds to behavior frame
+# (N + MUSCLE_BEHAVIOR_OFFSET) * sync_ratio. The excitation LED fires on the 0th
+# behavior frame of each group, i.e. the behavior frame exposed simultaneously
+# with the muscle frame, so the first illuminated muscle frame lines up with
+# behavior frame 0 and the correct offset for spatial overlay is 0. (Note this is
+# exposure-time correspondence; the muscle frame is *read out* about one period
+# later, but readout/arrival time is irrelevant for spatial alignment.) This is
+# the single source of truth for the correspondence; every site that matches the
+# two streams must use it.
+MUSCLE_BEHAVIOR_OFFSET = 0
 
 
 _imwrite_compression_params = [cv2.IMWRITE_TIFF_COMPRESSION, 5]
@@ -43,60 +54,41 @@ def warp_all_muscle_frames_to_behavior(
     *,
     raw_muscle_images_dir: Path,
     transformed_muscle_images_output_dir: Path,
-    muscle_calib_path: Path,
-    behavior_calib_path: Path,
     experiment_parameters_path: Path,
     processed_behavior_frame_metadata_path: Path,
     muscle_metadata_output_path: Path,
+    homography_path: Path,
     align_fly: bool = True,
     behavior_alignment_metadata_path: Path | None = None,
     processed_behavior_video_path: Path | None = None,
     missing_muscle_frames_tolerance: int = 3,
     num_workers: int = -1,
-    use_homography: bool = False,
-    homography_path: Path | None = None,
 ):
-    """This function performs muscle-to-behavior frame mapping and transformation:
+    """Warp raw PCO muscle frames into the behavior camera's coordinate system.
 
-    1. Determines timing synchronization between muscle and behavior recordings.
-    2. Spatially maps muscle images to behavior coordinate system using either:
-       a. Homography transformation (if use_homography=True)
-       b. Spotlight calibration parameters with affine approximation (if use_homography=False)
-    3. Applies the same alignment transformations used for behavior frames (if any has
-       been applied).
-    4. Saves transformed muscle images in TIFF format and metadata.
+    1. Determines timing synchronisation between muscle and behavior recordings.
+    2. Maps muscle pixels to behavior pixels via a pre-computed homography.
+    3. Applies the same per-frame alignment transforms used for the behavior channel.
+    4. Saves transformed TIFF frames and a metadata CSV.
 
     Args:
-        raw_muscle_images_dir (Path): Directory containing raw muscle image files.
-        transformed_muscle_images_output_dir (Path): Directory to save output frames.
-        muscle_calib_path (Path): Path to muscle camera calibration parameters.
-        behavior_calib_path (Path): Path to behavior camera calibration parameters.
-        experiment_parameters_path (Path): Path to the experiment parameters metadata.
-        processed_behavior_frame_metadata_path (Path): Path to behavior frames metadata
-            (CSV).
-        muscle_metadata_output_path (Path): Output path for muscle frames metadata (CSV).
-        align_fly (bool): Whether behavior frames have been transformed to align the
-            fly and crop the image. If True, `behavior_alignment_metadata_path` must be
-            provided. If False, `processed_behavior_video_path` must be provided.
-            Default is True.
-        behavior_alignment_metadata_path (Path | None): Path to behavior alignment
-            transforms (HDF5). Required if `align_fly` is True, ignored otherwise.
-        processed_behavior_video_path (Path | None): Path to processed behavior video
-            (MP4). Used only to get output dimensions if `align_fly` is False. Ignored
-            if `align_fly` is True (output dimensions are taken from alignment metadata
-            instead).
-        missing_muscle_frames_tolerance (int): See
-            `scripts.postprocess_recording.postprocess_recording_data`.
-        num_workers (int): Number of parallel workers (-1 for all available cores).
-        use_homography (bool): If True, use homography transformation for alignment.
-            If False, use stage-dependent affine transformation from Spotlight calibration.
-            Default is False.
-        homography_path (Path | None): Path to homography calibration YAML file.
-            Required if use_homography is True. If None and use_homography is True,
-            will look for homography_result.yaml in the standard calibration location.
-
-    Returns:
-        None: Outputs are saved to the specified directories and files.
+        raw_muscle_images_dir: Directory containing raw muscle TIFF files.
+        transformed_muscle_images_output_dir: Directory for output frames.
+        experiment_parameters_path: Path to ``experiment_parameters.yaml``.
+        processed_behavior_frame_metadata_path: Path to behavior frames metadata CSV.
+        muscle_metadata_output_path: Output path for muscle frames metadata CSV.
+        homography_path: Path to homography calibration YAML
+            (``homography_parameters.yaml`` produced by the ChArUco scan).
+        align_fly (bool): Whether behavior frames were transformed to align the fly.
+            If True, ``behavior_alignment_metadata_path`` must be provided.
+            If False, ``processed_behavior_video_path`` must be provided.
+        behavior_alignment_metadata_path: Path to behavior alignment transforms (HDF5).
+            Required when ``align_fly`` is True.
+        processed_behavior_video_path: Path to processed behavior video (used only to
+            read output dimensions when ``align_fly`` is False).
+        missing_muscle_frames_tolerance: Maximum allowed consecutive missing frames at
+            the end of the recording.
+        num_workers: Parallel workers for warping (-1 = all cores).
     """
     logger = logging.getLogger(__name__)
 
@@ -115,38 +107,34 @@ def warp_all_muscle_frames_to_behavior(
         processed_behavior_frame_metadata_path, behavior_muscle_sync_ratio
     )
 
-    # Create mapping object(s)
-    if use_homography:
-        # Use homography-based mapping
-        if homography_path is None:
-            # Try to find homography file in standard location
-            # Assume it's in the profile calibration directory
-            homography_path = (
-                behavior_calib_path.parent / "metadata/homography_parameters.yaml"
-            )
-            if not homography_path.exists():
-                raise FileNotFoundError(
-                    f"Homography file not found at {homography_path}. "
-                    "Please provide homography_path or run homography calibration first."
-                )
-        logger.info(f"Using homography transformation from {homography_path}")
-        homography_mapper = HomographyMapper(homography_path)
-        cross_mapper = None
-    else:
-        # Use stage-dependent affine mapping
+    # Build homography mapper
+    logger.info(f"Using homography transformation from {homography_path}")
+    homography_mapper = HomographyMapper(homography_path)
+
+    # Determine how many orphan muscle frames precede the first behavior-synced
+    # frame. In continuous (free-run) PCO mode the muscle camera starts grabbing
+    # frames before the behavior trigger -- and therefore the blue excitation LED
+    # -- turns on, so those leading frames receive no excitation and are much
+    # darker than the illuminated frames that follow. They have no corresponding
+    # behavior group and must be skipped. The onset is detected from the muscle
+    # frames' own brightness (a within-camera signal needing no common clock),
+    # not from a frame-count difference: the latter silently conflates leading
+    # orphans with a trailing stop-time mismatch between the two cameras and can
+    # therefore land on the wrong frame.
+    first_muscle_frameid = _count_leading_orphan_muscle_frames(raw_muscle_images_dir)
+    if first_muscle_frameid > 0:
         logger.info(
-            "Using stage-dependent affine transformation from Spotlight calibration"
+            f"Detected {first_muscle_frameid} orphan muscle frame(s) at the start "
+            "of the recording (captured before the behavior trigger / excitation "
+            "LED turned on); skipping them."
         )
-        behavior_mapper = SpotlightPositionMapper(behavior_calib_path)
-        muscle_mapper = SpotlightPositionMapper(muscle_calib_path)
-        cross_mapper = BehaviorMuscleCrossMapper(behavior_mapper, muscle_mapper)
-        homography_mapper = None
 
     # Check if we have all the muscle images
     muscle_image_paths = _filter_muscle_frames_by_availability(
         raw_muscle_images_dir,
         stage_pos_df_at_muscle_frames,
         missing_muscle_frames_tolerance,
+        first_frameid=first_muscle_frameid,
     )
     stage_pos_df_at_muscle_frames = stage_pos_df_at_muscle_frames.iloc[
         : len(muscle_image_paths)
@@ -165,36 +153,22 @@ def warp_all_muscle_frames_to_behavior(
         width, height, _ = get_video_info(processed_behavior_video_path)
         output_dim = (width, height)
 
-    # Prepare input kwargs for parallel processing
+    # Prepare input kwargs for parallel processing. Output frames are named by
+    # their re-indexed (0-based, orphan-free) muscle frame ID so that file index,
+    # the muscle_frame_id column in the metadata CSV, and the IDs returned by
+    # match_*_frameid all agree -- the downstream visualizers rely on this.
     input_kwargs = []
     for i, input_path in enumerate(muscle_image_paths):
-        stage_pos = stage_pos_df_at_muscle_frames.iloc[i][
-            ["x_pos_mm_interp", "y_pos_mm_interp"]
-        ].values.astype(np.float32)
-
-        if use_homography:
-            # Use homography transformation (stage-independent)
-            muscle2behavior_transform_matrix = homography_mapper.H_muscle2beh
-            use_perspective = True
-        else:
-            # Use stage-dependent affine transformation
-            muscle2behavior_transform_matrix = (
-                cross_mapper.get_affine_matrix_muscle2behavior(stage_pos)
-            )
-            use_perspective = False
-
-        behavior_alignment_transform_matrix = alignment_transforms[i]
-        output_path = transformed_muscle_images_output_dir / input_path.name
-        kwargs = {
-            "muscle2behavior_trans_mat": muscle2behavior_transform_matrix,
-            "behavior_alignment_trans_mat": behavior_alignment_transform_matrix,
+        output_path = transformed_muscle_images_output_dir / f"muscle_frame_{i:09d}.tif"
+        input_kwargs.append({
+            "muscle2behavior_trans_mat": homography_mapper.H_muscle2beh,
+            "behavior_alignment_trans_mat": alignment_transforms[i],
             "input_path": input_path,
             "output_dim": output_dim,
             "output_path": output_path,
             "return_output": False,  # reduce IO stress
-            "use_perspective": use_perspective,
-        }
-        input_kwargs.append(kwargs)
+            "use_perspective": True,
+        })
 
     # Process muscle images in parallel
     transformed_muscle_images_output_dir.mkdir(parents=True, exist_ok=True)
@@ -299,28 +273,104 @@ def get_behavior_muscle_sync_ratio(
 
 
 def _get_stage_pos_df_at_muscle_frames(
-    interpolated_stage_pos_path: Path, behavior_muscle_sync_ratio: int
+    interpolated_stage_pos_path: Path,
+    behavior_muscle_sync_ratio: int,
+    offset: int = MUSCLE_BEHAVIOR_OFFSET,
 ) -> pd.DataFrame:
+    # Keep one behavior-frame row per muscle frame: those at multiples of the sync
+    # ratio, starting at offset * sync_ratio (the behavior frame that muscle frame 0
+    # is synced to). For offset == 1 this drops behavior frame 0, which has no muscle
+    # correspondence due to the readout lag.
+    first_behavior_frame_id = offset * behavior_muscle_sync_ratio
     stage_pos_df_at_behavior_frames = pd.read_csv(interpolated_stage_pos_path)
+    behavior_frame_id = stage_pos_df_at_behavior_frames["behavior_frame_id"]
     stage_pos_df_at_muscle_frames = stage_pos_df_at_behavior_frames[
-        (stage_pos_df_at_behavior_frames["behavior_frame_id"] % behavior_muscle_sync_ratio == 0) &
-        (stage_pos_df_at_behavior_frames["behavior_frame_id"] > 0)
+        (behavior_frame_id % behavior_muscle_sync_ratio == 0)
+        & (behavior_frame_id >= first_behavior_frame_id)
     ].reset_index(drop=True)
-    
+
     if len(stage_pos_df_at_muscle_frames) > 0:
         assert (
             match_muscle_frameid_to_behavior_frameid(
-                0, sync_ratio=behavior_muscle_sync_ratio
+                0, sync_ratio=behavior_muscle_sync_ratio, offset=offset
             )
             == stage_pos_df_at_muscle_frames.iloc[0]["behavior_frame_id"]
         ), "Muscle-to-behavior frame ID mapping mismatch."
     return stage_pos_df_at_muscle_frames
 
 
+def _count_leading_orphan_muscle_frames(
+    raw_muscle_images_dir: Path,
+    *,
+    onset_brightness_ratio: float = 1.5,
+    brightness_percentile: float = 99.0,
+    max_scan_frames: int = 60,
+) -> int:
+    """Count muscle frames captured before the behavior trigger started.
+
+    In continuous (free-run) PCO mode the muscle camera begins grabbing frames
+    before the behavior trigger -- and therefore the blue excitation LED -- turns
+    on. These leading "orphan" frames receive no excitation and are markedly
+    darker than the illuminated frames that follow; they have no corresponding
+    behavior group and must be skipped.
+
+    The orphan count is the index of the first illuminated frame, detected as the
+    first frame whose brightness reaches ``onset_brightness_ratio`` times the
+    (dark) first frame's brightness. Brightness is summarised by a high percentile
+    (``brightness_percentile``) so a few hot pixels cannot flip the decision while
+    the spatially-extended GCaMP fluorescence still registers strongly. This uses
+    only the muscle frames themselves, so it needs no common clock between the two
+    cameras (there is none). If no onset is found within the first
+    ``max_scan_frames`` frames, the recording is assumed to start already
+    illuminated and 0 orphans are reported.
+
+    Args:
+        raw_muscle_images_dir: Directory containing raw muscle TIFF files.
+        onset_brightness_ratio: A frame counts as illuminated once its brightness
+            reaches this multiple of the (dark) first frame's brightness.
+        brightness_percentile: Percentile of pixel values used as the per-frame
+            brightness metric (robust to hot pixels).
+        max_scan_frames: Maximum number of leading frames to inspect.
+
+    Returns:
+        Number of leading orphan frames to skip (0 if the recording starts
+        already illuminated).
+    """
+    logger = logging.getLogger(__name__)
+
+    # Sort by parsed frame id so "first" means earliest-captured, not glob order.
+    paths_by_id = {}
+    for path in raw_muscle_images_dir.glob("*.tif"):
+        try:
+            paths_by_id[int(path.stem.split("_")[-1])] = path
+        except ValueError:
+            continue
+    sorted_ids = sorted(paths_by_id)
+    if not sorted_ids:
+        return 0
+
+    def _brightness(frame_id: int) -> float:
+        im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED)
+        return float(np.percentile(im, brightness_percentile))
+
+    onset_threshold = _brightness(sorted_ids[0]) * onset_brightness_ratio
+    for n_orphans, frame_id in enumerate(sorted_ids[:max_scan_frames]):
+        if _brightness(frame_id) >= onset_threshold:
+            return n_orphans
+
+    logger.info(
+        "No excitation-LED onset detected in the first %d muscle frames; assuming "
+        "the recording starts illuminated (0 leading orphan frames).",
+        min(len(sorted_ids), max_scan_frames),
+    )
+    return 0
+
+
 def _filter_muscle_frames_by_availability(
     raw_muscle_images_dir: Path,
     stage_pos_df_at_muscle_frames: pd.DataFrame,
     missing_muscle_frames_tolerance: int = 3,
+    first_frameid: int = 0,
 ) -> list[Path]:
     # Index all available frames
     _muscle_paths_by_frameid = {}
@@ -335,12 +385,14 @@ def _filter_muscle_frames_by_availability(
             continue
         _muscle_paths_by_frameid[frameid] = path
 
-    # Check if each expected frame is among the frames found
+    # Check if each expected frame is among the frames found, starting from
+    # first_frameid to skip orphan frames at the start of the recording.
     muscle_image_paths = []
     num_expected_frames = stage_pos_df_at_muscle_frames.shape[0]
-    for frameid in range(num_expected_frames):
+    for frameid in range(first_frameid, num_expected_frames + first_frameid):
         if frameid not in _muscle_paths_by_frameid:
-            if frameid >= num_expected_frames - missing_muscle_frames_tolerance:
+            rel_frameid = frameid - first_frameid
+            if rel_frameid >= num_expected_frames - missing_muscle_frames_tolerance:
                 # If we are almost at the end of the recording, it's ok. This could
                 # simply be due to expected synchronization/timing imperfections.
                 break
@@ -365,12 +417,18 @@ def _filter_muscle_frames_by_availability(
 
 
 def _load_alignment_transform_metadata(
-    behavior_alignment_metadata_path, behavior_muscle_sync_ratio
+    behavior_alignment_metadata_path,
+    behavior_muscle_sync_ratio,
+    offset: int = MUSCLE_BEHAVIOR_OFFSET,
 ):
     with h5py.File(behavior_alignment_metadata_path, "r") as f:
         transforms_ds = f["transform_matrices"]
+        # Pick the alignment transform of the behavior frame each muscle frame is
+        # synced to: muscle frame N maps to behavior frame
+        # (N + offset) * sync_ratio, so start the stride at offset * sync_ratio.
+        first_behavior_frame_id = offset * behavior_muscle_sync_ratio
         alignment_transforms = transforms_ds[
-            ::behavior_muscle_sync_ratio, :, :
+            first_behavior_frame_id::behavior_muscle_sync_ratio, :, :
         ]
         output_dim = transforms_ds.attrs["output_dim"]
     return alignment_transforms, output_dim
@@ -497,15 +555,23 @@ def match_muscle_frameid_to_behavior_frameid(
     muscle_frameid: int | list[int],
     *,
     sync_ratio: int | None = None,
+    offset: int = MUSCLE_BEHAVIOR_OFFSET,
     experiment_parameters_path: Path | None = None,
     recording_dir: Path | None = None,
 ):
     """Map muscle frame ID or IDs to corresponding behavior frame ID(s) using the
     provided synchronization ratio.
 
-    Note that muscle recording lags behind behavior recording by one cycle. For example,
-    if the sync ratio is 10, then the 0th muscle frame is recorded at the same time as
-    the 10th behavior frame (this is handled internally by this function).
+    (Re-indexed) muscle frame N corresponds to behavior frame
+    (N + ``offset``) * sync_ratio. With the default offset of 0, muscle frame 0 is
+    exposed simultaneously with behavior frame 0 (the excitation-LED frame).
+
+    Args:
+        muscle_frameid: Re-indexed muscle frame ID(s) (0-based, as stored in
+            muscle_frames_metadata.csv after orphan frames at the start have been
+            excluded).
+        offset: Muscle-to-behavior readout lag in muscle-frame periods. Defaults to
+            ``MUSCLE_BEHAVIOR_OFFSET``; see that constant for the full rationale.
     """
     if sync_ratio is None:
         sync_ratio = get_behavior_muscle_sync_ratio(
@@ -517,7 +583,7 @@ def match_muscle_frameid_to_behavior_frameid(
     if is_singleton_int:
         muscle_frameid = [muscle_frameid]
 
-    behavior_frameid = [(mfid + 1) * sync_ratio for mfid in muscle_frameid]
+    behavior_frameid = [(mfid + offset) * sync_ratio for mfid in muscle_frameid]
 
     if is_singleton_int:
         behavior_frameid = behavior_frameid[0]
@@ -529,6 +595,7 @@ def match_behavior_frameid_to_muscle_frameid(
     method: str,
     *,
     sync_ratio: int | None = None,
+    offset: int = MUSCLE_BEHAVIOR_OFFSET,
     experiment_parameters_path: Path | None = None,
     recording_dir: Path | None = None,
 ):
@@ -541,9 +608,14 @@ def match_behavior_frameid_to_muscle_frameid(
     - "floor": use the last available muscle frame.
     - "nearest": use the temporally closest muscle frame (might be in the future).
 
-    Note that muscle recording lags behind behavior recording by one cycle. For example,
-    if the sync ratio is 10, then the 0th muscle frame is recorded at the same time as
-    the 10th behavior frame (this is handled internally by this function).
+    The inverse of ``match_muscle_frameid_to_behavior_frameid``: with the default
+    offset of 0, behavior frame ``b`` maps to muscle frame ``b / sync_ratio``
+    (floored or rounded per ``method``).
+
+    Args:
+        offset: Must match the value used in
+            ``match_muscle_frameid_to_behavior_frameid`` (defaults to
+            ``MUSCLE_BEHAVIOR_OFFSET``).
     """
     if sync_ratio is None:
         sync_ratio = get_behavior_muscle_sync_ratio(
@@ -562,9 +634,9 @@ def match_behavior_frameid_to_muscle_frameid(
     muscle_frameid = []
     for bfid in behavior_frameid:
         if method == "floor":
-            mfid = int((bfid - sync_ratio) / sync_ratio)
+            mfid = int((bfid - offset * sync_ratio) / sync_ratio)
         elif method == "nearest":
-            mfid = round((bfid - sync_ratio) / sync_ratio)
+            mfid = round((bfid - offset * sync_ratio) / sync_ratio)
         muscle_frameid.append(mfid)
 
     if is_singleton_int:

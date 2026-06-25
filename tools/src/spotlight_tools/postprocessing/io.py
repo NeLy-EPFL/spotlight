@@ -14,6 +14,7 @@ def find_files_per_frame_by_suffix(
     consecutive at the specified stride (ie. no frame is missing).
     """
     logger = logging.getLogger(__name__)
+    print(f"Checking {suffix} files in {frames_dir}...")
     files = list(frames_dir.glob(f"*{suffix}"))
     files_by_frame = {}
     for file in files:
