@@ -979,6 +979,10 @@ void MainGUIWindow::start_recording() {
     // frames (see cam_flush_time_us in comm_protocol/protocol.h).
     std::this_thread::sleep_for(
         std::chrono::microseconds(cam_flush_time_us * 8 / 10));
+    // Set the muscle-imaging flag before raising is_recording so the muscle
+    // acquirer sees a consistent state: when muscle imaging is off the camera
+    // still free-runs but its frames are not saved (behavior-only recording).
+    program_state_->muscle_imaging_enabled.store(muscle_imaging_enabled_);
     program_state_->is_recording.store(true);
 
     spdlog::info(
