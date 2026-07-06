@@ -27,6 +27,8 @@ def postprocess_recording_data(
     overwrite: bool = False,
     align_fly: bool = True,
     with_muscle: bool = False,
+    reuse_behavior_alignment: bool = False,
+    num_orphan_muscle_frames: int | None = None,
     make_visualizations: bool = True,
     play_fps: int = 33,
     behavior_video_crf: int = 12,
@@ -72,6 +74,18 @@ def postprocess_recording_data(
         overwrite (bool): Whether to overwrite existing processed outputs.
         align_fly (bool): Whether to align and crop behavior frames based on fly pose.
         with_muscle (bool): Whether to process muscle images and align with behavior.
+        reuse_behavior_alignment (bool): If True, skip the behavior pipeline (stage
+            interpolation and SLEAP decode/align) and reuse the previously computed
+            behavior outputs (behavior_frames_metadata.csv, the aligned behavior video,
+            and, when align_fly is True, behavior_alignment_transforms.h5). Muscle
+            warping and visualizations are still run. Useful for iterating on muscle
+            alignment (e.g. tuning `num_orphan_muscle_frames`) without re-running the
+            expensive pose-estimation step. Requires those behavior outputs to already
+            exist in the processed directory.
+        num_orphan_muscle_frames (int | None): Number of leading orphan (pre-excitation,
+            dark) muscle frames to skip. If None (default), the count is detected
+            automatically from muscle-frame brightness. Provide an integer to override
+            the automatic detection.
         make_visualizations (bool): Whether to generate summary videos and overlays.
         play_fps (int): Frame rate for generated videos. This is for visualization only.
             It has no impact on the actual data saved. It merely sets the metadata that
@@ -117,7 +131,9 @@ def postprocess_recording_data(
     # Validate recording directory
     recording_dir = Path(recording_dir)
     processed_dir = recording_dir / "processed"
-    if processed_dir.exists() and not overwrite:
+    # When reusing existing behavior outputs the processed directory is expected to
+    # already exist, so the "already exists" guard does not apply.
+    if processed_dir.exists() and not overwrite and not reuse_behavior_alignment:
         logger.error(
             f"Processed directory {processed_dir} already exists. "
             "Use --overwrite to overwrite existing outputs."
@@ -160,35 +176,55 @@ def postprocess_recording_data(
     if with_muscle:
         muscle_frames_metadata_path = processed_dir / "muscle_frames_metadata.csv"
 
-    # Interpolate stage positions for behavior frames
-    logger.info("Interpolating stage positions for behavior frames...")
-    interp_stage_pos_at_behavior_frames(
-        frames_dir=raw_behavior_images_dir,
-        stage_positions_path=stage_positions_path,
-        output_path=behavior_frames_metadata_path,
-    )
+    if reuse_behavior_alignment:
+        # Reuse previously computed behavior outputs; skip stage interpolation and the
+        # expensive SLEAP decode/align. Verify the outputs we depend on downstream
+        # actually exist before continuing.
+        required_outputs = [behavior_frames_metadata_path, processed_behavior_video_path]
+        if align_fly:
+            required_outputs.append(alignment_metadata_path)
+        missing_outputs = [p for p in required_outputs if not p.exists()]
+        if missing_outputs:
+            raise FileNotFoundError(
+                "reuse_behavior_alignment=True but required existing outputs are "
+                "missing: "
+                + ", ".join(str(p) for p in missing_outputs)
+                + ". Run the full pipeline (without --reuse-behavior-alignment) first."
+            )
+        logger.info(
+            "Reusing previously computed behavior outputs; skipping stage "
+            "interpolation and SLEAP decode/align."
+        )
+    else:
+        # Interpolate stage positions for behavior frames
+        logger.info("Interpolating stage positions for behavior frames...")
+        interp_stage_pos_at_behavior_frames(
+            frames_dir=raw_behavior_images_dir,
+            stage_positions_path=stage_positions_path,
+            output_path=behavior_frames_metadata_path,
+        )
 
-    # Process behavior frames:
-    # 1. Decode pseudo-BGR JPEGs into single frames
-    # 2. Run SLEAP to detect fly position and orientation for each frame
-    # 3. Rotate and crop each frame to align the fly (centered, facing up)
-    config = load_spotlight_tools_config()
-    logger.info("Decoding and transforming behavior frames...")
-    decode_and_align_all_behavior_frames(
-        raw_behavior_frame_paths=raw_behavior_images_paths,
-        sleap_model_dir=Path(config["pose2d"]["sleap_model_dir"]).expanduser(),
-        output_video_path=processed_behavior_video_path,
-        output_metadata_path=alignment_metadata_path,
-        keypoints_code2name=config["pose2d"]["keypoint_names"],
-        align_fly=align_fly,
-        use_shm=use_shm,
-        sleap_batch_size=sleap_batch_size,
-        crop_dim=crop_dim,
-        play_fps=play_fps,
-        behavior_video_crf=behavior_video_crf,
-        behavior_video_preset=behavior_video_preset,
-        num_workers=num_workers,
-    )
+        # Process behavior frames:
+        # 1. Decode pseudo-BGR JPEGs into single frames
+        # 2. Run SLEAP to detect fly position and orientation for each frame
+        # 3. Rotate and crop each frame to align the fly (centered, facing up)
+        config = load_spotlight_tools_config()
+        logger.info("Decoding and transforming behavior frames...")
+        decode_and_align_all_behavior_frames(
+            raw_behavior_frame_paths=raw_behavior_images_paths,
+            sleap_model_dir=Path(config["pose2d"]["sleap_model_dir"]).expanduser(),
+            output_video_path=processed_behavior_video_path,
+            output_metadata_path=alignment_metadata_path,
+            keypoints_code2name=config["pose2d"]["keypoint_names"],
+            align_fly=align_fly,
+            use_shm=use_shm,
+            sleap_batch_size=sleap_batch_size,
+            crop_dim=crop_dim,
+            play_fps=play_fps,
+            behavior_video_crf=behavior_video_crf,
+            behavior_video_preset=behavior_video_preset,
+            num_workers=num_workers,
+        )
 
     # Process muscle frames (if requested)
     # 1. Warp muscle images to align with behavior frames
@@ -206,6 +242,7 @@ def postprocess_recording_data(
             behavior_alignment_metadata_path=alignment_metadata_path,
             processed_behavior_video_path=processed_behavior_video_path,
             missing_muscle_frames_tolerance=missing_muscle_frames_tolerance,
+            num_orphan_muscle_frames=num_orphan_muscle_frames,
             num_workers=num_workers,
         )
 

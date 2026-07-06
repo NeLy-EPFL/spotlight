@@ -62,6 +62,7 @@ def warp_all_muscle_frames_to_behavior(
     behavior_alignment_metadata_path: Path | None = None,
     processed_behavior_video_path: Path | None = None,
     missing_muscle_frames_tolerance: int = 3,
+    num_orphan_muscle_frames: int | None = None,
     num_workers: int = -1,
 ):
     """Warp raw PCO muscle frames into the behavior camera's coordinate system.
@@ -88,6 +89,11 @@ def warp_all_muscle_frames_to_behavior(
             read output dimensions when ``align_fly`` is False).
         missing_muscle_frames_tolerance: Maximum allowed consecutive missing frames at
             the end of the recording.
+        num_orphan_muscle_frames: Number of leading orphan (pre-excitation, dark)
+            muscle frames to skip. If None (default), the count is detected
+            automatically from muscle-frame brightness via
+            ``_count_leading_orphan_muscle_frames``. Provide an explicit integer to
+            override the automatic detection (e.g. when it misfires).
         num_workers: Parallel workers for warping (-1 = all cores).
     """
     logger = logging.getLogger(__name__)
@@ -121,13 +127,27 @@ def warp_all_muscle_frames_to_behavior(
     # not from a frame-count difference: the latter silently conflates leading
     # orphans with a trailing stop-time mismatch between the two cameras and can
     # therefore land on the wrong frame.
-    first_muscle_frameid = _count_leading_orphan_muscle_frames(raw_muscle_images_dir)
-    if first_muscle_frameid > 0:
+    if num_orphan_muscle_frames is not None:
+        if num_orphan_muscle_frames < 0:
+            raise ValueError(
+                "num_orphan_muscle_frames must be non-negative, got "
+                f"{num_orphan_muscle_frames}."
+            )
+        first_muscle_frameid = num_orphan_muscle_frames
         logger.info(
-            f"Detected {first_muscle_frameid} orphan muscle frame(s) at the start "
-            "of the recording (captured before the behavior trigger / excitation "
-            "LED turned on); skipping them."
+            f"Using user-specified count of {first_muscle_frameid} leading orphan "
+            "muscle frame(s) to skip (automatic brightness-based detection disabled)."
         )
+    else:
+        first_muscle_frameid = _count_leading_orphan_muscle_frames(
+            raw_muscle_images_dir
+        )
+        if first_muscle_frameid > 0:
+            logger.info(
+                f"Detected {first_muscle_frameid} orphan muscle frame(s) at the start "
+                "of the recording (captured before the behavior trigger / excitation "
+                "LED turned on); skipping them."
+            )
 
     # Check if we have all the muscle images
     muscle_image_paths = _filter_muscle_frames_by_availability(
@@ -302,9 +322,8 @@ def _get_stage_pos_df_at_muscle_frames(
 def _count_leading_orphan_muscle_frames(
     raw_muscle_images_dir: Path,
     *,
-    onset_brightness_ratio: float = 1.5,
-    brightness_percentile: float = 99.0,
-    max_scan_frames: int = 60,
+    brightness_low_percentile: float = 98.0,
+    num_illuminated_anchor_frames: int = 5,
 ) -> int:
     """Count muscle frames captured before the behavior trigger started.
 
@@ -314,23 +333,35 @@ def _count_leading_orphan_muscle_frames(
     darker than the illuminated frames that follow; they have no corresponding
     behavior group and must be skipped.
 
-    The orphan count is the index of the first illuminated frame, detected as the
-    first frame whose brightness reaches ``onset_brightness_ratio`` times the
-    (dark) first frame's brightness. Brightness is summarised by a high percentile
-    (``brightness_percentile``) so a few hot pixels cannot flip the decision while
-    the spatially-extended GCaMP fluorescence still registers strongly. This uses
-    only the muscle frames themselves, so it needs no common clock between the two
-    cameras (there is none). If no onset is found within the first
-    ``max_scan_frames`` frames, the recording is assumed to start already
-    illuminated and 0 orphans are reported.
+    The orphan count is the number of contiguous dark frames at the start, i.e. the
+    index of the first frame whose brightness reaches the midpoint between the (dark)
+    first frame and the (illuminated) tail. The tail level is anchored on the mean of
+    the last ``num_illuminated_anchor_frames`` frames rather than a single frame, so
+    one anomalous end frame cannot move the threshold. The midpoint is a natural
+    cutoff between the two levels -- more robust than a fixed multiplicative ratio when
+    the frames sit on a large additive pedestal (the dark and illuminated levels
+    differ by only a small fraction of the raw pixel value). Brightness is summarised
+    as the mean of the bright tail -- the pixels at or above ``brightness_low_percentile``
+    (i.e. from that percentile up to the max) -- so the spatially-extended GCaMP
+    fluorescence registers strongly while the dim background that dominates the frame
+    is ignored and no single hot pixel can flip the decision. This uses only the muscle
+    frames themselves, so it needs no common clock between the two cameras (there is
+    none).
+
+    As a sanity check, the recording is expected to split cleanly into a leading dark
+    block followed by all-illuminated frames. If any later frame dips back below the
+    threshold (e.g. the tail is not actually illuminated, a mid-recording dark frame,
+    a slow LED ramp, or no real dark->bright transition at all), a warning is emitted
+    because the orphan count is then unreliable; the caller can override it via
+    ``num_orphan_muscle_frames``.
 
     Args:
         raw_muscle_images_dir: Directory containing raw muscle TIFF files.
-        onset_brightness_ratio: A frame counts as illuminated once its brightness
-            reaches this multiple of the (dark) first frame's brightness.
-        brightness_percentile: Percentile of pixel values used as the per-frame
-            brightness metric (robust to hot pixels).
-        max_scan_frames: Maximum number of leading frames to inspect.
+        brightness_low_percentile: Lower percentile bounding the bright tail that is
+            averaged into the per-frame brightness metric (the mean of all pixels at
+            or above this percentile).
+        num_illuminated_anchor_frames: Number of trailing frames whose mean brightness
+            anchors the illuminated level used for the threshold.
 
     Returns:
         Number of leading orphan frames to skip (0 if the recording starts
@@ -351,19 +382,60 @@ def _count_leading_orphan_muscle_frames(
 
     def _brightness(frame_id: int) -> float:
         im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED)
-        return float(np.percentile(im, brightness_percentile))
+        # Mean of the bright tail: pixels from brightness_low_percentile up to the
+        # max. Averaging this tail captures the extended GCaMP fluorescence more
+        # fully than a single percentile while staying robust to lone hot pixels.
+        cutoff = np.percentile(im, brightness_low_percentile)
+        return float(im[im >= cutoff].mean())
 
-    onset_threshold = _brightness(sorted_ids[0]) * onset_brightness_ratio
-    for n_orphans, frame_id in enumerate(sorted_ids[:max_scan_frames]):
-        if _brightness(frame_id) >= onset_threshold:
-            return n_orphans
+    # Per-frame brightness for the whole recording -- needed both to find the leading
+    # dark block and to validate that the dark/illuminated split is clean (below).
+    brightness = np.array([_brightness(fid) for fid in sorted_ids])
 
-    logger.info(
-        "No excitation-LED onset detected in the first %d muscle frames; assuming "
-        "the recording starts illuminated (0 leading orphan frames).",
-        min(len(sorted_ids), max_scan_frames),
-    )
-    return 0
+    # Threshold = midpoint between the (dark) first frame and the (illuminated) tail,
+    # the tail anchored on the mean of the last num_illuminated_anchor_frames frames
+    # so a single anomalous end frame cannot move it. Robust to the large additive
+    # pedestal shared by both levels.
+    dark_anchor = brightness[0]
+    bright_anchor = float(brightness[-num_illuminated_anchor_frames:].mean())
+    onset_threshold = 0.5 * (dark_anchor + bright_anchor)
+
+    below = brightness < onset_threshold
+    if below.all():
+        # No frame reaches the threshold -- the illuminated level was never seen (e.g.
+        # the excitation LED never turned on). Report 0 rather than skipping every
+        # frame, and warn.
+        logger.warning(
+            "Orphan detection: no muscle frame reached the brightness threshold "
+            "(%.1f); the excitation LED may never have turned on. Reporting 0 orphan "
+            "frames -- inspect with scripts/diagnose_orphan_detection.py.",
+            onset_threshold,
+        )
+        return 0
+
+    # Leading orphan block = contiguous dark frames from the start.
+    n_orphans = int(np.argmax(~below))
+
+    # Sanity check: everything after the leading block should be illuminated. Any
+    # later frame back below the threshold means the split is not a clean
+    # leading-dark + illuminated one, so the orphan count may be wrong.
+    stragglers = np.nonzero(below[n_orphans:])[0] + n_orphans
+    if stragglers.size:
+        preview = ", ".join(str(int(s)) for s in stragglers[:10])
+        logger.warning(
+            "Orphan detection: after the leading %d dark frame(s), %d later frame(s) "
+            "are also below the brightness threshold (%.1f): [%s%s]. The recording "
+            "does not split cleanly into leading-dark + illuminated, so the orphan "
+            "count may be wrong. Inspect with scripts/diagnose_orphan_detection.py, "
+            "or set it explicitly via --num-orphan-muscle-frames.",
+            n_orphans,
+            stragglers.size,
+            onset_threshold,
+            preview,
+            "" if stragglers.size <= 10 else ", ...",
+        )
+
+    return n_orphans
 
 
 def _filter_muscle_frames_by_availability(
@@ -385,31 +457,55 @@ def _filter_muscle_frames_by_availability(
             continue
         _muscle_paths_by_frameid[frameid] = path
 
+    # Highest muscle frame index actually present on disk. Once we ask for a frame
+    # beyond this, the muscle recording has simply ended: it is shorter than the
+    # behavior recording because it started later (leading orphan frames are skipped
+    # via first_frameid) and/or stopped earlier. Those trailing behavior frames just
+    # have no muscle counterpart -- a clean end, not corruption. Note the number of
+    # available muscle frames (total on disk minus the skipped orphans) is what bounds
+    # the output; num_expected_frames comes from the behavior stream and is unaffected
+    # by the orphan count.
+    last_available_frameid = (
+        max(_muscle_paths_by_frameid) if _muscle_paths_by_frameid else first_frameid - 1
+    )
+
     # Check if each expected frame is among the frames found, starting from
     # first_frameid to skip orphan frames at the start of the recording.
     muscle_image_paths = []
     num_expected_frames = stage_pos_df_at_muscle_frames.shape[0]
     for frameid in range(first_frameid, num_expected_frames + first_frameid):
-        if frameid not in _muscle_paths_by_frameid:
-            rel_frameid = frameid - first_frameid
-            if rel_frameid >= num_expected_frames - missing_muscle_frames_tolerance:
-                # If we are almost at the end of the recording, it's ok. This could
-                # simply be due to expected synchronization/timing imperfections.
-                break
-            logging.error(
-                f"Problem scanning muscle images: Frame {frameid} not found in "
-                f"{raw_muscle_images_dir} (a total of {num_expected_frames} is "
-                f"expected). Dataset is incomplete."
-            )
-            raise RuntimeError("Dataset is incomplete.")
-        else:
+        if frameid in _muscle_paths_by_frameid:
             muscle_image_paths.append(_muscle_paths_by_frameid[frameid])
+            continue
+        # Frame missing. If we have run past the last muscle frame on disk, the
+        # recording has simply ended -> stop cleanly. A gap *before* the last
+        # available frame is genuine corruption: skipping it would misalign every
+        # subsequent muscle<->behavior correspondence, so raise.
+        if frameid > last_available_frameid:
+            break
+        logging.error(
+            f"Problem scanning muscle images: Frame {frameid} not found in "
+            f"{raw_muscle_images_dir} (a total of {num_expected_frames} is "
+            f"expected). Dataset is incomplete."
+        )
+        raise RuntimeError("Dataset is incomplete.")
 
     num_muscle_frames = len(muscle_image_paths)
-    if num_muscle_frames != num_expected_frames:
+    num_missing = num_expected_frames - num_muscle_frames
+    if num_missing > missing_muscle_frames_tolerance:
         logging.warning(
             f"Found {num_muscle_frames} muscle images, but expected "
-            f"{num_expected_frames}. This is likely normal because the two cameras "
+            f"{num_expected_frames} ({num_missing} fewer). The muscle recording is "
+            f"shorter than the behavior recording, so the last {num_missing} behavior "
+            f"frame(s) will have no muscle counterpart. This is expected when the "
+            f"muscle camera captured leading orphan frames or stopped early, but a "
+            f"large discrepancy may indicate a problem."
+        )
+    elif num_missing > 0:
+        logging.info(
+            f"Found {num_muscle_frames} muscle images, expected {num_expected_frames} "
+            f"({num_missing} fewer, within the tolerance of "
+            f"{missing_muscle_frames_tolerance}). This is normal: the two cameras "
             f"receive the stop signal at slightly different times."
         )
 
