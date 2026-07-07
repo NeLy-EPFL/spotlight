@@ -323,7 +323,7 @@ def _count_leading_orphan_muscle_frames(
     raw_muscle_images_dir: Path,
     *,
     brightness_low_percentile: float = 98.0,
-    num_illuminated_anchor_frames: int = 5,
+    illuminated_anchor_percentile: float = 25.0,
 ) -> int:
     """Count muscle frames captured before the behavior trigger started.
 
@@ -335,10 +335,20 @@ def _count_leading_orphan_muscle_frames(
 
     The orphan count is the number of contiguous dark frames at the start, i.e. the
     index of the first frame whose brightness reaches the midpoint between the (dark)
-    first frame and the (illuminated) tail. The tail level is anchored on the mean of
-    the last ``num_illuminated_anchor_frames`` frames rather than a single frame, so
-    one anomalous end frame cannot move the threshold. The midpoint is a natural
-    cutoff between the two levels -- more robust than a fixed multiplicative ratio when
+    first frame and the (illuminated) level. The illuminated level is anchored on a low
+    percentile (``illuminated_anchor_percentile``, default 25th) of the brightness over
+    the whole recording -- a conservative *lower bound* on the illuminated level. The
+    illuminated frames are the large majority, so a low percentile still lands within
+    their (dim end of the) distribution while staying unmoved by both the few leading
+    dark frames and any anomalously bright/dark tail. Anchoring at the dim end rather
+    than a central estimate keeps the threshold below even the faintest genuinely-
+    illuminated frame, so normal frame-to-frame GCaMP fluctuation is not mistaken for
+    orphans. (Anchoring on
+    the last few frames instead is not robust -- the signal fluctuates substantially
+    frame-to-frame, so a short tail window is a noisy, biased estimate; a spuriously
+    bright tail inflates the threshold and over-counts orphans.) The midpoint is a
+    natural cutoff between the two levels -- more robust than a fixed multiplicative
+    ratio when
     the frames sit on a large additive pedestal (the dark and illuminated levels
     differ by only a small fraction of the raw pixel value). Brightness is summarised
     as the mean of the bright tail -- the pixels at or above ``brightness_low_percentile``
@@ -360,8 +370,9 @@ def _count_leading_orphan_muscle_frames(
         brightness_low_percentile: Lower percentile bounding the bright tail that is
             averaged into the per-frame brightness metric (the mean of all pixels at
             or above this percentile).
-        num_illuminated_anchor_frames: Number of trailing frames whose mean brightness
-            anchors the illuminated level used for the threshold.
+        illuminated_anchor_percentile: Percentile of the per-frame brightness over the
+            whole recording used to anchor the illuminated level -- a low value (default
+            25th) gives a conservative lower bound on that level.
 
     Returns:
         Number of leading orphan frames to skip (0 if the recording starts
@@ -392,12 +403,16 @@ def _count_leading_orphan_muscle_frames(
     # dark block and to validate that the dark/illuminated split is clean (below).
     brightness = np.array([_brightness(fid) for fid in sorted_ids])
 
-    # Threshold = midpoint between the (dark) first frame and the (illuminated) tail,
-    # the tail anchored on the mean of the last num_illuminated_anchor_frames frames
-    # so a single anomalous end frame cannot move it. Robust to the large additive
-    # pedestal shared by both levels.
+    # Threshold = midpoint between the (dark) first frame and the (illuminated) level,
+    # the latter anchored on a low percentile of the brightness over the whole recording
+    # -- a conservative lower bound on the illuminated level. The illuminated frames are
+    # the large majority, so this percentile stays within their (dim end of the)
+    # distribution and is unmoved by the few leading dark frames or an anomalously
+    # bright/dark tail; keeping the anchor at the dim end stops normal frame-to-frame
+    # fluctuation from being mistaken for orphans. Robust to the large additive pedestal
+    # shared by both levels.
     dark_anchor = brightness[0]
-    bright_anchor = float(brightness[-num_illuminated_anchor_frames:].mean())
+    bright_anchor = float(np.percentile(brightness, illuminated_anchor_percentile))
     onset_threshold = 0.5 * (dark_anchor + bright_anchor)
 
     below = brightness < onset_threshold
