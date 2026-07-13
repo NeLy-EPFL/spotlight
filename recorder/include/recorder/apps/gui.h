@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -121,6 +122,7 @@ class MainGUIWindow : public QWidget {
   public:
     explicit MainGUIWindow(
         const RecorderConfig &recorder_config,
+        const std::filesystem::path &profile_dir,
         std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
         std::shared_ptr<MuscleRecordingState> muscle_recording_state,
         std::shared_ptr<TrackingControlState> tracking_control_state,
@@ -204,6 +206,7 @@ class MainGUIWindow : public QWidget {
         int muscle_nominal_exposure_us, int muscle_buffer_time_us);
     void write_recorder_config();
     void write_behavior_calibration_parameters();
+    void copy_homography_parameters_if_present();
 
     std::shared_ptr<ProgramState> program_state_;
     QSpinBox *behavior_fps_spin_box_;
@@ -222,6 +225,7 @@ class MainGUIWindow : public QWidget {
     MuscleHistogramWidget *muscle_histogram_widget_;
     QTimer *image_display_timer_;
     RecorderConfig recorder_config_;
+    std::filesystem::path profile_dir_;
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state_;
     std::shared_ptr<MuscleRecordingState> muscle_recording_state_;
     std::shared_ptr<TrackingControlState> tracking_control_state_;

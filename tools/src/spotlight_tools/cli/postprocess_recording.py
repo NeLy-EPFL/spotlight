@@ -27,6 +27,9 @@ def postprocess_recording_data(
     overwrite: bool = False,
     align_fly: bool = True,
     with_muscle: bool = False,
+    reuse_behavior_alignment: bool = False,
+    homography_path: Path | str | None = None,
+    num_orphan_muscle_frames: int | None = None,
     make_visualizations: bool = True,
     play_fps: int = 33,
     behavior_video_crf: int = 12,
@@ -40,7 +43,6 @@ def postprocess_recording_data(
     missing_muscle_frames_tolerance: int = 3,
     num_workers: int = -1,
     log_level: str = "INFO",
-    use_homography: bool = False,
 ) -> None:
     """High-level post-processing pipeline for a single Spotlight recording.
 
@@ -57,10 +59,10 @@ def postprocess_recording_data(
        c. (If `align_fly` is True) Rotating the image around the detected thorax so that
           the fly faces upward, and cropping image to a square centered on the fly.
     3. Muscle frame transformation and alignment (if requested): Warp muscle images to
-       be consistent with behavior images (this is based on Spotlight calibration
-       parameters), and apply the same alignment transforms used for behavior frames to
-       maintain pixel-wise correspondence. Note that depending on whether `align_fly` is
-       True, the output muscle frames are either full-sized or aligned/cropped.
+       be consistent with behavior images (using a pre-computed homography), and apply
+       the same alignment transforms used for behavior frames to maintain pixel-wise
+       correspondence. Note that depending on whether `align_fly` is True, the output
+       muscle frames are either full-sized or aligned/cropped.
     4. Generate summary video (showing behavior frames, 2D pose, and optionally muscle
        frames). If `with_muscle` is True, also generate muscle-upon-behavior overlays
        for a subset of frames for visual inspection.
@@ -73,6 +75,23 @@ def postprocess_recording_data(
         overwrite (bool): Whether to overwrite existing processed outputs.
         align_fly (bool): Whether to align and crop behavior frames based on fly pose.
         with_muscle (bool): Whether to process muscle images and align with behavior.
+        reuse_behavior_alignment (bool): If True, skip the behavior pipeline (stage
+            interpolation and SLEAP decode/align) and reuse the previously computed
+            behavior outputs (behavior_frames_metadata.csv, the aligned behavior video,
+            and, when align_fly is True, behavior_alignment_transforms.h5). Muscle
+            warping and visualizations are still run. Useful for iterating on muscle
+            alignment (e.g. tuning `num_orphan_muscle_frames`) without re-running the
+            expensive pose-estimation step. Requires those behavior outputs to already
+            exist in the processed directory.
+        homography_path (Path | str | None): Path to the muscle-to-behavior homography
+            calibration YAML to use for muscle warping. If None (default), the
+            homography snapshotted inside the recording
+            (metadata/homography_parameters.yaml) is used. Provide a path to override
+            it with a more recent calibration. Only relevant when with_muscle is True.
+        num_orphan_muscle_frames (int | None): Number of leading orphan (pre-excitation,
+            dark) muscle frames to skip. If None (default), the count is detected
+            automatically from muscle-frame brightness. Provide an integer to override
+            the automatic detection.
         make_visualizations (bool): Whether to generate summary videos and overlays.
         play_fps (int): Frame rate for generated videos. This is for visualization only.
             It has no impact on the actual data saved. It merely sets the metadata that
@@ -95,20 +114,15 @@ def postprocess_recording_data(
             Doing so will avoid duplicated disk read and write, but it is extremely
             sketchy - if the process runs out of shared memory, the entire OS will
             likely crash. Default is False.
-        missing_muscle_frames_tolerance (int): Maximum allowed consecutive missing
-            frames (the first one is always missing due to rolling shutter; the last
-            few might be missing due to nondeterministic hardware timing when recording
-            stops).
+        missing_muscle_frames_tolerance (int): Maximum muscle-frame shortfall, beyond the
+            part explained by the leading orphan skip, tolerated before the pipeline raises.
+            The muscle recording is expected to end a few frames short (the two cameras
+            receive the stop signal at slightly different times); a shortfall larger than
+            this once the orphan count is subtracted means the muscle recording is truncated
+            and is treated as a hard error rather than silently producing a short recording.
         num_workers (int): Number of parallel workers (-1 for all available cores).
         log_level (str): Logging level for the processing pipeline. Options are:
             "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL". Default is "INFO".
-        use_homography (bool): If True, use homography transformation for muscle-to-behavior
-            alignment instead of the stage-dependent affine transformation from Spotlight
-            calibration. This requires a homography calibration to have been performed.
-            Default is False.
-        homography_path (Path | str | None): Path to homography calibration YAML file.
-            If None and use_homography is True, will look for homography_result.yaml in
-            the standard profile calibration location. Default is None.
     """
     # Set up logging with the specified level
     numeric_level = getattr(logging, log_level.upper(), None)
@@ -125,7 +139,9 @@ def postprocess_recording_data(
     # Validate recording directory
     recording_dir = Path(recording_dir)
     processed_dir = recording_dir / "processed"
-    if processed_dir.exists() and not overwrite:
+    # When reusing existing behavior outputs the processed directory is expected to
+    # already exist, so the "already exists" guard does not apply.
+    if processed_dir.exists() and not overwrite and not reuse_behavior_alignment:
         logger.error(
             f"Processed directory {processed_dir} already exists. "
             "Use --overwrite to overwrite existing outputs."
@@ -141,9 +157,16 @@ def postprocess_recording_data(
     )
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     metadata_dir = recording_dir / "metadata/"
-    muscle_calib_path = metadata_dir / "calibration_parameters_muscle.yaml"
-    homography_path = metadata_dir / "homography_parameters.yaml"
-    behavior_calib_path = metadata_dir / "calibration_parameters_behavior.yaml"
+    # Use the caller-supplied homography if given (e.g. a more recent calibration),
+    # otherwise fall back to the one snapshotted inside the recording.
+    if homography_path is None:
+        homography_path = metadata_dir / "homography_parameters.yaml"
+    else:
+        homography_path = Path(homography_path)
+        if not homography_path.exists():
+            raise FileNotFoundError(
+                f"Supplied homography file does not exist: {homography_path}"
+            )
     experiment_parameters_path = metadata_dir / "experiment_parameters.yaml"
     if with_muscle:
         raw_muscle_images_dir = recording_dir / "muscle_images/"
@@ -170,58 +193,74 @@ def postprocess_recording_data(
     if with_muscle:
         muscle_frames_metadata_path = processed_dir / "muscle_frames_metadata.csv"
 
-    # Interpolate stage positions for behavior frames
-    logger.info("Interpolating stage positions for behavior frames...")
-    interp_stage_pos_at_behavior_frames(
-        frames_dir=raw_behavior_images_dir,
-        stage_positions_path=stage_positions_path,
-        output_path=behavior_frames_metadata_path,
-    )
+    if reuse_behavior_alignment:
+        # Reuse previously computed behavior outputs; skip stage interpolation and the
+        # expensive SLEAP decode/align. Verify the outputs we depend on downstream
+        # actually exist before continuing.
+        required_outputs = [behavior_frames_metadata_path, processed_behavior_video_path]
+        if align_fly:
+            required_outputs.append(alignment_metadata_path)
+        missing_outputs = [p for p in required_outputs if not p.exists()]
+        if missing_outputs:
+            raise FileNotFoundError(
+                "reuse_behavior_alignment=True but required existing outputs are "
+                "missing: "
+                + ", ".join(str(p) for p in missing_outputs)
+                + ". Run the full pipeline (without --reuse-behavior-alignment) first."
+            )
+        logger.info(
+            "Reusing previously computed behavior outputs; skipping stage "
+            "interpolation and SLEAP decode/align."
+        )
+    else:
+        # Interpolate stage positions for behavior frames
+        logger.info("Interpolating stage positions for behavior frames...")
+        interp_stage_pos_at_behavior_frames(
+            frames_dir=raw_behavior_images_dir,
+            stage_positions_path=stage_positions_path,
+            output_path=behavior_frames_metadata_path,
+        )
 
-    # Process behavior frames:
-    # 1. Decode pseudo-BGR JPEGs into single frames
-    # 2. Run SLEAP to detect fly position and orientation for each frame
-    # 3. Rotate and crop each frame to align the fly (centered, facing up)
-    config = load_spotlight_tools_config()
-    logger.info("Decoding and transforming behavior frames...")
-    decode_and_align_all_behavior_frames(
-        raw_behavior_frame_paths=raw_behavior_images_paths,
-        sleap_model_dir=Path(config["pose2d"]["sleap_model_dir"]).expanduser(),
-        output_video_path=processed_behavior_video_path,
-        output_metadata_path=alignment_metadata_path,
-        keypoints_code2name=config["pose2d"]["keypoint_names"],
-        align_fly=align_fly,
-        use_shm=use_shm,
-        sleap_batch_size=sleap_batch_size,
-        crop_dim=crop_dim,
-        play_fps=play_fps,
-        behavior_video_crf=behavior_video_crf,
-        behavior_video_preset=behavior_video_preset,
-        num_workers=num_workers,
-    )
+        # Process behavior frames:
+        # 1. Decode pseudo-BGR JPEGs into single frames
+        # 2. Run SLEAP to detect fly position and orientation for each frame
+        # 3. Rotate and crop each frame to align the fly (centered, facing up)
+        config = load_spotlight_tools_config()
+        logger.info("Decoding and transforming behavior frames...")
+        decode_and_align_all_behavior_frames(
+            raw_behavior_frame_paths=raw_behavior_images_paths,
+            sleap_model_dir=Path(config["pose2d"]["sleap_model_dir"]).expanduser(),
+            output_video_path=processed_behavior_video_path,
+            output_metadata_path=alignment_metadata_path,
+            keypoints_code2name=config["pose2d"]["keypoint_names"],
+            align_fly=align_fly,
+            use_shm=use_shm,
+            sleap_batch_size=sleap_batch_size,
+            crop_dim=crop_dim,
+            play_fps=play_fps,
+            behavior_video_crf=behavior_video_crf,
+            behavior_video_preset=behavior_video_preset,
+            num_workers=num_workers,
+        )
 
     # Process muscle frames (if requested)
     # 1. Warp muscle images to align with behavior frames
     # 2. Apply the same alignment transforms used for behavior frames
     if with_muscle:
         logger.info("Mapping muscle frames to behavior frames...")
-        if homography_path is not None:
-            homography_path = Path(homography_path)
         warp_all_muscle_frames_to_behavior(
-            muscle_calib_path=muscle_calib_path,
-            behavior_calib_path=behavior_calib_path,
             experiment_parameters_path=experiment_parameters_path,
             processed_behavior_frame_metadata_path=behavior_frames_metadata_path,
             raw_muscle_images_dir=raw_muscle_images_dir,
             transformed_muscle_images_output_dir=processed_muscle_frames_dir,
             muscle_metadata_output_path=muscle_frames_metadata_path,
+            homography_path=homography_path,
             align_fly=align_fly,
             behavior_alignment_metadata_path=alignment_metadata_path,
             processed_behavior_video_path=processed_behavior_video_path,
             missing_muscle_frames_tolerance=missing_muscle_frames_tolerance,
+            num_orphan_muscle_frames=num_orphan_muscle_frames,
             num_workers=num_workers,
-            use_homography=use_homography,
-            homography_path=homography_path,
         )
 
     # Generate visualizations (if requested)
@@ -233,6 +272,7 @@ def postprocess_recording_data(
             with_muscle=with_muscle,
             draw_2dpose=align_fly,
             muscle_images_dir=processed_muscle_frames_dir,
+            muscle_metadata_path=muscle_frames_metadata_path,
             experiment_parameters_path=experiment_parameters_path,
             pose_2d_path=alignment_metadata_path,
             muscle_vrange=muscle_vrange,

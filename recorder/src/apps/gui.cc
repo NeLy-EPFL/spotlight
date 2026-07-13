@@ -340,6 +340,7 @@ float MotionControlWidget::map_to_stage_y(int y) const {
 
 MainGUIWindow::MainGUIWindow(
     const RecorderConfig &recorder_config,
+    const std::filesystem::path &profile_dir,
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
     std::shared_ptr<MuscleRecordingState> muscle_recording_state,
     std::shared_ptr<TrackingControlState> tracking_control_state,
@@ -355,6 +356,7 @@ MainGUIWindow::MainGUIWindow(
     double stage_max_y_mm,
     QWidget *parent)
     : QWidget(parent), recorder_config_(recorder_config),
+      profile_dir_(profile_dir),
       behavior_recording_state_(std::move(behavior_recording_state)),
       muscle_recording_state_(std::move(muscle_recording_state)),
       tracking_control_state_(std::move(tracking_control_state)),
@@ -961,6 +963,7 @@ void MainGUIWindow::start_recording() {
         muscle_nominal_exposure_us, muscle_buffer_time_us);
     write_recorder_config();
     write_behavior_calibration_parameters();
+    copy_homography_parameters_if_present();
 
     // Send triggering parameters and start recording. The controller reverts to
     // the streaming (revert-to) params when the recording ends.
@@ -976,6 +979,10 @@ void MainGUIWindow::start_recording() {
     // frames (see cam_flush_time_us in comm_protocol/protocol.h).
     std::this_thread::sleep_for(
         std::chrono::microseconds(cam_flush_time_us * 8 / 10));
+    // Set the muscle-imaging flag before raising is_recording so the muscle
+    // acquirer sees a consistent state: when muscle imaging is off the camera
+    // still free-runs but its frames are not saved (behavior-only recording).
+    program_state_->muscle_imaging_enabled.store(muscle_imaging_enabled_);
     program_state_->is_recording.store(true);
 
     spdlog::info(
@@ -1088,6 +1095,33 @@ void MainGUIWindow::write_behavior_calibration_parameters() {
     behavior_cam_calibration_params_.save_to_file(output_path);
     spdlog::info(
         "Saved behavior calibration parameters to '{}'", output_path.string());
+}
+
+void MainGUIWindow::copy_homography_parameters_if_present() {
+    std::filesystem::path src =
+        profile_dir_ /
+        "calibration/model/homography_consensus/homography_result.yaml";
+    if (!std::filesystem::exists(src)) {
+        spdlog::warn(
+            "No homography calibration found at '{}'. Muscle-to-behavior "
+            "alignment will not be available for this recording unless "
+            "homography_parameters.yaml is provided manually.",
+            src.string());
+        return;
+    }
+
+    std::filesystem::path dst =
+        save_directory_->get_directory() / "metadata/homography_parameters.yaml";
+    if (std::filesystem::exists(dst)) {
+        spdlog::warn(
+            "Overwriting existing '{}'. If that file was from a different "
+            "calibration run, muscle alignment for this recording may use "
+            "incorrect parameters.",
+            dst.string());
+    }
+    std::filesystem::copy_file(
+        src, dst, std::filesystem::copy_options::overwrite_existing);
+    spdlog::info("Snapshotted homography parameters to '{}'", dst.string());
 }
 
 void MainGUIWindow::stop_recording() {

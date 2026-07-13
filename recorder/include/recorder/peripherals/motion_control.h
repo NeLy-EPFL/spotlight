@@ -18,8 +18,14 @@ class MotionControl {
   public:
     MotionControl(const RecorderConfig &recorder_config);
     ~MotionControl();
-    void
-    move_absolute(MotionAxis axis, double position, bool wait, double velocity);
+    // acceleration is in mm/s^2; 0 means "use the device-configured
+    // acceleration" set in apply_motion_stage_settings().
+    void move_absolute(
+        MotionAxis axis,
+        double position,
+        bool wait,
+        double velocity,
+        double acceleration = 0);
     void move_relative(
         MotionAxis axis, double relative_position, bool wait, double velocity);
     void home(MotionAxis axis, bool wait);

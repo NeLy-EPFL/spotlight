@@ -166,9 +166,19 @@ MotionControl::~MotionControl() {
 }
 
 void MotionControl::move_absolute(
-    MotionAxis axis, double position, bool wait, double velocity) {
+    MotionAxis axis,
+    double position,
+    bool wait,
+    double velocity,
+    double acceleration) {
     axis_ptr_lookup_[axis]->moveAbsolute(
-        position, length_unit_enum_, wait, velocity, velocity_unit_enum_);
+        position,
+        length_unit_enum_,
+        wait,
+        velocity,
+        velocity_unit_enum_,
+        acceleration,
+        zaber::motion::Units::ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED);
 }
 
 void MotionControl::move_relative(
