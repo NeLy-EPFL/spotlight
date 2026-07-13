@@ -50,6 +50,14 @@ motion_control:
   acceleration_mm_per_s_sq: 120
   acceleration_ramp_time_ms: 50
   max_speed_mm_per_s: 40
+  # Position-dependent tracking acceleration: the stage accelerates gently when
+  # the fly is near the image center (where centroid noise would cause jitter)
+  # and aggressively when it nears the edge (to keep up with a fast escape).
+  # Acceleration is linearly interpolated by the fly's pixel radius from center,
+  # reaching accel_max at radius >= min(rows, cols)/2 - max_accel_margin_px.
+  accel_min_mm_per_s_sq: 20      # acceleration when fly is at image center
+  accel_max_mm_per_s_sq: 250     # acceleration when fly is at/past the edge radius
+  max_accel_margin_px: 100       # edge radius = min(rows, cols)/2 - this margin
 
 homography:
   scan_x_center_mm: 75.0     # center of scan region (stage coordinates)

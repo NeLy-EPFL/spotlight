@@ -28,6 +28,7 @@ def postprocess_recording_data(
     align_fly: bool = True,
     with_muscle: bool = False,
     reuse_behavior_alignment: bool = False,
+    homography_path: Path | str | None = None,
     num_orphan_muscle_frames: int | None = None,
     make_visualizations: bool = True,
     play_fps: int = 33,
@@ -82,6 +83,11 @@ def postprocess_recording_data(
             alignment (e.g. tuning `num_orphan_muscle_frames`) without re-running the
             expensive pose-estimation step. Requires those behavior outputs to already
             exist in the processed directory.
+        homography_path (Path | str | None): Path to the muscle-to-behavior homography
+            calibration YAML to use for muscle warping. If None (default), the
+            homography snapshotted inside the recording
+            (metadata/homography_parameters.yaml) is used. Provide a path to override
+            it with a more recent calibration. Only relevant when with_muscle is True.
         num_orphan_muscle_frames (int | None): Number of leading orphan (pre-excitation,
             dark) muscle frames to skip. If None (default), the count is detected
             automatically from muscle-frame brightness. Provide an integer to override
@@ -108,10 +114,12 @@ def postprocess_recording_data(
             Doing so will avoid duplicated disk read and write, but it is extremely
             sketchy - if the process runs out of shared memory, the entire OS will
             likely crash. Default is False.
-        missing_muscle_frames_tolerance (int): Maximum allowed consecutive missing
-            frames (the first one is always missing due to rolling shutter; the last
-            few might be missing due to nondeterministic hardware timing when recording
-            stops).
+        missing_muscle_frames_tolerance (int): Maximum muscle-frame shortfall, beyond the
+            part explained by the leading orphan skip, tolerated before the pipeline raises.
+            The muscle recording is expected to end a few frames short (the two cameras
+            receive the stop signal at slightly different times); a shortfall larger than
+            this once the orphan count is subtracted means the muscle recording is truncated
+            and is treated as a hard error rather than silently producing a short recording.
         num_workers (int): Number of parallel workers (-1 for all available cores).
         log_level (str): Logging level for the processing pipeline. Options are:
             "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL". Default is "INFO".
@@ -149,7 +157,16 @@ def postprocess_recording_data(
     )
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     metadata_dir = recording_dir / "metadata/"
-    homography_path = metadata_dir / "homography_parameters.yaml"
+    # Use the caller-supplied homography if given (e.g. a more recent calibration),
+    # otherwise fall back to the one snapshotted inside the recording.
+    if homography_path is None:
+        homography_path = metadata_dir / "homography_parameters.yaml"
+    else:
+        homography_path = Path(homography_path)
+        if not homography_path.exists():
+            raise FileNotFoundError(
+                f"Supplied homography file does not exist: {homography_path}"
+            )
     experiment_parameters_path = metadata_dir / "experiment_parameters.yaml"
     if with_muscle:
         raw_muscle_images_dir = recording_dir / "muscle_images/"
@@ -255,6 +272,7 @@ def postprocess_recording_data(
             with_muscle=with_muscle,
             draw_2dpose=align_fly,
             muscle_images_dir=processed_muscle_frames_dir,
+            muscle_metadata_path=muscle_frames_metadata_path,
             experiment_parameters_path=experiment_parameters_path,
             pose_2d_path=alignment_metadata_path,
             muscle_vrange=muscle_vrange,

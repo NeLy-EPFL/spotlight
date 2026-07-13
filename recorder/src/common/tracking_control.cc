@@ -121,9 +121,17 @@ void motion_control_request_handler(
                         y_max_mm);
                 }
                 motion_control.move_absolute(
-                    x_axis, target_x, wait_for_completion, my_request.velocity);
+                    x_axis,
+                    target_x,
+                    wait_for_completion,
+                    my_request.velocity,
+                    my_request.acceleration);
                 motion_control.move_absolute(
-                    y_axis, target_y, wait_for_completion, my_request.velocity);
+                    y_axis,
+                    target_y,
+                    wait_for_completion,
+                    my_request.velocity,
+                    my_request.acceleration);
             } else {
                 // Convert the relative request to an absolute target so we
                 // can clamp against the travel limits before issuing the
@@ -139,9 +147,17 @@ void motion_control_request_handler(
                     y_min_mm,
                     y_max_mm);
                 motion_control.move_absolute(
-                    x_axis, target_x, wait_for_completion, my_request.velocity);
+                    x_axis,
+                    target_x,
+                    wait_for_completion,
+                    my_request.velocity,
+                    my_request.acceleration);
                 motion_control.move_absolute(
-                    y_axis, target_y, wait_for_completion, my_request.velocity);
+                    y_axis,
+                    target_y,
+                    wait_for_completion,
+                    my_request.velocity,
+                    my_request.acceleration);
             }
             my_response.set_success = true;
         } else if (my_request.request_type == wait_until_idle) {
@@ -185,7 +201,10 @@ void update_tracking_target(
     const std::shared_ptr<TrackingControlState> &tracking_control_state,
     const CalibrationParams &behavior_cam_calibration_params,
     float tracking_distance_threshold_mm,
-    float default_velocity) {
+    float default_velocity,
+    float accel_min,
+    float accel_max,
+    float max_accel_margin_px) {
     cv::Mat my_behavior_image =
         behavior_recording_state->latest_frame_holder->get_latest_frame_data()
             .image;
@@ -204,10 +223,13 @@ void update_tracking_target(
     bool is_found = false;
     double physical_pos_x = 0;
     double physical_pos_y = 0;
+    double fly_col_px = 0;
+    double fly_row_px = 0;
     std::shared_ptr<BehaviorCamera> behavior_camera =
         behavior_recording_state->behavior_camera.load();
     if (behavior_camera && behavior_camera->is_ready()) {
-        std::tie(is_found, physical_pos_x, physical_pos_y) =
+        std::tie(is_found, physical_pos_x, physical_pos_y, fly_col_px,
+                 fly_row_px) =
             calculate_fly_position_absolute_mm(
                 my_behavior_image,
                 my_motion_stage_position,
@@ -247,8 +269,19 @@ void update_tracking_target(
                 my_motion_stage_position.x_pos_mm + dx,
                 my_motion_stage_position.y_pos_mm + dy,
                 absolute};
+            // Accelerate gently near the image center (where centroid noise
+            // would cause jitter) and aggressively near the edge (to keep up
+            // with a fast escape).
+            double acceleration = compute_tracking_acceleration(
+                fly_col_px,
+                fly_row_px,
+                my_behavior_image.cols,
+                my_behavior_image.rows,
+                accel_min,
+                accel_max,
+                max_accel_margin_px);
             set_target_motion_stage_position(
-                target_motion_stage_position, default_velocity);
+                target_motion_stage_position, default_velocity, acceleration);
         }
     }
 }
@@ -281,6 +314,13 @@ void tracking_controller(
     const float default_velocity = recorder_config.get_parameter<float>(
         "motion_control", "default_velocity_mm_per_s");
 
+    const float accel_min = recorder_config.get_parameter<float>(
+        "motion_control", "accel_min_mm_per_s_sq");
+    const float accel_max = recorder_config.get_parameter<float>(
+        "motion_control", "accel_max_mm_per_s_sq");
+    const float max_accel_margin_px = recorder_config.get_parameter<float>(
+        "motion_control", "max_accel_margin_px");
+
     image_binarize_threshold = recorder_config.get_parameter<int>(
         "tracking", "image_binarize_threshold");
 
@@ -297,7 +337,10 @@ void tracking_controller(
                 tracking_control_state,
                 behavior_cam_calibration_params,
                 tracking_distance_threshold_mm,
-                default_velocity);
+                default_velocity,
+                accel_min,
+                accel_max,
+                max_accel_margin_px);
         } else {
             // spdlog::debug("Tracking controller is overriding tracking.");
             MotionStagePosition current_pos =
@@ -486,7 +529,8 @@ void motion_stage_position_logger(
     spdlog::info("Motion stage position logging thread stopped.");
 }
 
-std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
+std::tuple<bool, double, double, double, double>
+calculate_fly_position_absolute_mm(
     const cv::Mat &behavior_image,
     MotionStagePosition stage_position,
     const cv::Mat &active_area_mask_curr_view,
@@ -495,17 +539,21 @@ std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
     bool is_found = false;
     double physical_pos_x_mm = 0;
     double physical_pos_y_mm = 0;
+    double fly_col_px = 0;
+    double fly_row_px = 0;
 
     if (behavior_image.empty()) {
         spdlog::warn(
             "Input behavior image is empty. It's normal if this happens "
             "only one or two times at the start of recording.");
-        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm, fly_col_px,
+                fly_row_px};
     }
     if (!behavior_cam_calibration_params.is_defined) {
         // Cannot map pixel positions to physical positions because the
         // calibration model has not been defined yet
-        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm, fly_col_px,
+                fly_row_px};
     }
 
     // Zero out pixels that fall outside the active arena area.
@@ -526,12 +574,14 @@ std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
         cv::THRESH_BINARY);
     if (binary_image.empty()) {
         spdlog::error("Binary image after thresholding is empty");
-        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm, fly_col_px,
+                fly_row_px};
     }
     // display binary_image for debugging
     // cv::imshow("binary_image", binary_image);
     if (cv::countNonZero(binary_image) == 0) {
-        return {is_found, physical_pos_x_mm, physical_pos_y_mm};
+        return {is_found, physical_pos_x_mm, physical_pos_y_mm, fly_col_px,
+                fly_row_px};
     }
 
     // Apply morphological opening and closing with a smaller kernel
@@ -583,6 +633,8 @@ std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
         is_found = true;
         physical_pos_x_mm = x;
         physical_pos_y_mm = y;
+        fly_col_px = center_of_mass_col;
+        fly_row_px = center_of_mass_row;
 
         // spdlog::debug(
         //     "Fly found at pixel ({:.2f}, {:.2f}), physical ({:.2f}, {:.2f})",
@@ -590,7 +642,8 @@ std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
         // );
     }
 
-    return std::make_tuple(is_found, physical_pos_x_mm, physical_pos_y_mm);
+    return std::make_tuple(
+        is_found, physical_pos_x_mm, physical_pos_y_mm, fly_col_px, fly_row_px);
 }
 
 MotionStagePosition get_current_motion_stage_position() {
@@ -620,7 +673,7 @@ MotionStagePosition get_current_motion_stage_position() {
 }
 
 void set_target_motion_stage_position(
-    MotionStagePosition target_position, float velocity) {
+    MotionStagePosition target_position, float velocity, float acceleration) {
     if (target_position.position_type == absolute) {
         double clamped_x = std::clamp(
             target_position.x_pos_mm, software_x_min_mm, software_x_max_mm);
@@ -653,6 +706,7 @@ void set_target_motion_stage_position(
     my_request.request_type = set_target_position;
     my_request.position = target_position;
     my_request.velocity = velocity;
+    my_request.acceleration = acceleration;
     {
         std::lock_guard<std::mutex> lock(request_mutex);
         request_queue.push(my_request);

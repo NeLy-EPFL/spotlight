@@ -34,9 +34,15 @@ from spotlight_tools.postprocessing.io import check_output_path_against_alignmen
 # with the muscle frame, so the first illuminated muscle frame lines up with
 # behavior frame 0 and the correct offset for spatial overlay is 0. (Note this is
 # exposure-time correspondence; the muscle frame is *read out* about one period
-# later, but readout/arrival time is irrelevant for spatial alignment.) This is
-# the single source of truth for the correspondence; every site that matches the
-# two streams must use it.
+# later, but readout/arrival time is irrelevant for spatial alignment.)
+#
+# This is the *nominal* correspondence, valid when the muscle stream is gap-free. A
+# muscle exposure dropped mid-recording (see _detect_dropped_muscle_frames) breaks it:
+# every later muscle frame then belongs to a behavior group one further along than
+# N * sync_ratio. warp_all_muscle_frames_to_behavior handles this and writes the true,
+# drop-aware behavior frame id into the muscle metadata's corresponding_behavior_frame_id
+# column, which is therefore the single source of truth; consumers should read that
+# column rather than recompute N * sync_ratio via match_muscle_frameid_to_behavior_frameid.
 MUSCLE_BEHAVIOR_OFFSET = 0
 
 
@@ -67,10 +73,15 @@ def warp_all_muscle_frames_to_behavior(
 ):
     """Warp raw PCO muscle frames into the behavior camera's coordinate system.
 
-    1. Determines timing synchronisation between muscle and behavior recordings.
+    1. Determines timing synchronisation between muscle and behavior recordings,
+       including leading orphan frames (skipped) and muscle exposures dropped
+       mid-recording (accounted for so they do not offset later frames -- see
+       _detect_dropped_muscle_frames).
     2. Maps muscle pixels to behavior pixels via a pre-computed homography.
     3. Applies the same per-frame alignment transforms used for the behavior channel.
-    4. Saves transformed TIFF frames and a metadata CSV.
+    4. Saves transformed TIFF frames and a metadata CSV whose
+       ``corresponding_behavior_frame_id`` is the drop-aware source of truth for the
+       muscle<->behavior correspondence.
 
     Args:
         raw_muscle_images_dir: Directory containing raw muscle TIFF files.
@@ -91,7 +102,7 @@ def warp_all_muscle_frames_to_behavior(
             the end of the recording.
         num_orphan_muscle_frames: Number of leading orphan (pre-excitation, dark)
             muscle frames to skip. If None (default), the count is detected
-            automatically from muscle-frame brightness via
+            automatically from muscle-frame image structure via
             ``_count_leading_orphan_muscle_frames``. Provide an explicit integer to
             override the automatic detection (e.g. when it misfires).
         num_workers: Parallel workers for warping (-1 = all cores).
@@ -123,7 +134,7 @@ def warp_all_muscle_frames_to_behavior(
     # -- turns on, so those leading frames receive no excitation and are much
     # darker than the illuminated frames that follow. They have no corresponding
     # behavior group and must be skipped. The onset is detected from the muscle
-    # frames' own brightness (a within-camera signal needing no common clock),
+    # frames' own image structure (a within-camera signal needing no common clock),
     # not from a frame-count difference: the latter silently conflates leading
     # orphans with a trailing stop-time mismatch between the two cameras and can
     # therefore land on the wrong frame.
@@ -149,22 +160,67 @@ def warp_all_muscle_frames_to_behavior(
                 "LED turned on); skipping them."
             )
 
+    # One row per behavior group (behavior frames at multiples of the sync ratio); each
+    # muscle frame is paired with one of these groups.
+    behavior_group_df = stage_pos_df_at_muscle_frames
+
     # Check if we have all the muscle images
     muscle_image_paths = _filter_muscle_frames_by_availability(
         raw_muscle_images_dir,
-        stage_pos_df_at_muscle_frames,
+        behavior_group_df,
         missing_muscle_frames_tolerance,
         first_frameid=first_muscle_frameid,
     )
-    stage_pos_df_at_muscle_frames = stage_pos_df_at_muscle_frames.iloc[
-        : len(muscle_image_paths)
-    ].reset_index(drop=True)
+
+    # Read each kept muscle frame's timestamps once (reused for drop detection just below
+    # and for the metadata CSV at the end).
+    muscle_acquired_time_us, muscle_received_time_us = _read_muscle_frame_times(
+        muscle_image_paths
+    )
+
+    # Detect muscle exposures dropped mid-recording and map each muscle frame to its
+    # true behavior group. Without this, a single silent drop (contiguous ids on disk)
+    # offsets every later muscle<->behavior pairing by one group -- see
+    # _detect_dropped_muscle_frames.
+    slots, num_dropped = _detect_dropped_muscle_frames(muscle_acquired_time_us)
+    if num_dropped:
+        skipped_groups = sorted(
+            set(range(int(slots[0]), int(slots[-1]) + 1)) - set(slots.tolist())
+        )
+        logger.warning(
+            "Detected %d dropped muscle exposure(s) mid-recording (missed frame(s) not "
+            "saved to disk). Re-aligning later muscle frames to their true behavior "
+            "groups so the one-frame offset does not propagate. Behavior frame(s) left "
+            "without a muscle counterpart: %s.",
+            num_dropped,
+            [g * behavior_muscle_sync_ratio for g in skipped_groups],
+        )
+
+    # A drop pushes later frames into later behavior groups; discard any muscle frame
+    # whose group runs past the behavior recording (only the final frame(s), if any).
+    keep = slots < len(behavior_group_df)
+    if not keep.all():
+        logger.info(
+            "Discarding %d trailing muscle frame(s) whose behavior group is beyond the "
+            "behavior recording.",
+            int((~keep).sum()),
+        )
+        muscle_image_paths = [p for p, k in zip(muscle_image_paths, keep) if k]
+        muscle_acquired_time_us = muscle_acquired_time_us[keep]
+        muscle_received_time_us = muscle_received_time_us[keep]
+        slots = slots[keep]
+
+    # One behavior-group row per kept muscle frame, selected by its true (drop-aware)
+    # group rather than by contiguous position.
+    stage_pos_df_at_muscle_frames = behavior_group_df.iloc[slots].reset_index(drop=True)
 
     # Load transformation matrices applied to behavior frames (for alignment)
     if align_fly:
         alignment_transforms, output_dim = _load_alignment_transform_metadata(
             behavior_alignment_metadata_path, behavior_muscle_sync_ratio
         )
+        # Use each muscle frame's true behavior group's alignment transform.
+        alignment_transforms = alignment_transforms[slots]
     else:
         ident_transform = np.eye(2, 3)
         alignment_transforms = np.repeat(
@@ -208,7 +264,9 @@ def warp_all_muscle_frames_to_behavior(
 
     # Save muscle metadata as a dataframe
     muscle_frame_metadata = _make_muscle_metadata_dataframe(
-        muscle_image_paths, stage_pos_df_at_muscle_frames
+        stage_pos_df_at_muscle_frames,
+        muscle_acquired_time_us,
+        muscle_received_time_us,
     )
     muscle_metadata_output_path.parent.mkdir(parents=True, exist_ok=True)
     muscle_frame_metadata.to_csv(muscle_metadata_output_path, index=False)
@@ -319,138 +377,217 @@ def _get_stage_pos_df_at_muscle_frames(
     return stage_pos_df_at_muscle_frames
 
 
+# Onset threshold for structure-based leading-orphan detection (see
+# _count_leading_orphan_muscle_frames). The detection metric is the lag-1 spatial
+# autocorrelation of the frame-to-frame difference: it is ~0.08 for a dark->dark
+# difference (spatially white sensor noise, essentially the same across driver lines and
+# rigs) and jumps to >=~0.15 at the first illuminated frame, when the excitation LED
+# turns on and a spatially coherent muscle blob appears in the difference. 0.12 sits in
+# the (0.09, 0.15) gap between those two regimes.
+#
+# How this value was obtained: it recovered the hand-labelled leading-orphan count on all
+# 12 recordings of a ground-truth set spanning pan-muscle and sparse (~100 px) driver
+# lines, several rigs, and partly-out-of-frame flies -- and every threshold in
+# (0.09, 0.15) does so, so it is not knife-edge. Because the metric keys on the *shape* of
+# the change rather than its brightness, one fixed value generalises across lines whose
+# signal magnitude differs ~100-fold. The exploration and validation harness is archived
+# under scripts/archive/ (detect_orphan_structure.py, orphan_gt_dataset.txt,
+# orphan_gt_plots/).
+ORPHAN_ONSET_AUTOCORR_THRESHOLD = 0.12
+
+
+def _diff_spatial_autocorrelation(prev_frame: np.ndarray, frame: np.ndarray) -> float:
+    """Lag-1 spatial autocorrelation of the frame-to-frame difference.
+
+    ~0 for a white-noise (dark->dark) difference; jumps toward 1 when a spatially coherent
+    muscle blob appears in the difference. Scale-invariant -- it depends on the *shape* of
+    the change, not its brightness -- so it behaves the same for pan and sparse driver
+    lines and for a partly-visible fly.
+    """
+    diff = frame - prev_frame
+    diff = diff - diff.mean()
+    denom = float((diff * diff).mean())
+    if denom <= 0:
+        return 0.0
+    horizontal = float((diff[:, :-1] * diff[:, 1:]).mean())
+    vertical = float((diff[:-1, :] * diff[1:, :]).mean())
+    return 0.5 * (horizontal + vertical) / denom
+
+
 def _count_leading_orphan_muscle_frames(
     raw_muscle_images_dir: Path,
     *,
-    brightness_low_percentile: float = 98.0,
-    illuminated_anchor_percentile: float = 25.0,
+    autocorr_threshold: float = ORPHAN_ONSET_AUTOCORR_THRESHOLD,
+    num_frames_to_scan: int = 50,
 ) -> int:
-    """Count muscle frames captured before the behavior trigger started.
+    """Count muscle frames captured before the behavior trigger / excitation LED turned on.
 
-    In continuous (free-run) PCO mode the muscle camera begins grabbing frames
-    before the behavior trigger -- and therefore the blue excitation LED -- turns
-    on. These leading "orphan" frames receive no excitation and are markedly
-    darker than the illuminated frames that follow; they have no corresponding
-    behavior group and must be skipped.
+    In continuous (free-run) PCO mode the muscle camera begins grabbing frames before the
+    behavior trigger -- and therefore the blue excitation LED -- turns on. These leading
+    "orphan" frames receive no excitation; they have no corresponding behavior group and
+    must be skipped.
 
-    The orphan count is the number of contiguous dark frames at the start, i.e. the
-    index of the first frame whose brightness reaches the midpoint between the (dark)
-    first frame and the (illuminated) level. The illuminated level is anchored on a low
-    percentile (``illuminated_anchor_percentile``, default 25th) of the brightness over
-    the whole recording -- a conservative *lower bound* on the illuminated level. The
-    illuminated frames are the large majority, so a low percentile still lands within
-    their (dim end of the) distribution while staying unmoved by both the few leading
-    dark frames and any anomalously bright/dark tail. Anchoring at the dim end rather
-    than a central estimate keeps the threshold below even the faintest genuinely-
-    illuminated frame, so normal frame-to-frame GCaMP fluctuation is not mistaken for
-    orphans. (Anchoring on
-    the last few frames instead is not robust -- the signal fluctuates substantially
-    frame-to-frame, so a short tail window is a noisy, biased estimate; a spuriously
-    bright tail inflates the threshold and over-counts orphans.) The midpoint is a
-    natural cutoff between the two levels -- more robust than a fixed multiplicative
-    ratio when
-    the frames sit on a large additive pedestal (the dark and illuminated levels
-    differ by only a small fraction of the raw pixel value). Brightness is summarised
-    as the mean of the bright tail -- the pixels at or above ``brightness_low_percentile``
-    (i.e. from that percentile up to the max) -- so the spatially-extended GCaMP
-    fluorescence registers strongly while the dim background that dominates the frame
-    is ignored and no single hot pixel can flip the decision. This uses only the muscle
-    frames themselves, so it needs no common clock between the two cameras (there is
-    none).
+    Detection is structure-based: it needs no common clock between the two cameras (there
+    is none) and no per-recording tuning. For each consecutive pair of leading frames we
+    take the lag-1 spatial autocorrelation of their difference
+    (``_diff_spatial_autocorrelation``). A dark->dark difference is spatially white sensor
+    noise (autocorrelation ~0.08, essentially the same across driver lines and rigs),
+    whereas the dark->illuminated transition makes a spatially coherent muscle blob appear
+    in the difference (autocorrelation jumps to >=~0.15).
 
-    As a sanity check, the recording is expected to split cleanly into a leading dark
-    block followed by all-illuminated frames. If any later frame dips back below the
-    threshold (e.g. the tail is not actually illuminated, a mid-recording dark frame,
-    a slow LED ramp, or no real dark->bright transition at all), a warning is emitted
-    because the orphan count is then unreliable; the caller can override it via
-    ``num_orphan_muscle_frames``.
+    The onset is the first frame whose difference from its predecessor both (a) exceeds
+    ``autocorr_threshold`` and (b) is a *brightening* transition (the frame is brighter than
+    its predecessor). Requirement (b) is what handles the PCO first-frame artifact: in
+    free-run mode the very first readout integrates charge accumulated while the sensor was
+    arming, so frame 0 can be a genuinely bright, structured frame even though the
+    excitation LED is still off. Its difference to the following dark orphans is a
+    structured but *darkening* crossing -- the artifact switching off -- which would
+    otherwise be mistaken for the onset. A real onset (dark->lit) is always a brightening
+    crossing, so keeping only brightening crossings skips the artifact and lands on the
+    true first illuminated frame. Its index is the leading-orphan count.
+
+    Keying on the *shape* of the change rather than its magnitude is what makes a single
+    fixed threshold work whether the driver line lights the whole fly or only ~100 pixels,
+    and whether or not the fly is partly out of frame. The brightening test adds no tuning
+    parameter (it is just the sign of the mean change). See
+    ``ORPHAN_ONSET_AUTOCORR_THRESHOLD`` for how the threshold was chosen and validated.
 
     Args:
         raw_muscle_images_dir: Directory containing raw muscle TIFF files.
-        brightness_low_percentile: Lower percentile bounding the bright tail that is
-            averaged into the per-frame brightness metric (the mean of all pixels at
-            or above this percentile).
-        illuminated_anchor_percentile: Percentile of the per-frame brightness over the
-            whole recording used to anchor the illuminated level -- a low value (default
-            25th) gives a conservative lower bound on that level.
+        autocorr_threshold: Onset threshold on the diff autocorrelation.
+        num_frames_to_scan: How many leading frames to load and scan. Orphans number only
+            a handful in practice, so scanning the first several dozen frames finds the
+            onset while avoiding a read of the whole (multi-thousand-frame) recording.
 
     Returns:
-        Number of leading orphan frames to skip (0 if the recording starts
-        already illuminated).
+        Number of leading orphan frames to skip (0 if no onset is found within the scanned
+        window -- e.g. the recording starts already illuminated or the excitation LED
+        never turned on).
     """
     logger = logging.getLogger(__name__)
 
-    # Sort by parsed frame id so "first" means earliest-captured, not glob order.
+    # Sort by parsed frame id so "first" means earliest-captured, not glob order, and scan
+    # only the leading window (the onset is within the first handful of frames).
     paths_by_id = {}
     for path in raw_muscle_images_dir.glob("*.tif"):
         try:
             paths_by_id[int(path.stem.split("_")[-1])] = path
         except ValueError:
             continue
-    sorted_ids = sorted(paths_by_id)
-    if not sorted_ids:
+    sorted_ids = sorted(paths_by_id)[:num_frames_to_scan]
+    if len(sorted_ids) < 2:
         return 0
 
-    def _brightness(frame_id: int) -> float:
-        im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED)
-        # Mean of the bright tail: pixels from brightness_low_percentile up to the
-        # max. Averaging this tail captures the extended GCaMP fluorescence more
-        # fully than a single percentile while staying robust to lone hot pixels.
-        cutoff = np.percentile(im, brightness_low_percentile)
-        return float(im[im >= cutoff].mean())
+    prev = None
+    for i, frame_id in enumerate(sorted_ids):
+        im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED).astype(np.float32)
+        if (
+            prev is not None
+            and _diff_spatial_autocorrelation(prev, im) > autocorr_threshold
+            and im.mean() > prev.mean()  # brightening -> real onset, not the artifact off
+        ):
+            return i  # first illuminated frame -> i leading orphan frame(s) precede it
+        prev = im
 
-    # Per-frame brightness for the whole recording -- needed both to find the leading
-    # dark block and to validate that the dark/illuminated split is clean (below).
-    brightness = np.array([_brightness(fid) for fid in sorted_ids])
+    logger.warning(
+        "Orphan detection: no dark->illuminated transition found in the first %d muscle "
+        "frame(s) (diff autocorrelation never exceeded %.3f). Reporting 0 orphan frames "
+        "-- the recording may start already illuminated, or the excitation LED may not "
+        "have turned on. Inspect with scripts/archive/detect_orphan_structure.py, or set "
+        "the count explicitly via --num-orphan-muscle-frames.",
+        len(sorted_ids),
+        autocorr_threshold,
+    )
+    return 0
 
-    # Threshold = midpoint between the (dark) first frame and the (illuminated) level,
-    # the latter anchored on a low percentile of the brightness over the whole recording
-    # -- a conservative lower bound on the illuminated level. The illuminated frames are
-    # the large majority, so this percentile stays within their (dim end of the)
-    # distribution and is unmoved by the few leading dark frames or an anomalously
-    # bright/dark tail; keeping the anchor at the dim end stops normal frame-to-frame
-    # fluctuation from being mistaken for orphans. Robust to the large additive pedestal
-    # shared by both levels.
-    dark_anchor = brightness[0]
-    bright_anchor = float(np.percentile(brightness, illuminated_anchor_percentile))
-    onset_threshold = 0.5 * (dark_anchor + bright_anchor)
 
-    below = brightness < onset_threshold
-    if below.all():
-        # No frame reaches the threshold -- the illuminated level was never seen (e.g.
-        # the excitation LED never turned on). Report 0 rather than skipping every
-        # frame, and warn.
-        logger.warning(
-            "Orphan detection: no muscle frame reached the brightness threshold "
-            "(%.1f); the excitation LED may never have turned on. Reporting 0 orphan "
-            "frames -- inspect with scripts/diagnose_orphan_detection.py.",
-            onset_threshold,
-        )
-        return 0
+def _detect_dropped_muscle_frames(
+    acquired_time_us,
+    *,
+    gap_threshold: float = 1.5,
+    persistence_window: int = 12,
+):
+    """Locate muscle exposures dropped mid-recording from the frames' own timestamps.
 
-    # Leading orphan block = contiguous dark frames from the start.
-    n_orphans = int(np.argmax(~below))
+    In continuous (free-run) PCO mode the muscle ``frame_id`` on disk is a sequential
+    save counter, so if an exposure is missed the surviving frames' ids stay contiguous
+    -- the gap is invisible to a frame-id/contiguity check. But a dropped exposure adds a
+    real ~2x inter-frame gap and shifts every later frame one muscle period later in
+    time, permanently. The index-based muscle<->behavior correspondence (muscle frame N
+    -> behavior group N) then puts every subsequent muscle frame in the wrong behavior
+    group, so a single silent drop misaligns the whole remainder of the recording.
 
-    # Sanity check: everything after the leading block should be illuminated. Any
-    # later frame back below the threshold means the split is not a clean
-    # leading-dark + illuminated one, so the orphan count may be wrong.
-    stragglers = np.nonzero(below[n_orphans:])[0] + n_orphans
-    if stragglers.size:
-        preview = ", ".join(str(int(s)) for s in stragglers[:10])
-        logger.warning(
-            "Orphan detection: after the leading %d dark frame(s), %d later frame(s) "
-            "are also below the brightness threshold (%.1f): [%s%s]. The recording "
-            "does not split cleanly into leading-dark + illuminated, so the orphan "
-            "count may be wrong. Inspect with scripts/diagnose_orphan_detection.py, "
-            "or set it explicitly via --num-orphan-muscle-frames.",
-            n_orphans,
-            stragglers.size,
-            onset_threshold,
-            preview,
-            "" if stragglers.size <= 10 else ", ...",
-        )
+    This counts, for each kept muscle frame, how many muscle periods have actually
+    elapsed (from the muscle frames' own ``acquired_time_us`` -- no cross-camera clock is
+    needed). A genuine drop shows up as a *permanent* +1 step in that surplus. Timestamp
+    jitter can also momentarily stretch one interval past the threshold, but that deficit
+    is repaid within a few frames; we therefore accept a large gap as a real drop only
+    when the elapsed-time surplus straddling it persists *and* is close to an integer
+    number of periods (a dropped exposure removes ~1 whole period, so a partial timing
+    hiccup that permanently shifts the baseline by e.g. ~0.6 period is not a drop). The
+    surplus magnitude is read from the persistent level shift, not from the raw gap size,
+    which jitter can inflate.
 
-    return n_orphans
+    Args:
+        acquired_time_us: Per-frame acquisition timestamps (microseconds) of the kept
+            muscle frames, in capture order.
+        gap_threshold: An inter-frame interval above this many nominal periods is a
+            candidate drop location.
+        persistence_window: Number of frames on each side used to measure whether a
+            candidate gap's elapsed-time surplus persists.
+
+    Returns:
+        (slots, num_dropped): ``slots[i]`` is the behavior-group index that kept muscle
+        frame ``i`` maps to (behavior frame ``slots[i] * sync_ratio``); it equals ``i``
+        plus the number of dropped frames before it. ``num_dropped`` is the total.
+    """
+    t = np.asarray(acquired_time_us, dtype=float)
+    n = len(t)
+    if n < 3:
+        return np.arange(n), 0
+    t = t - t[0]
+    # Robust single-frame period: the median interval is unaffected by the rare ~2x drop
+    # gaps and by jitter tails.
+    period = float(np.median(np.diff(t)))
+    if period <= 0:
+        return np.arange(n), 0
+    # Elapsed muscle periods relative to a no-drop grid: rises by ~1 permanently at a
+    # real drop, wanders (bounded, self-correcting) under timestamp jitter.
+    excess = t / period - np.arange(n)
+    w = persistence_window
+    num_dropped_before = np.zeros(n, dtype=int)
+    running = 0
+    for i in range(1, n):
+        gap_periods = (t[i] - t[i - 1]) / period
+        if gap_periods > gap_threshold:
+            # Missed frames = persistent level shift straddling the gap (robust to the
+            # exact gap size), positive only when the surplus is not repaid by jitter.
+            before = np.median(excess[max(0, i - w):i])
+            after = np.median(excess[i:min(n, i + w)])
+            shift = after - before
+            missed = int(round(shift))
+            # A dropped exposure removes ~1 whole period, so accept a candidate only when
+            # the persistent surplus is close to an integer number of periods. This
+            # rejects a partial timing hiccup (e.g. a 1.6x gap that permanently shifts the
+            # baseline by only ~0.6 period) that round() would otherwise inflate to a full
+            # dropped frame.
+            if missed >= 1 and abs(shift - missed) <= 0.35:
+                running += missed
+        num_dropped_before[i] = running
+    slots = np.arange(n) + num_dropped_before
+    return slots, int(running)
+
+
+def _read_muscle_frame_times(muscle_image_paths):
+    """Read ``(acquired_time_us, received_time_us)`` for each muscle frame from its
+    sidecar CSV, returned as two int64 arrays aligned with ``muscle_image_paths``."""
+    acquired, received = [], []
+    for muscle_path in muscle_image_paths:
+        metadata_path = str(muscle_path).replace(".tif", ".csv")
+        frame_ds = pd.read_csv(metadata_path).iloc[0]
+        acquired.append(int(frame_ds["acquired_time_us"]))
+        received.append(int(frame_ds["received_time_us"]))
+    return np.array(acquired, dtype=np.int64), np.array(received, dtype=np.int64)
 
 
 def _filter_muscle_frames_by_availability(
@@ -507,21 +644,34 @@ def _filter_muscle_frames_by_availability(
 
     num_muscle_frames = len(muscle_image_paths)
     num_missing = num_expected_frames - num_muscle_frames
-    if num_missing > missing_muscle_frames_tolerance:
-        logging.warning(
-            f"Found {num_muscle_frames} muscle images, but expected "
-            f"{num_expected_frames} ({num_missing} fewer). The muscle recording is "
-            f"shorter than the behavior recording, so the last {num_missing} behavior "
-            f"frame(s) will have no muscle counterpart. This is expected when the "
-            f"muscle camera captured leading orphan frames or stopped early, but a "
-            f"large discrepancy may indicate a problem."
+    # Split the shortfall into the part the orphan skip accounts for and the rest. The two
+    # cameras record about the same number of frames and are stopped together, so the
+    # `first_frameid` orphan exposures the muscle camera spent before the trigger leave it
+    # exactly that many frames short at the end -- an expected shortfall of `first_frameid`.
+    # Anything beyond that (plus a few frames of stop-signal jitter, the tolerance) means
+    # the muscle recording is genuinely truncated: those behavior frames are lost with no
+    # muscle counterpart and every downstream alignment past the muscle end is missing. That
+    # is not recoverable here, so fail loudly rather than silently emit a short recording.
+    unexplained_missing = num_missing - first_frameid
+    if unexplained_missing > missing_muscle_frames_tolerance:
+        raise RuntimeError(
+            f"Muscle recording is short by {num_missing} frame(s) relative to the "
+            f"{num_expected_frames} expected from the behavior stream (found "
+            f"{num_muscle_frames}). The {first_frameid} leading orphan frame(s) account "
+            f"for {first_frameid} of these; the remaining {unexplained_missing} exceed the "
+            f"tolerance of {missing_muscle_frames_tolerance} and are not explained by "
+            f"orphans or stop-signal jitter -- the muscle recording is truncated (camera "
+            f"stopped early or frames were not saved). Fix the recording, or if this "
+            f"truncation is acceptable raise --missing-muscle-frames-tolerance to at least "
+            f"{unexplained_missing} to process it anyway."
         )
-    elif num_missing > 0:
+    if num_missing > 0:
         logging.info(
             f"Found {num_muscle_frames} muscle images, expected {num_expected_frames} "
-            f"({num_missing} fewer, within the tolerance of "
-            f"{missing_muscle_frames_tolerance}). This is normal: the two cameras "
-            f"receive the stop signal at slightly different times."
+            f"({num_missing} fewer; {first_frameid} explained by the leading orphan "
+            f"skip, {max(0, unexplained_missing)} within the tolerance of "
+            f"{missing_muscle_frames_tolerance}). This is normal: the two cameras receive "
+            f"the stop signal at slightly different times."
         )
 
     return muscle_image_paths
@@ -637,18 +787,18 @@ def warp_single_muscle_frame_to_behavior(
         return None
 
 
-def _make_muscle_metadata_dataframe(muscle_image_paths, stage_pos_df_at_muscle_frames):
-    muscle_frameids = np.arange(len(muscle_image_paths))
+def _make_muscle_metadata_dataframe(
+    stage_pos_df_at_muscle_frames, acquired_time_us, received_time_us
+):
+    # ``corresponding_behavior_frame_id`` is drop-aware: it comes from the behavior group
+    # each muscle frame was mapped to (see warp_all_muscle_frames_to_behavior), so it is
+    # authoritative even when a mid-recording drop breaks the nominal muscle_id * sync
+    # relationship. Downstream consumers should read this column rather than recompute it.
+    num_frames = len(stage_pos_df_at_muscle_frames)
+    muscle_frameids = np.arange(num_frames)
     behavior_frameids = stage_pos_df_at_muscle_frames["behavior_frame_id"].values
     x_pos_mm_interp = stage_pos_df_at_muscle_frames["x_pos_mm_interp"].values
     y_pos_mm_interp = stage_pos_df_at_muscle_frames["y_pos_mm_interp"].values
-    acquired_time_us = []
-    received_time_us = []
-    for muscle_path in muscle_image_paths:
-        metadata_path = str(muscle_path).replace(".tif", ".csv")
-        frame_ds = pd.read_csv(metadata_path).iloc[0]
-        acquired_time_us.append(frame_ds["acquired_time_us"])
-        received_time_us.append(frame_ds["received_time_us"])
 
     return pd.DataFrame(
         data={
@@ -656,8 +806,8 @@ def _make_muscle_metadata_dataframe(muscle_image_paths, stage_pos_df_at_muscle_f
             "corresponding_behavior_frame_id": behavior_frameids.astype(np.uint32),
             "x_pos_mm_interp": x_pos_mm_interp.astype(np.float32),
             "y_pos_mm_interp": y_pos_mm_interp.astype(np.float32),
-            "acquired_time_us": np.array(acquired_time_us, dtype=np.uint64),
-            "received_time_us": np.array(received_time_us, dtype=np.uint64),
+            "acquired_time_us": np.asarray(acquired_time_us, dtype=np.uint64),
+            "received_time_us": np.asarray(received_time_us, dtype=np.uint64),
         }
     )
 

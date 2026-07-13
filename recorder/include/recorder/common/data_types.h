@@ -59,6 +59,9 @@ struct MotionStageRequest {
     MotionStageRequestType request_type;
     MotionStagePosition position;
     float velocity;
+    // Per-move acceleration (mm/s^2). 0 means "use the device-configured
+    // acceleration" (see MotionControl::move_absolute).
+    float acceleration = 0;
 };
 
 struct MotionStageResponse {

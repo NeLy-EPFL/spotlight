@@ -76,7 +76,9 @@ void motion_stage_position_logger(
 // Aside from get_current_motion_stage_position(), they are all async.
 MotionStagePosition get_current_motion_stage_position();
 void set_target_motion_stage_position(
-    MotionStagePosition target_position, float velocity);
+    MotionStagePosition target_position,
+    float velocity,
+    float acceleration = 0);
 void set_motion_stage_limits(
     double x_min_mm, double x_max_mm, double y_min_mm, double y_max_mm);
 void wait_until_motion_stage_idle_sync();
@@ -87,7 +89,12 @@ void stop_motion_control_request_handler(
     const std::shared_ptr<ProgramState> &program_state);
 
 // High-level helper functions
-std::tuple<bool, double, double> calculate_fly_position_absolute_mm(
+
+// Returns (is_found, physical_x_mm, physical_y_mm, fly_col_px, fly_row_px).
+// The pixel coordinates are the fly centroid in the (reoriented) behavior
+// image and are 0 when the fly is not found.
+std::tuple<bool, double, double, double, double>
+calculate_fly_position_absolute_mm(
     const cv::Mat &behavior_image,
     MotionStagePosition stage_position,
     const cv::Mat &active_area_mask_curr_view,
