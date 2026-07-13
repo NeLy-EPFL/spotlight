@@ -32,8 +32,29 @@ from spotlight_tools.common.video import get_video_info, get_video_writer
 from spotlight_tools.postprocessing.io import find_files_per_frame_by_suffix
 from spotlight_tools.postprocessing.muscle import (
     get_behavior_muscle_sync_ratio,
-    match_behavior_frameid_to_muscle_frameid,
 )
+
+
+def _nearest_muscle_frameid(behavior_frameid, corr_behavior_ids, muscle_frame_ids):
+    """Muscle frame whose corresponding behavior frame is nearest ``behavior_frameid``.
+
+    ``corr_behavior_ids`` are the muscle metadata's drop-aware
+    corresponding_behavior_frame_id values (sorted ascending) and ``muscle_frame_ids``
+    the matching muscle ids. Using these anchors rather than ``behavior_frameid //
+    sync_ratio`` keeps the mapping correct across mid-recording dropped muscle frames.
+    """
+    pos = int(np.searchsorted(corr_behavior_ids, behavior_frameid))
+    if pos <= 0:
+        j = 0
+    elif pos >= len(corr_behavior_ids):
+        j = len(corr_behavior_ids) - 1
+    elif (corr_behavior_ids[pos] - behavior_frameid) < (
+        behavior_frameid - corr_behavior_ids[pos - 1]
+    ):
+        j = pos
+    else:
+        j = pos - 1
+    return int(muscle_frame_ids[j])
 
 
 def visualize_stage_trajectory(
@@ -103,6 +124,7 @@ def generate_summary_video(
     with_muscle: bool,
     draw_2dpose: bool = True,
     muscle_images_dir: Path | None = None,
+    muscle_metadata_path: Path | None = None,
     experiment_parameters_path: Path | None = None,
     pose_2d_path: Path | None = None,
     muscle_vrange: tuple[int, int] | None = None,
@@ -167,8 +189,24 @@ def generate_summary_video(
     if max_num_frames is not None:
         behavior_num_frames = min(behavior_num_frames, max_num_frames)
     muscle_id_to_path = None
+    muscle_corr_behavior_ids = None
+    muscle_frame_ids = None
     if with_muscle:
         muscle_id_to_path = find_files_per_frame_by_suffix(muscle_images_dir, ".tif")
+        # Behavior->muscle mapping comes from the muscle metadata's drop-aware
+        # corresponding_behavior_frame_id (see muscle.py), not from behavior // sync_ratio,
+        # so it stays correct across any mid-recording dropped muscle frame.
+        if muscle_metadata_path is None:
+            raise ValueError(
+                "muscle_metadata_path is required when with_muscle=True."
+            )
+        muscle_metadata_df = pd.read_csv(muscle_metadata_path).sort_values(
+            "corresponding_behavior_frame_id"
+        )
+        muscle_corr_behavior_ids = muscle_metadata_df[
+            "corresponding_behavior_frame_id"
+        ].to_numpy()
+        muscle_frame_ids = muscle_metadata_df["muscle_frame_id"].to_numpy()
 
     # Check if nominal width of image is incorrect
     if with_muscle:
@@ -235,7 +273,9 @@ def generate_summary_video(
                     "output_dir": tmpdir,
                     "with_muscle": with_muscle,
                     "draw_2dpose": draw_2dpose,
-                    "sync_ratio": sync_ratio,  # already None if not with_muscle
+                    # drop-aware behavior->muscle anchors (None if not with_muscle)
+                    "muscle_corr_behavior_ids": muscle_corr_behavior_ids,
+                    "muscle_frame_ids": muscle_frame_ids,
                     "muscle_id_to_path": muscle_id_to_path,  # already None if n/a
                     "muscle_vrange": muscle_vrange,  # already None if n/a
                     "pose_2d_data": pose2d_data,  # already None if not draw_2dpose
@@ -277,7 +317,8 @@ def _draw_summary_video_frames(
     output_dir: Path,
     with_muscle: bool,
     draw_2dpose: bool = True,
-    sync_ratio: int | None = None,
+    muscle_corr_behavior_ids: np.ndarray | None = None,
+    muscle_frame_ids: np.ndarray | None = None,
     muscle_id_to_path: dict[int, Path] | None = None,
     muscle_vrange: tuple[int, int] | None = None,
     pose_2d_data: np.ndarray | None = None,
@@ -334,12 +375,13 @@ def _draw_summary_video_frames(
 
         # Plot muscle image (if requested)
         if with_muscle:
-            assert sync_ratio is not None
+            assert muscle_corr_behavior_ids is not None
             assert muscle_vrange is not None
-            # The muscle camera captures first frame only in the second cycle due to its
-            # rolling shutter
-            muscle_frameid = match_behavior_frameid_to_muscle_frameid(
-                behavior_frameid, method="nearest", sync_ratio=sync_ratio
+            # Nearest muscle frame by the drop-aware corresponding_behavior_frame_id
+            # anchors (see muscle.py), so a mid-recording dropped muscle frame does not
+            # offset the overlay for the rest of the recording.
+            muscle_frameid = _nearest_muscle_frameid(
+                behavior_frameid, muscle_corr_behavior_ids, muscle_frame_ids
             )
             if muscle_frameid != _current_muscle_frameid:
                 _current_muscle_frameid = muscle_frameid

@@ -61,3 +61,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 spotlight_tools = ["assets/**"]
+
