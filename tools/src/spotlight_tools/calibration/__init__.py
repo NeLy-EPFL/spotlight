@@ -10,10 +10,6 @@ into the behavior camera coordinate system.
 For the current arena registration workflow, use spotlight_tools.arena instead.
 """
 
-from .aruco import ArUcoBoard as ArUcoBoard
-from .aruco import detect_aruco as detect_aruco
-from .aruco import plot_aruco_detections as plot_aruco_detections
-
 from .charuco import CharucoBoard as CharucoBoard
 from .charuco import get_gizem_board as get_gizem_board
 

@@ -1129,6 +1129,23 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud-firestore"
+version = "2.28.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "google-cloud-core" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/e2/7db007e30a84a2134a8c2880d3cfc30673f5f37f4e3b5b50ead6c3c61465/google_cloud_firestore-2.28.0.tar.gz", hash = "sha256:8211418bd746f3857046fc375138ddd0dfb023d5012545a9ade149be1461c6db", size = 651021, upload-time = "2026-06-25T23:39:43.754Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/96/6d58d540145b06d372a9ead34cf50ff17f35296cf9a8c43ccc141aa207ea/google_cloud_firestore-2.28.0-py3-none-any.whl", hash = "sha256:055daab3e5fb292f389b4e7d9e03dffb30f38a3463c23363f93d25569c933e59", size = 431943, upload-time = "2026-06-25T23:39:11.735Z" },
+]
+
+[[package]]
 name = "google-cloud-storage"
 version = "3.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3411,7 +3428,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.4.2"
+version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -3420,9 +3437,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
+    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
 ]
 
 [[package]]
@@ -4330,9 +4347,7 @@ version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "cmasher" },
-    { name = "ipykernel" },
-    { name = "ipython" },
-    { name = "ipywidgets" },
+    { name = "google-cloud-firestore" },
     { name = "joblib" },
     { name = "matplotlib" },
     { name = "mmh3" },
@@ -4343,16 +4358,13 @@ dependencies = [
     { name = "pupil-apriltags" },
     { name = "pylibdmtx" },
     { name = "pymupdf" },
-    { name = "pytest" },
     { name = "pyyaml" },
-    { name = "ruff" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "seaborn" },
     { name = "setuptools" },
     { name = "sleap" },
     { name = "sleap-nn" },
-    { name = "svgwrite" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "tqdm" },
@@ -4360,12 +4372,19 @@ dependencies = [
     { name = "vidgear" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ipykernel" },
+    { name = "ipython" },
+    { name = "ipywidgets" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "cmasher", specifier = ">=1.9,<2.0" },
-    { name = "ipykernel", specifier = ">=6.29,<7.0" },
-    { name = "ipython", specifier = ">=9.0,<10.0" },
-    { name = "ipywidgets", specifier = ">=8.1,<9.0" },
+    { name = "google-cloud-firestore", specifier = ">=2.28,<3.0" },
     { name = "joblib", specifier = ">=1.5,<2.0" },
     { name = "matplotlib", specifier = ">=3.10,<4.0" },
     { name = "mmh3", specifier = ">=5.0,<6.0" },
@@ -4376,21 +4395,27 @@ requires-dist = [
     { name = "pupil-apriltags", specifier = ">=1.0,<2.0" },
     { name = "pylibdmtx", specifier = "==0.1.10" },
     { name = "pymupdf", specifier = ">=1.0,<2.0" },
-    { name = "pytest", specifier = ">=8.3,<9.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
-    { name = "ruff", specifier = "==0.15.*" },
     { name = "scikit-learn", specifier = ">=1.6,<2.0" },
     { name = "scipy", specifier = ">=1.15,<2.0" },
     { name = "seaborn", specifier = "==0.13.2" },
     { name = "setuptools", specifier = ">=78,<79" },
     { name = "sleap", specifier = "==1.5.*" },
     { name = "sleap-nn", specifier = "==0.0.3" },
-    { name = "svgwrite" },
     { name = "torch", specifier = "==2.12.*" },
     { name = "torchvision", specifier = "==0.27.*" },
     { name = "tqdm", specifier = ">=4.67,<5.0" },
     { name = "tyro", specifier = ">=1.0,<2" },
     { name = "vidgear", specifier = "==0.3.4" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "ipykernel", specifier = ">=6.29,<7.0" },
+    { name = "ipython", specifier = ">=9.0,<10.0" },
+    { name = "ipywidgets", specifier = ">=8.1,<9.0" },
+    { name = "pytest", specifier = ">=9.1" },
+    { name = "ruff", specifier = ">=0.15.21" },
 ]
 
 [[package]]
@@ -4451,15 +4476,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1f/ce/a3bfb84c0da5ca9347ec7f1774a821664763827bb8e854f38fc814ac24e2/stringzilla-4.6.2-cp314-cp314-win32.whl", hash = "sha256:8cad620429de33881cca0e78032bba301176342e987705ddefb827403bc8caf3", size = 117985, upload-time = "2026-06-05T17:07:04.44Z" },
     { url = "https://files.pythonhosted.org/packages/62/34/e13e520393cd35e9e2cd0c4b9392781a2e30c76888d997523c549829faaa/stringzilla-4.6.2-cp314-cp314-win_amd64.whl", hash = "sha256:34e3c30bd65bba91ccb6b73258e4899fa025e9e21fbb1c028ab32974fd51e377", size = 167485, upload-time = "2026-06-05T17:07:05.873Z" },
     { url = "https://files.pythonhosted.org/packages/66/12/37808d822c5c2ff188eff46f0ee2637530e0ce781b9aac0b147bb9713c67/stringzilla-4.6.2-cp314-cp314-win_arm64.whl", hash = "sha256:005b4450a5d1f5e199cd4fc28c60a67695555a034981dfc4a8b0fa0b0989f0f1", size = 127917, upload-time = "2026-06-05T17:07:07.544Z" },
-]
-
-[[package]]
-name = "svgwrite"
-version = "1.4.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/16/c1/263d4e93b543390d86d8eb4fc23d9ce8a8d6efd146f9427364109004fa9b/svgwrite-1.4.3.zip", hash = "sha256:a8fbdfd4443302a6619a7f76bc937fc683daf2628d9b737c891ec08b8ce524c3", size = 189516, upload-time = "2022-07-14T14:05:26.107Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/15/640e399579024a6875918839454025bb1d5f850bb70d96a11eabb644d11c/svgwrite-1.4.3-py3-none-any.whl", hash = "sha256:bb6b2b5450f1edbfa597d924f9ac2dd099e625562e492021d7dd614f65f8a22d", size = 67122, upload-time = "2022-07-14T14:05:24.459Z" },
 ]
 
 [[package]]
