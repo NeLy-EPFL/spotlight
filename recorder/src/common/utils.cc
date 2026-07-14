@@ -242,7 +242,7 @@ void SaveDirectory::initialize() {
     }
 }
 
-LatestFrame::LatestFrame() : latest_frame_data_({0, 0, 0, cv::Mat()}) {}
+LatestFrame::LatestFrame() : latest_frame_data_({0, 0, 0, 0, cv::Mat()}) {}
 
 FrameData LatestFrame::get_latest_frame_data() const {
     std::lock_guard<std::mutex> lock(latest_frame_mutex_);

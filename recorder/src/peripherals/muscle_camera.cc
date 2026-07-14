@@ -254,6 +254,7 @@ FrameData MuscleCamera::wait_for_one_frame() {
 
     long frame_count = frame_metadata_ptr_->frame_count;
     uint64_t acquisition_time = frame_metadata_ptr_->acquisition_time;
+    uint32_t pco_record_id = frame_metadata_ptr_->pco_record_id;
 
     // Detect frames that were overwritten before we could read them. This is a
     // single-slot handoff: the server memcpy's every frame into the same
@@ -288,6 +289,7 @@ FrameData MuscleCamera::wait_for_one_frame() {
     FrameData frame_data;
     frame_data.acquisition_time = acquisition_time;
     frame_data.received_time = get_current_time_microseconds();
+    frame_data.pco_record_id = pco_record_id;
     frame_data.image = image;
     return frame_data;
 }

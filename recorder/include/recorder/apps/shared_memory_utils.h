@@ -15,7 +15,14 @@ struct FrameMetadata {
     // published yet" apart from "frame 0" (signed, matching
     // FrameData::frame_id).
     long frame_count = -1;
+    // The PCO camera's own frame timestamp, in microseconds since midnight,
+    // taken from the per-image PCO metadata (see
+    // get_camera_timestamp_microseconds). Camera clock, not a host clock.
     uint64_t acquisition_time = 0;
+    // The PCO recorder's running image number for this frame
+    // (pco::Image::getRecorderImageNumber()). Increments per acquired frame on
+    // the camera side, independent of the recorder's own frame numbering.
+    uint32_t pco_record_id = 0;
 };
 
 void setup_frame_data(

@@ -7,8 +7,16 @@ struct FrameData {
     // Matches the acquirers' frame counters (signed long); -1 until the frame
     // is assigned an id during recording.
     long frame_id = -1;
-    uint64_t acquisition_time = 0; // as returned by frame grabber
-    uint64_t received_time = 0;    // as returned by frame grabber
+    // Camera-side acquisition timestamp: the Euresys grabber timestamp for the
+    // behavior camera, and the PCO camera's own metadata timestamp
+    // (microseconds since midnight) for the muscle camera.
+    uint64_t acquisition_time = 0;
+    // Host time (get_current_time_microseconds) when the frame was read out.
+    uint64_t received_time = 0;
+    // Muscle camera only: the PCO recorder's running image number for this frame
+    // (pco::Image::getRecorderImageNumber()); 0 for behavior frames, which do
+    // not set it.
+    uint32_t pco_record_id = 0;
     cv::Mat image;
 };
 

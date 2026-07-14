@@ -252,10 +252,12 @@ void muscle_image_saver(
             spdlog::error(
                 "Failed to open metadata file: {}", metadata_path.c_str());
         } else {
-            metadata_file << "frame_id,acquired_time_us,received_time_us\n";
+            metadata_file
+                << "frame_id,acquired_time_us,received_time_us,pco_record_id\n";
             metadata_file << frame_data.frame_id << ","
                           << frame_data.acquisition_time << ","
-                          << frame_data.received_time << "\n";
+                          << frame_data.received_time << ","
+                          << frame_data.pco_record_id << "\n";
             metadata_file.close();
         }
 

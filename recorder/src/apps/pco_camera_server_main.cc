@@ -123,6 +123,42 @@ uint64_t get_current_time_microseconds() {
         .count();
 }
 
+// Decode a single packed-BCD byte (two decimal digits) to its numeric value.
+static uint32_t decode_bcd_byte(uint8_t byte) {
+    return (byte >> 4) * 10 + (byte & 0x0F);
+}
+
+// Read the PCO camera's own frame timestamp, in microseconds since midnight.
+// The value comes from the per-image PCO metadata (pco::Image::getMetaDataPtr(),
+// populated by camera.image() when metadata mode is on -- see setup_pco_camera).
+// Unlike the binary-timestamp feature, metadata is delivered as a separate block
+// and does NOT overwrite any image pixels. Unlike get_current_time_microseconds
+// (a host clock) this is the camera's own clock, so it is unaffected by
+// host-side scheduling/handoff latency. It is a time-of-day, so it wraps at
+// midnight -- fine for the intra-recording relative timing downstream relies on.
+uint64_t get_camera_timestamp_microseconds(pco::Image &image) {
+    const PCO_METADATA_STRUCT *metadata = image.getMetaDataPtr();
+    if (metadata == nullptr) {
+        spdlog::error(
+            "PCO image has no metadata; is metadata mode enabled on the "
+            "camera?");
+        return 0;
+    }
+    // bIMAGE_TIME_US_BCD is 6 BCD digits across 3 bytes, least-significant byte
+    // first (see PCO_METADATA_STRUCT in sc2_common.h).
+    uint32_t microseconds = decode_bcd_byte(metadata->bIMAGE_TIME_US_BCD[0]) +
+                            decode_bcd_byte(metadata->bIMAGE_TIME_US_BCD[1]) *
+                                100 +
+                            decode_bcd_byte(metadata->bIMAGE_TIME_US_BCD[2]) *
+                                10000;
+    uint32_t seconds = decode_bcd_byte(metadata->bIMAGE_TIME_SEC_BCD);
+    uint32_t minutes = decode_bcd_byte(metadata->bIMAGE_TIME_MIN_BCD);
+    uint32_t hours = decode_bcd_byte(metadata->bIMAGE_TIME_HOUR_BCD);
+    return static_cast<uint64_t>(hours) * 3600000000ULL +
+           static_cast<uint64_t>(minutes) * 60000000ULL +
+           static_cast<uint64_t>(seconds) * 1000000ULL + microseconds;
+}
+
 void setup_pco_camera(
     pco::Camera &camera,
     unsigned int default_shutter_open_time_us,
@@ -159,7 +195,12 @@ void setup_pco_camera(
     // time). Any sync delay is implemented in the trigger firmware, not here.
     config.delay_time_s = delay_us / 1000000.0; // Convert to seconds
     config.noise_filter_mode = NOISE_FILTER_MODE_ON;
-    // config.timestamp_mode = TIMESTAMP_MODE_ASCII;
+    // Enable per-image metadata so every frame carries the camera's own
+    // timestamp and image counter (read back via pco::Image::getMetaDataPtr();
+    // see get_camera_timestamp_microseconds). Metadata is delivered as a
+    // separate block and, unlike the binary-timestamp feature
+    // (TIMESTAMP_MODE_BINARY), does NOT overwrite any image pixels.
+    config.metadata_mode = METADATA_MODE_ON;
     spdlog::info("Setting PCO camera configuration");
     camera.setConfiguration(config);
     spdlog::info("PCO camera configuration set");
@@ -388,11 +429,15 @@ void serve_frames(
             CV_16UC1,
             pco_image.raw_data().first);
 
-        // Gather metadata
+        // Gather metadata. acquisition_time is the PCO camera's own frame
+        // timestamp (from per-image metadata, not a host clock); pco_record_id
+        // is the camera recorder's running image number, useful for spotting
+        // dropped/duplicated frames.
         pco_shared_memory::FrameMetadata frame_metadata;
         frame_metadata.frame_count = frame_count++;
         frame_metadata.acquisition_time =
-            pco_camera_server::get_current_time_microseconds();
+            pco_camera_server::get_camera_timestamp_microseconds(pco_image);
+        frame_metadata.pco_record_id = pco_image.getRecorderImageNumber();
 
         // Mutex-protected zone! Updata image buffer and frame count
         pthread_mutex_lock(mutex_ptr);
