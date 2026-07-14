@@ -74,24 +74,23 @@ def launch_dispatcher(job_id: str) -> None:
     scitas_params = job["scitas_params"]
     postprocessing_params = job["postprocessing_params"]
 
+    # `submit_remote_postprocessing_job` (which triggers this, via SSH) has already
+    # created `job_dir` and each trial's subdirectory under it.
     job_dir = (
         config.SCITAS_EXPORT_MOUNTPOINT_SCITAS / config.SCITAS_EXPORT_RELATIVE_WORKDIR
     ).resolve() / job_id
-    batch_scripts_dir = job_dir / "slurm_scripts"
-    logs_dir = job_dir / "logs"
-    batch_scripts_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-generate each trial's task manifest and SLURM batch script. The dispatcher
-    # just submits these via `sbatch` once each trial's input data has been copied
+    # Pre-generate each trial's task manifest and SLURM batch script (written directly
+    # into the trial's own directory). The dispatcher just submits these via `sbatch`
+    # once each trial's input data has been copied.
     for trial_id in job["trials"]:
         _write_postprocessing_batch_script(
             job_dir, job_id, trial_id, scitas_params, postprocessing_params
         )
 
     # Start dispatcher job
-    dispatcher_batch_script_path = batch_scripts_dir / "dispatcher.slurm"
-    _write_dispatcher_batch_script(job_id, dispatcher_batch_script_path, logs_dir)
+    dispatcher_batch_script_path = job_dir / "dispatcher.run"
+    _write_dispatcher_batch_script(job_id, dispatcher_batch_script_path, job_dir)
     result = run(
         ["sbatch", str(dispatcher_batch_script_path)],
         check=True,
@@ -110,7 +109,7 @@ def _parse_sbatch_job_id(sbatch_stdout: str) -> str:
 
 
 def _write_dispatcher_batch_script(
-    job_id: str, batch_script_path: Path, logs_dir: Path
+    job_id: str, batch_script_path: Path, job_dir: Path
 ):
     batch_script_path.write_text(
         _DISPATCHER_SLURM_TEMPLATE.substitute(
@@ -118,7 +117,7 @@ def _write_dispatcher_batch_script(
             mem=config.SCITAS_DISPATCHER_MEMORY,
             walltime=config.SCITAS_DISPATCHER_WALLTIME,
             spotlight_dir=config.SCITAS_SPOTLIGHT_REPO_DIR,
-            log_file=logs_dir / "dispatcher.log",
+            log_file=job_dir / "dispatcher.log",
         )
     )
 
@@ -131,13 +130,13 @@ def _write_postprocessing_batch_script(
     postprocessing_params: dict,
 ) -> None:
     """Pre-generate the task manifest and SLURM batch script for one trial's
-    postprocessing job. The dispatcher submits this script via `sbatch` once the
-    trial's input data has finished copying."""
+    postprocessing job, written into the trial's own directory (already created by
+    `submit_remote_postprocessing_job`). The dispatcher submits this script via
+    `sbatch` once the trial's input data has finished copying."""
     trial_dir = job_dir / trial_id
-    trial_dir.mkdir(parents=True, exist_ok=True)
     task_json_path = trial_dir / "task.json"
-    slurm_script_path = job_dir / "slurm_scripts" / f"{trial_id}.slurm"
-    log_file = job_dir / "logs" / f"{trial_id}.log"
+    slurm_script_path = trial_dir / f"{trial_id}.run"
+    log_file = trial_dir / f"{trial_id}.log"
 
     task_json_path.write_text(
         json.dumps(

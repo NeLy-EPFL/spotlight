@@ -10,6 +10,7 @@ import spotlight_postprocessing_scitas.common.config as config
 class TrialStatus(Enum):
     WAITING_ON_INPUT_COPY = "waiting_on_input_copy"
     INPUT_COPIED = "input_copied"
+    PROCESSING_QUEUED = "processing_queued"
     PROCESSING = "processing"
     OUTPUT_READY = "output_ready"
     OUTPUT_COPYING = "output_copying"

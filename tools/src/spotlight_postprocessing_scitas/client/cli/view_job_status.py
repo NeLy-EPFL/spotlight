@@ -1,4 +1,5 @@
 import tyro
+from tabulate import tabulate
 
 import spotlight_postprocessing_scitas.common.config as config
 from spotlight_postprocessing_scitas.common.db import (
@@ -7,13 +8,13 @@ from spotlight_postprocessing_scitas.common.db import (
     TrialStatus,
 )
 
+_TRIAL_TABLE_HEADERS = ["Trial", "Display Name", "Status", "Error"]
 
-def _format_trial(trial_id: str, trial: dict) -> str:
+
+def _trial_row(trial_id: str, trial: dict) -> list[str]:
     status = TrialStatus(trial["status"])
-    line = f"    {trial_id}  {trial['display_name']:<40} {status.name}"
-    if status == TrialStatus.FAILED and trial.get("error"):
-        line += f"  ({trial['error']})"
-    return line
+    error = trial.get("error") if status == TrialStatus.FAILED else None
+    return [trial_id, trial["display_name"], status.name, error or ""]
 
 
 def _format_dispatcher(job: dict) -> str | None:
@@ -30,22 +31,28 @@ def _format_dispatcher(job: dict) -> str | None:
 
 
 def _format_job(job_id: str, job: dict) -> str:
-    submission_time = job["submission_time"]
+    submission_time = job.get("submission_time")
+    submitted_str = (
+        f"{submission_time:%Y-%m-%d %H:%M:%S}" if submission_time else "unknown time"
+    )
     completion_time = job.get("completion_time")
     status = (
         f"completed {completion_time:%Y-%m-%d %H:%M:%S}"
         if completion_time
         else "incomplete"
     )
-    header = f"Job {job_id}  (submitted {submission_time:%Y-%m-%d %H:%M:%S}, {status})"
+    header = f"Job {job_id}  (submitted {submitted_str}, {status})"
 
     dispatcher_line = _format_dispatcher(job)
     trials = job.get("trials", {})
-    trial_lines = [_format_trial(trial_id, trials[trial_id]) for trial_id in sorted(trials)]
+    rows = [_trial_row(trial_id, trials[trial_id]) for trial_id in sorted(trials)]
+
     lines = [header]
     if dispatcher_line:
         lines.append(dispatcher_line)
-    lines.extend(trial_lines)
+    if rows:
+        table = tabulate(rows, headers=_TRIAL_TABLE_HEADERS)
+        lines.append("\n".join(f"    {line}" for line in table.splitlines()))
     return "\n".join(lines)
 
 

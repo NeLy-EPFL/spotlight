@@ -20,7 +20,8 @@ Some more implementation details:
 - We use _Firestore_ to track job status between the Spotlight computer and SCITAS.
 - The shared storage server used to transmit data between the Spotlight computer and SCITAS is the `/export` share on SCITAS. It can be mounted on any machine on EPFL Intranet through Samba. See [SCITAS docs](https://scitas-doc.epfl.ch/user-guide/data-management/mount-scitas-smb/) for more information.
 - The output location is typically a _different_ NAS meant for persistent storage (e.g., EPFL RCP NAS1, a.k.a. "the lab server").
-- The formal lifecycle of a trial is: `waiting_on_input_copy` → `input_copied` → `processing` → `output_ready` → `output_copying` → `complete` (or `failed` at any point).
+- The formal lifecycle of a trial is: `waiting_on_input_copy` → `input_copied` → `processing_queued` → `processing` → `output_ready` → `output_copying` → `complete` (or `failed` at any point). A trial enters `processing_queued` as soon as the dispatcher submits its SLURM job, and `processing` once that SLURM job actually starts running.
+- Under the job's directory on the `/export` share, the dispatcher's own SLURM batch script and log are at the top level (`dispatcher.run`/`dispatcher.log`), and each trial's batch script, log, and task manifest live under that trial's own subdirectory (`<trial_id>/<trial_id>.run`, `<trial_id>/<trial_id>.log`, `<trial_id>/task.json`).
 
 ## Setup
 
@@ -92,7 +93,9 @@ Or, to submit specific trials explicitly:
 ```sh
 submit-remote-postprocessing-job \
     --scitas-params.username "sibwang" \
-    --trials "G213xOGL16_260709/fly004_trial001:/mnt/upramdya_data/SW/spotlight_data/G213xOGL16_260709/fly004_trial001"
+    --trials "G213xOGL16_260709/fly004_trial001:/mnt/upramdya_data/SW/spotlight_data/G213xOGL16_260709/fly004_trial001" \
+    --with-muscle \
+    --make-visualizations
 ```
 
 `submit-remote-postprocessing-job` blocks in the foreground for the entire lifetime of the job: after registering it, it stays running to compress and copy each trial's input, then to wait for and copy back each trial's output once ready. Keep the terminal open (e.g. under `tmux`/`screen`) until it reports the job complete.

@@ -22,9 +22,10 @@ def spotlight_job_dispatcher(job_id: str, poll_interval_seconds: float = 15.0) -
     pre-generates every trial's task manifest and SLURM batch script, since the job's
     trials and parameters are already known from Firestore at that point). Polls
     Firestore for trials with status `INPUT_COPIED`; for each one found, submits its
-    pre-generated SLURM batch script via `sbatch` and marks it `PROCESSING`. Quits once
-    no trial is still `WAITING_ON_INPUT_COPY` or `INPUT_COPIED` (i.e. every trial has
-    at least been dispatched for processing).
+    pre-generated SLURM batch script via `sbatch` and marks it `PROCESSING_QUEUED`
+    (the trial's own SLURM job later marks it `PROCESSING` once it actually starts
+    running). Quits once no trial is still `WAITING_ON_INPUT_COPY` or `INPUT_COPIED`
+    (i.e. every trial has at least been dispatched for processing).
 
     This dispatcher's own status (`RUNNING`, then `COMPLETE` or `FAILED`) is recorded
     in Firestore under the job's `dispatcher` field, alongside the SLURM job ID
@@ -65,12 +66,12 @@ def spotlight_job_dispatcher(job_id: str, poll_interval_seconds: float = 15.0) -
 
             for trial_id, trial_status in trials_status.items():
                 if trial_status["status"] == TrialStatus.INPUT_COPIED:
-                    slurm_script_path = job_dir / "slurm_scripts" / f"{trial_id}.slurm"
+                    slurm_script_path = job_dir / trial_id / f"{trial_id}.run"
                     logger.info(
                         f"Submitting SLURM postprocessing job for trial '{trial_id}'..."
                     )
                     run(["sbatch", str(slurm_script_path)], check=True)
-                    db.update_trial_status(job_id, trial_id, TrialStatus.PROCESSING)
+                    db.update_trial_status(job_id, trial_id, TrialStatus.PROCESSING_QUEUED)
 
             time.sleep(poll_interval_seconds)
     except Exception as e:

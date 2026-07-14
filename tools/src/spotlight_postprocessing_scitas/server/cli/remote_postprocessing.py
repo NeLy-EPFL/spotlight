@@ -32,8 +32,9 @@ def remote_postprocess_recording(from_json: str) -> None:
     """Postprocess a single trial's recording on SCITAS, as dispatched by the job
     dispatcher (`spotlight_job_dispatcher`).
 
-    Unzips the trial's compressed input data and runs the standard postprocessing
-    pipeline (`postprocess_recording_data`) on it in place, so the client can copy the
+    Marks the trial `PROCESSING` in Firestore, then unzips the trial's compressed
+    input data and runs the standard postprocessing pipeline
+    (`postprocess_recording_data`) on it in place, so the client can copy the
     "metadata"/"stage_position"/"processed" subdirectories straight out of
     `<trial_dir>/<recording_name>/` to the persistent NAS server. Reports the
     resulting trial status (`OUTPUT_READY` or `FAILED`) back to Firestore.
@@ -58,6 +59,7 @@ def remote_postprocess_recording(from_json: str) -> None:
         postprocessing_params.num_workers = int(n_cores_per_task)
 
     db = JobsDatabase(config.FIRESTORE_SERVICE_ACCOUNT_KEY_PATH)
+    db.update_trial_status(job_id, trial_id, TrialStatus.PROCESSING)
 
     try:
         logger.info(f"Extracting input data for trial '{trial_id}'...")
