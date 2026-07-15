@@ -52,34 +52,29 @@ def _format_job(job_id: str, job: dict) -> str:
 
 
 def view_job_status(job_id: str | None = None) -> None:
-    """Print the status of postprocessing job(s) tracked in Firestore.
+    """Print the status of a postprocessing job tracked in Firestore.
 
-    Jobs and trials are always printed in a stable, sorted order (by ID, which sorts
+    Trials are always printed in a stable, sorted order (by ID, which sorts
     chronologically), so repeatedly re-running this (e.g. via `watch`) only highlights
     what actually changed.
 
     Args:
-        job_id: If given, print only this job's status. Otherwise, print the status of
-            every job that has not yet completed.
+        job_id: If given, print this job's status. Otherwise, print the status of the
+            most recently submitted job. Looking up the latest job only ever reads
+            that single job's document, not every job in Firestore.
     """
     db = JobsDatabase(config.FIRESTORE_SERVICE_ACCOUNT_KEY_PATH)
 
     if job_id is not None:
-        jobs = {job_id: db.get_job(job_id)}
+        job = db.get_job(job_id)
     else:
-        jobs = {
-            jid: job
-            for jid, job in db.list_jobs().items()
-            if job.get("completion_time") is None
-        }
+        latest_job = db.get_latest_job()
+        if latest_job is None:
+            print("No jobs found.")
+            return
+        job_id, job = latest_job
 
-    if not jobs:
-        print("No incomplete jobs.")
-        return
-
-    for jid in sorted(jobs):
-        print(_format_job(jid, parse_job(jobs[jid])))
-        print()
+    print(_format_job(job_id, parse_job(job)))
 
 
 def main() -> None:

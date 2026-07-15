@@ -44,7 +44,7 @@ class DispatcherStatus(Enum):
 class JobStatus(Enum):
     """Overall outcome of a job, derived from its trials' final statuses."""
 
-    PROCESSING = "processing"
+    RUNNING = "running"
     COMPLETE = "complete"
     PARTIAL_FAIL = "partial_fail"
     ALL_FAIL = "all_fail"
@@ -85,7 +85,7 @@ class JobsDatabase:
             "scitas_params": scitas_params,
             "submission_time": datetime.now(),
             "completion_time": None,
-            "job_status": JobStatus.PROCESSING.value,
+            "job_status": JobStatus.RUNNING.value,
             # Refreshed periodically by the client-side submission program for as
             # long as it is alive; the dispatcher aborts the job if this goes stale.
             "client_heartbeat": datetime.now(timezone.utc),
@@ -155,9 +155,20 @@ class JobsDatabase:
             raise ValueError(f"Job {job_id} does not exist in Firestore.")
         return doc.to_dict()
 
-    def list_jobs(self) -> dict[str, dict]:
-        """Fetch every job's full stored document, keyed by job ID (see `get_job`)."""
-        return {doc.id: doc.to_dict() for doc in self.collection.stream()}
+    def get_latest_job(self) -> tuple[str, dict] | None:
+        """Fetch the ID and raw document of the most recently submitted job, or None
+        if there are no jobs. Cheap: reads only that single document, rather than
+        every job in Firestore, by querying for the highest `submission_time`."""
+        docs = list(
+            self.collection.order_by(
+                "submission_time", direction=firestore.Query.DESCENDING
+            )
+            .limit(1)
+            .stream()
+        )
+        if not docs:
+            return None
+        return docs[0].id, docs[0].to_dict()
 
     def get_job_status(self, job_id: str) -> dict:
         """Fetch a job and parse it into a typed status view (see `parse_job`)."""
@@ -179,9 +190,9 @@ class JobsDatabase:
 
 
 def parse_job(job: dict) -> dict:
-    """Parse a job document (as returned by `JobsDatabase.get_job`/`list_jobs`) into a
-    typed view, with trial/job/dispatcher status fields as their enums instead of the
-    raw strings they're stored as."""
+    """Parse a job document (as returned by `JobsDatabase.get_job`/`get_latest_job`)
+    into a typed view, with trial/job/dispatcher status fields as their enums instead
+    of the raw strings they're stored as."""
     trials = {
         trial_id: {
             "display_name": trial["display_name"],

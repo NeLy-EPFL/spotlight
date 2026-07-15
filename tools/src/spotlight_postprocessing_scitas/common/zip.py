@@ -5,24 +5,24 @@ from pathlib import Path
 
 
 def _resolve_n_workers(n_workers: int) -> int:
-    if "SLURM_CPUS_PER_TASK" in os.environ:
-        n_cores_total = int(os.environ["SLURM_CPUS_PER_TASK"])
+    if "SLURM_CPUS_ON_NODE" in os.environ:
+        n_cpu_cores = int(os.environ["SLURM_CPUS_ON_NODE"])
     else:
-        n_cores_total = os.cpu_count()
+        n_cpu_cores = os.cpu_count()
 
-    if n_workers > n_cores_total:
+    if n_workers > n_cpu_cores:
         warnings.warn(
-            f"Requested {n_workers} workers, but only {n_cores_total} cores are "
-            f"available. Using {n_cores_total} workers instead."
+            f"Requested {n_workers} workers, but only {n_cpu_cores} cores are "
+            f"available. Using {n_cpu_cores} workers instead."
         )
-        return n_cores_total
+        return n_cpu_cores
 
     if n_workers == 0:
         return 1
 
     if n_workers <= 0:
         # if n_workers is -1, use all cores. if -2, use all but one cores, etc.
-        return max(1, n_cores_total + n_workers + 1)
+        return max(1, n_cpu_cores + n_workers + 1)
 
     return n_workers
 

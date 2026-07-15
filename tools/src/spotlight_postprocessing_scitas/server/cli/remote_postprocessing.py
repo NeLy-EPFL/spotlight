@@ -48,9 +48,9 @@ def remote_postprocess_recording(from_json: str) -> None:
     postprocessing_params = PostprocessingParams(**task["postprocessing_params"])
 
     # Override num_workers to the number of cores allocated to this SLURM job
-    n_cores_per_task = environ.get("SLURM_CPUS_PER_TASK")
-    if n_cores_per_task is not None:
-        postprocessing_params.num_workers = int(n_cores_per_task)
+    n_cpu_cores = environ.get("SLURM_CPUS_ON_NODE")
+    if n_cpu_cores is not None:
+        postprocessing_params.num_workers = int(n_cpu_cores)
 
     db = JobsDatabase(config.FIRESTORE_SERVICE_ACCOUNT_KEY_PATH)
     db.update_trial_status(job_id, trial_id, TrialStatus.PROCESSING)

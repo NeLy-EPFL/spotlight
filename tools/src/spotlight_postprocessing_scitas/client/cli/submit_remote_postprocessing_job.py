@@ -63,7 +63,7 @@ class ScitasJobParams:
     mem_per_job: str = "96G"
     """Number of GB of RAM to request per job."""
 
-    walltime: str = "2:00:00"
+    walltime: str = "4:00:00"
     """Walltime to request per job, in HH:MM:SS format."""
 
     partition: str = "standard"
@@ -229,6 +229,33 @@ class ScitasJobSubmission:
                 local_basedir / trial_relpath,
                 remote_basedir / trial_relpath,
             )
+
+    def check_no_existing_output(self, overwrite: bool) -> None:
+        """Raise if any trial's target output directory already has processed
+        output, unless `overwrite` is set.
+
+        Checked before submitting the job so a doomed job is rejected upfront,
+        instead of failing only after the trial has already been processed
+        remotely and its output is about to be copied back.
+
+        Args:
+            overwrite: Whether existing output is allowed to be overwritten.
+
+        Raises:
+            FileExistsError: A trial's target output directory already contains
+                one of `_TRIAL_OUTPUT_SUBDIRS` and `overwrite` is False.
+        """
+        if overwrite:
+            return
+        for trial_spec in self.localpath_to_trialspec.values():
+            for name in _TRIAL_OUTPUT_SUBDIRS:
+                existing = trial_spec.target_output_path / name
+                if existing.exists():
+                    raise FileExistsError(
+                        f"Output directory {existing} for trial "
+                        f"'{trial_spec.display_name}' already exists. Pass "
+                        "`--postprocess-params.overwrite` to overwrite it."
+                    )
 
     def add_job_to_db(
         self, scitas_params: ScitasJobParams, postprocess_params: PostprocessingParams
@@ -405,7 +432,7 @@ class ScitasJobSubmission:
                 display_name = trial_spec.display_name if trial_spec else trial_id
 
                 if trial_status["status"] == TrialStatus.OUTPUT_READY:
-                    logger.info(f"Trial '{display_name}' output is ready for copying.")
+                    logger.info(f"Output for trial '{display_name}' is ready, copying.")
                     self.db.update_trial_status(
                         job_id, trial_id, TrialStatus.OUTPUT_COPYING
                     )
@@ -525,6 +552,11 @@ def submit_remote_postprocessing_job(
             "Either `trials` or the combination of `local_basedir` and "
             "`remote_basedir` must be provided, but not both."
         )
+
+    # Reject outright if any trial's output already exists and would be
+    # silently overwritten later, instead of failing only after the trial has
+    # already been processed remotely.
+    submission.check_no_existing_output(postprocess_params.overwrite)
 
     # Add job to Firestore
     job_id = submission.add_job_to_db(scitas_params, postprocess_params)
