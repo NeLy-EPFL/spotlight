@@ -37,6 +37,7 @@ dependencies = [
     # Packaging, logistics, logging, CLI, IO, etc.
     "setuptools>=78,<79",
     "tyro>=1.0,<2",
+    "loguru>=0.7",
     "joblib>=1.5,<2.0",
     "tqdm>=4.67,<5.0",
     "pyyaml>=6.0,<7.0",

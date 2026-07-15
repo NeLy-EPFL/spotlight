@@ -1,15 +1,12 @@
 import json
-import re
 from pathlib import Path
 from string import Template
-from subprocess import run
 
 import tyro
 
 import spotlight_postprocessing_scitas.common.config as config
+from spotlight_postprocessing_scitas.common import slurm
 from spotlight_postprocessing_scitas.common.db import JobsDatabase
-
-_SBATCH_JOB_ID_RE = re.compile(r"Submitted batch job (\d+)")
 
 _DISPATCHER_SLURM_TEMPLATE = Template("""#!/bin/bash -l
 
@@ -46,6 +43,7 @@ _POSTPROCESSING_SLURM_TEMPLATE = Template("""#!/bin/bash -l
 
 echo "Launching postprocessing job for trial ${trial_id} from $$(hostname) at $$(date)"
 
+module load gcc ffmpeg
 source ${spotlight_dir}/tools/.venv/bin/activate
 remote-postprocess-recording --from-json ${task_json_path}
 
@@ -91,26 +89,11 @@ def launch_dispatcher(job_id: str) -> None:
     # Start dispatcher job
     dispatcher_batch_script_path = job_dir / "dispatcher.run"
     _write_dispatcher_batch_script(job_id, dispatcher_batch_script_path, job_dir)
-    result = run(
-        ["sbatch", str(dispatcher_batch_script_path)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    slurm_job_id = _parse_sbatch_job_id(result.stdout)
+    slurm_job_id = slurm.submit_job(dispatcher_batch_script_path)
     db.set_dispatcher_slurm_job_id(job_id, slurm_job_id)
 
 
-def _parse_sbatch_job_id(sbatch_stdout: str) -> str:
-    match = _SBATCH_JOB_ID_RE.search(sbatch_stdout)
-    if not match:
-        raise ValueError(f"Could not parse SLURM job ID from `sbatch` output: {sbatch_stdout!r}")
-    return match.group(1)
-
-
-def _write_dispatcher_batch_script(
-    job_id: str, batch_script_path: Path, job_dir: Path
-):
+def _write_dispatcher_batch_script(job_id: str, batch_script_path: Path, job_dir: Path):
     batch_script_path.write_text(
         _DISPATCHER_SLURM_TEMPLATE.substitute(
             job_id=job_id,

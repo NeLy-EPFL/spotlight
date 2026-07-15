@@ -1,9 +1,9 @@
 import json
-import logging
 from os import environ
 from pathlib import Path
 
 import tyro
+from loguru import logger
 
 import spotlight_postprocessing_scitas.common.config as config
 from spotlight_postprocessing_scitas.common.db import JobsDatabase, TrialStatus
@@ -12,8 +12,6 @@ from spotlight_tools.cli.postprocess_recording import (
     PostprocessingParams,
     postprocess_recording_data,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def _find_recording_dir(trial_dir: Path) -> Path:
@@ -43,10 +41,6 @@ def remote_postprocess_recording(from_json: str) -> None:
         from_json: Path to a JSON task manifest (written by `spotlight_job_dispatcher`)
             describing the trial to process.
     """
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
     task = json.loads(Path(from_json).read_text())
     job_id = task["job_id"]
     trial_id = task["trial_id"]

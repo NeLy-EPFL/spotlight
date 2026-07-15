@@ -12,16 +12,24 @@ The overall workflow is:
 - When instructed to initiate a dispatcher, a script on SCITAS (login node) does the following:
     - Generate Slurm batch scripts to perform each postprocessing task.
     - Submit a dispatcher Slurm job that runs on a compute node (this job might be queued for some time, but it's very small is it shouldn't take too long).
-- The dispatcher then does the following from a compute node (avoids running long jobs on the shared login nodes):
+- The dispatcher then does the following from a compute node (avoids running long jobs on the shared login nodes), and stays running for the entire job rather than quitting once every trial has been dispatched:
     - Wait for copying of input data into the shared storage server to complete.
     - When input data for a trial are ready, submit a new Slurm job to run its postprocessing.
+    - Cross-check every dispatched trial's Slurm job state directly (via `sacct`), so a trial whose job gets killed outright (out-of-memory, walltime exceeded, node failure, etc.) is marked failed instead of being stuck forever, even if its own process never got the chance to report back.
+    - Watch the client-side submission program's heartbeat (see below); if it goes stale, assume the client has died, cancel every trial's Slurm job, and mark the whole job failed.
+    - Quit once every trial has reached a terminal status (`output_ready` or `failed`).
 
 Some more implementation details:
 - We use _Firestore_ to track job status between the Spotlight computer and SCITAS.
 - The shared storage server used to transmit data between the Spotlight computer and SCITAS is the `/export` share on SCITAS. It can be mounted on any machine on EPFL Intranet through Samba. See [SCITAS docs](https://scitas-doc.epfl.ch/user-guide/data-management/mount-scitas-smb/) for more information.
 - The output location is typically a _different_ NAS meant for persistent storage (e.g., EPFL RCP NAS1, a.k.a. "the lab server").
 - The formal lifecycle of a trial is: `waiting_on_input_copy` → `input_copied` → `processing_queued` → `processing` → `output_ready` → `output_copying` → `complete` (or `failed` at any point). A trial enters `processing_queued` as soon as the dispatcher submits its SLURM job, and `processing` once that SLURM job actually starts running.
+- The job as a whole also has a top-level status, derived from its trials' final statuses once every trial is done (or the job is aborted): `processing` → `complete` (every trial succeeded), `partial_fail` (some trials failed), or `all_fail` (every trial failed, or the job was aborted because the client-side submission program died or crashed).
 - Under the job's directory on the `/export` share, the dispatcher's own SLURM batch script and log are at the top level (`dispatcher.run`/`dispatcher.log`), and each trial's batch script, log, and task manifest live under that trial's own subdirectory (`<trial_id>/<trial_id>.run`, `<trial_id>/<trial_id>.log`, `<trial_id>/task.json`).
+- Robustness against processes dying outright (rather than failing through their own exception handling), assuming the dispatcher itself never dies:
+    - The client-side submission program (`submit-remote-postprocessing-job`) refreshes a heartbeat timestamp in Firestore every `CLIENT_HEARTBEAT_INTERVAL` seconds (in a background thread, so it isn't blocked by any single long-running step). If the dispatcher sees no heartbeat for `CLIENT_HEARTBEAT_TIMEOUT` seconds, it assumes the client died, cancels every trial's Slurm job, and marks the whole job (and its remaining trials) failed. The client also marks the job `all_fail` (and every unfinished trial `failed`) itself if it crashes for any other reason before the job finishes.
+    - Each trial's own Slurm job ID is recorded in Firestore as soon as it's submitted, so the dispatcher can cross-check its state via `sacct` on every poll and catch a trial that was killed outright, without relying on that trial's own process to report back.
+    - As a last resort, if the dispatcher itself crashes on an unexpected exception, it also marks the job `all_fail` (and every unfinished trial `failed`) before exiting, rather than leaving them stuck in `processing` forever with nothing left watching them. This does not cover the dispatcher's own Slurm job being killed outright (e.g. node failure) -- nothing currently cross-checks the dispatcher's own Slurm state the way it cross-checks each trial's.
 
 ## Setup
 
@@ -101,11 +109,11 @@ submit-remote-postprocessing-job \
 `submit-remote-postprocessing-job` blocks in the foreground for the entire lifetime of the job: after registering it, it stays running to compress and copy each trial's input, then to wait for and copy back each trial's output once ready. Keep the terminal open (e.g. under `tmux`/`screen`) until it reports the job complete.
 
 ## Monitor job status
-Run `view-job-status` (in a new terminal) at any time to print the status of every trial (plus the dispatcher's own SLURM job ID and status, once submitted) in every incomplete job, or `view-job-status --job-id <job-id>` to inspect a single job (complete or not). Job and trial IDs are printed in a stable, sorted (chronological) order, so `watch -n 10 view-job-status` is a convenient way to keep an eye on progress (updated every 10 seconds).
+Run `view-job-status` (in a new terminal) at any time to print each incomplete job's overall status (`processing`/`complete`/`partial_fail`/`all_fail`), the dispatcher's own SLURM job ID and status (once submitted), and every trial's status, or `view-job-status --job-id <job-id>` to inspect a single job (complete or not). Job and trial IDs are printed in a stable, sorted (chronological) order, so `watch -n 10 view-job-status` is a convenient way to keep an eye on progress (updated every 10 seconds).
 
 ## CLIs
 - **`submit-remote-postprocessing-job`** (Spotlight computer): Initiates job and tells SCITAS to start dispatcher.
 - **`launch-spotlight-job-dispatcher`** (SCITAS login node, called by `submit-remote-postprocessing-job` via SSH): Creates Slurm batch scripts for individual trials based on job specs. Starts dispatcher job.
-- **`spotlight-job-dispatcher`** (SCITAS compute node, started by `launch-spotlight-job-dispatcher`): Waits for input data to be ready and submit postprocessing jobs.
+- **`spotlight-job-dispatcher`** (SCITAS compute node, started by `launch-spotlight-job-dispatcher`): Waits for input data to be ready and submits postprocessing jobs; stays running for the whole job, cross-checking dispatched trials' Slurm state and the client's heartbeat, until every trial is ready or failed.
 - **`remote-postprocess-recording`** (SCITAS compute node, started by `spotlight-job-dispatcher`): Wrapper around `postprocess-recording`.
 - **`view-job-status`** (anywhere): Monitor job status.

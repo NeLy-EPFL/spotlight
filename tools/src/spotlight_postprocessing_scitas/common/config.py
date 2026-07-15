@@ -13,6 +13,12 @@ SCITAS_EXPORT_MOUNTPOINT_LOCAL = Path("/mnt/scitas_export_upramdya")
 SCITAS_EXPORT_RELATIVE_WORKDIR = "spotlight_remote_processing"
 SCITAS_EXPORT_SAMBA_ADDR = "//samba.hpc.epfl.ch/upramdya"
 
+# How often the client-side submission program refreshes its "still alive" heartbeat,
+# and how long the dispatcher waits without a heartbeat before concluding the client
+# has died and aborting the whole job.
+CLIENT_HEARTBEAT_INTERVAL = 30
+CLIENT_HEARTBEAT_TIMEOUT = 120
+
 # Firestore
 FIRESTORE_SERVICE_ACCOUNT_KEY_PATH = (
     Path.home() / ".config/spotlight-remote-processing/firestore-key.json"

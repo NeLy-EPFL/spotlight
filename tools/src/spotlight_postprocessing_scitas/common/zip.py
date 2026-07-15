@@ -29,7 +29,7 @@ def _resolve_n_workers(n_workers: int) -> int:
 
 def zip_dir(input_dir: Path, output_path: Path, n_workers: int) -> None:
     """Zip data using multiple threads.
-    
+
     This does the equivalent of `tar cf - input_dir | pigz > output_path`.
     """
     if not input_dir.is_dir():

@@ -1,6 +1,6 @@
 from pathlib import Path
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from google.cloud import firestore
 
@@ -18,11 +18,36 @@ class TrialStatus(Enum):
     FAILED = "failed"
 
 
+# Trial statuses the client-side submission program considers final: once every
+# trial is in one of these, the job as a whole is done.
+TERMINAL_TRIAL_STATUSES = frozenset({TrialStatus.COMPLETE, TrialStatus.FAILED})
+
+# Trials the dispatcher still has work to do for: waiting on input, submitting the
+# SLURM job, or watching its state.
+DISPATCHER_ACTIVE_TRIAL_STATUSES = frozenset(
+    {
+        TrialStatus.WAITING_ON_INPUT_COPY,
+        TrialStatus.INPUT_COPIED,
+        TrialStatus.PROCESSING_QUEUED,
+        TrialStatus.PROCESSING,
+    }
+)
+
+
 class DispatcherStatus(Enum):
     SUBMITTED = "submitted"
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
+
+
+class JobStatus(Enum):
+    """Overall outcome of a job, derived from its trials' final statuses."""
+
+    PROCESSING = "processing"
+    COMPLETE = "complete"
+    PARTIAL_FAIL = "partial_fail"
+    ALL_FAIL = "all_fail"
 
 
 class JobsDatabase:
@@ -52,6 +77,7 @@ class JobsDatabase:
                     "display_name": display_name,
                     "status": TrialStatus.WAITING_ON_INPUT_COPY.value,
                     "error": None,
+                    "slurm_job_id": None,
                 }
                 for trial_id, display_name in trials
             },
@@ -59,6 +85,10 @@ class JobsDatabase:
             "scitas_params": scitas_params,
             "submission_time": datetime.now(),
             "completion_time": None,
+            "job_status": JobStatus.PROCESSING.value,
+            # Refreshed periodically by the client-side submission program for as
+            # long as it is alive; the dispatcher aborts the job if this goes stale.
+            "client_heartbeat": datetime.now(timezone.utc),
             "dispatcher": {
                 "slurm_job_id": None,
                 "status": None,
@@ -67,6 +97,21 @@ class JobsDatabase:
         }
         doc_ref = self.collection.document(job_id)
         doc_ref.set(data)
+
+    def set_trial_slurm_job_id(
+        self, job_id: str, trial_id: str, slurm_job_id: str
+    ) -> None:
+        """Record a trial's own SLURM job ID once its postprocessing job has been
+        submitted, so its state can later be cross-checked directly against
+        `sacct`."""
+        doc_ref = self.collection.document(job_id)
+        doc_ref.update({f"trials.{trial_id}.slurm_job_id": slurm_job_id})
+
+    def update_client_heartbeat(self, job_id: str) -> None:
+        """Refresh the client-side submission program's heartbeat timestamp for a
+        job. The dispatcher treats a stale heartbeat as the client having died."""
+        doc_ref = self.collection.document(job_id)
+        doc_ref.update({"client_heartbeat": datetime.now(timezone.utc)})
 
     def set_dispatcher_slurm_job_id(self, job_id: str, slurm_job_id: str) -> None:
         """Record the dispatcher's own SLURM job ID once it has been submitted."""
@@ -100,20 +145,10 @@ class JobsDatabase:
             }
         )
 
-    def get_trial_status(self, job_id: str, trial_id: str) -> dict:
-        doc_ref = self.collection.document(job_id)
-        doc = doc_ref.get()
-        if not doc.exists:
-            raise ValueError(f"Job {job_id} does not exist in Firestore.")
-        data = doc.to_dict().get("trials", {}).get(trial_id)
-        if not data:
-            raise ValueError(
-                f"Trial {trial_id} does not exist in job {job_id} in Firestore."
-            )
-        return {"status": TrialStatus(data["status"]), "error": data["error"]}
-
     def get_job(self, job_id: str) -> dict:
-        """Fetch the full stored document for a job (trials, params, timestamps)."""
+        """Fetch the full stored document for a job, as-is (trial/job/dispatcher
+        status fields are still the raw strings they're stored as; use `parse_job` to
+        get them back as their enums)."""
         doc_ref = self.collection.document(job_id)
         doc = doc_ref.get()
         if not doc.exists:
@@ -121,24 +156,56 @@ class JobsDatabase:
         return doc.to_dict()
 
     def list_jobs(self) -> dict[str, dict]:
-        """Fetch every job's full stored document, keyed by job ID."""
+        """Fetch every job's full stored document, keyed by job ID (see `get_job`)."""
         return {doc.id: doc.to_dict() for doc in self.collection.stream()}
 
     def get_job_status(self, job_id: str) -> dict:
-        doc_ref = self.collection.document(job_id)
-        doc = doc_ref.get()
-        if not doc.exists:
-            raise ValueError(f"Job {job_id} does not exist in Firestore.")
-        data = doc.to_dict()
-        trials_data = data.get("trials", {})
-        trials_data = {
-            k: {"status": TrialStatus(v["status"]), "error": v["error"]}
-            for k, v in trials_data.items()
-            if isinstance(v, dict)
-        }
-        completion_time = data.get("completion_time")
-        return {"trials_status": trials_data, "completion_time": completion_time}
+        """Fetch a job and parse it into a typed status view (see `parse_job`)."""
+        return parse_job(self.get_job(job_id))
 
-    def mark_job_complete(self, job_id: str):
+    def mark_job_complete(self, job_id: str, status: JobStatus) -> None:
+        """Record the job's final outcome once every trial has reached a terminal
+        status, or the job was aborted."""
         doc_ref = self.collection.document(job_id)
-        doc_ref.update({"completion_time": datetime.now()})
+        doc_ref.update({"completion_time": datetime.now(), "job_status": status.value})
+
+    def fail_incomplete_trials(self, job_id: str, error: str) -> None:
+        """Mark every trial not yet in a terminal status as `FAILED`, e.g. because the
+        job is being aborted due to an unexpected error elsewhere in the pipeline."""
+        job = self.get_job(job_id)
+        for trial_id, trial in job.get("trials", {}).items():
+            if TrialStatus(trial["status"]) not in TERMINAL_TRIAL_STATUSES:
+                self.update_trial_status(job_id, trial_id, TrialStatus.FAILED, error)
+
+
+def parse_job(job: dict) -> dict:
+    """Parse a job document (as returned by `JobsDatabase.get_job`/`list_jobs`) into a
+    typed view, with trial/job/dispatcher status fields as their enums instead of the
+    raw strings they're stored as."""
+    trials = {
+        trial_id: {
+            "display_name": trial["display_name"],
+            "status": TrialStatus(trial["status"]),
+            "error": trial.get("error"),
+            "slurm_job_id": trial.get("slurm_job_id"),
+        }
+        for trial_id, trial in job.get("trials", {}).items()
+        if isinstance(trial, dict)
+    }
+    dispatcher = job.get("dispatcher") or {}
+    dispatcher_status = dispatcher.get("status")
+    job_status = job.get("job_status")
+    return {
+        "trials": trials,
+        "submission_time": job.get("submission_time"),
+        "completion_time": job.get("completion_time"),
+        "client_heartbeat": job.get("client_heartbeat"),
+        "job_status": JobStatus(job_status) if job_status else None,
+        "dispatcher": {
+            "slurm_job_id": dispatcher.get("slurm_job_id"),
+            "status": (
+                DispatcherStatus(dispatcher_status) if dispatcher_status else None
+            ),
+            "error": dispatcher.get("error"),
+        },
+    }

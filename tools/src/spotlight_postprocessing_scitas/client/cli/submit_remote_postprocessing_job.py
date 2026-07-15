@@ -1,10 +1,10 @@
-import logging
 import os
 import random
 import shutil
 import string
 import subprocess
 import sys
+import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -12,14 +12,18 @@ from tempfile import mkstemp
 from time import sleep
 
 import tyro
+from loguru import logger
 from tyro.conf import OmitArgPrefixes
 
 import spotlight_postprocessing_scitas.common.config as config
-from spotlight_postprocessing_scitas.common.db import JobsDatabase, TrialStatus
+from spotlight_postprocessing_scitas.common.db import (
+    TERMINAL_TRIAL_STATUSES,
+    JobsDatabase,
+    JobStatus,
+    TrialStatus,
+)
 from spotlight_postprocessing_scitas.common.zip import zip_dir
 from spotlight_tools.cli.postprocess_recording import PostprocessingParams
-
-logger = logging.getLogger(__name__)
 
 # Subdirectories of a postprocessed trial to copy to the persistent NAS server.
 # "behavior_images" and "muscle_images" are deliberately excluded.
@@ -30,10 +34,6 @@ def _generate_id(prefix: str):
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
     return f"{prefix}{timestamp}_{suffix}"
-
-
-def _is_trial_finished(trial_status: TrialStatus) -> bool:
-    return trial_status in (TrialStatus.COMPLETE, TrialStatus.FAILED)
 
 
 def _parse_trial_pair(entry: str) -> tuple[Path, Path]:
@@ -48,7 +48,7 @@ def _parse_trial_pair(entry: str) -> tuple[Path, Path]:
 
 
 @dataclass(frozen=True)
-class ScitasConfig:
+class ScitasJobParams:
     """Configuration for running postprocessing jobs on SCITAS."""
 
     username: str
@@ -80,10 +80,10 @@ class TrialSpec:
     display_name: str
     """Human-readable name for the trial."""
 
-    trial_localpath: Path
+    local_path: Path
     """Trial directory on the local machine."""
 
-    trial_persistent_nas_path: Path
+    target_output_path: Path
     """Destination directory for this trial's postprocessed output on the persistent
     NAS server."""
 
@@ -95,10 +95,14 @@ class ScitasJobSubmission:
         submission = ScitasJobSubmission()
         submission.add_trial(...)  # and/or submission.add_trials_by_diff(...)
         job_id = submission.add_job_to_db(scitas_params, postprocess_params)
-        submission.create_trial_directories(job_id)
-        submission.start_dispatcher_on_scitas(job_id, scitas_params)
-        submission.copy_input_to_scitas_export(job_id)
-        submission.wait_to_copy_output(job_id)
+        heartbeat_stop = submission.start_heartbeat(job_id)
+        try:
+            submission.create_trial_directories(job_id)
+            submission.start_dispatcher_on_scitas(job_id, scitas_params)
+            submission.copy_input_to_scitas_export(job_id)
+            submission.wait_to_copy_output(job_id)
+        finally:
+            heartbeat_stop.set()
     """
 
     def __init__(self) -> None:
@@ -113,33 +117,32 @@ class ScitasJobSubmission:
     def add_trial(
         self,
         display_name: str,
-        trial_localpath: Path,
-        trial_persistent_nas_path: Path,
+        local_path: Path,
+        target_output_path: Path,
     ) -> None:
         """Add a trial to the job submission.
 
         Args:
             display_name: Display name of the trial.
-            trial_localpath: Trial directory on the local machine.
-            trial_persistent_nas_path: Destination directory for this trial's
+            local_path: Trial directory on the local machine.
+            target_output_path: Destination directory for this trial's
                 postprocessed output on the persistent NAS server.
         """
-        if not trial_localpath.exists():
-            raise FileNotFoundError(f"Trial path {trial_localpath} does not exist.")
-        trial_localpath = trial_localpath.resolve()
-        if trial_localpath in self.localpath_to_trialspec:
-            raise ValueError(f"Trial path {trial_localpath} has already been added.")
+        if not local_path.exists():
+            raise FileNotFoundError(f"Trial path {local_path} does not exist.")
+        local_path = local_path.resolve()
+        if local_path in self.localpath_to_trialspec:
+            raise ValueError(f"Trial path {local_path} has already been added.")
         trial_spec = TrialSpec(
             trial_id=_generate_id("trial"),
             display_name=display_name,
-            trial_localpath=trial_localpath,
-            trial_persistent_nas_path=trial_persistent_nas_path,
+            local_path=local_path,
+            target_output_path=target_output_path,
         )
-        self.localpath_to_trialspec[trial_localpath] = trial_spec
+        self.localpath_to_trialspec[local_path] = trial_spec
         self.trialid_to_trialspec[trial_spec.trial_id] = trial_spec
         logger.info(
-            f"Added trial '{display_name}' ({trial_localpath} -> "
-            f"{trial_persistent_nas_path})."
+            f"Added trial '{display_name}' ({local_path} -> {target_output_path})."
         )
 
     def add_trials_by_diff(
@@ -228,7 +231,7 @@ class ScitasJobSubmission:
             )
 
     def add_job_to_db(
-        self, scitas_params: ScitasConfig, postprocess_params: PostprocessingParams
+        self, scitas_params: ScitasJobParams, postprocess_params: PostprocessingParams
     ) -> str:
         """Push the prepared job and its trials to the Firestore jobs database.
 
@@ -258,6 +261,32 @@ class ScitasJobSubmission:
         )
         return job_id
 
+    def start_heartbeat(self, job_id: str) -> threading.Event:
+        """Start a background thread that periodically refreshes this job's
+        heartbeat in Firestore for as long as this program is alive, so the
+        dispatcher (the one component assumed to never die) can detect if this
+        program dies and abort the whole job.
+
+        Runs independently of whatever the main thread is doing (SSH call,
+        compressing/copying a trial, or sleeping between polls), so a single
+        long-running step doesn't cause a false "client is dead" detection.
+
+        Returns:
+            The `threading.Event` used to stop the heartbeat thread; call `.set()` on
+            it once this program is about to exit (normally or due to an error).
+        """
+        stop_event = threading.Event()
+
+        def _heartbeat_loop():
+            while not stop_event.wait(config.CLIENT_HEARTBEAT_INTERVAL):
+                try:
+                    self.db.update_client_heartbeat(job_id)
+                except Exception as e:
+                    logger.warning(f"Failed to send heartbeat for job '{job_id}': {e}")
+
+        threading.Thread(target=_heartbeat_loop, daemon=True).start()
+        return stop_event
+
     def create_trial_directories(self, job_id: str) -> None:
         """Create the job's directory and each trial's subdirectory under the SCITAS
         export working directory.
@@ -273,7 +302,7 @@ class ScitasJobSubmission:
             (job_dir / trial_spec.trial_id).mkdir(parents=True, exist_ok=True)
 
     def start_dispatcher_on_scitas(
-        self, job_id: str, scitas_params: ScitasConfig
+        self, job_id: str, scitas_params: ScitasJobParams
     ) -> None:
         """Launch dispatcher SLURM job via SSH.
 
@@ -315,7 +344,7 @@ class ScitasJobSubmission:
                 f"{zipped_path}..."
             )
             try:
-                zip_dir(trial_spec.trial_localpath, zipped_path, n_workers)
+                zip_dir(trial_spec.local_path, zipped_path, n_workers)
             except Exception as e:
                 logger.error(
                     f"Failed to copy trial '{trial_spec.display_name}' to the "
@@ -352,17 +381,26 @@ class ScitasJobSubmission:
             next_check_time += timedelta(seconds=check_interval)
 
             job_status = self.db.get_job_status(job_id)
-            trials_status = job_status["trials_status"]
+            trials = job_status["trials"]
 
             if all(
-                _is_trial_finished(trial_status["status"])
-                for trial_status in trials_status.values()
+                trial["status"] in TERMINAL_TRIAL_STATUSES for trial in trials.values()
             ):
-                logger.info(f"All trials for job '{job_id}' are finished.")
-                self.db.mark_job_complete(job_id)
+                final_statuses = {t["status"] for t in trials.values()}
+                if final_statuses == {TrialStatus.FAILED}:
+                    final_job_status = JobStatus.ALL_FAIL
+                elif TrialStatus.FAILED in final_statuses:
+                    final_job_status = JobStatus.PARTIAL_FAIL
+                else:
+                    final_job_status = JobStatus.COMPLETE
+                logger.info(
+                    f"All trials for job '{job_id}' are finished "
+                    f"({final_job_status.name})."
+                )
+                self.db.mark_job_complete(job_id, final_job_status)
                 break
 
-            for trial_id, trial_status in trials_status.items():
+            for trial_id, trial_status in trials.items():
                 trial_spec = self.trialid_to_trialspec.get(trial_id)
                 display_name = trial_spec.display_name if trial_spec else trial_id
 
@@ -372,22 +410,22 @@ class ScitasJobSubmission:
                         job_id, trial_id, TrialStatus.OUTPUT_COPYING
                     )
                     trial_dir = self.local_scitas_export_workdir / job_id / trial_id
-                    recording_dir = trial_dir / trial_spec.trial_localpath.name
-                    trial_persistent_nas_dir = trial_spec.trial_persistent_nas_path
+                    recording_dir = trial_dir / trial_spec.local_path.name
+                    trial_target_output_dir = trial_spec.target_output_path
                     try:
-                        trial_persistent_nas_dir.mkdir(parents=True, exist_ok=True)
+                        trial_target_output_dir.mkdir(parents=True, exist_ok=True)
                         for name in _TRIAL_OUTPUT_SUBDIRS:
                             src = recording_dir / name
                             if src.exists():
                                 shutil.copytree(
                                     src,
-                                    trial_persistent_nas_dir / name,
+                                    trial_target_output_dir / name,
                                     dirs_exist_ok=True,
                                 )
                     except Exception as e:
                         logger.error(
                             f"Failed to copy output for trial '{display_name}' to "
-                            f"{trial_persistent_nas_dir}: {e}"
+                            f"{trial_target_output_dir}: {e}"
                         )
                         self.db.update_trial_status(
                             job_id, trial_id, TrialStatus.FAILED, error=str(e)
@@ -396,7 +434,7 @@ class ScitasJobSubmission:
                     self.db.update_trial_status(job_id, trial_id, TrialStatus.COMPLETE)
                     logger.info(
                         f"Trial '{display_name}' output copied to "
-                        f"{trial_persistent_nas_dir}."
+                        f"{trial_target_output_dir}."
                     )
                     try:
                         shutil.rmtree(trial_dir)
@@ -426,7 +464,7 @@ class ScitasJobSubmission:
 
 
 def submit_remote_postprocessing_job(
-    scitas_params: ScitasConfig,
+    scitas_params: ScitasJobParams,
     trials: list[str] | None = None,
     local_basedir: Path | None = None,
     remote_basedir: Path | None = None,
@@ -462,10 +500,6 @@ def submit_remote_postprocessing_job(
             uses all available cores, -2 all but one, etc.
         postprocess_params: Postprocessing parameters to apply to every trial.
     """
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
     if local_basedir is not None:
         local_basedir = local_basedir.expanduser()
     if remote_basedir is not None:
@@ -479,7 +513,11 @@ def submit_remote_postprocessing_job(
     if explicit_trials_given and not autodiff_roots_given:
         for entry in trials:
             trial_dir, trial_nas_dir = _parse_trial_pair(entry)
-            submission.add_trial(trial_dir.name, trial_dir, trial_nas_dir)
+            # Include the parent directory name too (not just the trial directory's
+            # own name) so trials sharing a name across experiments still display
+            # unambiguously in `view-job-status`.
+            display_name = "/".join(trial_dir.parts[-2:])
+            submission.add_trial(display_name, trial_dir, trial_nas_dir)
     elif autodiff_roots_given and not explicit_trials_given:
         submission.add_trials_by_diff(local_basedir, remote_basedir, skip_preview)
     else:
@@ -491,19 +529,35 @@ def submit_remote_postprocessing_job(
     # Add job to Firestore
     job_id = submission.add_job_to_db(scitas_params, postprocess_params)
 
-    # Create the job's and each trial's directory on the SCITAS export share before
-    # launching the dispatcher, so the two never race to create them.
-    submission.create_trial_directories(job_id)
+    # Send a heartbeat for as long as this program is alive, so the dispatcher can
+    # detect if it dies and abort the job instead of waiting on it forever.
+    heartbeat_stop = submission.start_heartbeat(job_id)
+    try:
+        # Create the job's and each trial's directory on the SCITAS export share
+        # before launching the dispatcher, so the two never race to create them.
+        submission.create_trial_directories(job_id)
 
-    # Launch dispatcher job on SCITAS to monitor the job and dispatch postprocessing
-    # jobs
-    submission.start_dispatcher_on_scitas(job_id, scitas_params)
+        # Launch dispatcher job on SCITAS to monitor the job and dispatch
+        # postprocessing jobs
+        submission.start_dispatcher_on_scitas(job_id, scitas_params)
 
-    # Copy input data to SCITAS export workdir
-    submission.copy_input_to_scitas_export(job_id, n_workers=zip_workers)
+        # Copy input data to SCITAS export workdir
+        submission.copy_input_to_scitas_export(job_id, n_workers=zip_workers)
 
-    # Wait for output to be ready and copy it to persistent NAS
-    submission.wait_to_copy_output(job_id)
+        # Wait for output to be ready and copy it to persistent NAS
+        submission.wait_to_copy_output(job_id)
+    except Exception as e:
+        # If anything here fails unexpectedly (e.g. the dispatcher never even got
+        # launched), make sure the job doesn't sit in Firestore as `PROCESSING`
+        # forever with nothing left watching it, and that its trials don't stay
+        # stuck showing a stale in-progress status.
+        submission.db.fail_incomplete_trials(
+            job_id, error=f"Client-side submission program crashed: {e}"
+        )
+        submission.db.mark_job_complete(job_id, JobStatus.ALL_FAIL)
+        raise
+    finally:
+        heartbeat_stop.set()
 
 
 def main() -> None:
