@@ -59,6 +59,9 @@ struct MotionStageRequest {
     MotionStageRequestType request_type;
     MotionStagePosition position;
     float velocity;
+    // Per-move acceleration (mm/s^2). 0 means "use the device-configured
+    // acceleration" (see MotionControl::move_absolute).
+    float acceleration = 0;
 };
 
 struct MotionStageResponse {
@@ -74,6 +77,11 @@ enum CalibrationScanDirection { row_by_row, column_by_column };
 struct ProgramState {
     std::atomic<bool> to_quit = false;
     std::atomic<bool> is_recording = false;
+    // Whether the current recording images the muscle camera. When false the
+    // muscle camera still free-runs (it is never TTL-triggered) but its frames
+    // are not saved -- a behavior-only recording. Set by the GUI before
+    // is_recording is raised; read by the muscle image acquirer.
+    std::atomic<bool> muscle_imaging_enabled = false;
 };
 
 struct ProgrammedStop {

@@ -1,6 +1,7 @@
 #include "recorder/common/utils.h"
 
 #include <algorithm>
+#include <cmath>
 
 uint64_t get_current_time_microseconds() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
@@ -104,6 +105,22 @@ int calculate_behavior_camera_preview_width(
     int motion_stage_y_range) {
     return behavior_camera_preview_height *
            (static_cast<float>(motion_stage_x_range) / motion_stage_y_range);
+}
+
+double compute_tracking_acceleration(
+    double fly_col_px,
+    double fly_row_px,
+    int img_cols,
+    int img_rows,
+    double accel_min,
+    double accel_max,
+    double max_accel_margin_px) {
+    double dx = fly_col_px - img_cols / 2.0;
+    double dy = fly_row_px - img_rows / 2.0;
+    double radius_px = std::sqrt(dx * dx + dy * dy);
+    double r_max = std::min(img_cols, img_rows) / 2.0 - max_accel_margin_px;
+    double frac = (r_max > 0) ? std::clamp(radius_px / r_max, 0.0, 1.0) : 1.0;
+    return accel_min + frac * (accel_max - accel_min);
 }
 
 fs::path prepare_output_folder(const fs::path &directory, bool clear_folder) {

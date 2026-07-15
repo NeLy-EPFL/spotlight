@@ -37,6 +37,18 @@ int calculate_behavior_camera_preview_width(
     int motion_stage_x_range,
     int motion_stage_y_range);
 
+// Linearly interpolate the tracking move acceleration (mm/s^2) by the fly's
+// pixel radius from the image center: accel_min at the center, accel_max at
+// radius >= min(cols, rows)/2 - max_accel_margin_px, clamped in between.
+double compute_tracking_acceleration(
+    double fly_col_px,
+    double fly_row_px,
+    int img_cols,
+    int img_rows,
+    double accel_min,
+    double accel_max,
+    double max_accel_margin_px);
+
 fs::path prepare_output_folder(const fs::path &directory, bool clear_folder);
 
 size_t get_my_thread_id_hash();

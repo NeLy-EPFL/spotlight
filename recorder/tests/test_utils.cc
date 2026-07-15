@@ -309,4 +309,48 @@ TEST(LatestFrame, RoundTripsLatestFrameData) {
     EXPECT_EQ(out.received_time, 123999u);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Position-dependent tracking acceleration                                   */
+/* -------------------------------------------------------------------------- */
+
+// 200x100 image -> center at (100, 50); r_max = min(100, 200)/2 - 10 = 40.
+constexpr int kCols = 200;
+constexpr int kRows = 100;
+constexpr double kAccelMin = 20.0;
+constexpr double kAccelMax = 250.0;
+constexpr double kMargin = 10.0;
+
+double accel_at(double col, double row) {
+    return compute_tracking_acceleration(
+        col, row, kCols, kRows, kAccelMin, kAccelMax, kMargin);
+}
+
+TEST(ComputeTrackingAcceleration, ReturnsAccelMinAtCenter) {
+    EXPECT_DOUBLE_EQ(accel_at(kCols / 2.0, kRows / 2.0), kAccelMin);
+}
+
+TEST(ComputeTrackingAcceleration, ReturnsAccelMaxAtEdgeRadius) {
+    // 40 px straight down from center reaches exactly r_max.
+    EXPECT_DOUBLE_EQ(accel_at(kCols / 2.0, kRows / 2.0 + 40.0), kAccelMax);
+}
+
+TEST(ComputeTrackingAcceleration, ClampsToAccelMaxBeyondEdgeRadius) {
+    EXPECT_DOUBLE_EQ(accel_at(kCols / 2.0, kRows / 2.0 + 80.0), kAccelMax);
+}
+
+TEST(ComputeTrackingAcceleration, InterpolatesLinearlyAtMidpoint) {
+    // Half of r_max -> halfway between accel_min and accel_max.
+    double midpoint = kAccelMin + 0.5 * (kAccelMax - kAccelMin);
+    EXPECT_DOUBLE_EQ(accel_at(kCols / 2.0, kRows / 2.0 + 20.0), midpoint);
+}
+
+TEST(ComputeTrackingAcceleration, ClampsToAccelMaxWhenMarginExceedsHalfDim) {
+    // Degenerate r_max <= 0: every position should map to accel_max.
+    EXPECT_DOUBLE_EQ(
+        compute_tracking_acceleration(
+            kCols / 2.0, kRows / 2.0, kCols, kRows, kAccelMin, kAccelMax,
+            /*max_accel_margin_px=*/100.0),
+        kAccelMax);
+}
+
 } // namespace

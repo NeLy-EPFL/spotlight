@@ -6,47 +6,68 @@ authors = [
     { name = "Sibo Wang-Chen", email = "sibo.wang@epfl.ch" }
 ]
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.13,<3.15"
 
 dependencies = [
+    # Generic numerics & CV stuff
     "opencv-python>=4.11,<5.0",
-    "pupil-apriltags>=1.0,<2.0",
-    "pylibdmtx==0.1.10",
-    "pymupdf>=1.0,<2.0",
-    "mmh3>=5.0,<6.0",
     "pillow>=11.0,<12.0",
     "numpy>=2.0,<3.0",
-    "tqdm>=4.67,<5.0",
-    "ipython>=9.0,<10.0",
-    "ipykernel>=6.29,<7.0",
-    "matplotlib>=3.10,<4.0",
-    "joblib>=1.5,<2.0",
     "pandas>=2.2,<3.0",
     "scipy>=1.15,<2.0",
-    "pytest>=8.3,<9.0",
     "scikit-learn>=1.6,<2.0",
-    "seaborn==0.13.2",
-    "ipywidgets>=8.1,<9.0",
-    "pyyaml>=6.0,<7.0",
-    "tyro==0.9.*",
-    "vidgear==0.3.4",
-    "setuptools>=78,<79",
-    "cmasher>=1.9,<2.0",
+    
+    # AprilTag generation & detection
+    "pylibdmtx==0.1.10",
+    "pupil-apriltags>=1.0,<2.0",
+    "mmh3>=5.0,<6.0",
+    "pymupdf>=1.0,<2.0",
+    
+    # Pose estimation for fly alignment & cropping
     "sleap==1.5.*",
     "sleap-nn==0.0.3",
-    "torch==2.9.*",
-    "torchvision==0.24.*",
-    "ruff==0.15.*",
+    "torch==2.12.*",
+    "torchvision==0.27.*",
+    
+    # Visualization
+    "matplotlib>=3.10,<4.0",
+    "seaborn==0.13.2",
+    "cmasher>=1.9,<2.0",
+    
+    # Packaging, logistics, logging, CLI, IO, etc.
+    "setuptools>=78,<79",
+    "tyro>=1.0,<2",
+    "loguru>=0.7",
+    "joblib>=1.5,<2.0",
+    "tqdm>=4.67,<5.0",
+    "pyyaml>=6.0,<7.0",
+    "vidgear==0.3.4",
+    
+    # Managing postprocessing jobs on remote machines (e.g., SCITAS)
+    "google-cloud-firestore>=2.28,<3.0",
+    "tabulate>=0.9,<0.10",
+]
 
-    # TODO: Remove after spotlight_tools.calibration is updated
-    # and the aruco module is fully removed
-    "svgwrite",
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "ruff>=0.15.21",
+    "ipython>=9.0,<10.0",
+    "ipykernel>=6.29,<7.0",
+    "ipywidgets>=8.1,<9.0",
 ]
 
 [project.scripts]
 fit-arena-registration = "spotlight_tools.cli.fit_arena_registration:main"
 postprocess-recording = "spotlight_tools.cli.postprocess_recording:main"
 visualize-stage-trajectory = "spotlight_tools.cli.visualize_stage_trajectory:main"
+fit-homography = "spotlight_tools.cli.fit_homography:main"
+mount-scitas-export-share = "spotlight_postprocessing_scitas.client.cli.mount_scitas_export_share:main"
+submit-remote-postprocessing-job = "spotlight_postprocessing_scitas.client.cli.submit_remote_postprocessing_job:main"
+view-job-status = "spotlight_postprocessing_scitas.client.cli.view_job_status:main"
+launch-spotlight-job-dispatcher = "spotlight_postprocessing_scitas.server.cli.launch_dispatcher:main"
+spotlight-job-dispatcher = "spotlight_postprocessing_scitas.server.cli.dispatcher:main"
+remote-postprocess-recording = "spotlight_postprocessing_scitas.server.cli.remote_postprocessing:main"
 
 [build-system]
 requires = ["setuptools>=78", "wheel"]

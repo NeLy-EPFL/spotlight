@@ -135,7 +135,12 @@ void muscle_image_acquirer(
         muscle_recording_state->latest_frame_holder->set_latest_frame_data(
             frame_data);
 
-        bool is_recording = program_state->is_recording.load();
+        // Only save muscle frames when the current recording images the
+        // muscle camera. The camera always free-runs (it is never
+        // TTL-triggered), so without this gate a behavior-only recording would
+        // save its un-excited, un-synced continuous-mode frames.
+        bool is_recording = program_state->is_recording.load() &&
+                            program_state->muscle_imaging_enabled.load();
         int num_frames_expected =
             programmed_recording_stop->num_muscle_frames_expected;
 
@@ -154,8 +159,9 @@ void muscle_image_acquirer(
             // Stop exactly on the programmed frame count: once the last
             // expected frame has been enqueued, stop recording on our own so no
             // extra frames are saved. Nothing else to do here -- the behavior
-            // acquirer notifies the GUI to finalize, and the Arduino also stops
-            // triggering the muscle camera by itself.
+            // acquirer notifies the GUI to finalize. The muscle camera keeps
+            // free-running (it is never TTL-triggered); we simply stop
+            // enqueueing its frames.
             if (num_frames_expected >= 0 &&
                 current_frame_id == num_frames_expected) {
                 reached_programmed_stop = true;
