@@ -20,9 +20,17 @@ struct FrameMetadata {
     // get_camera_timestamp_microseconds). Camera clock, not a host clock.
     uint64_t acquisition_time = 0;
     // The PCO recorder's running image number for this frame
-    // (pco::Image::getRecorderImageNumber()). Increments per acquired frame on
-    // the camera side, independent of the recorder's own frame numbering.
+    // (pco::Image::getRecorderImageNumber()). This is assigned by the host-side
+    // recorder AFTER a frame has been transferred off the camera, so it counts
+    // only frames that actually reached the host -- frames dropped on the USB3
+    // link are never numbered and leave no gap here.
     uint32_t pco_record_id = 0;
+    // The camera's per-exposure image counter (bIMAGE_COUNTER in the per-image
+    // metadata). Unlike pco_record_id, this is stamped by the sensor on every
+    // exposure, so a jump of more than one between successive delivered frames
+    // means the camera exposed frames that were dropped before reaching the
+    // recorder. Comparing the two counters localizes muscle-frame loss.
+    uint32_t camera_image_counter = 0;
 };
 
 void setup_frame_data(

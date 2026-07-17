@@ -127,6 +127,16 @@ void muscle_image_acquirer(
     // until the GUI tears the recording down.
     bool reached_programmed_stop = false;
 
+    // Track muscle frames the sensor exposed but that never reached the host
+    // (dropped on the camera link, e.g. when it negotiated USB 2.0 instead of
+    // SuperSpeed), from gaps in the per-exposure camera image counter. The
+    // running total is published so the GUI can warn at the end of the
+    // recording. Reset when a recording ends (below); the atomics are zeroed by
+    // the GUI when the next recording starts.
+    long int num_frames_missed = 0;
+    uint32_t prev_camera_image_counter = 0;
+    bool have_prev_camera_image_counter = false;
+
     while (!program_state->to_quit.load()) {
         FrameData frame_data = muscle_camera->wait_for_one_frame();
         if (frame_data.image.empty()) {
@@ -156,6 +166,23 @@ void muscle_image_acquirer(
             }
             muscle_recording_state->muscle_image_queue_cond_var.notify_one();
 
+            // Accumulate any frames dropped on the camera link (a jump of more
+            // than one in the sensor's per-exposure counter) and publish the
+            // recorded/missed totals for the GUI's end-of-recording check.
+            if (have_prev_camera_image_counter &&
+                frame_data.camera_image_counter > prev_camera_image_counter) {
+                num_frames_missed += frame_data.camera_image_counter -
+                                     prev_camera_image_counter - 1;
+            }
+            if (frame_data.camera_image_counter != 0) {
+                prev_camera_image_counter = frame_data.camera_image_counter;
+                have_prev_camera_image_counter = true;
+            }
+            muscle_recording_state->num_muscle_frames_recorded.store(
+                current_frame_id);
+            muscle_recording_state->num_muscle_frames_missed.store(
+                num_frames_missed);
+
             // Stop exactly on the programmed frame count: once the last
             // expected frame has been enqueued, stop recording on our own so no
             // extra frames are saved. Nothing else to do here -- the behavior
@@ -174,6 +201,13 @@ void muscle_image_acquirer(
             // counter so that the next recording session starts at 0
             current_frame_id = 0;
             reached_programmed_stop = false;
+            // Reset the per-recording drop tracking. The published atomics keep
+            // the just-finished recording's totals (so the GUI can read them at
+            // end of recording); the GUI zeroes them when the next recording
+            // starts.
+            num_frames_missed = 0;
+            prev_camera_image_counter = 0;
+            have_prev_camera_image_counter = false;
         }
     }
 }
@@ -252,12 +286,13 @@ void muscle_image_saver(
             spdlog::error(
                 "Failed to open metadata file: {}", metadata_path.c_str());
         } else {
-            metadata_file
-                << "frame_id,acquired_time_us,received_time_us,pco_record_id\n";
+            metadata_file << "frame_id,acquired_time_us,received_time_us,pco_"
+                             "record_id,camera_image_counter\n";
             metadata_file << frame_data.frame_id << ","
                           << frame_data.acquisition_time << ","
                           << frame_data.received_time << ","
-                          << frame_data.pco_record_id << "\n";
+                          << frame_data.pco_record_id << ","
+                          << frame_data.camera_image_counter << "\n";
             metadata_file.close();
         }
 

@@ -23,6 +23,13 @@ struct MuscleRecordingState {
     std::mutex muscle_image_queue_mutex;
     std::condition_variable muscle_image_queue_cond_var;
     std::shared_ptr<LatestFrame> latest_frame_holder;
+    // Number of muscle frames enqueued so far in the current recording, and how
+    // many the sensor exposed but that never reached the host (dropped on the
+    // camera link). Published by the acquirer and read by the GUI at the end of
+    // the recording to warn if muscle frames were missed. The GUI zeroes both
+    // when a recording starts.
+    std::atomic<long> num_muscle_frames_recorded{0};
+    std::atomic<long> num_muscle_frames_missed{0};
 };
 
 class MuscleCameraROI {

@@ -40,6 +40,14 @@ confirm() {
     fi
 }
 
+# Echo the root-hub link speed (Mbps) of the port whose 'disable' file is $1.
+# Used to bring the SuperSpeed port up before its slower USB 2.0 companion.
+port_link_speed() {
+    local port_dir
+    port_dir="$(dirname "$1")"
+    cat "$(readlink -f "$port_dir")/../../speed" 2>/dev/null || echo 0
+}
+
 reset_behavior_cam() {
     require lspci
 
@@ -99,30 +107,74 @@ reset_muscle_cam() {
         hub_iface="${bus}-0:1.0"
         port_obj="usb${bus}-port${port}"
     fi
-    disable_file="/sys/bus/usb/devices/${hub_iface}/${port_obj}/disable"
+    port_dir="/sys/bus/usb/devices/${hub_iface}/${port_obj}"
+    disable_file="${port_dir}/disable"
 
     if [[ ! -f "$disable_file" ]]; then
         die "Port disable control not found at ${disable_file}."
     fi
 
-    confirm "Ready to disable/re-enable USB port (bus=${bus}, device=${devnum}, port=${port}) via ${disable_file}."
+    # A USB3 receptacle exposes the SuperSpeed link and its USB 2.0 companion as
+    # two separate port objects that are each other's 'peer'. Disabling only the
+    # port the device currently sits on leaves the peer enabled, so the
+    # still-connected camera immediately re-enumerates on the peer -- and a
+    # SuperSpeed device that lands on its USB 2.0 companion gets stuck at
+    # 480 Mbps, which is too slow to transfer every muscle frame (~70% are then
+    # dropped on the link). To force a clean re-enumeration that re-trains
+    # SuperSpeed -- like a physical replug -- disable BOTH the port and its peer
+    # during the off window, then re-enable both.
+    disable_files=("$disable_file")
+    peer_dir=$(readlink -f "${port_dir}/peer" 2>/dev/null || true)
+    if [[ -n "$peer_dir" && -f "${peer_dir}/disable" ]]; then
+        disable_files+=("${peer_dir}/disable")
+        echo "Cycling port ${port_obj} and its companion $(basename "$peer_dir")."
+    else
+        echo "Warning: no peer (USB 2.0 companion) port found; cycling only" \
+             "${port_obj}. The device may re-enumerate at USB 2.0 speed." >&2
+    fi
 
-    # Safety net: if interrupted before re-enable, restore the port on exit.
-    # Installed *before* the disabling write so that an interrupt (or a partial
-    # write) in between cannot leave the port stuck disabled; re-enabling a port
-    # that was never disabled is a harmless no-op.
-    trap 'echo "Restoring port..."; echo 0 | sudo tee "$disable_file" >/dev/null 2>&1 || true' EXIT
+    # Re-enable SuperSpeed first. A USB3 device only trains SuperSpeed if its SS
+    # port is live before it can fall back to the (slower) USB 2.0 companion. If
+    # the companion came up first the still-connected camera would enumerate at
+    # 480 Mbps and never re-train SuperSpeed -- exactly the failure we are fixing
+    # (and the reason this matters most when resetting an already-downgraded
+    # camera, where the found port IS the USB 2.0 one). Order the re-enable by
+    # descending root-hub link speed so the SuperSpeed port is restored first.
+    mapfile -t reenable_files < <(
+        for f in "${disable_files[@]}"; do
+            echo "$(port_link_speed "$f") $f"
+        done | sort -rn | awk '{print $2}')
 
-    echo "Disabling port..."
-    echo 1 | sudo tee "$disable_file" > /dev/null || die "Failed to disable port."
+    confirm "Ready to disable/re-enable the USB port(s) for bus=${bus} device=${devnum} port=${port} (and its USB 2.0 companion) so the camera re-trains SuperSpeed."
+
+    # Safety net: restore every port we touch on exit, SuperSpeed first. Installed
+    # *before* the disabling writes so that an interrupt (or a partial write) in
+    # between cannot leave a port stuck disabled; re-enabling a port that was
+    # never disabled is a harmless no-op.
+    trap 'echo "Restoring port(s)..."; for f in "${reenable_files[@]}"; do echo 0 | sudo tee "$f" >/dev/null 2>&1 || true; done' EXIT
+
+    echo "Disabling port(s)..."
+    for f in "${disable_files[@]}"; do
+        echo 1 | sudo tee "$f" > /dev/null || die "Failed to disable port ($f)."
+    done
 
     echo "Waiting ${CYCLE_DELAY}s..."
     sleep "$CYCLE_DELAY"
 
-    echo "Re-enabling port..."
-    echo 0 | sudo tee "$disable_file" > /dev/null || die "Failed to re-enable port."
+    echo "Re-enabling port(s), SuperSpeed first..."
+    first=1
+    for f in "${reenable_files[@]}"; do
+        echo 0 | sudo tee "$f" > /dev/null || die "Failed to re-enable port ($f)."
+        # Give the SuperSpeed link a moment to train before the USB 2.0
+        # companion goes live, so the device does not settle on 480 Mbps.
+        if [[ $first -eq 1 && ${#reenable_files[@]} -gt 1 ]]; then
+            sleep 1
+            first=0
+        fi
+    done
     trap - EXIT
-    echo "Done."
+    echo "Done. Verify the camera re-trained SuperSpeed (expect 5000 Mbps):"
+    echo "  for d in /sys/bus/usb/devices/*; do [ \"\$(cat \$d/idVendor 2>/dev/null)\" = 1cb2 ] && echo \"pco.panda: \$(cat \$d/speed) Mbps\"; done"
 }
 
 if [[ "${1:-}" == "behavior" ]]; then

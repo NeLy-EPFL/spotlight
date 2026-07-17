@@ -159,6 +159,23 @@ uint64_t get_camera_timestamp_microseconds(pco::Image &image) {
            static_cast<uint64_t>(seconds) * 1000000ULL + microseconds;
 }
 
+// Read the PCO camera's per-exposure image counter from the per-image metadata
+// (bIMAGE_COUNTER_BCD: 4 packed-BCD bytes, least-significant byte first). Unlike
+// getRecorderImageNumber(), which numbers frames only once they have reached the
+// host recorder, this counter is stamped by the sensor on every exposure, so a
+// jump of more than one between successive delivered frames reveals frames that
+// were exposed but dropped before reaching the host (e.g. on a USB 2.0 link).
+uint32_t get_camera_image_counter(pco::Image &image) {
+    const PCO_METADATA_STRUCT *metadata = image.getMetaDataPtr();
+    if (metadata == nullptr) {
+        return 0;
+    }
+    return decode_bcd_byte(metadata->bIMAGE_COUNTER_BCD[0]) +
+           decode_bcd_byte(metadata->bIMAGE_COUNTER_BCD[1]) * 100 +
+           decode_bcd_byte(metadata->bIMAGE_COUNTER_BCD[2]) * 10000 +
+           decode_bcd_byte(metadata->bIMAGE_COUNTER_BCD[3]) * 1000000;
+}
+
 void setup_pco_camera(
     pco::Camera &camera,
     unsigned int default_shutter_open_time_us,
@@ -438,6 +455,8 @@ void serve_frames(
         frame_metadata.acquisition_time =
             pco_camera_server::get_camera_timestamp_microseconds(pco_image);
         frame_metadata.pco_record_id = pco_image.getRecorderImageNumber();
+        frame_metadata.camera_image_counter =
+            pco_camera_server::get_camera_image_counter(pco_image);
 
         // Mutex-protected zone! Updata image buffer and frame count
         pthread_mutex_lock(mutex_ptr);

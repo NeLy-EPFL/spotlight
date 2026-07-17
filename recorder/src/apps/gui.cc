@@ -982,6 +982,10 @@ void MainGUIWindow::start_recording() {
     // Set the muscle-imaging flag before raising is_recording so the muscle
     // acquirer sees a consistent state: when muscle imaging is off the camera
     // still free-runs but its frames are not saved (behavior-only recording).
+    // Zero the muscle drop counters so the end-of-recording check reflects only
+    // this recording (the acquirer publishes into these while recording).
+    muscle_recording_state_->num_muscle_frames_recorded.store(0);
+    muscle_recording_state_->num_muscle_frames_missed.store(0);
     program_state_->muscle_imaging_enabled.store(muscle_imaging_enabled_);
     program_state_->is_recording.store(true);
 
@@ -1165,6 +1169,38 @@ void MainGUIWindow::end_recording(bool reached_programmed_end) {
         muscle_imaging_check_box_->isChecked() ? "enabled" : "disabled");
 
     current_recording_is_scheduled_ = false;
+
+    // Warn loudly if muscle frames were dropped on the camera link during this
+    // recording (a jump in the sensor's per-exposure counter). This almost
+    // always means the muscle camera's USB link negotiated USB 2.0 instead of
+    // SuperSpeed, in which case the link cannot transfer every frame and ~2/3
+    // are lost. The fix is to reset (reset-camera muscle) or replug the camera
+    // and confirm it re-trained SuperSpeed (5000 Mbps) before recording again.
+    if (muscle_imaging_enabled_) {
+        long num_missed =
+            muscle_recording_state_->num_muscle_frames_missed.load();
+        long num_recorded =
+            muscle_recording_state_->num_muscle_frames_recorded.load();
+        if (num_missed > 0) {
+            spdlog::error(
+                "{} muscle frame(s) dropped on the camera link during this "
+                "recording ({} recorded).",
+                num_missed,
+                num_recorded);
+            QMessageBox::critical(
+                this,
+                "Muscle frames dropped",
+                QString("<b style='color:red'>%1 muscle frame(s) were dropped "
+                        "during this recording</b> (%2 recorded).</p>"
+                        "<p>This almost always means the muscle camera's USB "
+                        "link negotiated USB&nbsp;2.0 instead of SuperSpeed, so "
+                        "it cannot transfer every frame. Reset the camera "
+                        "(<tt>reset-camera muscle</tt>) or replug it, confirm "
+                        "it is at 5000&nbsp;Mbps, and re-record.")
+                    .arg(static_cast<qlonglong>(num_missed))
+                    .arg(static_cast<qlonglong>(num_recorded)));
+        }
+    }
 }
 
 void MainGUIWindow::push_muscle_camera_exposure(

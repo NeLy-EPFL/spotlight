@@ -15,8 +15,14 @@ struct FrameData {
     uint64_t received_time = 0;
     // Muscle camera only: the PCO recorder's running image number for this frame
     // (pco::Image::getRecorderImageNumber()); 0 for behavior frames, which do
-    // not set it.
+    // not set it. Counts frames that reached the host recorder, so it stays
+    // gap-free even when the camera drops frames on the USB3 link.
     uint32_t pco_record_id = 0;
+    // Muscle camera only: the camera's per-exposure image counter (bIMAGE_COUNTER
+    // metadata); 0 for behavior frames. A gap larger than one between successive
+    // delivered muscle frames counts frames the sensor exposed but that were
+    // dropped before reaching the recorder.
+    uint32_t camera_image_counter = 0;
     cv::Mat image;
 };
 
