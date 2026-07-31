@@ -24,8 +24,8 @@ dependencies = [
     "pymupdf>=1.0,<2.0",
     
     # Pose estimation for fly alignment & cropping
-    "sleap==1.5.*",
-    "sleap-nn==0.0.3",
+    "sleap[nn]==1.6.3",
+    "sleap-nn==0.2.0",
     "torch==2.12.*",
     "torchvision==0.27.*",
     
