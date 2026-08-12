@@ -1,605 +1,293 @@
-"""
-Visualization utilities for post-processed recordings:
-
-generate_summary_video
-    Compose an MP4 showing behavior frames, optional 2-D pose skeleton,
-    and optional muscle frames side-by-side.
-generate_overlay_samples
-    Save a set of PNG overlay images showing muscle warped onto behavior
-    for random subsets of frames (useful for visual QC).
-visualize_stage_trajectory
-    Plot the XY stage path over the recording as a coloured line.
-draw_2dpose_on_single_frame
-    Draw SLEAP keypoints and limbs on a single frame array.
+"""5-panel QA visualization for one postprocessed recording, cv2/pvio only
+(no matplotlib): raw+orient-box overlay, cropped+aligned (blank if flipped),
+muscle (if requested), pose2d skeleton overlay (if requested), synthetic 3D
+IK panel (if requested). Every panel is resized to a common height and
+horizontally concatenated. Reads back already-computed outputs (video files,
+muscle H5, pose2d H5, IK/FK H5) -- no model re-inference here, that already
+happened in `behavior.process_behavior_pipeline`.
 """
 
+import json
 import logging
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import h5py
 import numpy as np
 import pandas as pd
-import cv2
-import matplotlib.pyplot as plt
-import h5py
-from tempfile import TemporaryDirectory
-from matplotlib.figure import Figure
-from matplotlib.axes import Axes
-from matplotlib.colors import Normalize
-from matplotlib.collections import LineCollection
-from matplotlib import colormaps
-from pathlib import Path
-from joblib import Parallel, delayed
-
-from spotlight_tools.common.video import get_video_info, get_video_writer
-from spotlight_tools.postprocessing.io import find_files_per_frame_by_suffix
-from spotlight_tools.postprocessing.muscle import (
-    get_behavior_muscle_sync_ratio,
+from spotlight_tools.common.video import StreamingVideoWriter
+from spotlight_tools.spotlight_orient.box import raw_domain_box_corners
+from spotlight_tools.spotlight_pose2d.viz import (
+    build_edge_colors,
+    build_node_colors,
+    draw_pose,
 )
 
+VISUALIZATION_HEIGHT = 450
+FLIP_DECISION_THRESHOLD = 0.5
+YELLOW = (0, 255, 255)  # BGR
+GRAY = (128, 128, 128)
+WHITE = (255, 255, 255)
 
-def _nearest_muscle_frameid(behavior_frameid, corr_behavior_ids, muscle_frame_ids):
-    """Muscle frame whose corresponding behavior frame is nearest ``behavior_frameid``.
-
-    ``corr_behavior_ids`` are the muscle metadata's drop-aware
-    corresponding_behavior_frame_id values (sorted ascending) and ``muscle_frame_ids``
-    the matching muscle ids. Using these anchors rather than ``behavior_frameid //
-    sync_ratio`` keeps the mapping correct across mid-recording dropped muscle frames.
-    """
-    pos = int(np.searchsorted(corr_behavior_ids, behavior_frameid))
-    if pos <= 0:
-        j = 0
-    elif pos >= len(corr_behavior_ids):
-        j = len(corr_behavior_ids) - 1
-    elif (corr_behavior_ids[pos] - behavior_frameid) < (
-        behavior_frameid - corr_behavior_ids[pos - 1]
-    ):
-        j = pos
-    else:
-        j = pos - 1
-    return int(muscle_frame_ids[j])
+_IK_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts" / "spotlight_ik"
 
 
-def visualize_stage_trajectory(
-    behavior_frame_metadata_path: Path, output_path: Path | None = None
-) -> tuple[Figure, Axes]:
-    """Create a matplotlib figure showing the XY trajectory of the stage.
+def _round_to_multiple(value: int, multiple: int = 16) -> int:
+    return max(multiple, int(round(value / multiple)) * multiple)
 
-    The trajectory is colored by time (seconds) starting at 0. The function
-    returns the created (fig, ax) so callers can further customize or save
-    the figure.
 
-    Args:
-        behavior_frame_metadata_path (Path): Path to CSV file containing at
-            least the columns `x_pos_mm_interp`, `y_pos_mm_interp` and
-            `received_time_us` used to plot the trajectory and color by time.
-        output_path (Path | None): Optional path to save the figure.
-
-    Returns:
-        tuple[Figure, Axes]: The matplotlib Figure and Axes containing the plot.
-    """
-    behavior_frame_metadata_df = pd.read_csv(behavior_frame_metadata_path)
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.set_title("Stage position trajectory")
-    ax.set_xlabel("X Position (mm)")
-    ax.set_ylabel("Y Position (mm)")
-    ax.set_aspect("equal", adjustable="box")
-
-    x_pos = behavior_frame_metadata_df["x_pos_mm_interp"].values
-    y_pos = behavior_frame_metadata_df["y_pos_mm_interp"].values
-
-    points = np.array([x_pos, y_pos]).T.reshape(-1, 1, 2)
-    segments = np.concatenate([points[:-1], points[1:]], axis=1)
-
-    colormap_name = "gnuplot"
-    cmap = colormaps[colormap_name]
-
-    times = behavior_frame_metadata_df["received_time_us"].values / 1e6  # us->s
-    times = times - times[0]  # normalize to start at 0
-    norm = Normalize(vmin=times.min(), vmax=times.max())
-    lc = LineCollection(segments, cmap=cmap, norm=norm)
-
-    lc.set_array(times[:-1])
-    lc.set_linewidth(2)
-    line = ax.add_collection(lc)
-
-    cbar = fig.colorbar(line, ax=ax)
-    cbar.set_label("Time (s)")
-    ax.grid(True, linestyle="--", alpha=0.7)
-
-    margin_x = 0.05 * (x_pos.max() - x_pos.min())
-    margin_y = 0.05 * (y_pos.max() - y_pos.min())
-    margin = max(margin_x, margin_y)
-    ax.set_xlim(x_pos.min() - margin, x_pos.max() + margin)
-    ax.set_ylim(y_pos.min() - margin, y_pos.max() + margin)
-
-    if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(output_path, dpi=300)
-
-    return fig, ax
+def _resize_to_height(frame: np.ndarray, height: int) -> np.ndarray:
+    h, w = frame.shape[:2]
+    new_w = _round_to_multiple(round(w * height / h))
+    return cv2.resize(frame, (new_w, height))
 
 
 def generate_summary_video(
-    behavior_video_path: Path,
+    *,
+    recording_dir: Path,
+    postprocessed_dir: Path,
+    alignment: str,
+    with_muscle: bool,
+    with_pose2d: bool,
+    with_ik: bool,
+    aligned_video_path: Path | None,
+    fullsize_video_path: Path | None,
+    flipped_prob: np.ndarray | None,
+    muscle_h5_path: Path | None,
+    muscle_dataset_name: str | None,
+    pose2d_h5_path: Path | None,
+    pose2d_skeleton_json_path: Path | None,
+    ikfk_h5_path: Path | None,
     output_path: Path,
-    with_muscle: bool,
-    draw_2dpose: bool = True,
-    muscle_images_dir: Path | None = None,
-    muscle_metadata_path: Path | None = None,
-    experiment_parameters_path: Path | None = None,
-    pose_2d_path: Path | None = None,
-    muscle_vrange: tuple[int, int] | None = None,
-    muscle_vrange_quantiles: tuple[float, float] | None = (97.0, 99.995),
-    muscle_vrange_quantiles_sample_rate: float = 0.05,
-    play_fps: int = 33,
-    avg_chunks_per_worker: int = 10,
-    crf: int = 17,
-    preset: str = "slow",
-    max_num_frames: int | None = None,
+    muscle_vrange: tuple[int, int] | None,
+    play_fps: float,
+    crf: int,
+    preset: str | None,
+    max_frames: int | None = None,
 ) -> None:
-    """Generate a summary video combining behavior frames, predicted pose overlaid on
-    behavior frames, and muscle images.
-
-    Args:
-        behavior_video_path (Path): Path to the aligned behavior video file.
-        output_path (Path): Path where the summary video will be saved.
-        with_muscle (bool): Whether to include muscle image panels in the output. If
-            True, `muscle_images_dir` and `experiment_parameters_path` must be
-            provided.
-        draw_2dpose (bool): Whether to draw 2D pose on the behavior frames. If
-            `align_fly` was False during upstream processing, this must be False. If
-            True, `pose_2d_path` must be provided. Default: True.
-        muscle_images_dir (Path | None): Directory containing processed muscle images.
-        experiment_parameters_path (Path | None): Path to the experiment parameters
-            metadata generated by the Spotlight recording software.
-        pose_2d_path (Path | None): Path to 2D pose estimation results (HDF5 format).
-        muscle_vrange (tuple[int, int] | None): Optional (vmin, vmax) for muscle
-            image normalization. If None, computed adaptively.
-        muscle_vrange_quantiles (tuple[float, float] | None): Percentiles for adaptive
-            muscle range computation. For each sampled muscle image, these quantiles
-            will be computed.
-        muscle_vrange_quantiles_sample_rate (float): Fraction of muscle images to sample
-            for range computation if muscle_vrange is None.
-        play_fps (int): Frame rate for the output summary video. This is for
-            visualization only and has no impact on the actual data (see
-            `scripts.postprocess_recording.postprocess_recording_data`).
-        avg_chunks_per_worker (int): Average number of frame chunks per parallel worker.
-            Too small a value may lead to inefficient video read (many seeks). Too large
-            a value may lead to imbalanced workload across workers.
-        crf (int): Constant Rate Factor for video encoding quality. Lower is better.
-            17-23 are reasonable values for visualization.
-        preset (str): ffmpeg preset for encoding speed vs compression. Slower = more
-            space-efficient compression.
-        max_num_frames (int | None): Optional limit on number of frames to process
-            (for testing). If None, process all frames.
-    """
     logger = logging.getLogger(__name__)
+    show_aligned = alignment in ("aligned", "both")
 
-    # Get behavior-muscle sync ratio
-    sync_ratio = None
+    # Every pseudo-BGR file packs 3 consecutive monochrome behavior frames
+    # (see behavior.py); n_frames counts the real, expanded frames.
+    raw_paths = sorted((recording_dir / "behavior_images").glob("behavior_frame_*.jpg"))
+    n_frames = len(raw_paths) * 3
+    if max_frames is not None:
+        n_frames = min(n_frames, max_frames)
+    _raw_cache_path_idx, _raw_cache_channels = None, None
+
+    def _raw_frame(i: int) -> np.ndarray:
+        nonlocal _raw_cache_path_idx, _raw_cache_channels
+        path_idx, channel = divmod(i, 3)
+        if path_idx != _raw_cache_path_idx:
+            image = cv2.imread(str(raw_paths[path_idx]))
+            _raw_cache_channels = cv2.split(image)
+            _raw_cache_path_idx = path_idx
+        return _raw_cache_channels[channel]
+
+    aligned_cap = cv2.VideoCapture(str(aligned_video_path)) if show_aligned else None
+
+    keypoints_pre = flipped = None
+    canonical_points = None
+    alignment_metadata_path = postprocessed_dir / "behavior_alignment_transforms.h5"
+    if show_aligned and alignment_metadata_path.exists():
+        with h5py.File(alignment_metadata_path, "r") as f:
+            keypoints_pre = f["keypoints_xy_pre_alignment"][:n_frames]
+            keypoints_post = f["keypoints_xy_post_alignment"][:n_frames]
+            if flipped_prob is None:
+                flipped = f["flipped_prob"][:n_frames]
+        canonical_points = np.nanmean(keypoints_post, axis=0)
+    if flipped_prob is not None:
+        flipped = flipped_prob
+
+    pose2d_data = node_names = edges = point_colors = edge_colors = None
+    if with_pose2d:
+        with h5py.File(pose2d_h5_path, "r") as f:
+            pose2d_data = f["poses"][:n_frames]
+            node_names = [str(n) for n in f.attrs["node_names"]]
+        skeleton = json.loads(pose2d_skeleton_json_path.read_text())
+        name_to_idx = {name: i for i, name in enumerate(node_names)}
+        edges = [
+            (name_to_idx[a], name_to_idx[b])
+            for a, b in skeleton["edges"]
+            if a in name_to_idx and b in name_to_idx
+        ]
+        # `build_node_colors`/`build_edge_colors` return RGB tuples (see
+        # `spotlight_pose2d.viz`'s own docstring: designed for pvio's pure-RGB
+        # pipeline, "used as-is with no channel reordering"). This pipeline's
+        # canvases go through `cv2.imwrite` (BGR) inside `StreamingVideoWriter`
+        # before pvio ever sees them, so they need reversing here to render
+        # with the same colors as poseforge2's own IK/pose2d QA videos.
+        point_colors = [c[::-1] for c in build_node_colors(node_names)]
+        edge_colors = [c[::-1] for c in build_edge_colors(edges, node_names)]
+
+    ik_periods_by_frame = {}
+    th_idx_ik = None
+    thc_idxs = None
+    if with_ik and ikfk_h5_path is not None and ikfk_h5_path.exists():
+        sys.path.insert(0, str(_IK_SCRIPTS_DIR))
+        from make_videos import (  # noqa: E402
+            compute_camera_orientation,
+            compute_grid_lines,
+            draw_fk_3d_panel,
+            draw_grid_floor,
+            project_relative_to_panel,
+        )
+        from spotlight_tools.spotlight_ik.io_utils import load_ikfk_h5
+
+        ik_data = load_ikfk_h5(ikfk_h5_path)
+        ik_node_names = ik_data["node_names"]
+        for period in ik_data["periods"]:
+            for local_i, frame_idx in enumerate(
+                range(period.start_idx, period.end_idx)
+            ):
+                ik_periods_by_frame[frame_idx] = (period, local_i)
+        ik_name_to_idx = {name: i for i, name in enumerate(ik_node_names)}
+        th_idx_ik = ik_name_to_idx.get("Th")
+        thc_idxs = tuple(
+            ik_name_to_idx.get(n) for n in ("LF_ThC", "RF_ThC", "LH_ThC", "RH_ThC")
+        )
+
+    muscle_dataset = muscle_meta = muscle_file = None
     if with_muscle:
-        sync_ratio = get_behavior_muscle_sync_ratio(
-            experiment_parameters_path=experiment_parameters_path
-        )
-        logger.info(f"Behavior to muscle frame sync ratio: {sync_ratio}.")
-
-    # Index files to be used
-    behavior_width, behavior_height, behavior_num_frames = get_video_info(
-        behavior_video_path
-    )
-    if max_num_frames is not None:
-        behavior_num_frames = min(behavior_num_frames, max_num_frames)
-    muscle_id_to_path = None
-    muscle_corr_behavior_ids = None
-    muscle_frame_ids = None
-    if with_muscle:
-        muscle_id_to_path = find_files_per_frame_by_suffix(muscle_images_dir, ".tif")
-        # Behavior->muscle mapping comes from the muscle metadata's drop-aware
-        # corresponding_behavior_frame_id (see muscle.py), not from behavior // sync_ratio,
-        # so it stays correct across any mid-recording dropped muscle frame.
-        if muscle_metadata_path is None:
-            raise ValueError(
-                "muscle_metadata_path is required when with_muscle=True."
-            )
-        muscle_metadata_df = pd.read_csv(muscle_metadata_path).sort_values(
-            "corresponding_behavior_frame_id"
-        )
-        muscle_corr_behavior_ids = muscle_metadata_df[
-            "corresponding_behavior_frame_id"
-        ].to_numpy()
-        muscle_frame_ids = muscle_metadata_df["muscle_frame_id"].to_numpy()
-
-    # Check if nominal width of image is incorrect
-    if with_muscle:
-        _muscle_img_sample = cv2.imread(
-            str(list(muscle_id_to_path.values())[0]), cv2.IMREAD_UNCHANGED
-        )
-        assert len(_muscle_img_sample.shape) == 2, "Muscle image is not single channel"
-        muscle_width = _muscle_img_sample.shape[1]
-        if muscle_width != behavior_width:
-            logger.warning(
-                f"Behavior images have a width of {behavior_width} pixels, but "
-                f"muscle images have a width of {muscle_width} pixels. This is likely "
-                f"because the user set the desired ROI height is not allowed by the "
-                f"camera, so the camera rounded it to the nearest allowed value. (Note: "
-                f"the canonically oriented behavior images is 90-degree rotated and "
-                f"flipped compared to how the camera sensor acquires them; hence it's "
-                f"the ROI height parameter that matters. Taking the lower of the widths."
-            )
-            behavior_width = min(behavior_width, muscle_width)
-
-    # If necessary, determine vmin and vmax of muscle images for visualization
-    if with_muscle and muscle_vrange is None:
-        muscle_images_paths = sorted(list(muscle_images_dir.glob("*.tif")))
-        muscle_vrange = _determine_adaptive_muscle_vrange(
-            muscle_vrange_quantiles,
-            muscle_vrange_quantiles_sample_rate,
-            muscle_images_paths,
-        )
-        logger.info(f"Determined adaptive muscle value range: {muscle_vrange}.")
-
-    # Load 2D pose estimation data
-    if draw_2dpose:
-        with h5py.File(pose_2d_path, "r") as f:
-            # pose_2d_data: (num_frames, num_keypoints, 2)
-            pose_2d_data = f["keypoints_xy_post_alignment"][:]
-
-    # Generate summary video frames
-    with TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-        logger.info(f"Generating summary video frames in temporary directory {tmpdir}")
-
-        # Use higher verbosity because total number of jobs is much lower than usual
-        parallel_mapper = Parallel(
-            n_jobs=-1, backend="loky", verbose=8 if logger.level <= logging.INFO else 0
-        )
-        effective_n_workers = parallel_mapper._effective_n_jobs()
-        n_chunks = avg_chunks_per_worker * effective_n_workers
-        chunk_size = (behavior_num_frames + n_chunks - 1) // n_chunks
-
-        # Generate list of kwargs for parallel processing
-        input_kwargs = []
-        for chunk_start in range(0, behavior_num_frames, chunk_size):
-            chunk_end = min(chunk_start + chunk_size, behavior_num_frames)
-            chunk_behavior_frameids = list(range(chunk_start, chunk_end))
-            if draw_2dpose:
-                pose2d_data = pose_2d_data[chunk_behavior_frameids, :, :]
-            else:
-                pose2d_data = None
-            input_kwargs.append(
-                {
-                    "behavior_video_path": behavior_video_path,
-                    "behavior_frameids": chunk_behavior_frameids,
-                    "behavior_shape": (behavior_height, behavior_width),
-                    "output_dir": tmpdir,
-                    "with_muscle": with_muscle,
-                    "draw_2dpose": draw_2dpose,
-                    # drop-aware behavior->muscle anchors (None if not with_muscle)
-                    "muscle_corr_behavior_ids": muscle_corr_behavior_ids,
-                    "muscle_frame_ids": muscle_frame_ids,
-                    "muscle_id_to_path": muscle_id_to_path,  # already None if n/a
-                    "muscle_vrange": muscle_vrange,  # already None if n/a
-                    "pose_2d_data": pose2d_data,  # already None if not draw_2dpose
-                }
+        muscle_file = h5py.File(muscle_h5_path, "r")
+        muscle_dataset = muscle_file[muscle_dataset_name]
+        muscle_meta = pd.read_csv(postprocessed_dir / "muscle_frames_metadata.csv")
+        if muscle_vrange is None:
+            sample = muscle_dataset[:: max(1, len(muscle_dataset) // 50)]
+            nonzero = sample[sample > 0]
+            muscle_vrange = (
+                (int(np.percentile(nonzero, 50)), int(np.percentile(nonzero, 99)))
+                if nonzero.size
+                else (0, 65535)
             )
 
-        # Run parallel processing
-        logger.info(
-            f"Generating summary video frames using {effective_n_workers} workers, "
-            f"in {n_chunks} chunks of ~{chunk_size} frames each"
-        )
-        parallel_mapper(
-            delayed(_draw_summary_video_frames)(**kwargs) for kwargs in input_kwargs
-        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    writer = StreamingVideoWriter(output_path, play_fps, crf, preset)
+    t_render = time.perf_counter()
+    for i in range(n_frames):
+        panels = []
+        raw_bgr = cv2.cvtColor(_raw_frame(i), cv2.COLOR_GRAY2BGR)
 
-        # Write video
-        logger.info(f"Writing summary video to {output_path} at {play_fps} FPS")
-        video_writer = get_video_writer(
-            output_path,
-            play_fps,
-            crf=crf,
-            preset=preset,
-            logging=logger.level <= logging.INFO,
-        )
-        frame_paths = sorted(
-            list(tmpdir.glob("summary_video_frame_*.jpg")),
-            key=lambda path: int(path.stem.split("_")[-1]),
-        )
-        for path in frame_paths:
-            frame = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-            video_writer.write(frame)
-        video_writer.close()
+        is_flipped = flipped is not None and flipped[i] >= FLIP_DECISION_THRESHOLD
+        if show_aligned and canonical_points is not None and keypoints_pre is not None:
+            corners = raw_domain_box_corners(keypoints_pre[i], canonical_points)
+            if corners is not None:
+                color = GRAY if is_flipped else YELLOW
+                cv2.polylines(
+                    raw_bgr, [corners.astype(np.int32)], True, color, 4, cv2.LINE_AA
+                )
+        panels.append(_resize_to_height(raw_bgr, VISUALIZATION_HEIGHT))
 
-
-def _draw_summary_video_frames(
-    behavior_video_path: Path,
-    behavior_frameids: list[int],
-    behavior_shape: tuple[int, int],
-    output_dir: Path,
-    with_muscle: bool,
-    draw_2dpose: bool = True,
-    muscle_corr_behavior_ids: np.ndarray | None = None,
-    muscle_frame_ids: np.ndarray | None = None,
-    muscle_id_to_path: dict[int, Path] | None = None,
-    muscle_vrange: tuple[int, int] | None = None,
-    pose_2d_data: np.ndarray | None = None,
-):
-    logger = logging.getLogger(__name__)
-
-    # Initialize canvas
-    num_panels = 1
-    if draw_2dpose:
-        num_panels += 1
-    if with_muscle:
-        num_panels += 1
-    panel_width = behavior_shape[1]
-    canvas_width = panel_width * num_panels
-    canvas_height = behavior_shape[0]
-    canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
-
-    # Initialize behavior video reader
-    video_reader = cv2.VideoCapture(str(behavior_video_path))
-    if not video_reader.isOpened():
-        logger.error(f"Error: Could not open behavior video {behavior_video_path}.")
-        raise RuntimeError("Could not open behavior video.")
-    assert all(
-        behavior_frameids[i] + 1 == behavior_frameids[i + 1]
-        for i in range(len(behavior_frameids) - 1)
-    ), "behavior_frameids must be consecutive for efficient video reading."
-    video_reader.set(cv2.CAP_PROP_POS_FRAMES, behavior_frameids[0])
-
-    # Buffer for current muscle image (not updated every behavior frame)
-    _current_muscle_frameid = None
-    _current_muscle_image = None
-
-    # Generate frames
-    for i, behavior_frameid in enumerate(behavior_frameids):
-        ret, behavior_image = video_reader.read()
-        if not ret:
-            logger.error(
-                f"Failed to read frame {behavior_frameid} from behavior video."
+        aligned_frame = None
+        if show_aligned:
+            ok, aligned_frame = aligned_cap.read()
+            if not ok:
+                aligned_frame = np.zeros_like(panels[0])
+            # Panel 2 blanks specifically for flipped frames (display-only
+            # flag); the underlying crop stays available in `aligned_frame`
+            # for panel 4's background below, since pose2d itself ran on the
+            # real best-effort crop regardless of flip status.
+            display_aligned_frame = (
+                np.zeros_like(aligned_frame) if is_flipped else aligned_frame
             )
-            raise RuntimeError("Failed to read behavior frame.")
-        behavior_image = behavior_image[:, :, 0]
+            panels.append(
+                _resize_to_height(display_aligned_frame, VISUALIZATION_HEIGHT)
+            )
 
-        # Plot behavior frame
-        canvas[:, :panel_width, :] = behavior_image[:, :, None]
-        curr_col_start = panel_width
-
-        # Plot behavior frame with pose overlay
-        if draw_2dpose:
-            behavior_with_pose = np.repeat(behavior_image[:, :, None], 3, axis=2)
-            draw_2dpose_on_single_frame(behavior_with_pose, pose_2d_data[i, :, :])
-            col_slice = slice(curr_col_start, curr_col_start + panel_width)
-            canvas[:, col_slice, :] = behavior_with_pose
-            curr_col_start += panel_width
-
-        # Plot muscle image (if requested)
         if with_muscle:
-            assert muscle_corr_behavior_ids is not None
-            assert muscle_vrange is not None
-            # Nearest muscle frame by the drop-aware corresponding_behavior_frame_id
-            # anchors (see muscle.py), so a mid-recording dropped muscle frame does not
-            # offset the overlay for the rest of the recording.
-            muscle_frameid = _nearest_muscle_frameid(
-                behavior_frameid, muscle_corr_behavior_ids, muscle_frame_ids
+            matches = muscle_meta.index[
+                muscle_meta["corresponding_behavior_frame_id"] <= i
+            ]
+            if len(matches) > 0:
+                muscle_img = muscle_dataset[int(matches[-1])]
+                norm = np.clip(
+                    (muscle_img.astype(np.float32) - muscle_vrange[0])
+                    / max(1, muscle_vrange[1] - muscle_vrange[0]),
+                    0, 1,
+                )  # fmt: skip
+                muscle_bgr = cv2.cvtColor(
+                    (norm * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR
+                )
+            else:
+                muscle_bgr = np.zeros_like(panels[0])
+            panels.append(_resize_to_height(muscle_bgr, VISUALIZATION_HEIGHT))
+
+        period_info = ik_periods_by_frame.get(i)
+        if with_pose2d:
+            pose_panel = (
+                aligned_frame.copy()
+                if aligned_frame is not None
+                else np.zeros(
+                    (VISUALIZATION_HEIGHT, VISUALIZATION_HEIGHT, 3), dtype=np.uint8
+                )
             )
-            if muscle_frameid != _current_muscle_frameid:
-                _current_muscle_frameid = muscle_frameid
-                if muscle_frameid not in muscle_id_to_path:
-                    logger.warning(
-                        f"Muscle frame ID {muscle_frameid} not found. Skipping."
-                    )
-                    _current_muscle_image = np.zeros(behavior_shape, dtype=np.uint8)
-                else:
-                    muscle_image_path = muscle_id_to_path[muscle_frameid]
-                    muscle_image = cv2.imread(
-                        str(muscle_image_path), cv2.IMREAD_UNCHANGED
-                    )
-                    muscle_image_norm = (
-                        muscle_image.astype(np.float32) - muscle_vrange[0]
-                    ) / (muscle_vrange[1] - muscle_vrange[0])
-                    muscle_image_norm = np.clip(muscle_image_norm, 0, 1)
-                    _current_muscle_image = (muscle_image_norm * 255.0).astype(np.uint8)
-            col_slice = slice(curr_col_start, curr_col_start + panel_width)
-            canvas[:, col_slice, 1] = _current_muscle_image  # green channel
+            raw_points = pose2d_data[i].copy()
+            if with_ik and period_info is not None:
+                period, local_i = period_info
+                draw_pose(
+                    pose_panel,
+                    raw_points,
+                    edges,
+                    [WHITE] * len(edges),
+                    [WHITE] * len(node_names),
+                )
+                draw_pose(
+                    pose_panel,
+                    period.fk_2d_px[local_i],
+                    edges,
+                    edge_colors,
+                    point_colors,
+                )
+            else:
+                draw_pose(pose_panel, raw_points, edges, edge_colors, point_colors)
+            panels.append(_resize_to_height(pose_panel, VISUALIZATION_HEIGHT))
 
-        # Write frame to disk
-        output_path = output_dir / f"summary_video_frame_{behavior_frameid:06d}.jpg"
-        cv2.imwrite(str(output_path), canvas)
+        if with_ik:
+            panel_3d = np.zeros(
+                (VISUALIZATION_HEIGHT, VISUALIZATION_HEIGHT, 3), dtype=np.uint8
+            )
+            if (
+                period_info is not None
+                and th_idx_ik is not None
+                and all(idx is not None for idx in thc_idxs)
+            ):
+                period, local_i = period_info
+                fk_3d_mm_frame = period.fk_3d_mm[local_i]
+                right_axis, up_axis, view_dir = compute_camera_orientation(
+                    fk_3d_mm_frame, thc_idxs
+                )
+                draw_grid_floor(
+                    panel_3d,
+                    compute_grid_lines(right_axis, up_axis, VISUALIZATION_HEIGHT),
+                )
+                centered = fk_3d_mm_frame - fk_3d_mm_frame[th_idx_ik]
+                points_2d = project_relative_to_panel(
+                    centered, right_axis, up_axis, VISUALIZATION_HEIGHT
+                )
+                depths = centered @ view_dir
+                draw_fk_3d_panel(
+                    panel_3d, points_2d, depths, edges, edge_colors, point_colors
+                )
+            panels.append(panel_3d)
 
-    video_reader.release()
-
-
-def draw_2dpose_on_single_frame(
-    image,
-    nodes_xy,
-    keypoint_colors=[(31, 119, 180), (255, 127, 14), (44, 160, 44)],
-    keypoint_radius=10,
-    line_color=(128, 128, 128),
-    line_width=4,
-):
-    """
-    Draws a fly skeleton with 3 keypoints (neck, thorax, abdomen) on the given image.
-
-    Args:
-        image (np.ndarray): The image on which to draw the skeleton.
-        nodes_xy (np.ndarray): An array of shape (3, 2) containing the (x, y)
-            coordinates of the 3 keypoints.
-        keypoint_colors (list of tuple, optional): List of RGB colors for each keypoint.
-        keypoint_radius (int, optional): Radius of the circles representing keypoints.
-        line_color (tuple, optional): RGB color for the lines connecting keypoints.
-        line_width (int, optional): Width of the lines connecting keypoints.
-
-    Returns:
-        None: The function modifies the input image in place.
-    """
-    for j in range(1, nodes_xy.shape[0]):
-        prev_pt_xy = nodes_xy[j - 1, :]
-        curr_pt_xy = nodes_xy[j, :]
-        if np.any(np.isnan(prev_pt_xy)) or np.any(np.isnan(curr_pt_xy)):
-            continue  # Skip if any coordinate is NaN
-        cv2.line(
-            image,
-            (int(round(prev_pt_xy[0])), int(round(prev_pt_xy[1]))),
-            (int(round(curr_pt_xy[0])), int(round(curr_pt_xy[1]))),
-            line_color[::-1],  # Convert RGB to BGR
-            line_width,
-        )
-    for j in range(nodes_xy.shape[0]):
-        curr_pt_xy = nodes_xy[j, :]
-        if np.any(np.isnan(curr_pt_xy)):
-            continue  # Skip if any coordinate is NaN
-        cv2.circle(
-            image,
-            (int(round(curr_pt_xy[0])), int(round(curr_pt_xy[1]))),
-            keypoint_radius,
-            keypoint_colors[j][::-1],  # Convert RGB to BGR
-            -1,
-        )
-
-
-def _determine_adaptive_muscle_vrange(
-    muscle_vrange_quantiles,
-    muscle_vrange_quantiles_sample_rate,
-    muscle_image_paths,
-    vmin_percentile_of_quantiles=50.0,
-    vmax_percentile_of_quantiles=95.0,
-):
-    """Determine an adaptive (vmin, vmax) for muscle image visualization.
-
-    The function samples a subset of the provided muscle images, computes the
-    requested quantiles for each sampled image, then computes robust percentiles
-    across those per-image quantiles to produce final vmin and vmax values.
-    Pixels with value 0 are ignored when computing quantiles.
-
-    Args:
-        muscle_vrange_quantiles (tuple[float, float]): Percentiles to compute on
-            each sampled image (e.g. (97.0, 99.995)). Must not be None.
-        muscle_vrange_quantiles_sample_rate (float): Fraction of images to
-            sample when determining the range (0 < sample_rate <= 1).
-        muscle_image_paths (Sequence[Path]): List of file paths to muscle images
-            (tif files) to sample from.
-        vmin_percentile_of_quantiles (float): Percentile to take across the
-            per-image lower-quantiles to produce the final vmin (default 50.0).
-        vmax_percentile_of_quantiles (float): Percentile to take across the
-            per-image upper-quantiles to produce the final vmax (default 95.0).
-
-    Returns:
-        tuple[int, int]: (vmin, vmax) integer values suitable for clipping and
-        mapping muscle images to display range.
-
-    Raises:
-        ValueError: If ``muscle_vrange_quantiles`` is None or if the sample rate
-            is invalid.
-    """
-    logger = logging.getLogger(__name__)
-
-    if muscle_vrange_quantiles is None:
-        logger.error(
-            "User must specify either muscle_vrange or muscle_vrange_quantiles."
-        )
-        raise ValueError("Unspecified muscle_vrange or muscle_vrange_quantiles.")
-
-    if not (0 < muscle_vrange_quantiles_sample_rate <= 1.0):
-        raise ValueError("muscle_vrange_quantiles_sample_rate must be in (0, 1].")
-
-    sample_every_k = max(1, int(1 / muscle_vrange_quantiles_sample_rate))
-    paths_to_check = muscle_image_paths[::sample_every_k]
-
-    quantiles = np.full((len(paths_to_check), 2), np.nan)
-    logger.info("Detecting muscle vrange adaptively...")
-    for i, path in enumerate(paths_to_check):
-        image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-        if (image == 0).all():
-            logger.warning(f"Muscle image {path} is all zeros, skipping.")
-            continue
-        quantiles[i, :] = np.percentile(image[image != 0], muscle_vrange_quantiles)
-
-    if np.isnan(quantiles).all():
-        logger.error("All sampled muscle images are empty (all zeros).")
-        raise RuntimeError("Cannot determine muscle vrange from empty images.")
-
-    vmin = np.nanpercentile(quantiles[:, 0], vmin_percentile_of_quantiles)
-    vmax = np.nanpercentile(quantiles[:, 1], vmax_percentile_of_quantiles)
-
-    return int(vmin), int(vmax)
-
-
-def generate_overlay_samples(
-    behavior_video_path: Path,
-    muscle_images_dir: Path,
-    muscle_metadata_path: Path,
-    experiment_parameters_path: Path,
-    output_dir: Path,
-    muscle_vrange: tuple[int, int] | None = None,
-    muscle_vrange_quantiles: tuple[float, float] | None = (97.0, 99.995),
-    muscle_vrange_quantiles_sample_rate: float = 0.05,
-    num_samples: int = 100,
-) -> None:
-    """Generate sample overlay images combining behavior and muscle frames. This is
-    useful for sanity-checking the alignment between behavior and muscle data.
-    Arguments are similar to generate_summary_video."""
-    logger = logging.getLogger(__name__)
-
-    # Load muscle frames metadata
-    muscle_metadata_df = pd.read_csv(muscle_metadata_path)
-    sample_interval = len(muscle_metadata_df) // num_samples
-    sample_muscle_frameids = np.arange(0, len(muscle_metadata_df), sample_interval)
-    sample_muscle_frameids = np.unique(sample_muscle_frameids)
-    num_samples = len(sample_muscle_frameids)
-
-    # If necessary, determine vmin and vmax of muscle images for visualization
-    if muscle_vrange is None:
-        muscle_images_paths = sorted(list(muscle_images_dir.glob("*.tif")))
-        muscle_vrange = _determine_adaptive_muscle_vrange(
-            muscle_vrange_quantiles,
-            muscle_vrange_quantiles_sample_rate,
-            muscle_images_paths,
-        )
-        print(f"Determined adaptive muscle value range: {muscle_vrange}.")
-
-    # Get behavior-muscle sync ratio
-    sync_ratio = get_behavior_muscle_sync_ratio(
-        experiment_parameters_path=experiment_parameters_path
+        writer.write_chunk([np.hstack(panels)])
+        if (i + 1) % 500 == 0:
+            logger.info(f"Rendered {i + 1}/{n_frames} visualization frames")
+    logger.info(
+        f"STEP TIME viz_render_loop (compositing, writing scratch JPEGs): "
+        f"{time.perf_counter() - t_render:.1f}s"
     )
-    logger.info(f"Behavior to muscle frame sync ratio: {sync_ratio}.")
 
-    # Open behavior video
-    behavior_video_reader = cv2.VideoCapture(str(behavior_video_path))
-
-    # Generate samples
-    print(f"Generating {num_samples} samples overlay images...")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for muscle_frameid in sample_muscle_frameids:
-        metadata_entry = muscle_metadata_df.iloc[muscle_frameid]
-        assert metadata_entry["muscle_frame_id"] == muscle_frameid
-        behavior_frameid = int(metadata_entry["corresponding_behavior_frame_id"])
-        muscle_path = muscle_images_dir / f"muscle_frame_{muscle_frameid:09d}.tif"
-        muscle_image = cv2.imread(str(muscle_path), cv2.IMREAD_UNCHANGED)
-        # The muscle camera captures first frame only in the second cycle due to its
-        # rolling shutter
-        behavior_video_reader.set(cv2.CAP_PROP_POS_FRAMES, behavior_frameid)
-        ret, behavior_image = behavior_video_reader.read()
-        if not ret:
-            logger.warning(
-                f"Could not read behavior frame {behavior_frameid} for muscle "
-                f"frame {muscle_frameid}. Skipping."
-            )
-            continue
-        behavior_image = behavior_image[:, :, 0]
-
-        # Overlay images
-        assert behavior_image.shape == muscle_image.shape
-        overlay = np.zeros((*behavior_image.shape, 3), dtype=np.uint8)
-        overlay[:, :, 2] = behavior_image  # red (opencv uses BGR order)
-        muscle_image_normalized = (
-            muscle_image.astype(np.float32) - muscle_vrange[0]
-        ) / (muscle_vrange[1] - muscle_vrange[0])
-        muscle_image_normalized = np.clip(muscle_image_normalized, 0, 1)
-        overlay[:, :, 1] = (255 * muscle_image_normalized).astype(np.uint8)  # green
-
-        # Save overlay image
-        overlay_path = output_dir / f"behavior_frame_{behavior_frameid:06d}.jpg"
-        cv2.imwrite(str(overlay_path), overlay)
-
-    behavior_video_reader.release()
+    if aligned_cap is not None:
+        aligned_cap.release()
+    if muscle_file is not None:
+        muscle_file.close()
+    t_encode = time.perf_counter()
+    writer.close()
+    logger.info(
+        f"STEP TIME viz_encode (writer.close()): {time.perf_counter() - t_encode:.1f}s"
+    )
+    logger.info(f"Saved {output_path}")

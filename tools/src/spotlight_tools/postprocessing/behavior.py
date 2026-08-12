@@ -1,316 +1,149 @@
-"""
-Behavior frame processing: decode pseudo-BGR JPEGs, run SLEAP 2-D pose
-estimation, align and crop each frame so the fly faces upward.
+"""Behavior frame processing: decode pseudo-BGR JPEGs, run the `TinyOrientModel`
+(replacing the old SLEAP-based 3-keypoint aligner), align/crop each frame, and
+-- in the same streaming pass, no video round-trip -- run the pose2d model on
+the aligned crop and warp whichever muscle frames land in the current chunk.
 
-The recorder bundles every three consecutive behavior frames into a single
-JPEG file (a performance hack at save time); expand_single_pseudo_bgr_image
-unpacks each such file before any further processing.
+See `spotlight_tools.postprocessing.muscle`/`visualize` for the muscle and
+QA-video stages that consume this module's outputs.
 """
+
+import json
+import logging
+import time
+from collections import defaultdict
+from pathlib import Path
 
 import cv2
 import h5py
 import numpy as np
-import logging
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from sleap_io import Video
-from sleap_nn.predict import run_inference
+import torch
 from joblib import Parallel, delayed
 
-from spotlight_tools.common.video import get_video_writer
-from spotlight_tools.postprocessing.io import check_output_path_against_alignment_flag
+from spotlight_tools.common.video import StreamingVideoWriter
+from spotlight_tools.postprocessing.io import (
+    MuscleH5Writer,
+    check_output_path_against_alignment_flag,
+)
+from spotlight_tools.postprocessing.muscle import (
+    MuscleBehaviorMapping,
+    warp_muscle_chunk,
+)
+from spotlight_tools.spotlight_orient.dataset import OUTPUT_SIZE as ORIENT_OUTPUT_SIZE
+from spotlight_tools.spotlight_orient.dataset import SCALE_FACTOR as ORIENT_SCALE_FACTOR
+from spotlight_tools.spotlight_orient.model import TinyOrientModel
+from spotlight_tools.spotlight_pose2d.dataset import INPUT_SIZE as POSE2D_INPUT_SIZE
+from spotlight_tools.spotlight_pose2d.model import RepVGGPoseModel
 
-
-def decode_and_align_all_behavior_frames(
-    *,
-    raw_behavior_frame_paths: list[Path],
-    sleap_model_dir: Path,
-    output_video_path: Path,
-    output_metadata_path: Path,
-    keypoints_code2name: dict[str, str],
-    align_fly: bool = True,
-    use_shm: bool = False,
-    sleap_batch_size: int = 128,
-    crop_dim: int = 900,
-    play_fps: int = 33,
-    behavior_video_crf: int = 12,
-    behavior_video_preset: str = "slow",
-    num_workers: int = -1,
-) -> None:
-    """This function processes behavior frames through the following pipeline:
-
-    1. Expands pseudo-BGR JPEG images into separate monochrome frames (during recording,
-       every three consecutive frames are saved as a single 3-channel JPEG for
-       performance considerations)
-    2. (If `align_fly` is True) Runs a 3-keypoint pose estimation with SLEAP to detect
-       fly position and heading
-    3. (If `align_fly` is True) Transforms frames to align and center the fly (facing
-       upward)
-    4. Outputs an aligned behavior video and transformation metadata
-
-    Args:
-        raw_behavior_frame_paths (list[Path]): Paths to input pseudo-BGR JPEG files.
-        sleap_model_dir (Path): Directory containing trained SLEAP model files.
-        output_video_path (Path): Path for the output aligned behavior video.
-        output_metadata_path (Path): Path for the transformation metadata (HDF5).
-        keypoints_code2name (dict[str, str]): Mapping from keypoint codes (used by
-            SLEAP) to meaningful names.
-        align_fly (bool): If False, skip pose estimation and frame alignment; simply
-            decode pseudo-BGR images into separate monochrome frames and save as video.
-            Default is True.
-        use_shm (bool): Whether to use shared memory (/dev/shm) for temporary files.
-            Doing so will avoid duplicated disk read and write, but it is extremely
-            sketchy - if the process runs out of shared memory, the entire OS will
-            likely crash. Default is False.
-        sleap_batch_size (int): Batch size for SLEAP inference.
-        crop_dim (int): Output frame dimensions (actual size is crop_dim x crop_dim px).
-        play_fps (int): Frame rate for the output video. This is for visualization only
-            and has no impact on the actual data (see
-            `scripts.postprocess_recording.postprocess_recording_data`).
-        behavior_video_crf (int): Constant Rate Factor for video encoding quality. Lower
-            is better. 12-17 is visually lossless for most purposes. <10 is overkill.
-        behavior_video_preset (str): ffmpeg preset for encoding speed vs compression.
-            Slower setting = better compression. "slow" or "slower" is recommended.
-        num_workers (int): Number of parallel workers (-1 for all available cores).
-    """
-    # Set logging verbosity
-    logger = logging.getLogger(__name__)
-
-    # Check if output path suggests alignment status consistent with `align_fly`
-    check_output_path_against_alignment_flag(output_video_path, align_fly)
-
-    with TemporaryDirectory(dir="/dev/shm" if use_shm else None) as tmpdir:
-        logger.info(
-            f"Processing {len(raw_behavior_frame_paths)} pseudo-BGR frames under "
-            f"temporary directory {tmpdir}"
-        )
-
-        # Convert pseudo 3-channel images to sequences of 3 monochrome images
-        logger.info("Expanding pseudo-BGR images to single-channel frames")
-        expanded_frames_dir = Path(tmpdir) / "single_channel_frames"
-        expanded_frames_dir.mkdir(parents=True, exist_ok=True)
-        single_channel_frame_paths = _expand_all_pseudo_bgr_images(
-            raw_behavior_frame_paths, expanded_frames_dir, num_workers=num_workers
-        )
-
-        if align_fly:
-            # Run SLEAP 2D pose estimation on single-channel frames
-            logger.info("Running SLEAP 2D pose estimation on expanded frames")
-            keypoints_xy_pre_alignment = estimate_2dpose_sequence(
-                single_channel_frame_paths,
-                sleap_model_dir,
-                keypoints_code2name,
-                output_path=Path(tmpdir) / "sleap_predictions.slp",  # will be deleted
-                batch_size=sleap_batch_size,
-            )
-
-            # Transform frame by frame based on keypoints
-            logger.info("Transforming behavior frames to align the fly")
-            transformed_frame_paths, transformed_keypoints, transform_matrices = (
-                _transform_all_frames_to_align(
-                    keypoints_xy_pre_alignment,
-                    single_channel_frame_paths,
-                    keypoints_code2name,
-                    crop_dim,
-                    output_dir=Path(tmpdir) / "aligned_frames",
-                    num_workers=num_workers,
-                )
-            )
-
-        # Save transformed frames as video
-        output_video_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Saving aligned behavior video to {output_video_path}")
-        video_writer = get_video_writer(
-            output_path=output_video_path,
-            fps=play_fps,
-            crf=behavior_video_crf,
-            preset=behavior_video_preset,
-            logging=logger.level <= logging.INFO,
-        )
-        if align_fly:
-            frame_paths_to_write = transformed_frame_paths
-        else:
-            frame_paths_to_write = single_channel_frame_paths
-        for frame_path in frame_paths_to_write:
-            frame = cv2.imread(str(frame_path), cv2.IMREAD_UNCHANGED)
-            video_writer.write(frame)
-        video_writer.close()
-
-        # Save transformation metadata if fly alignment was performed
-        if align_fly:
-            logger.info(f"Saving transformation metadata to {output_metadata_path}")
-            output_metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            _save_transformation_metadata(
-                output_path=output_metadata_path,
-                keypoints_xy_pre_alignment=keypoints_xy_pre_alignment,
-                transformed_keypoints=transformed_keypoints,
-                transform_matrices=transform_matrices,
-                keypoints_code2name=keypoints_code2name,
-                output_dim=(crop_dim, crop_dim),
-            )
-
-
-def _expand_all_pseudo_bgr_images(
-    pseudo3ch_frame_paths: list[Path],
-    single_channel_frames_dir: Path,
-    num_workers: int = -1,
-) -> list[Path]:
-    """Expand all pseudo-BGR images into individual single-channel frames in parallel.
-
-    Args:
-        pseudo3ch_frame_paths (list[Path]): Paths to pseudo-BGR input images.
-        single_channel_frames_dir (Path): Directory where expanded frames will be saved.
-        num_workers (int): Number of parallel workers (-1 for all available cores).
-
-    Returns:
-        list[Path]: Paths to all generated single-channel frame files.
-    """
-    logger = logging.getLogger(__name__)
-    verbosity = 1 if logger.level <= logging.INFO else 0
-
-    single_channel_frames_dir.mkdir(parents=True, exist_ok=True)
-    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky", verbose=verbosity)
-    logger.info(
-        f"Expanding pseudo-BGR images using {num_workers} "
-        f"(effectively {parallel_mapper._effective_n_jobs()}) workers"
-    )
-    single_channel_frame_paths_grouped = parallel_mapper(
-        delayed(expand_single_pseudo_bgr_image)(
-            input_path, single_channel_frames_dir / f"frame_{i:06d}"
-        )
-        for i, input_path in enumerate(pseudo3ch_frame_paths)
-    )
-    logger.info("Finished expanding pseudo-BGR images")
-    single_channel_frame_paths = []
-    for group in single_channel_frame_paths_grouped:
-        single_channel_frame_paths.extend(group)
-    return single_channel_frame_paths
+# See `tools/scripts/spotlight_orient/visualize_predictions.py`'s own
+# FLIP_DECISION_THRESHOLD -- the model's own sigmoid decision boundary,
+# distinct from `flip_label.FLIPPED_THRESHOLD` (a *training*-label proxy).
+FLIP_DECISION_THRESHOLD = 0.5
 
 
 def expand_single_pseudo_bgr_image(
-    pseudo3ch_frame_path: Path, output_path_stem: Path
-) -> list[Path]:
+    pseudo3ch_frame_path: Path,
+) -> list[np.ndarray]:
     """Spotlight saves 3 adjacent behavior images as a single pseudo-BGR
-    JPEG image (an IO optimization trick). This function expands it into
-    separate monochrome images.
-
-    Args:
-        pseudo3ch_frame_path: Path to the input pseudo-BGR image.
-        output_path_stem: Path stem for the output single-channel images.
-            The function will append suffixes "_ch0.jpg", "_ch1.jpg", "_ch2.jpg"
-            for the three channels.
-
-    Returns:
-        list of Paths to the three output single-channel images.
-    """
+    JPEG (an IO optimization at recording time). Expand it into 3 separate
+    monochrome frames, in memory (no intermediate file)."""
     pseudo3ch_image = cv2.imread(str(pseudo3ch_frame_path))
     blue, green, red = cv2.split(pseudo3ch_image)
-    output_paths = []
-    for j, channel in enumerate([blue, green, red]):
-        single_channel_frame_path = output_path_stem.with_suffix(f".ch{j}.jpg")
-        cv2.imwrite(str(single_channel_frame_path), channel)
-        output_paths.append(single_channel_frame_path)
-    return output_paths
+    return [blue, green, red]
 
 
-def estimate_2dpose_sequence(
-    single_channel_frame_paths: list[Path],
-    sleap_model_dir: Path,
-    keypoints_code2name: dict[str, str],
-    output_path: Path,
-    batch_size: int = 128,
-) -> np.ndarray:
-    """Run SLEAP 2D pose estimation on single-channel behavior images.
+def _expand_chunk(paths: list[Path], num_workers: int) -> list[np.ndarray]:
+    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky")
+    grouped = parallel_mapper(delayed(expand_single_pseudo_bgr_image)(p) for p in paths)
+    frames = []
+    for group in grouped:
+        frames.extend(group)
+    return frames
 
-    Args:
-        single_channel_frame_paths (list[Path]): Paths to single-channel frame images.
-        sleap_model_dir (Path): Directory containing trained SLEAP model files.
-        keypoints_code2name (dict[str, str]): Mapping from keypoint codes (used by
-            SLEAP) to meaningful names.
-        output_path (Path): Path where SLEAP predictions will be (temporarily) saved.
-        batch_size (int): Batch size for SLEAP inference processing.
 
-    Returns:
-        np.ndarray: Keypoint coordinates with shape (num_frames, num_keypoints, 2).
-            NaN values indicate missing keypoints.
-    """
-    logger = logging.getLogger(__name__)
+def _load_orient_model(checkpoint_path: Path, device: str) -> TinyOrientModel:
+    model = TinyOrientModel(n_keypoints=3, use_global_context=True).to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    model.eval()
+    return model
 
-    # Run SLEAP inference
-    logger.info("Running SLEAP 2D pose estimation")
-    video = Video.from_filename([str(path) for path in single_channel_frame_paths])
-    predicted_labels = run_inference(
-        input_video=video,
-        model_paths=[sleap_model_dir],
-        batch_size=batch_size,
-        output_path=output_path,
+
+def _run_orient_batch(
+    model: TinyOrientModel, frames: list[np.ndarray], device: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """`frames`: list of `(H, W)` uint8 monochrome. Returns
+    `(keypoints, flipped_prob)`: keypoints `(n, 3, 2)` in raw fullsize
+    pixel space (matching `dataset.NATIVE_FRAME_SIZE`), flipped_prob `(n,)`."""
+    width, height = ORIENT_OUTPUT_SIZE
+    batch = np.stack([cv2.resize(f, (width, height)) for f in frames])
+    batch = np.repeat(batch[:, :, :, None], 3, axis=-1)
+    tensor = torch.from_numpy(batch).permute(0, 3, 1, 2).float().to(device) / 255.0
+
+    with (
+        torch.no_grad(),
+        torch.autocast(
+            device_type=device, dtype=torch.float16, enabled=device == "cuda"
+        ),
+    ):
+        pred_keypoints, pred_flip_logit = model(tensor)
+
+    raw_points = (
+        pred_keypoints.float().cpu().numpy()
+        * np.array(ORIENT_OUTPUT_SIZE, dtype=np.float32)
+        * ORIENT_SCALE_FACTOR
     )
-    logger.info("Finished SLEAP 2D pose estimation")
-
-    # Format results
-    keypoints_code2idx = {
-        code: idx for idx, code in enumerate(keypoints_code2name.keys())
-    }
-    keypoints_xy = np.full(
-        (len(single_channel_frame_paths), len(keypoints_code2name), 2), np.nan
-    )
-    for i, frame_labels in enumerate(predicted_labels):
-        n_instances = len(frame_labels.instances)
-        if n_instances == 0:
-            continue  # leave as NaN if no instances detected
-        elif n_instances == 1:
-            points = frame_labels.instances[0].points
-            for point in points:
-                keypoint_idx = keypoints_code2idx[point["name"]]
-                keypoints_xy[i, keypoint_idx, :] = point["xy"]
-        else:
-            raise RuntimeError(
-                f"Multiple instances ({n_instances}) detected in frame {i}. "
-                "This is unexpected for single-animal tracking."
-            )
-    return keypoints_xy  # (num_frames, num_keypoints, 2)
+    flipped_prob = torch.sigmoid(pred_flip_logit).float().cpu().numpy()[:, 0]
+    return raw_points, flipped_prob
 
 
-def fill_gaps_in_2dpose_sequence(keypoints_xy: np.ndarray) -> np.ndarray:
-    """Fill missing keypoints (NaN values) using forward and backward filling.
+def _load_pose2d_model(checkpoint_path: Path, n_keypoints: int, device: str):
+    model = RepVGGPoseModel(n_keypoints, pretrained_backbone=False).to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    model.eval()
+    return model
 
-    If any keypoint in a frame is NaN, it is filled with the last valid keypoints.
-    If the 0th frame has NaN values, they are filled with the first valid keypoints
-    found in subsequent frames.
 
-    Args:
-        keypoints_xy (np.ndarray): Keypoint coordinates with shape
-            (num_frames, num_keypoints, 2).
+def _heatmaps_to_points(heatmaps: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Per-keypoint argmax location + peak value, in heatmap pixel coords.
+    `heatmaps`: `(n_nodes, H, W)`."""
+    n_nodes, h, w = heatmaps.shape
+    flat = heatmaps.reshape(n_nodes, -1)
+    idx = flat.argmax(axis=1)
+    scores = flat[np.arange(n_nodes), idx]
+    ys, xs = np.unravel_index(idx, (h, w))
+    return np.stack([xs, ys], axis=1).astype(np.float32), scores.astype(np.float32)
 
-    Returns:
-        np.ndarray: Keypoints with gaps filled, same shape as input.
-    """
-    logger = logging.getLogger(__name__)
 
-    num_frames, _, _ = keypoints_xy.shape
-    keypoints_xy_filled = keypoints_xy.copy()
-
-    # Find the first valid frame
-    first_valid_frame = None
-    for i in range(num_frames):
-        if not np.isnan(keypoints_xy_filled[i, ...]).any():
-            first_valid_frame = i
-            break
-
-    if first_valid_frame is None:
-        logger.error("All frames have NaN keypoints. Cannot fill gaps.")
-        return keypoints_xy_filled
-
-    # Fill leading NaNs with the first valid frame
-    for i in range(first_valid_frame):
-        keypoints_xy_filled[i, ...] = keypoints_xy_filled[first_valid_frame, ...]
-
-    # Fill intermediate NaNs with the last valid frame
-    for i in range(first_valid_frame + 1, num_frames):
-        if np.isnan(keypoints_xy_filled[i, ...]).any():
-            keypoints_xy_filled[i, ...] = keypoints_xy_filled[i - 1, ...]
-
-    return keypoints_xy_filled
+def _run_pose2d_batch(
+    model, frames_bgr_or_gray: np.ndarray, device: str, batch_size: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """`frames_bgr_or_gray`: `(n, H, W)` uint8 aligned crops (single channel).
+    Returns `(poses, keypoint_scores)`: `(n, n_keypoints, 2)` in the aligned
+    crop's own pixel space, `(n, n_keypoints)`."""
+    n = len(frames_bgr_or_gray)
+    all_poses, all_scores = [], []
+    for start in range(0, n, batch_size):
+        sub = frames_bgr_or_gray[start : start + batch_size]
+        sub_rgb = np.repeat(sub[:, :, :, None], 3, axis=-1)
+        resized = np.stack(
+            [cv2.resize(f, (POSE2D_INPUT_SIZE, POSE2D_INPUT_SIZE)) for f in sub_rgb]
+        )
+        tensor = (
+            torch.from_numpy(resized).permute(0, 3, 1, 2).float().to(device) / 255.0
+        )
+        with (
+            torch.no_grad(),
+            torch.autocast(
+                device_type=device, dtype=torch.float16, enabled=device == "cuda"
+            ),
+        ):
+            heatmaps = model(tensor).float().cpu().numpy()
+        input_scale = POSE2D_INPUT_SIZE / sub.shape[2]  # sub width (crop_dim)
+        heatmap_scale = POSE2D_INPUT_SIZE / heatmaps.shape[-1] / input_scale
+        for h in heatmaps:
+            points, scores = _heatmaps_to_points(h)
+            all_poses.append(points * heatmap_scale)
+            all_scores.append(scores)
+    return np.stack(all_poses), np.stack(all_scores)
 
 
 def transform_single_frame_to_align(
@@ -320,186 +153,291 @@ def transform_single_frame_to_align(
     thorax_idx: int,
     neck_idx: int,
     abdomen_idx: int,
+    thorax_y_normalized: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Transform a single behavior frame to align and center the fly.
-
-    The transformation rotates the frame so the fly faces upward (head toward
-    negative y-axis) and crops around the thorax to center the fly in a square image.
-
-    Args:
-        input_frame (np.ndarray): Input frame image as 2D array.
-        keypoints (np.ndarray): Keypoint coordinates with shape (num_keypoints, 2).
-        crop_dim (int): Output dimensions (actual size is crop_dim x crop_dim pixels).
-        thorax_idx (int): Index of the thorax keypoint in SLEAP output.
-        neck_idx (int): Index of the neck keypoint in SLEAP output.
-        abdomen_idx (int): Index of the abdomen keypoint in SLEAP output.
-
-    Returns:
-        np.ndarray: Transformed frame.
-        np.ndarray: Transformed keypoints.
-        np.ndarray: Transformation matrix.
-    """
-    # rotation_pivot and heading are both in (x, y), i.e. (col, row)
+    """Rotate so the fly faces upward (head toward negative y) and crop
+    around the thorax. `thorax_y_normalized` places the thorax at that
+    fraction of the crop's height (0=top, 1=bottom, 0.5=old centered
+    behavior); horizontal placement is always centered."""
     rotation_pivot = keypoints[thorax_idx, :]
     heading = keypoints[neck_idx, :] - keypoints[abdomen_idx, :]
-    # arctan2 expects inputs in (y, x) order and returns angle from +x in
-    # radians (positive = counter-clockwise)
-    current_angle = np.rad2deg(np.arctan2(heading[1], heading[0]))  # arctan2(y, x)
-    target_angle = -90  # == arctan2(-1, 0) in deg, i.e. facing up (y inverted OpenCV)
-    rotation_angle = target_angle - current_angle  # counter-clockwise positive
+    current_angle = np.rad2deg(np.arctan2(heading[1], heading[0]))
+    target_angle = -90
+    rotation_angle = target_angle - current_angle
 
-    # Define affine transformation matrix
-    # Step 1: Rotate around thorax so the fly faces up
-    # Note: getRotationMatrix2D expects counter-clockwise angles to be positive
-    # However, the y axis is inverted in image coordinates, so the "counter-clockwise"
-    # angle calculated above needs to be inverted
     transform_matrix = cv2.getRotationMatrix2D(
         rotation_pivot, -rotation_angle, scale=1.0
     )
-    # Step 2: Crop around thorax to center the fly in a smaller square image
     translation_x = -rotation_pivot[0] + crop_dim / 2
-    translation_y = -rotation_pivot[1] + crop_dim / 2
+    translation_y = -rotation_pivot[1] + crop_dim * thorax_y_normalized
     transform_matrix[0, 2] += translation_x
     transform_matrix[1, 2] += translation_y
 
-    # Transform image
     output_frame = cv2.warpAffine(
-        input_frame,
-        transform_matrix,
-        (crop_dim, crop_dim),
-        flags=cv2.INTER_NEAREST,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=0,
-    )
+        input_frame, transform_matrix, (crop_dim, crop_dim),
+        flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+    )  # fmt: skip
 
-    # Transform keypoints
     keypoints_homogeneous = np.hstack([keypoints, np.ones((keypoints.shape[0], 1))])
-    transformed_keypoints = (transform_matrix @ keypoints_homogeneous.T).T  # (n_pts, 2)
-
+    transformed_keypoints = (transform_matrix @ keypoints_homogeneous.T).T
     return output_frame, transformed_keypoints, transform_matrix
 
 
-def _transform_all_frames_to_align(
-    keypoints_xy_pre_alignment: np.ndarray,
-    expanded_frame_paths: list[Path],
-    keypoints_code2name: dict[str, str],
+def process_behavior_pipeline(
+    *,
+    raw_behavior_frame_paths: list[Path],
+    orient_checkpoint_path: Path,
+    alignment: str,  # "aligned" | "fullsize" | "both"
+    thorax_y_normalized: float,
     crop_dim: int,
-    output_dir: Path,
+    output_aligned_video_path: Path | None,
+    output_fullsize_video_path: Path | None,
+    output_alignment_metadata_path: Path,
+    behavior_video_fps: float,
+    behavior_video_crf: int,
+    behavior_video_preset: str,
+    orient_batch_size: int,
+    run_pose2d: bool,
+    pose2d_checkpoint_path: Path | None,
+    pose2d_skeleton_json_path: Path | None,
+    pose2d_batch_size: int,
+    output_pose2d_h5_path: Path | None,
+    run_muscle: bool,
+    muscle_mapping: MuscleBehaviorMapping | None,
+    output_muscle_h5_path: Path | None,
+    muscle_dataset_name: str | None,
     num_workers: int = -1,
-) -> tuple[list[Path], np.ndarray, np.ndarray]:
-    """Transform all behavior frames to align and center the fly in parallel.
+) -> dict:
+    """The single streaming pass: decode -> orient -> align -> (pose2d,
+    muscle) -> write video(s), chunk by chunk. Model inference always runs
+    on in-memory arrays, strictly before any frame is bound into a video
+    (the aligned/fullsize videos and the muscle H5 are the only things
+    encoded/written to disk here; pose2d never has to decode a video).
 
-    Args:
-        keypoints_xy_pre_alignment (np.ndarray): Pre-alignment keypoint coordinates with
-            shape (num_frames, num_keypoints, 2).
-        expanded_frame_paths (list[Path]): Paths to pre-alignment single-channel frames.
-        keypoints_code2name (dict[str, str]): Mapping from keypoint codes (used by
-            SLEAP) to meaningful names.
-        crop_dim (int): Output frame dimensions (actual size is crop_dim x crop_dim).
-        output_dir (Path): Directory where transformed frames will be saved.
-        num_workers (int): Number of parallel workers (-1 for all available cores).
-
-    Returns:
-        list[Path]: Paths to the transformed frames.
-        np.ndarray: Transformed keypoints with shape (num_frames, num_keypoints, 2).
-        np.ndarray: Transformation matrices with shape (num_frames, 2, 3).
+    Returns a dict with `flipped_prob` (`(n_frames,)`, for visualization),
+    `n_frames`, and whichever output paths were actually produced.
     """
     logger = logging.getLogger(__name__)
-    verbosity = 1 if logger.level <= logging.INFO else 0
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    logger.info(f"Orient/pose2d device: {device}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_aligned_video_path is not None:
+        check_output_path_against_alignment_flag(output_aligned_video_path, alignment)
+    if output_fullsize_video_path is not None:
+        check_output_path_against_alignment_flag(output_fullsize_video_path, alignment)
 
-    keypoints_xy_pre_alignment_filled = fill_gaps_in_2dpose_sequence(
-        keypoints_xy_pre_alignment
-    )
-    num_frames = len(expanded_frame_paths)
-    thorax_idx = list(keypoints_code2name.values()).index("thorax")
-    neck_idx = list(keypoints_code2name.values()).index("neck")
-    abdomen_idx = list(keypoints_code2name.values()).index("abdomen tip")
+    orient_model = _load_orient_model(orient_checkpoint_path, device)
+    write_aligned = alignment in ("aligned", "both")
+    write_fullsize = alignment in ("fullsize", "both")
 
-    def _process_frame(i):
-        input_frame = cv2.imread(str(expanded_frame_paths[i]), cv2.IMREAD_UNCHANGED)
-        keypoints = keypoints_xy_pre_alignment_filled[i, :, :]
-        transformed_frame, transformed_keypoints, transform_matrix = (
-            transform_single_frame_to_align(
-                input_frame, keypoints, crop_dim, thorax_idx, neck_idx, abdomen_idx
+    aligned_writer = (
+        StreamingVideoWriter(
+            output_aligned_video_path, behavior_video_fps, behavior_video_crf,
+            behavior_video_preset,
+        )
+        if write_aligned
+        else None
+    )  # fmt: skip
+    fullsize_writer = (
+        StreamingVideoWriter(
+            output_fullsize_video_path, behavior_video_fps, behavior_video_crf,
+            behavior_video_preset,
+        )
+        if write_fullsize
+        else None
+    )  # fmt: skip
+
+    pose2d_model = None
+    pose2d_node_names = None
+    if run_pose2d:
+        pose2d_node_names = json.loads(pose2d_skeleton_json_path.read_text())[
+            "node_names"
+        ]
+        pose2d_model = _load_pose2d_model(
+            pose2d_checkpoint_path, len(pose2d_node_names), device
+        )
+
+    muscle_writer = None
+    if run_muscle:
+        muscle_writer = MuscleH5Writer(
+            output_muscle_h5_path, muscle_dataset_name, crop_dim, crop_dim
+        )
+
+    # Every pseudo-BGR file on disk packs 3 consecutive monochrome behavior
+    # frames (a recording-time IO optimization); n_frames counts the real,
+    # expanded frames, not raw files.
+    n_frames = len(raw_behavior_frame_paths) * 3
+    keypoints_xy_pre_alignment = np.full((n_frames, 3, 2), np.nan, dtype=np.float32)
+    keypoints_xy_post_alignment = np.full((n_frames, 3, 2), np.nan, dtype=np.float32)
+    transform_matrices = np.zeros((n_frames, 2, 3), dtype=np.float64)
+    flipped_prob = np.full(n_frames, np.nan, dtype=np.float32)
+    all_pose2d_poses = [] if run_pose2d else None
+    all_pose2d_scores = [] if run_pose2d else None
+
+    thorax_idx, neck_idx, abdomen_idx = (
+        1,
+        0,
+        2,
+    )  # COARSE_KEYPOINTS = [neck, thorax, abdomen]
+    last_valid_keypoints = None
+
+    # Granular per-phase timing (Task: "video binding is probably the
+    # slowest part") -- accumulated across every chunk, logged as totals
+    # once the streaming pass finishes, plus separately for the final
+    # video-encode calls in `.close()` below.
+    timers = defaultdict(float)
+
+    def _tick():
+        return time.perf_counter()
+
+    # Chunk over raw (pseudo-BGR) files, sized so the expanded frame count
+    # per chunk is close to orient_batch_size (each file expands to 3 frames).
+    path_chunk_size = max(orient_batch_size // 3, 1)
+    for path_start in range(0, len(raw_behavior_frame_paths), path_chunk_size):
+        path_end = min(path_start + path_chunk_size, len(raw_behavior_frame_paths))
+        chunk_start = path_start * 3
+        chunk_end = min(path_end * 3, n_frames)
+        chunk_paths = raw_behavior_frame_paths[path_start:path_end]
+
+        t0 = _tick()
+        chunk_frames = _expand_chunk(chunk_paths, num_workers)[
+            : chunk_end - chunk_start
+        ]
+        timers["decode"] += _tick() - t0
+
+        t0 = _tick()
+        raw_points, flip_probs = _run_orient_batch(orient_model, chunk_frames, device)
+        timers["orient_infer"] += _tick() - t0
+        keypoints_xy_pre_alignment[chunk_start:chunk_end] = raw_points
+        flipped_prob[chunk_start:chunk_end] = flip_probs
+
+        aligned_batch = np.empty(
+            (len(chunk_frames), crop_dim, crop_dim), dtype=np.uint8
+        )
+        fullsize_batch = (
+            np.stack(chunk_frames).astype(np.uint8) if write_fullsize else None
+        )
+        t0 = _tick()
+        for i, frame in enumerate(chunk_frames):
+            keypoints = raw_points[i]
+            if np.isnan(keypoints).any():
+                # Forward-fill (matches the old whole-trial fill_gaps_in_2dpose_sequence
+                # for interior gaps); a leading all-NaN run at the very start of the
+                # trial is the one case that can't be forward-filled -- fall back to
+                # this chunk's own first valid frame once one appears.
+                keypoints = last_valid_keypoints
+                if keypoints is None:
+                    valid_in_chunk = [
+                        p for p in raw_points[i:] if not np.isnan(p).any()
+                    ]
+                    if not valid_in_chunk:
+                        raise RuntimeError(
+                            "Orient model produced NaN keypoints for the entire "
+                            "leading chunk; cannot align."
+                        )
+                    keypoints = valid_in_chunk[0]
+            else:
+                last_valid_keypoints = keypoints
+
+            aligned_frame, aligned_kp, transform_matrix = transform_single_frame_to_align(
+                frame, keypoints, crop_dim, thorax_idx, neck_idx, abdomen_idx,
+                thorax_y_normalized,
+            )  # fmt: skip
+            aligned_batch[i] = aligned_frame
+            keypoints_xy_post_alignment[chunk_start + i] = aligned_kp
+            transform_matrices[chunk_start + i] = transform_matrix
+        timers["warp_loop"] += _tick() - t0
+
+        t0 = _tick()
+        if aligned_writer is not None:
+            aligned_writer.write_chunk(aligned_batch)
+        if fullsize_writer is not None:
+            fullsize_writer.write_chunk(fullsize_batch)
+        timers["video_write_chunk"] += _tick() - t0
+
+        if run_pose2d:
+            t0 = _tick()
+            poses, scores = _run_pose2d_batch(
+                pose2d_model, aligned_batch, device, pose2d_batch_size
             )
-        )
-        output_path = output_dir / f"aligned_frame_{i:06d}.jpg"
-        cv2.imwrite(str(output_path), transformed_frame)
-        return output_path, transformed_keypoints, transform_matrix
+            timers["pose2d_infer"] += _tick() - t0
+            all_pose2d_poses.append(poses)
+            all_pose2d_scores.append(scores)
 
-    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky", verbose=verbosity)
+        if run_muscle:
+            t0 = _tick()
+            transforms_by_frame = {
+                chunk_start + i: transform_matrices[chunk_start + i]
+                for i in range(len(chunk_frames))
+            }
+            muscle_frames = warp_muscle_chunk(
+                muscle_mapping, chunk_start, chunk_end, transforms_by_frame, num_workers
+            )
+            timers["muscle_warp"] += _tick() - t0
+            # Separate from the warp above -- profiling found the HDF5 gzip
+            # write, not the cv2 warp, was the actual dominant cost here
+            # (see MuscleH5Writer's docstring).
+            t0 = _tick()
+            muscle_writer.append(muscle_frames)
+            timers["muscle_h5_write"] += _tick() - t0
+
+        logger.info(f"Processed {chunk_end}/{n_frames} behavior frames")
+
     logger.info(
-        f"Transforming behavior images to align the fly using {num_workers} "
-        f"(effectively {parallel_mapper._effective_n_jobs()}) workers"
+        "Streaming pass phase totals: "
+        + ", ".join(f"{k}={v:.1f}s" for k, v in timers.items())
     )
-    results = parallel_mapper(delayed(_process_frame)(i) for i in range(num_frames))
-    logger.info("Finished transforming behavior images")
-    transformed_frame_paths, transformed_keypoints, transform_matrices = zip(*results)
-    transformed_frame_paths = list(transformed_frame_paths)
-    transformed_keypoints = np.array(transformed_keypoints)
-    transform_matrices = np.array(transform_matrices)
 
-    return transformed_frame_paths, transformed_keypoints, transform_matrices
+    t0 = _tick()
+    if aligned_writer is not None:
+        aligned_writer.close()
+    logger.info(f"Aligned video encode (writer.close()): {_tick() - t0:.1f}s")
+    if fullsize_writer is not None:
+        t0 = _tick()
+        fullsize_writer.close()
+        logger.info(f"Fullsize video encode (writer.close()): {_tick() - t0:.1f}s")
+    if muscle_writer is not None:
+        t0 = _tick()
+        muscle_writer.close()
+        logger.info(f"Muscle H5 close/flush: {_tick() - t0:.1f}s")
 
-
-def _save_transformation_metadata(
-    output_path: Path,
-    keypoints_xy_pre_alignment: np.ndarray,
-    transformed_keypoints: np.ndarray,
-    transform_matrices: np.ndarray,
-    keypoints_code2name: dict[str, str],
-    output_dim: tuple[int, int],
-):
-    """Save detected pose (both pre- and post-alignment), and transformation matrices
-    used for alignment to an H5 file."""
-    logger = logging.getLogger(__name__)
-
-    logger.info(f"Saving transformation metadata to {output_path}")
-    with h5py.File(output_path, "w") as hf:
-        ds = hf.create_dataset(
-            "keypoints_xy_pre_alignment",
-            data=keypoints_xy_pre_alignment,
+    output_alignment_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(output_alignment_metadata_path, "w") as f:
+        f.create_dataset(
+            "keypoints_xy_pre_alignment", data=keypoints_xy_pre_alignment,
+            compression="gzip", dtype="float32",
+        )  # fmt: skip
+        f.create_dataset(
+            "keypoints_xy_post_alignment", data=keypoints_xy_post_alignment,
             compression="gzip",
-            dtype="float32",
-        )
-        ds.attrs["keypoint_names"] = list(keypoints_code2name.values())
-        ds = hf.create_dataset(
-            "keypoints_xy_post_alignment",
-            data=transformed_keypoints,
-            compression="gzip",
-        )
-        ds.attrs["keypoint_names"] = list(keypoints_code2name.values())
-        ds = hf.create_dataset(
+        )  # fmt: skip
+        f.create_dataset(
             "transform_matrices", data=transform_matrices, compression="gzip"
         )
-        ds.attrs["output_dim"] = list(output_dim)
-    logger.info("Finished saving transformation metadata")
+        f.create_dataset("flipped_prob", data=flipped_prob, compression="gzip")
+        f.attrs["output_dim"] = [crop_dim, crop_dim]
+        f.attrs["keypoint_names"] = ["neck", "thorax", "abdomen"]
 
+    result = {
+        "n_frames": n_frames,
+        "flipped_prob": flipped_prob,
+        "aligned_video_path": output_aligned_video_path if write_aligned else None,
+        "fullsize_video_path": output_fullsize_video_path if write_fullsize else None,
+        "alignment_metadata_path": output_alignment_metadata_path,
+    }
 
-# if __name__ == "__main__":
-#     from spotlight_tools.common import load_spotlight_tools_config
+    if run_pose2d:
+        poses = np.concatenate(all_pose2d_poses)
+        keypoint_scores = np.concatenate(all_pose2d_scores)
+        instance_score = np.nanmean(keypoint_scores, axis=-1)
+        from spotlight_tools.spotlight_pose2d.io_utils import save_pose_h5
 
-#     logging.basicConfig(
-#         level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-#     )
+        save_pose_h5(
+            output_pose2d_h5_path, poses, keypoint_scores, instance_score,
+            np.zeros(n_frames, dtype=bool), pose2d_node_names,
+            video_path=output_aligned_video_path,
+        )  # fmt: skip
+        result["pose2d_h5_path"] = output_pose2d_h5_path
+        result["pose2d_node_names"] = pose2d_node_names
 
-#     # fmt: off
-#     recording_dir = Path("~/data/spotlight/20250613-fly1b-002/").expanduser()
-#     sleap_model_dir = Path(
-#         "~/data/sleap/models/spotlight_3pt_20251023/models/251024_023711.single_instance.n=900/"
-#     ).expanduser()
-#     pseudo3ch_frame_paths = sorted(recording_dir.glob("behavior_images/behavior_frame_*.jpg"))
-#     config = load_spotlight_tools_config()
-#     decode_and_transform_behavior_frames(
-#         pseudo3ch_frame_paths,
-#         sleap_model_dir,
-#         output_video_path=recording_dir / "processed/aligned_behavior_video.mkv",
-#         output_metadata_path=recording_dir / "processed/behavior_alignment_transforms.h5",
-#         use_shm=False,
-#         keypoints_code2name=config["pose2d"]["keypoint_names"],
-#         crop_dim=900,
-#         play_fps=33,
-#     )
-#     # fmt: on
+    return result
