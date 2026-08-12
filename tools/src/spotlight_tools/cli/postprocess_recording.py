@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -252,51 +253,95 @@ def postprocess_recording_data(
                 muscle_mapping, postprocessed_dir / "muscle_frames_metadata.csv"
             )
 
+    viz_ikfk_h5_path = None
     if params.ik:
         t_step = time.perf_counter()
         logger.info("Solving IK/FK...")
+        # min_confidence/min_joint_excursion_deg/min_period_length are a
+        # "meaningful snippet" selection gate for downstream tasks (choosing
+        # which stretches are worth simulating in FlyGym), not a fit-quality
+        # gate -- left at solve_ik.py's own defaults here. max_mismatch *is*
+        # a fit-quality gate (does the fit actually match the 2D prediction)
+        # and stays at its default too (not overridden to inf): disabling it
+        # previously let genuinely bad fits -- e.g. a best-effort crop on a
+        # frame the orient model itself flagged flipped -- through
+        # uninspected, measurably worsening mismatch stats on real trials.
         subprocess.run(
             [
                 sys.executable, str(SOLVE_IK_SCRIPT_PATH),
                 "--input-path", str(pose2d_h5_path),
                 "--output-path", str(ikfk_h5_path),
                 "--neutral-weight", str(params.ik_prior_weight),
-                # Disable the mismatch-based re-segmentation step (rejecting
-                # frames by xy distance between pred_2d_mm and fk_3d_mm) --
-                # inf accepts every frame the confidence-based period-finder
-                # already kept, so periods are never further split on this.
-                "--max-mismatch", "inf",
                 "--override",
             ],
             check=True,
         )  # fmt: skip
         logger.info(f"STEP TIME ik_solve: {time.perf_counter() - t_step:.1f}s")
 
+        if params.visualize:
+            # A second, separate IK pass just for the QA video: attempts
+            # every frame with a pose2d prediction (min_confidence/
+            # min_joint_excursion_deg/min_period_length relaxed to
+            # effectively off), keeping only the real fit-quality gate
+            # (max_mismatch, at its default). This never touches the
+            # production inverse_kinematics.h5 above -- that file's
+            # curated periods are what downstream FlyGym-snippet selection
+            # reads, and stay exactly as solve_ik.py already designs them.
+            t_step = time.perf_counter()
+            logger.info("Solving a second, visualization-only IK/FK pass...")
+            viz_ikfk_h5_path = Path(tempfile.mkstemp(suffix=".h5")[1])
+            viz_ikfk_h5_path.unlink()
+            subprocess.run(
+                [
+                    sys.executable, str(SOLVE_IK_SCRIPT_PATH),
+                    "--input-path", str(pose2d_h5_path),
+                    "--output-path", str(viz_ikfk_h5_path),
+                    "--neutral-weight", str(params.ik_prior_weight),
+                    "--min-confidence", "0",
+                    "--min-joint-excursion-deg", "0",
+                    "--min-period-length", "1",
+                    "--override",
+                ],
+                check=True,
+            )  # fmt: skip
+            logger.info(f"STEP TIME viz_ik_solve: {time.perf_counter() - t_step:.1f}s")
+
     if params.visualize:
         t_step = time.perf_counter()
         logger.info("Generating QA visualization video...")
-        generate_summary_video(
-            recording_dir=recording_dir,
-            postprocessed_dir=postprocessed_dir,
-            alignment=params.alignment,
-            with_muscle=params.muscle,
-            with_pose2d=params.pose2d,
-            with_ik=params.ik,
-            aligned_video_path=aligned_video_path,
-            fullsize_video_path=fullsize_video_path,
-            flipped_prob=(behavior_result["flipped_prob"] if behavior_result else None),
-            muscle_h5_path=muscle_h5_path,
-            muscle_dataset_name=muscle_dataset_name,
-            pose2d_h5_path=pose2d_h5_path,
-            pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
-            ikfk_h5_path=ikfk_h5_path,
-            output_path=postprocessed_dir / "summary_video.mp4",
-            muscle_vrange=params.muscle_vrange,
-            play_fps=play_fps,
-            crf=params.visualization_crf,
-            preset=params.visualization_preset,
-            num_workers=params.num_workers,
-        )
+        try:
+            generate_summary_video(
+                recording_dir=recording_dir,
+                postprocessed_dir=postprocessed_dir,
+                alignment=params.alignment,
+                crop_dim=params.crop_dim,
+                with_muscle=params.muscle,
+                with_pose2d=params.pose2d,
+                with_ik=params.ik,
+                flipped_prob=(
+                    behavior_result["flipped_prob"] if behavior_result else None
+                ),
+                muscle_h5_path=muscle_h5_path,
+                muscle_dataset_name=muscle_dataset_name,
+                pose2d_h5_path=pose2d_h5_path,
+                pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
+                # The visualization-only IK pass (attempts every frame) when
+                # available, so the QA video always shows IK/FK wherever
+                # pose2d has a prediction and the fit quality gate accepts
+                # it -- distinct from the curated production ikfk_h5_path.
+                ikfk_h5_path=(
+                    viz_ikfk_h5_path if viz_ikfk_h5_path is not None else ikfk_h5_path
+                ),
+                output_path=postprocessed_dir / "summary_video.mp4",
+                muscle_vrange=params.muscle_vrange,
+                play_fps=play_fps,
+                crf=params.visualization_crf,
+                preset=params.visualization_preset,
+                num_workers=params.num_workers,
+            )
+        finally:
+            if viz_ikfk_h5_path is not None:
+                viz_ikfk_h5_path.unlink(missing_ok=True)
         logger.info(
             f"STEP TIME visualization_total: {time.perf_counter() - t_step:.1f}s"
         )

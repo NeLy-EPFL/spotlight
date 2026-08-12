@@ -39,7 +39,10 @@ from spotlight_tools.spotlight_pose2d.viz import (
 
 VISUALIZATION_HEIGHT = 450
 FLIP_DECISION_THRESHOLD = 0.5
-YELLOW = (0, 255, 255)  # BGR
+# RGB -- frames go straight to `pvio.write_frames_to_video` (no cv2.imwrite
+# in between, which is what used to make BGR the right choice here, back
+# when a JPEG scratch-write step sat between drawing and pvio).
+YELLOW = (255, 255, 0)
 GRAY = (128, 128, 128)
 WHITE = (255, 255, 255)
 DEFAULT_CHUNK_SIZE = 500
@@ -64,7 +67,8 @@ def _render_chunk(
     tmpdir: str,
     raw_paths: list[Path],
     show_aligned: bool,
-    aligned_video_path: Path | None,
+    crop_dim: int | None,
+    transform_matrices: np.ndarray | None,
     keypoints_pre: np.ndarray | None,
     canonical_points: np.ndarray | None,
     flipped: np.ndarray | None,
@@ -90,11 +94,6 @@ def _render_chunk(
     """Composites and encodes one contiguous frame range, entirely within
     this worker process. Returns the path to this chunk's own temp video.
     """
-    aligned_cap = None
-    if show_aligned:
-        aligned_cap = cv2.VideoCapture(str(aligned_video_path))
-        aligned_cap.set(cv2.CAP_PROP_POS_FRAMES, chunk_start)
-
     muscle_file = muscle_dataset = None
     if with_muscle:
         muscle_file = h5py.File(muscle_h5_path, "r")
@@ -138,9 +137,19 @@ def _render_chunk(
 
         aligned_frame = None
         if show_aligned:
-            ok, aligned_frame = aligned_cap.read()
-            if not ok:
-                aligned_frame = np.zeros_like(panels[0])
+            # Re-derive the aligned crop directly from the raw frame using
+            # this exact frame's own saved transform, rather than decoding
+            # `aligned_behavior_video.mp4` back out -- identical result
+            # (same transform, same source pixels), no video decode at all,
+            # and avoids piling one more concurrent-resource dependency
+            # (video decode sessions) onto encode-session contention when
+            # many chunks render in parallel.
+            aligned_gray = cv2.warpAffine(
+                _raw_frame(i), transform_matrices[i], (crop_dim, crop_dim),
+                flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )  # fmt: skip
+            aligned_frame = cv2.cvtColor(aligned_gray, cv2.COLOR_GRAY2BGR)
             display_aligned_frame = (
                 np.zeros_like(aligned_frame) if is_flipped else aligned_frame
             )
@@ -168,14 +177,24 @@ def _render_chunk(
 
         period_info = ik_periods_by_frame.get(i)
         if with_pose2d:
+            # Resize the background to final display resolution *before*
+            # drawing (not after -- drawing on the native crop_dim canvas
+            # then shrinking the whole panel scaled LINE_THICKNESS/
+            # POINT_RADIUS down with it, making markers sub-pixel-thin).
+            # Scale the point coordinates by the same ratio so they land in
+            # the right place on the now-smaller canvas, while the marker
+            # size constants themselves (spotlight_pose2d.viz's own, same
+            # ones poseforge2's own QA videos use) stay pixel-for-pixel as
+            # designed.
             pose_panel = (
-                aligned_frame.copy()
+                _resize_to_height(aligned_frame, VISUALIZATION_HEIGHT)
                 if aligned_frame is not None
                 else np.zeros(
                     (VISUALIZATION_HEIGHT, VISUALIZATION_HEIGHT, 3), dtype=np.uint8
                 )
             )
-            raw_points = pose2d_data[i].copy()
+            point_scale = VISUALIZATION_HEIGHT / crop_dim
+            raw_points = pose2d_data[i] * point_scale
             if with_ik and period_info is not None:
                 period, local_i = period_info
                 draw_pose(
@@ -187,14 +206,14 @@ def _render_chunk(
                 )
                 draw_pose(
                     pose_panel,
-                    period.fk_2d_px[local_i],
+                    period.fk_2d_px[local_i] * point_scale,
                     edges,
                     edge_colors,
                     point_colors,
                 )
             else:
                 draw_pose(pose_panel, raw_points, edges, edge_colors, point_colors)
-            panels.append(_resize_to_height(pose_panel, VISUALIZATION_HEIGHT))
+            panels.append(pose_panel)
 
         if with_ik:
             panel_3d = np.zeros(
@@ -226,8 +245,6 @@ def _render_chunk(
 
         frames.append(np.hstack(panels))
 
-    if aligned_cap is not None:
-        aligned_cap.release()
     if muscle_file is not None:
         muscle_file.close()
 
@@ -263,11 +280,10 @@ def generate_summary_video(
     recording_dir: Path,
     postprocessed_dir: Path,
     alignment: str,
+    crop_dim: int,
     with_muscle: bool,
     with_pose2d: bool,
     with_ik: bool,
-    aligned_video_path: Path | None,
-    fullsize_video_path: Path | None,
     flipped_prob: np.ndarray | None,
     muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
@@ -293,12 +309,13 @@ def generate_summary_video(
     if max_frames is not None:
         n_frames = min(n_frames, max_frames)
 
-    keypoints_pre = flipped = canonical_points = None
+    keypoints_pre = flipped = canonical_points = transform_matrices = None
     alignment_metadata_path = postprocessed_dir / "behavior_alignment_transforms.h5"
     if show_aligned and alignment_metadata_path.exists():
         with h5py.File(alignment_metadata_path, "r") as f:
             keypoints_pre = f["keypoints_xy_pre_alignment"][:n_frames]
             keypoints_post = f["keypoints_xy_post_alignment"][:n_frames]
+            transform_matrices = f["transform_matrices"][:n_frames]
             if flipped_prob is None:
                 flipped = f["flipped_prob"][:n_frames]
         canonical_points = np.nanmean(keypoints_post, axis=0)
@@ -317,16 +334,12 @@ def generate_summary_video(
             for a, b in skeleton["edges"]
             if a in name_to_idx and b in name_to_idx
         ]
-        # `build_node_colors`/`build_edge_colors` return RGB tuples (see
-        # `spotlight_pose2d.viz`'s own docstring: designed for pvio's pure-RGB
-        # pipeline, "used as-is with no channel reordering"). This pipeline's
-        # canvases are fed to pvio directly here (no cv2.imwrite round trip),
-        # but still go through cv2.polylines/circle/line first, which write
-        # into whatever channel order the array already has -- reversed here
-        # once, up front, so the final colors match poseforge2's own
-        # IK/pose2d QA videos.
-        point_colors = [c[::-1] for c in build_node_colors(node_names)]
-        edge_colors = [c[::-1] for c in build_edge_colors(edges, node_names)]
+        # `build_node_colors`/`build_edge_colors` return RGB tuples, used
+        # as-is (see `spotlight_pose2d.viz`'s own docstring): frames go
+        # straight to `pvio.write_frames_to_video`, which reads RGB, with
+        # no cv2.imwrite (BGR) step in between to reorder for.
+        point_colors = build_node_colors(node_names)
+        edge_colors = build_edge_colors(edges, node_names)
 
     ik_periods_by_frame = {}
     th_idx_ik = None
@@ -378,7 +391,8 @@ def generate_summary_video(
                 tmpdir=tmpdir,
                 raw_paths=raw_paths,
                 show_aligned=show_aligned,
-                aligned_video_path=aligned_video_path,
+                crop_dim=crop_dim,
+                transform_matrices=transform_matrices,
                 keypoints_pre=keypoints_pre,
                 canonical_points=canonical_points,
                 flipped=flipped,
