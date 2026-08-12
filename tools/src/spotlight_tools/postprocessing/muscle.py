@@ -176,7 +176,9 @@ def _count_leading_orphan_muscle_frames(
 
     prev = None
     for i, frame_id in enumerate(sorted_ids):
-        im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED).astype(np.float32)
+        im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED).astype(
+            np.float32
+        )
         if (
             prev is not None
             and _diff_spatial_autocorrelation(prev, im) > autocorr_threshold
@@ -211,8 +213,8 @@ def _detect_dropped_muscle_frames(
     for i in range(1, n):
         gap_periods = (t[i] - t[i - 1]) / period
         if gap_periods > gap_threshold:
-            before = np.median(excess[max(0, i - w):i])
-            after = np.median(excess[i:min(n, i + w)])
+            before = np.median(excess[max(0, i - w) : i])
+            after = np.median(excess[i : min(n, i + w)])
             shift = after - before
             missed = int(round(shift))
             if missed >= 1 and abs(shift - missed) <= 0.35:
@@ -309,9 +311,13 @@ def plan_muscle_behavior_mapping(
     if num_orphan_muscle_frames is not None:
         first_muscle_frameid = num_orphan_muscle_frames
     else:
-        first_muscle_frameid = _count_leading_orphan_muscle_frames(raw_muscle_images_dir)
+        first_muscle_frameid = _count_leading_orphan_muscle_frames(
+            raw_muscle_images_dir
+        )
         if first_muscle_frameid > 0:
-            logger.info(f"Detected {first_muscle_frameid} leading orphan muscle frame(s)")
+            logger.info(
+                f"Detected {first_muscle_frameid} leading orphan muscle frame(s)"
+            )
 
     muscle_image_paths = _filter_muscle_frames_by_availability(
         raw_muscle_images_dir,
@@ -324,7 +330,9 @@ def plan_muscle_behavior_mapping(
     )
     slots, num_dropped = _detect_dropped_muscle_frames(muscle_acquired_time_us)
     if num_dropped:
-        logger.warning(f"Detected {num_dropped} dropped muscle exposure(s) mid-recording.")
+        logger.warning(
+            f"Detected {num_dropped} dropped muscle exposure(s) mid-recording."
+        )
 
     keep = slots < len(stage_pos_df_at_muscle_frames)
     if not keep.all():
@@ -337,7 +345,9 @@ def plan_muscle_behavior_mapping(
 
     return MuscleBehaviorMapping(
         muscle_image_paths=muscle_image_paths,
-        corresponding_behavior_frame_id=behavior_group_df["behavior_frame_id"].to_numpy(),
+        corresponding_behavior_frame_id=behavior_group_df[
+            "behavior_frame_id"
+        ].to_numpy(),
         x_pos_mm_interp=behavior_group_df["x_pos_mm_interp"].to_numpy(dtype=np.float32),
         y_pos_mm_interp=behavior_group_df["y_pos_mm_interp"].to_numpy(dtype=np.float32),
         acquired_time_us=muscle_acquired_time_us,
@@ -372,7 +382,7 @@ def warp_muscle_chunk(
     chunk_behavior_frame_start: int,
     chunk_behavior_frame_end: int,
     alignment_transforms_by_behavior_frame: dict[int, np.ndarray],
-    num_workers: int = -1,
+    num_cpu_workers: int = -1,
 ) -> np.ndarray:
     """Warp every muscle frame whose `corresponding_behavior_frame_id` falls
     in `[chunk_behavior_frame_start, chunk_behavior_frame_end)`, using this
@@ -388,9 +398,11 @@ def warp_muscle_chunk(
         & (mapping.corresponding_behavior_frame_id < chunk_behavior_frame_end)
     )[0]
     if len(idxs) == 0:
-        return np.empty((0, mapping.output_dim[1], mapping.output_dim[0]), dtype=np.uint16)
+        return np.empty(
+            (0, mapping.output_dim[1], mapping.output_dim[0]), dtype=np.uint16
+        )
 
-    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky")
+    parallel_mapper = Parallel(n_jobs=num_cpu_workers, backend="loky")
     results = parallel_mapper(
         delayed(warp_single_muscle_frame_to_behavior)(
             mapping.homography_mapper.H_muscle2beh,

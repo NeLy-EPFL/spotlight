@@ -85,10 +85,30 @@ def fit_line_direction(points: np.ndarray) -> np.ndarray:
     return vt[0]
 
 
+def fit_disambiguated_direction(points: np.ndarray) -> np.ndarray:
+    """`fit_line_direction`, sign-resolved using `points`' own first-to-last
+    order (e.g. head/neck end to abdomen end) -- see `fit_rotation_
+    translation`'s own docstring for why this, not a general shape fit,
+    is the right way to read a near-collinear keypoint set's orientation.
+
+    Args:
+        points: `(n, 2)`, `n >= 2`, in head-to-abdomen (or equivalent)
+            order.
+
+    Returns:
+        `(2,)` unit vector, pointing from `points[0]` toward `points[-1]`.
+    """
+    direction = fit_line_direction(points)
+    if np.dot(direction, points[-1] - points[0]) < 0:
+        direction = -direction
+    return direction
+
+
 def fit_rotation_translation(
     predicted_points: np.ndarray,
     canonical_points: np.ndarray,
     scale: float = RAW_TO_ALIGNED_SCALE,
+    pred_direction_override: np.ndarray | None = None,
 ) -> np.ndarray:
     """Fits a raw-to-aligned affine transform with a FIXED scale -- only
     rotation and translation vary per frame.
@@ -113,6 +133,12 @@ def fit_rotation_translation(
             domain.
         scale: Raw-to-aligned scale; `RAW_TO_ALIGNED_SCALE` (1.0) unless
             overridden for e.g. a display already resized by some factor.
+        pred_direction_override: `(2,)` unit vector to use instead of
+            fitting one fresh from `predicted_points` -- e.g. a version of
+            this same direction smoothed over time, for a QA overlay that
+            shouldn't jitter frame to frame the way an independent per-frame
+            fit does. Still sign-disambiguated the same way a freshly-fit
+            direction would be. `None` (default) fits fresh, as before.
 
     Returns:
         `(2, 3)` affine matrix, raw -> aligned domain.
@@ -120,12 +146,13 @@ def fit_rotation_translation(
     pred_centroid = predicted_points.mean(axis=0)
     canon_centroid = canonical_points.mean(axis=0)
 
-    pred_direction = fit_line_direction(predicted_points)
-    if np.dot(pred_direction, predicted_points[-1] - predicted_points[0]) < 0:
-        pred_direction = -pred_direction
-    canon_direction = fit_line_direction(canonical_points)
-    if np.dot(canon_direction, canonical_points[-1] - canonical_points[0]) < 0:
-        canon_direction = -canon_direction
+    if pred_direction_override is not None:
+        pred_direction = pred_direction_override
+        if np.dot(pred_direction, predicted_points[-1] - predicted_points[0]) < 0:
+            pred_direction = -pred_direction
+    else:
+        pred_direction = fit_disambiguated_direction(predicted_points)
+    canon_direction = fit_disambiguated_direction(canonical_points)
 
     angle = np.arctan2(canon_direction[1], canon_direction[0]) - np.arctan2(
         pred_direction[1], pred_direction[0]
@@ -143,6 +170,7 @@ def raw_domain_box_corners(
     canonical_points: np.ndarray,
     scale: float = RAW_TO_ALIGNED_SCALE,
     box_size: int = ALIGNED_BOX_SIZE,
+    pred_direction_override: np.ndarray | None = None,
 ) -> np.ndarray | None:
     """Where the 900x900 aligned box's corners would land in the raw frame,
     if `predicted_points` (this frame's own neck/thorax/abdomen, in raw
@@ -162,6 +190,8 @@ def raw_domain_box_corners(
         scale: Raw-to-aligned scale; `RAW_TO_ALIGNED_SCALE` (1.0) unless
             overridden.
         box_size: Aligned domain's own size (900).
+        pred_direction_override: See `fit_rotation_translation`'s own
+            docstring -- passed straight through.
 
     Returns:
         `(4, 2)` box corners in raw pixel space (top-left, top-right,
@@ -170,7 +200,9 @@ def raw_domain_box_corners(
     """
     if np.isnan(predicted_points).any():
         return None
-    raw_to_aligned = fit_rotation_translation(predicted_points, canonical_points, scale)
+    raw_to_aligned = fit_rotation_translation(
+        predicted_points, canonical_points, scale, pred_direction_override
+    )
     aligned_to_raw = invert_affine(raw_to_aligned[np.newaxis])
     corners = np.array(
         [[0, 0], [box_size, 0], [box_size, box_size], [0, box_size]], dtype=np.float32

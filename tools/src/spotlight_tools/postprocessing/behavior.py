@@ -39,6 +39,30 @@ from spotlight_tools.spotlight_pose2d.model import RepVGGPoseModel
 # distinct from `flip_label.FLIPPED_THRESHOLD` (a *training*-label proxy).
 FLIP_DECISION_THRESHOLD = 0.5
 
+# "auto" batch size = this fraction of the active GPU's total VRAM (MiB).
+# Hardcoded so a batch size tuned (via measured fp16 peak usage, see
+# `PostprocessingParams`) on a 12 GB GPU scales automatically to bigger
+# GPUs instead of leaving headroom unused there.
+ORIENT_BATCH_SIZE_VRAM_FRACTION = 0.04
+POSE2D_BATCH_SIZE_VRAM_FRACTION = 0.02
+# No GPU to size a batch against; CPU inference isn't this pipeline's
+# tuned/expected path, so this is just a modest, safe constant.
+CPU_FALLBACK_BATCH_SIZE = 32
+
+
+def _resolve_batch_size(
+    batch_size: int | str, vram_fraction: float, device: str
+) -> int:
+    """`batch_size` as given, or (if `"auto"`) `vram_fraction` of the
+    active GPU's total VRAM in MiB -- see `ORIENT_BATCH_SIZE_VRAM_
+    FRACTION`/`POSE2D_BATCH_SIZE_VRAM_FRACTION`."""
+    if batch_size != "auto":
+        return int(batch_size)
+    if device != "cuda":
+        return CPU_FALLBACK_BATCH_SIZE
+    vram_mib = torch.cuda.get_device_properties(0).total_memory / (1024**2)
+    return int(vram_fraction * vram_mib)
+
 
 def expand_single_pseudo_bgr_image(
     pseudo3ch_frame_path: Path,
@@ -51,8 +75,8 @@ def expand_single_pseudo_bgr_image(
     return [blue, green, red]
 
 
-def _expand_chunk(paths: list[Path], num_workers: int) -> list[np.ndarray]:
-    parallel_mapper = Parallel(n_jobs=num_workers, backend="loky")
+def _expand_chunk(paths: list[Path], num_cpu_workers: int) -> list[np.ndarray]:
+    parallel_mapper = Parallel(n_jobs=num_cpu_workers, backend="loky")
     grouped = parallel_mapper(delayed(expand_single_pseudo_bgr_image)(p) for p in paths)
     frames = []
     for group in grouped:
@@ -196,17 +220,17 @@ def process_behavior_pipeline(
     behavior_video_fps: float,
     behavior_video_crf: int,
     behavior_video_preset: str,
-    orient_batch_size: int,
+    orient_batch_size: int | str,
     run_pose2d: bool,
     pose2d_checkpoint_path: Path | None,
     pose2d_skeleton_json_path: Path | None,
-    pose2d_batch_size: int,
+    pose2d_batch_size: int | str,
     output_pose2d_h5_path: Path | None,
     run_muscle: bool,
     muscle_mapping: MuscleBehaviorMapping | None,
     output_muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
-    num_workers: int = -1,
+    num_cpu_workers: int = -1,
 ) -> dict:
     """The single streaming pass: decode -> orient -> align -> (pose2d,
     muscle) -> write video(s), chunk by chunk. Model inference always runs
@@ -219,7 +243,24 @@ def process_behavior_pipeline(
     """
     logger = logging.getLogger(__name__)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"Orient/pose2d device: {device}")
+    orient_batch_size = _resolve_batch_size(
+        orient_batch_size, ORIENT_BATCH_SIZE_VRAM_FRACTION, device
+    )
+    pose2d_batch_size = _resolve_batch_size(
+        pose2d_batch_size, POSE2D_BATCH_SIZE_VRAM_FRACTION, device
+    )
+    # `num_cpu_workers` is constant for the rest of this call, so joblib's
+    # own resolution of it (relevant mainly for -1 = "all cores") only
+    # needs checking once here, not on every _expand_chunk/warp_muscle_
+    # chunk call below.
+    effective_cpu_workers = Parallel(
+        n_jobs=num_cpu_workers, backend="loky"
+    )._effective_n_jobs()
+    logger.info(
+        f"Orient/pose2d device: {device}, orient_batch_size={orient_batch_size}, "
+        f"pose2d_batch_size={pose2d_batch_size}, "
+        f"num_cpu_workers={num_cpu_workers} (effective: {effective_cpu_workers})"
+    )  # fmt: skip
 
     if output_aligned_video_path is not None:
         check_output_path_against_alignment_flag(output_aligned_video_path, alignment)
@@ -300,7 +341,7 @@ def process_behavior_pipeline(
         chunk_paths = raw_behavior_frame_paths[path_start:path_end]
 
         t0 = _tick()
-        chunk_frames = _expand_chunk(chunk_paths, num_workers)[
+        chunk_frames = _expand_chunk(chunk_paths, num_cpu_workers)[
             : chunk_end - chunk_start
         ]
         timers["decode"] += _tick() - t0
@@ -371,7 +412,11 @@ def process_behavior_pipeline(
                 for i in range(len(chunk_frames))
             }
             muscle_frames = warp_muscle_chunk(
-                muscle_mapping, chunk_start, chunk_end, transforms_by_frame, num_workers
+                muscle_mapping,
+                chunk_start,
+                chunk_end,
+                transforms_by_frame,
+                num_cpu_workers,
             )
             timers["muscle_warp"] += _tick() - t0
             # Separate from the warp above -- profiling found the HDF5 gzip
@@ -391,15 +436,22 @@ def process_behavior_pipeline(
     t0 = _tick()
     if aligned_writer is not None:
         aligned_writer.close()
-    logger.info(f"Aligned video encode (writer.close()): {_tick() - t0:.1f}s")
+    timers["aligned_video_encode"] = _tick() - t0
+    logger.info(
+        f"Aligned video encode (writer.close()): {timers['aligned_video_encode']:.1f}s"
+    )
     if fullsize_writer is not None:
         t0 = _tick()
         fullsize_writer.close()
-        logger.info(f"Fullsize video encode (writer.close()): {_tick() - t0:.1f}s")
+        timers["fullsize_video_encode"] = _tick() - t0
+        logger.info(
+            f"Fullsize video encode (writer.close()): {timers['fullsize_video_encode']:.1f}s"
+        )
     if muscle_writer is not None:
         t0 = _tick()
         muscle_writer.close()
-        logger.info(f"Muscle H5 close/flush: {_tick() - t0:.1f}s")
+        timers["muscle_h5_close"] = _tick() - t0
+        logger.info(f"Muscle H5 close/flush: {timers['muscle_h5_close']:.1f}s")
 
     output_alignment_metadata_path.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(output_alignment_metadata_path, "w") as f:
@@ -424,6 +476,7 @@ def process_behavior_pipeline(
         "aligned_video_path": output_aligned_video_path if write_aligned else None,
         "fullsize_video_path": output_fullsize_video_path if write_fullsize else None,
         "alignment_metadata_path": output_alignment_metadata_path,
+        "timers": dict(timers),
     }
 
     if run_pose2d:
