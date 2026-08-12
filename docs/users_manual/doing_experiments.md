@@ -1,8 +1,8 @@
 # Doing experiments
 
-**Tl;dr: run `source init-spotlight.sh` and follow on-screen instructions.** This activates the Python virtual environment for the tools in `tools/` and remembers which profile and arena directories to use.
+**Tl;dr: run `source init-spotlight.sh` and follow on-screen instructions.** This activates the Python virtual environment for the tools in `python/` and remembers which profile and arena directories to use.
 
-Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spotlight` with arguments specifying the profile and arena directories: e.g., `run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146x146`. Activate the Python virtual environment manually (`tools/`) before running `fit-arena-registration`.
+Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spotlight` with arguments specifying the profile and arena directories: e.g., `run-spotlight -p ~/Spotlight/profiles/default -a ~/Spotlight/arenas/arena146x146`. Activate the Python virtual environment manually (`python/`) before running `fit-arena-registration`.
 
 ---
 

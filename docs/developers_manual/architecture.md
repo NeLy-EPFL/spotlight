@@ -11,7 +11,7 @@ durint the same period of time).
 
 This page is the conceptual map. For the timing/synchronization details see
 [Data acquisition](data_acquisition.md); for the host↔microcontroller messages see
-the [communication protocol](comm_protocol.md).
+the [communication protocol](serial_comm_protocol.md).
 
 ## Multithreading
 
@@ -72,15 +72,14 @@ handled by an Arduino Nano ESP32 running the firmware in `trigger_firmware/`, no
 by the host. The host sends compact JSON commands (frame rate, exposures, the
 recording schedule) over USB serial; the microcontroller generates the TTL trigger
 signals. This protocol is a small library in `comm_protocol/`, shared by both the
-recorder and the firmware. See [comm_protocol.md](comm_protocol.md) and
-[data_acquisition.md](data_acquisition.md).
+recorder and the firmware. See [serial_comm_protocol.md](serial_comm_protocol.md)
+and [data_acquisition.md](data_acquisition.md).
 
 ## Components in this repository
 
-- `recorder/` — the C++ recorder and its three programs ([`align-cameras`](recorder/align_cameras.md),
-  [`run-arena-registration-scan`](recorder/run_arena_registration_scan.md),
-  [`run-spotlight`](recorder/run_spotlight.md)).
+- `recorder/` — the C++ recorder and its programs (`align-cameras`,
+  `run-arena-registration-scan`, `run-charuco-homography-scan`, `run-spotlight`).
 - `trigger_firmware/` — the microcontroller firmware (PlatformIO).
 - `comm_protocol/` — the shared JSON protocol library (CMake; included by both of
   the above).
-- `tools/` — the offline Python tools (`fit-arena-registration`, `postprocess-recording`, etc.).
+- `python/` — the offline Python tools (`fit-arena-registration`, `postprocess-recording`, etc.).

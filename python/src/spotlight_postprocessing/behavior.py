@@ -28,19 +28,19 @@ from spotlight_postprocessing.muscle import (
     MuscleBehaviorMapping,
     warp_muscle_chunk,
 )
-from spotlight_postprocessing.spotlight_localization.dataset import (
+from spotlight_postprocessing.localization.dataset import (
     OUTPUT_SIZE as LOCALIZATION_OUTPUT_SIZE,
 )
-from spotlight_postprocessing.spotlight_localization.dataset import (
+from spotlight_postprocessing.localization.dataset import (
     SCALE_FACTOR as LOCALIZATION_SCALE_FACTOR,
 )
-from spotlight_postprocessing.spotlight_localization.model import TinyLocalizationModel
-from spotlight_postprocessing.spotlight_pose2d.dataset import (
+from spotlight_postprocessing.localization.model import TinyLocalizationModel
+from spotlight_postprocessing.pose2d.dataset import (
     INPUT_SIZE as POSE2D_INPUT_SIZE,
 )
-from spotlight_postprocessing.spotlight_pose2d.model import RepVGGPoseModel
+from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
 
-# See `scripts/spotlight_localization/visualize_predictions.py`'s own
+# See `scripts/postprocessing/model_training/localization/visualize_predictions.py`'s own
 # FLIP_DECISION_THRESHOLD -- the model's own sigmoid decision boundary,
 # distinct from `flip_label.FLIPPED_THRESHOLD` (a *training*-label proxy).
 FLIP_DECISION_THRESHOLD = 0.5
@@ -494,7 +494,7 @@ def process_behavior_pipeline(
         poses = np.concatenate(all_pose2d_poses)
         keypoint_scores = np.concatenate(all_pose2d_scores)
         instance_score = np.nanmean(keypoint_scores, axis=-1)
-        from spotlight_postprocessing.spotlight_pose2d.io_utils import save_pose_h5
+        from spotlight_postprocessing.pose2d.io_utils import save_pose_h5
 
         save_pose_h5(
             output_pose2d_h5_path, poses, keypoint_scores, instance_score,

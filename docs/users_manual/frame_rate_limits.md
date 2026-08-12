@@ -1,7 +1,7 @@
 # Frame rate limits
 
 Reference calculations for the maximum achievable frame rates of the two cameras.
-See [Data acquisition](data_acquisition.md) for how the muscle camera's
+See [Data acquisition](../developers_manual/data_acquisition.md) for how the muscle camera's
 continuous (auto-sequence) mode and the behavior/muscle synchronization work.
 
 ## Behavior camera
@@ -59,7 +59,7 @@ is no per-frame idle time. This is depicted in the sketch below.
 
 <img width="500" alt="continuous rolling shutter timing" src="https://github.com/user-attachments/assets/ac59d1bc-7d2d-42f4-8c17-8721e81cd1ba" />
 
-where (see also [Data acquisition](data_acquisition.md)):
+where (see also [Data acquisition](../developers_manual/data_acquisition.md)):
 
 - The thin, green lines are the exposure periods.
 - The thick, red lines are the sensor readout periods.

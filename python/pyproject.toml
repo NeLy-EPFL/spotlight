@@ -39,7 +39,7 @@ dependencies = [
 postprocessing = [
     # Pose estimation for fly alignment & cropping (spotlight_localization/
     # spotlight_pose2d training-loop tools; live inference no longer uses
-    # sleap, see spotlight_localization)
+    # sleap, see localization)
     "sleap[nn]==1.6.3",
     "sleap-io==0.7.0",
     "sleap-nn==0.2.0",
@@ -50,7 +50,7 @@ postprocessing = [
     "onnx>=1.22.0",
     "onnxscript>=0.7.1",
 
-    # spotlight_ik: QuickIK-based IK/FK fit (FlyGym physics replay stays in
+    # invkin: QuickIK-based IK/FK fit (FlyGym physics replay stays in
     # poseforge2 -- this pipeline only needs the IK solve + a cv2 3D panel)
     "quickik",
 

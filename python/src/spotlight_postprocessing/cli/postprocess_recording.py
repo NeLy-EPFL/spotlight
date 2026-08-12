@@ -34,7 +34,7 @@ POSE2D_CHECKPOINT_PATH = (
 POSE2D_SKELETON_JSON_PATH = (
     PYTHON_ROOT / "bulk_data/pose2d_model/skeleton_metadata.json"
 )
-SOLVE_IK_SCRIPT_PATH = PYTHON_ROOT / "scripts/spotlight_ik/solve_ik.py"
+SOLVE_IK_SCRIPT_PATH = PYTHON_ROOT / "scripts/postprocessing/solve_ik.py"
 
 
 @dataclass
@@ -410,26 +410,22 @@ def postprocess_recording_data(
         logger.info(f"STEP TIME visualization_total: {visualization_total_s:.1f}s")
 
     timers = behavior_result["timers"] if behavior_result else {}
+
+    def sum_present(*keys: str) -> float | None:
+        """Sum of `timers[key]` for whichever `keys` were actually recorded
+        (e.g. a video/encode step that didn't run), or None if none were."""
+        values = [timers[k] for k in keys if k in timers]
+        return sum(values) if values else None
+
     report = [
         ("localization model", timers.get("localization_infer")),
         ("2d pose model", timers.get("pose2d_infer")),
         ("muscle warping", timers.get("muscle_warp")),
         (
             "saving behavior video",
-            (
-                timers["aligned_video_encode"] + timers.get("fullsize_video_encode", 0)
-                if "aligned_video_encode" in timers
-                else timers.get("fullsize_video_encode")
-            ),
+            sum_present("aligned_video_encode", "fullsize_video_encode"),
         ),
-        (
-            "saving muscle h5",
-            (
-                timers["muscle_h5_write"] + timers.get("muscle_h5_close", 0)
-                if "muscle_h5_write" in timers
-                else None
-            ),
-        ),
+        ("saving muscle h5", sum_present("muscle_h5_write", "muscle_h5_close")),
         ("making summary video", visualization_total_s),
         ("total", time.perf_counter() - t_start),
     ]

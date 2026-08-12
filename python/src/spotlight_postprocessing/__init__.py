@@ -27,7 +27,7 @@ visualize
 io
     Low-level helpers: find per-frame files, check output path consistency,
     append muscle frames to an HDF5 dataset.
-spotlight_localization, spotlight_pose2d, spotlight_ik
+localization, pose2d, invkin
     The fly-alignment, 2D-pose, and inverse-kinematics models/pipelines
     used by the modules above.
 """

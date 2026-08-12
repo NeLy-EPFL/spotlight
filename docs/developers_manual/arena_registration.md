@@ -3,13 +3,13 @@
 Arena registration fits the mapping between three coordinate systems — behavior
 camera pixels, translation-stage positions, and physical arena coordinates — so the
 recorder knows where the fly is in the arena and the post-processing can place each
-frame. It is a two-program procedure: a scan
-([`run-arena-registration-scan`](../recorder/run_arena_registration_scan.md), C++)
-followed by a fit ([`fit-arena-registration`](../python-tools/fit_arena_registration.md),
-Python).
+frame. It is a two-program procedure: a scan (`run-arena-registration-scan`, C++;
+run with `--help` for its full list of options) followed by a fit
+(`fit-arena-registration`, Python; run `fit-arena-registration --help` for its
+full list of options).
 
 > [!IMPORTANT]
-> **Prerequisite:** install the Python tools in `tools/` (see [Installation](installation_compilation.md), Step 4).
+> **Prerequisite:** install the Python tools in `python/` (see [Installation](installation_compilation.md), Step 4).
 
 ## Procedure
 
@@ -30,9 +30,8 @@ run-arena-registration-scan \
 3. The stage automatically visits each AprilTag, acquires 10 frames per tag, and
    writes everything to `~/Spotlight/arenas/arena146x146/mapping_scan/`.
 
-The scan takes a few minutes (8 AprilTags × 10 frames for arena146x146). See the
-[`run-arena-registration-scan` page](../recorder/run_arena_registration_scan.md) for
-details and the exact output format.
+The scan takes a few minutes (8 AprilTags × 10 frames for arena146x146). Run
+`run-arena-registration-scan --help` for details and the exact output format.
 
 ### Step 2 — Fit the registration model
 
@@ -44,9 +43,8 @@ This writes `model/calibration_result.yaml`, `model/calibration_points.csv`, and
 `model/diagnostics.png` to the arena directory.
 
 Open `model/diagnostics.png` and check the fit quality: RMSE should be ≲ 0.1 mm and
-R² ≈ 1.0 (see [Quality targets](#quality-targets)). See the
-[`fit-arena-registration` page](../python-tools/fit_arena_registration.md) for
-options.
+R² ≈ 1.0 (see [Quality targets](#quality-targets)). Run `fit-arena-registration
+--help` for the full list of options.
 
 ### Step 3 — Verify with the recorder
 
@@ -79,7 +77,7 @@ Registration establishes two mappings for the behavior camera:
 1. **Arena spec.** The arena PDF (`arena_spec.pdf`) encodes the physical
    (arena-space) positions of all AprilTag corners and the DataMatrix center, in
    mm. `ArenaConfig` parses this and writes `metadata.yaml`.
-2. **Mapping board.** `make_arena146x146_config.py` generates a printable
+2. **Mapping board.** `scripts/tools/set_up_arenas.py` generates a printable
    `mapping_board.pdf` with AprilTag markers at the spec's locations, plus a
    DataMatrix barcode encoding an 8-character checksum of the full spec.
 3. **Registration scan.** `run-arena-registration-scan`:

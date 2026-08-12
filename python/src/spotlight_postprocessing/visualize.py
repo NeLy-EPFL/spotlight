@@ -31,7 +31,7 @@ still drawn in either case, whenever `show_pose_overlay` allows it.
 
 Reads back already-computed outputs (video files, muscle H5,
 `kinematics.h5`) -- no model re-inference here, that already happened in
-`behavior.process_behavior_pipeline` and `scripts/spotlight_ik/solve_ik.py`.
+`behavior.process_behavior_pipeline` and `scripts/postprocessing/solve_ik.py`.
 
 Rendering is chunked and parallelized (joblib): each worker composites its
 own frame range and encodes it directly to its own small temp video via
@@ -66,15 +66,15 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy.ndimage import binary_closing, binary_opening, gaussian_filter1d
 from spotlight_tools.calibration.mapper import SpotlightPositionMapper
 from spotlight_postprocessing.common.video import pad_to_macroblock
-from spotlight_postprocessing.spotlight_localization.box import (
+from spotlight_postprocessing.localization.box import (
     fit_disambiguated_direction,
     raw_domain_box_corners,
 )
-from spotlight_postprocessing.spotlight_localization.flip_label import (
+from spotlight_postprocessing.localization.flip_label import (
     weighted_confidence,
 )
-from spotlight_postprocessing.spotlight_pose2d.viz import LINE_THICKNESS, POINT_RADIUS
-from spotlight_postprocessing.spotlight_pose2d.viz import (
+from spotlight_postprocessing.pose2d.viz import LINE_THICKNESS, POINT_RADIUS
+from spotlight_postprocessing.pose2d.viz import (
     build_edge_colors,
     build_node_colors,
     draw_pose,
@@ -101,19 +101,14 @@ COLORMAP_LUT_SIZE = 256
 IK_LINE_THICKNESS_SCALE = 2
 IK_POINT_RADIUS_SCALE = 2
 DEFAULT_CHUNK_SIZE = 500
-# Measured directly (10 concurrent `ffmpeg -c:v h264_nvenc` processes on
-# this project's own RTX 3080 Ti, driver 580.173.02): exactly 8 concurrent
-# sessions succeed, a 9th fails with "OpenEncodeSessionEx failed:
-# incompatible client key" -- a hard, driver-enforced cap on this
-# (unpatched) consumer GPU, not a soft/tunable limit. Running workers AT
-# that exact cap left zero margin for the natural timing overlap between
-# real per-chunk encodes (workers don't start/stop in lockstep) and each
-# worker's own one-time `pvio` NVENC capability probe, which was
-# intermittently tipping some chunk over the limit -- either a graceful
-# libx264 fallback for that chunk, or (worse) an unhandled failure deep
-# enough in the encode call to kill the whole worker process outright
-# (joblib's "A worker stopped..." warning, silently retried on another
-# worker). 6 leaves 2 sessions of headroom below the measured cap.
+# Measured directly (concurrent `ffmpeg -c:v h264_nvenc` processes on this
+# project's own RTX 3080 Ti, driver 580.173.02): a hard, driver-enforced
+# cap of 8 concurrent NVENC sessions (a 9th fails with "OpenEncodeSessionEx
+# failed: incompatible client key"). Running workers AT that exact cap left
+# no margin for real chunks' uneven start/stop timing plus each worker's
+# own one-time NVENC capability probe, intermittently tipping a chunk over
+# the limit (silent libx264 fallback, or a hard worker crash). 6 leaves 2
+# sessions of headroom.
 DEFAULT_NUM_WORKERS = 6
 DEFAULT_COMPOSITE_WORKERS = 4
 """Threads per chunk *process* used to composite (not encode) frames.
@@ -142,7 +137,12 @@ RAW_BOX_LEGEND_LINES = [
     "gray: rejected (not upright or too close to edge)",
 ]
 
-_IK_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "spotlight_ik"
+_IK_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "postprocessing"
+# Registered once here rather than at each of this module's three `from
+# make_videos import ...` call sites: those stay lazy/conditional (skipping
+# make_videos.py's own import cost when with_ik/with_pose2d is off), but
+# there's no reason to re-insert the same sys.path entry three times.
+sys.path.insert(0, str(_IK_SCRIPTS_DIR))
 
 
 def _round_to_multiple(value: int, multiple: int = 16) -> int:
@@ -504,7 +504,6 @@ def _precompute_panel_overlays(
         )  # fmt: skip
         row2_widths.append(PANEL_SIZE)
     if with_row2 and with_ik:
-        sys.path.insert(0, str(_IK_SCRIPTS_DIR))
         from make_videos import GRID_SPACING_MM
 
         grid_label = f"grid: {GRID_SPACING_MM:g} mm"
@@ -717,7 +716,6 @@ def _render_chunk(
             }
 
     if with_ik:
-        sys.path.insert(0, str(_IK_SCRIPTS_DIR))
         from make_videos import (
             compute_camera_orientation,
             compute_grid_lines,
@@ -791,15 +789,11 @@ def _render_chunk(
             row1.append(_apply_overlay(muscle_bgr, panel_overlays.get("muscle")))
 
         # --- row 2 ---
-        # Both panels below key their overlay drawing only on
-        # `show_pose_overlay[i]` (best-effort background always shown,
-        # same as row 1's aligned/muscle panels; overlay hidden whenever
-        # flipped OR weighted keypoint confidence is too low, see
-        # `show_pose_overlay`) and `show_ik[i]` (IK actually attempted for
-        # this frame -- see `solve_ik.py`'s internal gap detection -- and
-        # not display-rejected for excessive fk-to-prediction mismatch):
-        # the 2D pose overlay is drawn whenever `show_pose_overlay[i]`,
-        # regardless of `show_ik`, since it doesn't depend on IK at all.
+        # Both panels gate their overlay on `show_pose_overlay[i]`
+        # (background always shown either way; overlay hidden when flipped
+        # or confidence is too low). The colored IK layer additionally
+        # requires `show_ik[i]` (IK attempted and within the mismatch
+        # tolerance); the raw 2D pose overlay doesn't depend on IK at all.
         row2 = []
         if with_pose2d:
             # Resize the background to final display resolution *before*
@@ -817,7 +811,7 @@ def _render_chunk(
                 raw_points = pose2d_data[i] * point_scale
                 if th_idx is not None:
                     # "Th" isn't a real IK observation (see
-                    # spotlight_ik.neuromechfly's module docstring) --
+                    # invkin.neuromechfly's module docstring) --
                     # omitted from both this raw layer and the colored IK
                     # layer below (and from their shared edges, filtered
                     # out of `edges` above), not just this one.
@@ -1014,9 +1008,8 @@ def generate_summary_video(
     th_idx = None
     thc_idxs = None
     if with_pose2d:
-        from spotlight_postprocessing.spotlight_ik.io_utils import load_kinematics_h5
+        from spotlight_postprocessing.invkin.io_utils import load_kinematics_h5
 
-        sys.path.insert(0, str(_IK_SCRIPTS_DIR))
         from make_videos import EXCLUDED_EDGE_NAME_PAIRS
 
         kinematics = load_kinematics_h5(kinematics_h5_path)
@@ -1027,7 +1020,7 @@ def generate_summary_video(
         th_idx = name_to_idx.get("Th")
         # Excludes the two SLEAP-skeleton edges from the thorax hub to the
         # midleg ThC nodes: "Th" isn't a real IK observation (see
-        # `spotlight_ik.neuromechfly`'s module docstring), so a line to it
+        # `invkin.neuromechfly`'s module docstring), so a line to it
         # would misrepresent the IK reconstruction the same way it would in
         # `make_videos.py`'s own QA clips (see `EXCLUDED_EDGE_NAME_PAIRS`
         # there); applied here regardless of `with_ik` for consistency.
@@ -1039,7 +1032,7 @@ def generate_summary_video(
             and frozenset({a, b}) not in EXCLUDED_EDGE_NAME_PAIRS
         ]
         # `build_node_colors`/`build_edge_colors` return RGB tuples, used
-        # as-is (see `spotlight_pose2d.viz`'s own docstring): frames go
+        # as-is (see `pose2d.viz`'s own docstring): frames go
         # straight to `pvio.write_frames_to_video`, which reads RGB, with
         # no cv2.imwrite (BGR) step in between to reorder for.
         point_colors = build_node_colors(node_names)
@@ -1124,17 +1117,14 @@ def generate_summary_video(
     chunk_bounds = list(range(0, n_frames, chunk_size)) + [n_frames]
     chunks = list(zip(chunk_bounds[:-1], chunk_bounds[1:]))
     # KNOWN ISSUE: joblib/loky occasionally logs "A worker stopped while
-    # some jobs were given to the executor" partway through a real run (no
-    # Python traceback -- a native-level worker death, not a catchable
-    # exception). Survived three independent, still-worth-keeping fixes
-    # (a real NaN-cast bug feeding `make_videos`'s grid-line cast, an
-    # NVENC concurrent-session-count margin fix, and disabling OpenCV's own
-    # internal thread pool, which otherwise fights `composite_workers`'
-    # ThreadPoolExecutor for cores) without going away; loky transparently
-    # retries the lost work on another worker and every run has still
-    # finished with a complete, correct video, so this is left as a
-    # monitored, apparently-benign warning rather than chased further
-    # without real native-level debugging tools (gdb/core dumps).
+    # some jobs were given to the executor" mid-run -- a native worker
+    # death (no Python traceback), not a catchable exception. Survived
+    # three independent, still-worth-keeping fixes (a real NaN-cast bug in
+    # make_videos's grid-line cast, an NVENC session-count margin fix, and
+    # disabling OpenCV's own thread pool) without going away. loky retries
+    # the lost work automatically and every run finishes with a complete,
+    # correct video, so this stays a monitored, benign warning rather than
+    # chased further without real native debugging tools (gdb/core dumps).
     encode_pool = Parallel(n_jobs=num_workers, return_as="generator")
     logger.info(
         f"Rendering {n_frames} visualization frames across {len(chunks)} "

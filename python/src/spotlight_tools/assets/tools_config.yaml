@@ -6,18 +6,19 @@ pose2d:
     Th: thorax
     Ab: abdomen tip
 
-# Paths below are relative to the `tools/` package root (i.e. `tools/bulk_data/...`,
-# a symlink to /mnt/datassd/spotlight/bulk_data, gitignored) -- callers must resolve
-# them against that root, not against the current working directory.
+# Paths below are relative to the `python/` package root (i.e.
+# `python/bulk_data/...`, a symlink to /mnt/datassd/spotlight/bulk_data,
+# gitignored) -- callers must resolve them against that root, not against
+# the current working directory.
 
 # TinyLocalizationModel (coarse neck/thorax/abdomen + flip flag on raw frames),
 # migrated from poseforge2's spotlight_orient (poseforge2's own name for it,
-# unchanged there). See scripts/spotlight_localization/README.md.
+# unchanged there). See scripts/postprocessing/model_training/localization/README.md.
 localization_model:
   checkpoint_path: "bulk_data/localization_model/checkpoints/v13/best.pt"
 
 # RepVGGPoseModel (37-keypoint full pose on the aligned crop), migrated from
-# poseforge2's spotlight_pose2d. See scripts/spotlight_pose2d/README.md.
+# poseforge2's spotlight_pose2d. See scripts/postprocessing/model_training/pose2d/README.md.
 pose2d_model:
   checkpoint_path: "bulk_data/pose2d_model/checkpoints/iter2b/best.pt"
   skeleton_json_path: "bulk_data/pose2d_model/skeleton_metadata.json"

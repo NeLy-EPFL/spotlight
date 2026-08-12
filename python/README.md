@@ -23,16 +23,17 @@ uv sync --extra postprocessing   # + the full postprocessing pipeline
 fit-arena-registration -a ~/Spotlight/arenas/arena146x146
 
 # Post-process a recording:
-postprocess-recording --recording-dir ~/data/spotlight/20250613-fly1b-002/ --with-muscle
+postprocess-recording ~/data/spotlight/20250613-fly1b-002/
 ```
 
 ## Scripts
 
-| Entry point | Script | Description |
+| Entry point | Implementation | Description |
 |---|---|---|
-| `fit-arena-registration` | `scripts/fit_arena_registration.py` | Fit registration model from scan images. |
-| `postprocess-recording` | `scripts/postprocess_recording.py` | Full postprocessing pipeline. |
-| `visualize-stage-trajectory` | `scripts/visualize_stage_trajectory.py` | Plot stage XY path. |
-| *(run directly)* | `scripts/arena/make_arena146x146_config.py` | Regenerate arena146x146 assets from `arena_spec.pdf`. |
+| `fit-arena-registration` | `src/spotlight_tools/cli/fit_arena_registration.py` | Fit registration model from scan images. |
+| `fit-homography` | `src/spotlight_tools/cli/fit_homography.py` | Fit behavior-to-muscle camera homography from a scan. |
+| `postprocess-recording` | `src/spotlight_postprocessing/cli/postprocess_recording.py` | Full postprocessing pipeline. |
+| `visualize-stage-trajectory` | `src/spotlight_tools/cli/visualize_stage_trajectory.py` | Plot stage XY path. |
+| *(run directly)* | `scripts/tools/set_up_arenas.py` | Regenerate every bundled arena's config assets from its `arena_spec.pdf`. |
 
 See the [wiki](https://github.com/NeLy-EPFL/spotlight-control/wiki) for the full procedure.

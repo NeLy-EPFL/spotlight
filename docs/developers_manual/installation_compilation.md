@@ -6,7 +6,7 @@
 git clone git@github.com:NeLy-EPFL/spotlight-control.git
 ```
 
-The Python tools (`tools/`) are part of this repository — no separate clone needed.
+The Python tools (`python/`) are part of this repository — no separate clone needed.
 
 ## Step 2: Build recorder programs
 
@@ -40,6 +40,6 @@ pio run -d trigger_firmware -t upload
 ## Step 4: Install Python tools
 
 ```bash
-cd tools
+cd python
 uv sync  # see https://docs.astral.sh/uv/ if uv is not installed
 ```

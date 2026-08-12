@@ -12,7 +12,6 @@
 ## Developer's manual
 
 - [Installation & compilation](developers_manual/installation_compilation.md)
-    - [Dependencies](developers_manual/dependencies.md))
 - [Unit testing](developers_manual/unit_testing.md)
 - [Data acquisition workflows](developers_manual/data_acquisition.md)
 - [Code architecture](developers_manual/architecture.md)
@@ -22,4 +21,4 @@
     - [Arena registration](developers_manual/arena_registration.md) for live tracking
     - [Camera homography](developers_manual/camera_homography.md) for behavior-to-muscle alignment
 - [Code style](developers_manual/code_style.md)
-- Instructions for AI agents live separately in [`AGENTS.md`](AGENTS.md).
+- Instructions for AI agents live separately in [`AGENTS.md`](../AGENTS.md).
