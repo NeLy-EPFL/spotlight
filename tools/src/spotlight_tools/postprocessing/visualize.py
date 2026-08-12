@@ -5,11 +5,22 @@ IK panel (if requested). Every panel is resized to a common height and
 horizontally concatenated. Reads back already-computed outputs (video files,
 muscle H5, pose2d H5, IK/FK H5) -- no model re-inference here, that already
 happened in `behavior.process_behavior_pipeline`.
+
+Rendering is chunked and parallelized (joblib): each worker seeks its own
+`cv2.VideoCapture` to its chunk's start frame, composites its frames, and
+encodes them directly to its own small temp video via `pvio` -- no JPEG
+scratch-file round trip (unlike `StreamingVideoWriter`, which needs one
+since a whole trial's frames don't fit in memory at once; one chunk's worth
+does). Chunk videos are concatenated at the end via ffmpeg's stream-copy
+concat demuxer (no re-encode, since every chunk shares the same codec
+params).
 """
 
 import json
 import logging
+import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -17,7 +28,8 @@ import cv2
 import h5py
 import numpy as np
 import pandas as pd
-from spotlight_tools.common.video import StreamingVideoWriter
+import pvio
+from joblib import Parallel, delayed
 from spotlight_tools.spotlight_orient.box import raw_domain_box_corners
 from spotlight_tools.spotlight_pose2d.viz import (
     build_edge_colors,
@@ -30,6 +42,7 @@ FLIP_DECISION_THRESHOLD = 0.5
 YELLOW = (0, 255, 255)  # BGR
 GRAY = (128, 128, 128)
 WHITE = (255, 255, 255)
+DEFAULT_CHUNK_SIZE = 500
 
 _IK_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts" / "spotlight_ik"
 
@@ -44,38 +57,49 @@ def _resize_to_height(frame: np.ndarray, height: int) -> np.ndarray:
     return cv2.resize(frame, (new_w, height))
 
 
-def generate_summary_video(
+def _render_chunk(
     *,
-    recording_dir: Path,
-    postprocessed_dir: Path,
-    alignment: str,
-    with_muscle: bool,
-    with_pose2d: bool,
-    with_ik: bool,
+    chunk_start: int,
+    chunk_end: int,
+    tmpdir: str,
+    raw_paths: list[Path],
+    show_aligned: bool,
     aligned_video_path: Path | None,
-    fullsize_video_path: Path | None,
-    flipped_prob: np.ndarray | None,
+    keypoints_pre: np.ndarray | None,
+    canonical_points: np.ndarray | None,
+    flipped: np.ndarray | None,
+    with_muscle: bool,
     muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
-    pose2d_h5_path: Path | None,
-    pose2d_skeleton_json_path: Path | None,
-    ikfk_h5_path: Path | None,
-    output_path: Path,
+    muscle_meta: pd.DataFrame | None,
     muscle_vrange: tuple[int, int] | None,
+    with_pose2d: bool,
+    pose2d_data: np.ndarray | None,
+    node_names: list[str] | None,
+    edges: list[tuple[int, int]] | None,
+    point_colors: list[tuple[int, int, int]] | None,
+    edge_colors: list[tuple[int, int, int]] | None,
+    with_ik: bool,
+    ik_periods_by_frame: dict,
+    th_idx_ik: int | None,
+    thc_idxs: tuple | None,
     play_fps: float,
     crf: int,
     preset: str | None,
-    max_frames: int | None = None,
-) -> None:
-    logger = logging.getLogger(__name__)
-    show_aligned = alignment in ("aligned", "both")
+) -> str:
+    """Composites and encodes one contiguous frame range, entirely within
+    this worker process. Returns the path to this chunk's own temp video.
+    """
+    aligned_cap = None
+    if show_aligned:
+        aligned_cap = cv2.VideoCapture(str(aligned_video_path))
+        aligned_cap.set(cv2.CAP_PROP_POS_FRAMES, chunk_start)
 
-    # Every pseudo-BGR file packs 3 consecutive monochrome behavior frames
-    # (see behavior.py); n_frames counts the real, expanded frames.
-    raw_paths = sorted((recording_dir / "behavior_images").glob("behavior_frame_*.jpg"))
-    n_frames = len(raw_paths) * 3
-    if max_frames is not None:
-        n_frames = min(n_frames, max_frames)
+    muscle_file = muscle_dataset = None
+    if with_muscle:
+        muscle_file = h5py.File(muscle_h5_path, "r")
+        muscle_dataset = muscle_file[muscle_dataset_name]
+
     _raw_cache_path_idx, _raw_cache_channels = None, None
 
     def _raw_frame(i: int) -> np.ndarray:
@@ -87,87 +111,18 @@ def generate_summary_video(
             _raw_cache_path_idx = path_idx
         return _raw_cache_channels[channel]
 
-    aligned_cap = cv2.VideoCapture(str(aligned_video_path)) if show_aligned else None
-
-    keypoints_pre = flipped = None
-    canonical_points = None
-    alignment_metadata_path = postprocessed_dir / "behavior_alignment_transforms.h5"
-    if show_aligned and alignment_metadata_path.exists():
-        with h5py.File(alignment_metadata_path, "r") as f:
-            keypoints_pre = f["keypoints_xy_pre_alignment"][:n_frames]
-            keypoints_post = f["keypoints_xy_post_alignment"][:n_frames]
-            if flipped_prob is None:
-                flipped = f["flipped_prob"][:n_frames]
-        canonical_points = np.nanmean(keypoints_post, axis=0)
-    if flipped_prob is not None:
-        flipped = flipped_prob
-
-    pose2d_data = node_names = edges = point_colors = edge_colors = None
-    if with_pose2d:
-        with h5py.File(pose2d_h5_path, "r") as f:
-            pose2d_data = f["poses"][:n_frames]
-            node_names = [str(n) for n in f.attrs["node_names"]]
-        skeleton = json.loads(pose2d_skeleton_json_path.read_text())
-        name_to_idx = {name: i for i, name in enumerate(node_names)}
-        edges = [
-            (name_to_idx[a], name_to_idx[b])
-            for a, b in skeleton["edges"]
-            if a in name_to_idx and b in name_to_idx
-        ]
-        # `build_node_colors`/`build_edge_colors` return RGB tuples (see
-        # `spotlight_pose2d.viz`'s own docstring: designed for pvio's pure-RGB
-        # pipeline, "used as-is with no channel reordering"). This pipeline's
-        # canvases go through `cv2.imwrite` (BGR) inside `StreamingVideoWriter`
-        # before pvio ever sees them, so they need reversing here to render
-        # with the same colors as poseforge2's own IK/pose2d QA videos.
-        point_colors = [c[::-1] for c in build_node_colors(node_names)]
-        edge_colors = [c[::-1] for c in build_edge_colors(edges, node_names)]
-
-    ik_periods_by_frame = {}
-    th_idx_ik = None
-    thc_idxs = None
-    if with_ik and ikfk_h5_path is not None and ikfk_h5_path.exists():
+    if with_ik:
         sys.path.insert(0, str(_IK_SCRIPTS_DIR))
-        from make_videos import (  # noqa: E402
+        from make_videos import (
             compute_camera_orientation,
             compute_grid_lines,
             draw_fk_3d_panel,
             draw_grid_floor,
             project_relative_to_panel,
         )
-        from spotlight_tools.spotlight_ik.io_utils import load_ikfk_h5
 
-        ik_data = load_ikfk_h5(ikfk_h5_path)
-        ik_node_names = ik_data["node_names"]
-        for period in ik_data["periods"]:
-            for local_i, frame_idx in enumerate(
-                range(period.start_idx, period.end_idx)
-            ):
-                ik_periods_by_frame[frame_idx] = (period, local_i)
-        ik_name_to_idx = {name: i for i, name in enumerate(ik_node_names)}
-        th_idx_ik = ik_name_to_idx.get("Th")
-        thc_idxs = tuple(
-            ik_name_to_idx.get(n) for n in ("LF_ThC", "RF_ThC", "LH_ThC", "RH_ThC")
-        )
-
-    muscle_dataset = muscle_meta = muscle_file = None
-    if with_muscle:
-        muscle_file = h5py.File(muscle_h5_path, "r")
-        muscle_dataset = muscle_file[muscle_dataset_name]
-        muscle_meta = pd.read_csv(postprocessed_dir / "muscle_frames_metadata.csv")
-        if muscle_vrange is None:
-            sample = muscle_dataset[:: max(1, len(muscle_dataset) // 50)]
-            nonzero = sample[sample > 0]
-            muscle_vrange = (
-                (int(np.percentile(nonzero, 50)), int(np.percentile(nonzero, 99)))
-                if nonzero.size
-                else (0, 65535)
-            )
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    writer = StreamingVideoWriter(output_path, play_fps, crf, preset)
-    t_render = time.perf_counter()
-    for i in range(n_frames):
+    frames = []
+    for i in range(chunk_start, chunk_end):
         panels = []
         raw_bgr = cv2.cvtColor(_raw_frame(i), cv2.COLOR_GRAY2BGR)
 
@@ -186,10 +141,6 @@ def generate_summary_video(
             ok, aligned_frame = aligned_cap.read()
             if not ok:
                 aligned_frame = np.zeros_like(panels[0])
-            # Panel 2 blanks specifically for flipped frames (display-only
-            # flag); the underlying crop stays available in `aligned_frame`
-            # for panel 4's background below, since pose2d itself ran on the
-            # real best-effort crop regardless of flip status.
             display_aligned_frame = (
                 np.zeros_like(aligned_frame) if is_flipped else aligned_frame
             )
@@ -273,21 +224,195 @@ def generate_summary_video(
                 )
             panels.append(panel_3d)
 
-        writer.write_chunk([np.hstack(panels)])
-        if (i + 1) % 500 == 0:
-            logger.info(f"Rendered {i + 1}/{n_frames} visualization frames")
-    logger.info(
-        f"STEP TIME viz_render_loop (compositing, writing scratch JPEGs): "
-        f"{time.perf_counter() - t_render:.1f}s"
-    )
+        frames.append(np.hstack(panels))
 
     if aligned_cap is not None:
         aligned_cap.release()
     if muscle_file is not None:
         muscle_file.close()
-    t_encode = time.perf_counter()
-    writer.close()
+
+    chunk_path = str(Path(tmpdir) / f"chunk_{chunk_start:09d}.mp4")
+    pvio.write_frames_to_video(
+        chunk_path, frames, play_fps, mode="auto", quality=crf, preset=preset,
+        quiet=True,
+    )  # fmt: skip
+    return chunk_path
+
+
+def _concat_chunk_videos(chunk_paths: list[str], output_path: Path) -> None:
+    """Fast stream-copy concat (no re-encode) -- every chunk shares the same
+    codec/resolution/params, encoded by the same `pvio` call above."""
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        for p in chunk_paths:
+            f.write(f"file '{p}'\n")
+        list_path = f.name
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                "-i", list_path, "-c", "copy", str(output_path),
+            ],
+            check=True,
+        )  # fmt: skip
+    finally:
+        Path(list_path).unlink(missing_ok=True)
+
+
+def generate_summary_video(
+    *,
+    recording_dir: Path,
+    postprocessed_dir: Path,
+    alignment: str,
+    with_muscle: bool,
+    with_pose2d: bool,
+    with_ik: bool,
+    aligned_video_path: Path | None,
+    fullsize_video_path: Path | None,
+    flipped_prob: np.ndarray | None,
+    muscle_h5_path: Path | None,
+    muscle_dataset_name: str | None,
+    pose2d_h5_path: Path | None,
+    pose2d_skeleton_json_path: Path | None,
+    ikfk_h5_path: Path | None,
+    output_path: Path,
+    muscle_vrange: tuple[int, int] | None,
+    play_fps: float,
+    crf: int,
+    preset: str | None,
+    num_workers: int = -1,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    max_frames: int | None = None,
+) -> None:
+    logger = logging.getLogger(__name__)
+    show_aligned = alignment in ("aligned", "both")
+
+    # Every pseudo-BGR file packs 3 consecutive monochrome behavior frames
+    # (see behavior.py); n_frames counts the real, expanded frames.
+    raw_paths = sorted((recording_dir / "behavior_images").glob("behavior_frame_*.jpg"))
+    n_frames = len(raw_paths) * 3
+    if max_frames is not None:
+        n_frames = min(n_frames, max_frames)
+
+    keypoints_pre = flipped = canonical_points = None
+    alignment_metadata_path = postprocessed_dir / "behavior_alignment_transforms.h5"
+    if show_aligned and alignment_metadata_path.exists():
+        with h5py.File(alignment_metadata_path, "r") as f:
+            keypoints_pre = f["keypoints_xy_pre_alignment"][:n_frames]
+            keypoints_post = f["keypoints_xy_post_alignment"][:n_frames]
+            if flipped_prob is None:
+                flipped = f["flipped_prob"][:n_frames]
+        canonical_points = np.nanmean(keypoints_post, axis=0)
+    if flipped_prob is not None:
+        flipped = flipped_prob
+
+    pose2d_data = node_names = edges = point_colors = edge_colors = None
+    if with_pose2d:
+        with h5py.File(pose2d_h5_path, "r") as f:
+            pose2d_data = f["poses"][:n_frames]
+            node_names = [str(n) for n in f.attrs["node_names"]]
+        skeleton = json.loads(pose2d_skeleton_json_path.read_text())
+        name_to_idx = {name: i for i, name in enumerate(node_names)}
+        edges = [
+            (name_to_idx[a], name_to_idx[b])
+            for a, b in skeleton["edges"]
+            if a in name_to_idx and b in name_to_idx
+        ]
+        # `build_node_colors`/`build_edge_colors` return RGB tuples (see
+        # `spotlight_pose2d.viz`'s own docstring: designed for pvio's pure-RGB
+        # pipeline, "used as-is with no channel reordering"). This pipeline's
+        # canvases are fed to pvio directly here (no cv2.imwrite round trip),
+        # but still go through cv2.polylines/circle/line first, which write
+        # into whatever channel order the array already has -- reversed here
+        # once, up front, so the final colors match poseforge2's own
+        # IK/pose2d QA videos.
+        point_colors = [c[::-1] for c in build_node_colors(node_names)]
+        edge_colors = [c[::-1] for c in build_edge_colors(edges, node_names)]
+
+    ik_periods_by_frame = {}
+    th_idx_ik = None
+    thc_idxs = None
+    if with_ik and ikfk_h5_path is not None and ikfk_h5_path.exists():
+        from spotlight_tools.spotlight_ik.io_utils import load_ikfk_h5
+
+        ik_data = load_ikfk_h5(ikfk_h5_path)
+        ik_node_names = ik_data["node_names"]
+        for period in ik_data["periods"]:
+            for local_i, frame_idx in enumerate(
+                range(period.start_idx, period.end_idx)
+            ):
+                ik_periods_by_frame[frame_idx] = (period, local_i)
+        ik_name_to_idx = {name: i for i, name in enumerate(ik_node_names)}
+        th_idx_ik = ik_name_to_idx.get("Th")
+        thc_idxs = tuple(
+            ik_name_to_idx.get(n) for n in ("LF_ThC", "RF_ThC", "LH_ThC", "RH_ThC")
+        )
+
+    muscle_meta = None
+    if with_muscle:
+        muscle_meta = pd.read_csv(postprocessed_dir / "muscle_frames_metadata.csv")
+        if muscle_vrange is None:
+            with h5py.File(muscle_h5_path, "r") as f:
+                dataset = f[muscle_dataset_name]
+                sample = dataset[:: max(1, len(dataset) // 50)]
+            nonzero = sample[sample > 0]
+            muscle_vrange = (
+                (int(np.percentile(nonzero, 50)), int(np.percentile(nonzero, 99)))
+                if nonzero.size
+                else (0, 65535)
+            )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    chunk_bounds = list(range(0, n_frames, chunk_size)) + [n_frames]
+    chunks = list(zip(chunk_bounds[:-1], chunk_bounds[1:]))
     logger.info(
-        f"STEP TIME viz_encode (writer.close()): {time.perf_counter() - t_encode:.1f}s"
+        f"Rendering {n_frames} visualization frames across {len(chunks)} "
+        f"parallel chunks of ~{chunk_size} frames each..."
     )
+
+    t_render = time.perf_counter()
+    with tempfile.TemporaryDirectory(prefix="viz_chunks_") as tmpdir:
+        chunk_paths = Parallel(n_jobs=num_workers)(
+            delayed(_render_chunk)(
+                chunk_start=start,
+                chunk_end=end,
+                tmpdir=tmpdir,
+                raw_paths=raw_paths,
+                show_aligned=show_aligned,
+                aligned_video_path=aligned_video_path,
+                keypoints_pre=keypoints_pre,
+                canonical_points=canonical_points,
+                flipped=flipped,
+                with_muscle=with_muscle,
+                muscle_h5_path=muscle_h5_path,
+                muscle_dataset_name=muscle_dataset_name,
+                muscle_meta=muscle_meta,
+                muscle_vrange=muscle_vrange,
+                with_pose2d=with_pose2d,
+                pose2d_data=pose2d_data,
+                node_names=node_names,
+                edges=edges,
+                point_colors=point_colors,
+                edge_colors=edge_colors,
+                with_ik=with_ik,
+                ik_periods_by_frame=ik_periods_by_frame,
+                th_idx_ik=th_idx_ik,
+                thc_idxs=thc_idxs,
+                play_fps=play_fps,
+                crf=crf,
+                preset=preset,
+            )
+            for start, end in chunks
+        )
+        logger.info(
+            f"STEP TIME viz_render_and_encode (parallel, per-chunk, no JPEG "
+            f"scratch round trip): {time.perf_counter() - t_render:.1f}s"
+        )
+
+        t_concat = time.perf_counter()
+        _concat_chunk_videos(chunk_paths, output_path)
+        logger.info(
+            f"STEP TIME viz_concat (stream copy, no re-encode): "
+            f"{time.perf_counter() - t_concat:.1f}s"
+        )
+
     logger.info(f"Saved {output_path}")

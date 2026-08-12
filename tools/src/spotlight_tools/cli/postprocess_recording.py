@@ -295,6 +295,7 @@ def postprocess_recording_data(
             play_fps=play_fps,
             crf=params.visualization_crf,
             preset=params.visualization_preset,
+            num_workers=params.num_workers,
         )
         logger.info(
             f"STEP TIME visualization_total: {time.perf_counter() - t_step:.1f}s"
