@@ -94,11 +94,13 @@ class PostprocessingParams:
     decision (box color, and darkening panels 2-5): >= this counts as
     flipped. Raising it calls more frames not-flipped."""
 
-    visualize_flip_mask_window: int = 5
-    """Binary opening+closing window (frames) denoising the flip decision
-    above before it's used, so a single noisy frame doesn't flicker the QA
-    video's darkened panels. -1 disables this (use the raw per-frame
-    threshold decision as-is)."""
+    acceptance_mask_window: int = 15
+    """Binary opening+closing window (frames) denoising the flip decision,
+    the IK-acceptance decision (attempted and within `ik_max_mismatch`),
+    and the pose2d/IK-overlay confidence decision (weighted keypoint
+    confidence >= 0.5) before any of them is used, so a single noisy frame
+    doesn't flicker the QA video's darkened panels or overlays. -1 disables
+    this (use each raw per-frame decision as-is)."""
 
     orientation_filter_sigma: float = 5.0
     """Gaussian smoothing sigma (frames) applied to the fitted neck-thorax-
@@ -134,12 +136,14 @@ class PostprocessingParams:
     decode step that feeds the localization model. Passed straight through to
     joblib's own `n_jobs`, so -1 (default) means joblib auto-detects all
     cores; never resolved to a concrete number ourselves."""
-    visualization_num_workers: int = 8
+    visualization_num_workers: int = 6
     """Separate from num_cpu_workers: the QA video's per-chunk render+
     encode step's own worker count. Encoding shares the GPU's own
     concurrent-NVENC-session limit across workers (unlike decode/muscle
     warping, which don't touch the GPU), so this defaults much lower than
-    num_cpu_workers' usual -1 (all cores) to avoid exceeding it."""
+    num_cpu_workers' usual -1 (all cores) to avoid exceeding it -- see
+    `visualize.DEFAULT_NUM_WORKERS`'s own comment for the measured 8-session
+    hard cap this leaves headroom under."""
 
     visualization_composite_workers: int = 4
     """Threads per visualization_num_workers *process* used to composite
@@ -383,7 +387,7 @@ def postprocess_recording_data(
             preset=params.visualization_preset,
             flip_confidence_threshold=params.flip_confidence_threshold,
             ik_mismatch_threshold=params.ik_max_mismatch,
-            flip_mask_window=params.visualize_flip_mask_window,
+            acceptance_mask_window=params.acceptance_mask_window,
             orientation_filter_sigma=params.orientation_filter_sigma,
             num_workers=params.visualization_num_workers,
             composite_workers=params.visualization_composite_workers,

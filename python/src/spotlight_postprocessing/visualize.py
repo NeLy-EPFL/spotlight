@@ -18,13 +18,16 @@ Row 1's cropped/muscle panels are always shown, even on a frame the
 localization model flagged flipped (best-effort crop, same as an unflipped
 frame) -- flip only suppresses row 2's own overlay drawing (2D pose
 skeleton, IK fit): the pose2d panel's background (the same cropped frame)
-still shows.
+still shows. Row 2's overlay is likewise hidden (background still shown)
+wherever the raw 2D pose's own weighted keypoint confidence drops below
+`POSE2D_CONFIDENCE_THRESHOLD` (see `show_pose_overlay`) -- both this and
+the flip decision are denoised with `acceptance_mask_window` before use.
 IK is additionally not drawn wherever `kinematics.h5`'s `inverse_kinematics/`
 group has no fit for that frame (an internal gap-detection decision made by
 `solve_ik.py`, not exposed here) or wherever its fk-to-prediction mismatch
 exceeds `ik_mismatch_threshold` (a display-only rejection; kinematics.h5
 itself never drops data for this) -- the raw 2D pose skeleton itself is
-still drawn in either case, whenever the frame isn't flipped.
+still drawn in either case, whenever `show_pose_overlay` allows it.
 
 Reads back already-computed outputs (video files, muscle H5,
 `kinematics.h5`) -- no model re-inference here, that already happened in
@@ -67,6 +70,9 @@ from spotlight_postprocessing.spotlight_localization.box import (
     fit_disambiguated_direction,
     raw_domain_box_corners,
 )
+from spotlight_postprocessing.spotlight_localization.flip_label import (
+    weighted_confidence,
+)
 from spotlight_postprocessing.spotlight_pose2d.viz import LINE_THICKNESS, POINT_RADIUS
 from spotlight_postprocessing.spotlight_pose2d.viz import (
     build_edge_colors,
@@ -77,6 +83,12 @@ from spotlight_postprocessing.spotlight_pose2d.viz import (
 PANEL_SIZE = 450
 FLIP_DECISION_THRESHOLD_DEFAULT = 0.5
 IK_MISMATCH_THRESHOLD_DEFAULT = 0.3
+# Not exposed as a CLI flag: an internal display-only cutoff, same value
+# and same `weighted_confidence` proxy as `solve_ik.py`'s own (also
+# internal, also unexposed) IK gap-detection threshold -- below this, the
+# 2D pose and IK overlays are hidden (frame itself still shown, see
+# `show_pose_overlay`).
+POSE2D_CONFIDENCE_THRESHOLD = 0.5
 # RGB -- frames go straight to `pvio.write_frames_to_video` (no cv2.imwrite
 # in between, which is what used to make BGR the right choice here, back
 # when a JPEG scratch-write step sat between drawing and pvio).
@@ -89,7 +101,20 @@ COLORMAP_LUT_SIZE = 256
 IK_LINE_THICKNESS_SCALE = 2
 IK_POINT_RADIUS_SCALE = 2
 DEFAULT_CHUNK_SIZE = 500
-DEFAULT_NUM_WORKERS = 8
+# Measured directly (10 concurrent `ffmpeg -c:v h264_nvenc` processes on
+# this project's own RTX 3080 Ti, driver 580.173.02): exactly 8 concurrent
+# sessions succeed, a 9th fails with "OpenEncodeSessionEx failed:
+# incompatible client key" -- a hard, driver-enforced cap on this
+# (unpatched) consumer GPU, not a soft/tunable limit. Running workers AT
+# that exact cap left zero margin for the natural timing overlap between
+# real per-chunk encodes (workers don't start/stop in lockstep) and each
+# worker's own one-time `pvio` NVENC capability probe, which was
+# intermittently tipping some chunk over the limit -- either a graceful
+# libx264 fallback for that chunk, or (worse) an unhandled failure deep
+# enough in the encode call to kill the whole worker process outright
+# (joblib's "A worker stopped..." warning, silently retried on another
+# worker). 6 leaves 2 sessions of headroom below the measured cap.
+DEFAULT_NUM_WORKERS = 6
 DEFAULT_COMPOSITE_WORKERS = 4
 """Threads per chunk *process* used to composite (not encode) frames.
 Compositing is CPU-bound and dominated by cv2/numpy calls that release the
@@ -100,7 +125,7 @@ encoding stays exactly as GPU-session-limited as before."""
 
 SCALE_BAR_UM = 500
 LABEL_FONT_SIZE = 16  # +20% over the original 13pt, for scale bar/legend text
-TITLE_FONT_SIZE = 16
+TITLE_FONT_SIZE = 18  # +2pt over the original 16pt (panel titles), ~+13%
 OVERLAY_MARGIN = 12
 
 PANEL_NAMES = {
@@ -503,22 +528,59 @@ def _precompute_panel_overlays(
     return overlays, border_lines
 
 
-def _compute_smoothed_flip_mask(
-    flipped_prob: np.ndarray, threshold: float, mask_window: int
+def _fill_gap_frames(
+    arr: np.ndarray, attempted: np.ndarray, show: np.ndarray
 ) -> np.ndarray:
-    """Thresholds `flipped_prob` at `threshold`, then denoises the
-    resulting boolean time series with a binary opening (drops isolated
-    flipped spikes) followed by a closing (fills isolated not-flipped gaps
-    inside a longer flipped stretch) -- both using a `mask_window`-sized 1D
-    structuring element. `mask_window == -1` skips this denoising step
-    entirely (the raw per-frame threshold is used as-is)."""
-    is_flipped = flipped_prob >= threshold
-    if mask_window == -1:
-        return is_flipped
-    structure = np.ones(mask_window, dtype=bool)
-    is_flipped = binary_opening(is_flipped, structure=structure)
-    is_flipped = binary_closing(is_flipped, structure=structure)
-    return is_flipped
+    """Nearest-neighbor-fills `arr`'s frame axis wherever `show` wants a
+    frame displayed but `attempted` says that frame's own IK data is
+    actually NaN (a gap `_smooth_acceptance_mask`'s closing bridged over,
+    see `show_ik`) -- holds the nearest real IK reconstruction across the
+    gap instead of leaving NaN there, which would otherwise reach
+    `make_videos`'s synthetic-3D-panel helpers (built for a real, non-NaN
+    camera pose every frame they're called for) and produce garbage
+    (`np.round`/`astype(int32)` of NaN).
+
+    Args:
+        arr: `(n_frames, ...)`, e.g. `fk_2d_px`/`fk_3d_mm`.
+        attempted: `(n_frames,)` bool, wherever `arr`'s own frame is real
+            (not NaN).
+        show: `(n_frames,)` bool, wherever display wants this frame shown
+            (see `show_ik`); always a superset of `attempted` in practice,
+            but not assumed here.
+
+    Returns:
+        `arr` unchanged if nothing needs filling, else a filled copy.
+    """
+    needs_fill = show & ~attempted
+    if not needs_fill.any():
+        return arr
+    valid_idxs = np.flatnonzero(attempted)
+    if valid_idxs.size == 0:
+        return arr
+    all_idxs = np.arange(len(arr))
+    pos = np.clip(np.searchsorted(valid_idxs, all_idxs), 0, len(valid_idxs) - 1)
+    left = valid_idxs[np.clip(pos - 1, 0, len(valid_idxs) - 1)]
+    right = valid_idxs[pos]
+    nearest = np.where(np.abs(all_idxs - left) <= np.abs(right - all_idxs), left, right)
+    filled = arr.copy()
+    filled[needs_fill] = arr[nearest[needs_fill]]
+    return filled
+
+
+def _smooth_acceptance_mask(mask: np.ndarray, window: int) -> np.ndarray:
+    """Denoises a boolean per-frame acceptance time series with a binary
+    opening (drops isolated accepted spikes) followed by a closing (fills
+    isolated rejected gaps inside a longer accepted stretch) -- both using a
+    `window`-sized 1D structuring element. `window == -1` skips this
+    denoising step entirely (the raw per-frame mask is used as-is). Used for
+    both the flip-based frame-acceptance mask and the IK-acceptance mask
+    (see `acceptance_mask_window`)."""
+    if window == -1:
+        return mask
+    structure = np.ones(window, dtype=bool)
+    mask = binary_opening(mask, structure=structure)
+    mask = binary_closing(mask, structure=structure)
+    return mask
 
 
 def _compute_smoothed_directions(keypoints_pre: np.ndarray, sigma: float) -> np.ndarray:
@@ -594,11 +656,12 @@ def _render_chunk(
     edges: list[tuple[int, int]] | None,
     point_colors: list[tuple[int, int, int]] | None,
     edge_colors: list[tuple[int, int, int]] | None,
+    show_pose_overlay: np.ndarray | None,
     with_ik: bool,
     fk_2d_px: np.ndarray | None,
     fk_3d_mm: np.ndarray | None,
     show_ik: np.ndarray | None,
-    th_idx_ik: int | None,
+    th_idx: int | None,
     thc_idxs: tuple | None,
     play_fps: float,
     crf: int,
@@ -623,6 +686,16 @@ def _render_chunk(
     (which the previous single-cache-variable version would have needed a
     lock for) and no redundant re-decoding.
     """
+    # OpenCV's own internal thread pool (TBB/pthreads, depending on build)
+    # parallelizes individual calls (resize, warpAffine, ...) by default;
+    # left enabled, it fights the `composite_workers` ThreadPoolExecutor
+    # below for the same cores and is a known source of intermittent
+    # native crashes under concurrent multi-threaded cv2 use (the process
+    # just dies -- no Python traceback -- which joblib then reports as "A
+    # worker stopped..." and silently retries elsewhere). Idempotent and
+    # cheap enough to set on every call rather than once per worker process.
+    cv2.setNumThreads(1)
+
     # This chunk's own muscle rows, batch-read once up front rather than
     # looked up per frame inside the threaded compositing below: h5py
     # handles aren't safe to share across threads, and one batched fancy-
@@ -718,13 +791,15 @@ def _render_chunk(
             row1.append(_apply_overlay(muscle_bgr, panel_overlays.get("muscle")))
 
         # --- row 2 ---
-        # Both panels below key their overlay drawing only on `flipped_i`
-        # (best-effort background always shown, same as row 1's aligned/
-        # muscle panels) and `show_ik[i]` (IK actually attempted for this
-        # frame -- see `solve_ik.py`'s internal gap detection -- and not
-        # display-rejected for excessive fk-to-prediction mismatch): the 2D
-        # pose overlay is drawn whenever not flipped, regardless of
-        # `show_ik`, since it doesn't depend on IK having run at all.
+        # Both panels below key their overlay drawing only on
+        # `show_pose_overlay[i]` (best-effort background always shown,
+        # same as row 1's aligned/muscle panels; overlay hidden whenever
+        # flipped OR weighted keypoint confidence is too low, see
+        # `show_pose_overlay`) and `show_ik[i]` (IK actually attempted for
+        # this frame -- see `solve_ik.py`'s internal gap detection -- and
+        # not display-rejected for excessive fk-to-prediction mismatch):
+        # the 2D pose overlay is drawn whenever `show_pose_overlay[i]`,
+        # regardless of `show_ik`, since it doesn't depend on IK at all.
         row2 = []
         if with_pose2d:
             # Resize the background to final display resolution *before*
@@ -737,9 +812,16 @@ def _render_chunk(
                 if aligned_frame is not None
                 else row1_black.copy()
             )
-            if not flipped_i:
+            if show_pose_overlay is not None and show_pose_overlay[i]:
                 point_scale = PANEL_SIZE / crop_dim
                 raw_points = pose2d_data[i] * point_scale
+                if th_idx is not None:
+                    # "Th" isn't a real IK observation (see
+                    # spotlight_ik.neuromechfly's module docstring) --
+                    # omitted from both this raw layer and the colored IK
+                    # layer below (and from their shared edges, filtered
+                    # out of `edges` above), not just this one.
+                    raw_points[th_idx] = np.nan
                 draw_pose(
                     pose_panel,
                     raw_points,
@@ -750,10 +832,17 @@ def _render_chunk(
                 if with_ik and show_ik is not None and show_ik[i]:
                     # Colored (IK/FK) drawn after gray (raw) -- already on
                     # top -- at 2x thickness/radius so it reads clearly
-                    # over the raw skeleton wherever they overlap.
+                    # over the raw skeleton wherever they overlap. "Th" is
+                    # excluded here too (not just from the raw layer above):
+                    # it isn't a real IK observation, and its own assigned
+                    # color (no leg/antenna prefix -> OTHER_COLOR, a light
+                    # gray) reads as just another gray dot marking it.
+                    fk_points = fk_2d_px[i] * point_scale
+                    if th_idx is not None:
+                        fk_points[th_idx] = np.nan
                     draw_pose(
                         pose_panel,
-                        fk_2d_px[i] * point_scale,
+                        fk_points,
                         edges,
                         edge_colors,
                         point_colors,
@@ -765,10 +854,11 @@ def _render_chunk(
         if with_row2 and with_ik:
             panel_3d = np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
             if (
-                not flipped_i
+                show_pose_overlay is not None
+                and show_pose_overlay[i]
                 and show_ik is not None
                 and show_ik[i]
-                and th_idx_ik is not None
+                and th_idx is not None
                 and all(idx is not None for idx in thc_idxs)
             ):
                 fk_3d_mm_frame = fk_3d_mm[i]
@@ -778,11 +868,17 @@ def _render_chunk(
                 draw_grid_floor(
                     panel_3d, compute_grid_lines(right_axis, up_axis, PANEL_SIZE)
                 )
-                centered = fk_3d_mm_frame - fk_3d_mm_frame[th_idx_ik]
+                centered = fk_3d_mm_frame - fk_3d_mm_frame[th_idx]
                 points_2d = project_relative_to_panel(
                     centered, right_axis, up_axis, PANEL_SIZE
                 )
                 depths = centered @ view_dir
+                # "Th" is the panel's own fixed origin (see `centered`
+                # above) -- always projects to dead-center, not a
+                # meaningful reconstructed keypoint -- and, like the pose2d
+                # panel's layers, would otherwise draw as a gray dot (no
+                # leg/antenna color -> OTHER_COLOR).
+                points_2d[th_idx] = np.nan
                 draw_fk_3d_panel(
                     panel_3d, points_2d, depths, edges, edge_colors, point_colors
                 )
@@ -874,7 +970,7 @@ def generate_summary_video(
     preset: str | None,
     flip_confidence_threshold: float = FLIP_DECISION_THRESHOLD_DEFAULT,
     ik_mismatch_threshold: float = IK_MISMATCH_THRESHOLD_DEFAULT,
-    flip_mask_window: int = 5,
+    acceptance_mask_window: int = 15,
     orientation_filter_sigma: float = 5.0,
     num_workers: int = DEFAULT_NUM_WORKERS,
     composite_workers: int = DEFAULT_COMPOSITE_WORKERS,
@@ -906,29 +1002,41 @@ def generate_summary_video(
             if flipped_prob is None:
                 flipped_prob = f["flipped_prob"][:n_frames]
         canonical_points = np.nanmean(keypoints_post, axis=0)
-        is_flipped = _compute_smoothed_flip_mask(
-            flipped_prob, flip_confidence_threshold, flip_mask_window
+        is_flipped = _smooth_acceptance_mask(
+            flipped_prob >= flip_confidence_threshold, acceptance_mask_window
         )
         smoothed_directions = _compute_smoothed_directions(
             keypoints_pre, orientation_filter_sigma
         )
 
     pose2d_data = node_names = edges = point_colors = edge_colors = None
-    fk_2d_px = fk_3d_mm = show_ik = None
-    th_idx_ik = None
+    fk_2d_px = fk_3d_mm = show_ik = show_pose_overlay = None
+    th_idx = None
     thc_idxs = None
     if with_pose2d:
         from spotlight_postprocessing.spotlight_ik.io_utils import load_kinematics_h5
+
+        sys.path.insert(0, str(_IK_SCRIPTS_DIR))
+        from make_videos import EXCLUDED_EDGE_NAME_PAIRS
 
         kinematics = load_kinematics_h5(kinematics_h5_path)
         node_names = kinematics["node_names"]
         pose2d_data = kinematics["keypoint_positions_2d_px"][:n_frames]
         skeleton = json.loads(pose2d_skeleton_json_path.read_text())
         name_to_idx = {name: i for i, name in enumerate(node_names)}
+        th_idx = name_to_idx.get("Th")
+        # Excludes the two SLEAP-skeleton edges from the thorax hub to the
+        # midleg ThC nodes: "Th" isn't a real IK observation (see
+        # `spotlight_ik.neuromechfly`'s module docstring), so a line to it
+        # would misrepresent the IK reconstruction the same way it would in
+        # `make_videos.py`'s own QA clips (see `EXCLUDED_EDGE_NAME_PAIRS`
+        # there); applied here regardless of `with_ik` for consistency.
         edges = [
             (name_to_idx[a], name_to_idx[b])
             for a, b in skeleton["edges"]
-            if a in name_to_idx and b in name_to_idx
+            if a in name_to_idx
+            and b in name_to_idx
+            and frozenset({a, b}) not in EXCLUDED_EDGE_NAME_PAIRS
         ]
         # `build_node_colors`/`build_edge_colors` return RGB tuples, used
         # as-is (see `spotlight_pose2d.viz`'s own docstring): frames go
@@ -937,14 +1045,29 @@ def generate_summary_video(
         point_colors = build_node_colors(node_names)
         edge_colors = build_edge_colors(edges, node_names)
 
+        # Hides the 2D pose/IK overlay drawing specifically (the frame
+        # itself still shows, same as a flipped frame) wherever the raw 2D
+        # pose's own weighted keypoint confidence is too low to trust --
+        # no extra processing needed, `keypoint_positions_confidence` is
+        # already in kinematics.h5 and `weighted_confidence` is the same
+        # proxy `solve_ik.py` uses internally for its own gap detection.
+        pose2d_confidence = kinematics["keypoint_positions_confidence"][:n_frames]
+        confident_enough = _smooth_acceptance_mask(
+            weighted_confidence(pose2d_confidence, node_names)
+            >= POSE2D_CONFIDENCE_THRESHOLD,
+            acceptance_mask_window,
+        )
+        not_flipped = (
+            ~is_flipped if is_flipped is not None else np.ones(n_frames, dtype=bool)
+        )
+        show_pose_overlay = confident_enough & not_flipped
+
         ik = kinematics["inverse_kinematics"]
         if with_ik and ik is not None:
-            sys.path.insert(0, str(_IK_SCRIPTS_DIR))
             from solve_ik import leg_keypoint_indices, nanreduce_ignore_all_nan
 
             fk_2d_px = ik.keypoint_positions_2d_px[:n_frames]
             fk_3d_mm = ik.keypoint_positions_3d_mm[:n_frames]
-            th_idx_ik = name_to_idx.get("Th")
             thc_idxs = tuple(
                 name_to_idx.get(n) for n in ("LF_ThC", "RF_ThC", "LH_ThC", "RH_ThC")
             )
@@ -960,7 +1083,16 @@ def generate_summary_video(
                 pose2d_mm[:, leg_idxs] - fk_3d_mm[:, leg_idxs, :2], axis=-1
             )
             frame_max_mismatch = nanreduce_ignore_all_nan(np.nanmax, dist, axis=-1)
-            show_ik = ik_attempted & (frame_max_mismatch <= ik_mismatch_threshold)
+            show_ik = _smooth_acceptance_mask(
+                ik_attempted & (frame_max_mismatch <= ik_mismatch_threshold),
+                acceptance_mask_window,
+            )
+            # `show_ik`'s own closing can mark a frame as shown even though
+            # that exact frame's IK data is still NaN (a small gap bridged
+            # for display continuity) -- hold the nearest real
+            # reconstruction across it rather than drawing/casting NaN.
+            fk_2d_px = _fill_gap_frames(fk_2d_px, ik_attempted, show_ik)
+            fk_3d_mm = _fill_gap_frames(fk_3d_mm, ik_attempted, show_ik)
 
     muscle_meta = None
     if with_muscle:
@@ -991,6 +1123,18 @@ def generate_summary_video(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     chunk_bounds = list(range(0, n_frames, chunk_size)) + [n_frames]
     chunks = list(zip(chunk_bounds[:-1], chunk_bounds[1:]))
+    # KNOWN ISSUE: joblib/loky occasionally logs "A worker stopped while
+    # some jobs were given to the executor" partway through a real run (no
+    # Python traceback -- a native-level worker death, not a catchable
+    # exception). Survived three independent, still-worth-keeping fixes
+    # (a real NaN-cast bug feeding `make_videos`'s grid-line cast, an
+    # NVENC concurrent-session-count margin fix, and disabling OpenCV's own
+    # internal thread pool, which otherwise fights `composite_workers`'
+    # ThreadPoolExecutor for cores) without going away; loky transparently
+    # retries the lost work on another worker and every run has still
+    # finished with a complete, correct video, so this is left as a
+    # monitored, apparently-benign warning rather than chased further
+    # without real native-level debugging tools (gdb/core dumps).
     encode_pool = Parallel(n_jobs=num_workers, return_as="generator")
     logger.info(
         f"Rendering {n_frames} visualization frames across {len(chunks)} "
@@ -1014,8 +1158,9 @@ def generate_summary_video(
                 muscle_meta=muscle_meta, muscle_vrange=muscle_vrange, muscle_lut=muscle_lut,
                 with_pose2d=with_pose2d, pose2d_data=pose2d_data, node_names=node_names,
                 edges=edges, point_colors=point_colors, edge_colors=edge_colors,
+                show_pose_overlay=show_pose_overlay,
                 with_ik=with_ik, fk_2d_px=fk_2d_px, fk_3d_mm=fk_3d_mm, show_ik=show_ik,
-                th_idx_ik=th_idx_ik, thc_idxs=thc_idxs, play_fps=play_fps, crf=crf,
+                th_idx=th_idx, thc_idxs=thc_idxs, play_fps=play_fps, crf=crf,
                 preset=preset, mode=encode_mode, composite_workers=composite_workers,
             )  # fmt: skip
 
