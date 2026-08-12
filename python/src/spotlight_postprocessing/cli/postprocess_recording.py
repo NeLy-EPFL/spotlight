@@ -3,7 +3,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from fractions import Fraction
@@ -23,13 +22,15 @@ from spotlight_postprocessing.visualize import generate_summary_video
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
-TOOLS_ROOT = Path(__file__).resolve().parents[3]  # tools/
-ORIENT_CHECKPOINT_PATH = TOOLS_ROOT / "bulk_data/orient_model/checkpoints/v13/best.pt"
+PYTHON_ROOT = Path(__file__).resolve().parents[3]  # python/
+ORIENT_CHECKPOINT_PATH = PYTHON_ROOT / "bulk_data/orient_model/checkpoints/v13/best.pt"
 POSE2D_CHECKPOINT_PATH = (
-    TOOLS_ROOT / "bulk_data/pose2d_model/checkpoints/iter2b/best.pt"
+    PYTHON_ROOT / "bulk_data/pose2d_model/checkpoints/iter2b/best.pt"
 )
-POSE2D_SKELETON_JSON_PATH = TOOLS_ROOT / "bulk_data/pose2d_model/skeleton_metadata.json"
-SOLVE_IK_SCRIPT_PATH = TOOLS_ROOT / "scripts/spotlight_ik/solve_ik.py"
+POSE2D_SKELETON_JSON_PATH = (
+    PYTHON_ROOT / "bulk_data/pose2d_model/skeleton_metadata.json"
+)
+SOLVE_IK_SCRIPT_PATH = PYTHON_ROOT / "scripts/spotlight_ik/solve_ik.py"
 
 
 @dataclass
@@ -80,10 +81,11 @@ class PostprocessingParams:
 
     ik_max_mismatch: float = 0.3
     """Max tolerated xy mismatch (mm) between the 2D prediction and the
-    IK/FK fit, passed through as `solve_ik.py`'s `max_mismatch` -- the real
-    fit-quality gate (as opposed to min_confidence/min_joint_excursion_deg,
-    a "worth attempting" heuristic for downstream FlyGym-snippet selection,
-    left at solve_ik.py's own defaults and not exposed here)."""
+    IK/FK fit before the QA video stops drawing the IK overlay for that
+    frame. Purely a `visualize.py` display decision (see its module
+    docstring); `kinematics.h5` itself always keeps whatever IK result
+    `solve_ik.py` computed, mismatch included, for downstream curation in
+    poseforge2."""
 
     flip_confidence_threshold: float = 0.5
     """Orient model's flip-probability cutoff for the QA video's flip
@@ -234,7 +236,7 @@ def postprocess_recording_data(
     pose2d_h5_path = (
         postprocessed_dir / "pose2d_predictions.h5" if params.pose2d else None
     )
-    ikfk_h5_path = postprocessed_dir / "inverse_kinematics.h5" if params.ik else None
+    kinematics_h5_path = postprocessed_dir / "kinematics.h5" if params.pose2d else None
 
     muscle_mapping = None
     muscle_dataset_name = None
@@ -338,106 +340,54 @@ def postprocess_recording_data(
                 muscle_mapping, postprocessed_dir / "muscle_frames_metadata.csv"
             )
 
-    viz_ikfk_h5_path = None
-    if params.ik:
+    if params.pose2d:
         t_step = time.perf_counter()
-        logger.info("Solving IK/FK...")
-        # min_confidence/min_joint_excursion_deg/min_period_length are a
-        # "meaningful snippet" selection gate for downstream tasks (choosing
-        # which stretches are worth simulating in FlyGym), not a fit-quality
-        # gate -- left at solve_ik.py's own defaults here. max_mismatch *is*
-        # a fit-quality gate (does the fit actually match the 2D prediction),
-        # exposed as --ik-max-mismatch: disabling it entirely previously let
-        # genuinely bad fits -- e.g. a best-effort crop on a frame the orient
-        # model itself flagged flipped -- through uninspected, measurably
-        # worsening mismatch stats on real trials.
+        logger.info("Building kinematics.h5 (pose2d + optional IK/FK)...")
         subprocess.run(
             [
                 sys.executable, str(SOLVE_IK_SCRIPT_PATH),
                 "--input-path", str(pose2d_h5_path),
-                "--output-path", str(ikfk_h5_path),
+                "--output-path", str(kinematics_h5_path),
                 "--neutral-weight", str(params.ik_prior_weight),
-                "--max-mismatch", str(params.ik_max_mismatch),
+                "--with-ik" if params.ik else "--no-with-ik",
                 "--override",
             ],
             check=True,
         )  # fmt: skip
-        logger.info(f"STEP TIME ik_solve: {time.perf_counter() - t_step:.1f}s")
-
-        if params.visualize:
-            # A second, separate IK pass just for the QA video: attempts
-            # every frame with a pose2d prediction (min_confidence/
-            # min_joint_excursion_deg/min_period_length relaxed to
-            # effectively off), keeping only the real fit-quality gate
-            # (--ik-max-mismatch, same value as the production pass above).
-            # This never touches the production inverse_kinematics.h5 above
-            # -- that file's curated periods are what downstream FlyGym-
-            # snippet selection reads, and stay exactly as solve_ik.py
-            # already designs them.
-            t_step = time.perf_counter()
-            logger.info("Solving a second, visualization-only IK/FK pass...")
-            viz_ikfk_h5_path = Path(tempfile.mkstemp(suffix=".h5")[1])
-            viz_ikfk_h5_path.unlink()
-            subprocess.run(
-                [
-                    sys.executable, str(SOLVE_IK_SCRIPT_PATH),
-                    "--input-path", str(pose2d_h5_path),
-                    "--output-path", str(viz_ikfk_h5_path),
-                    "--neutral-weight", str(params.ik_prior_weight),
-                    "--max-mismatch", str(params.ik_max_mismatch),
-                    "--min-confidence", "0",
-                    "--min-joint-excursion-deg", "0",
-                    "--min-period-length", "1",
-                    "--override",
-                ],
-                check=True,
-            )  # fmt: skip
-            logger.info(f"STEP TIME viz_ik_solve: {time.perf_counter() - t_step:.1f}s")
+        logger.info(f"STEP TIME kinematics_solve: {time.perf_counter() - t_step:.1f}s")
 
     visualization_total_s = None
     if params.visualize:
         t_step = time.perf_counter()
         logger.info("Generating QA visualization video...")
-        try:
-            generate_summary_video(
-                recording_dir=recording_dir,
-                postprocessed_dir=postprocessed_dir,
-                alignment=params.alignment,
-                crop_dim=params.crop_dim,
-                with_muscle=params.muscle,
-                with_pose2d=params.pose2d,
-                with_ik=params.ik,
-                flipped_prob=(
-                    behavior_result["flipped_prob"] if behavior_result else None
-                ),
-                muscle_h5_path=muscle_h5_path,
-                muscle_dataset_name=muscle_dataset_name,
-                pose2d_h5_path=pose2d_h5_path,
-                pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
-                # The visualization-only IK pass (attempts every frame) when
-                # available, so the QA video always shows IK/FK wherever
-                # pose2d has a prediction and the fit quality gate accepts
-                # it -- distinct from the curated production ikfk_h5_path.
-                ikfk_h5_path=(
-                    viz_ikfk_h5_path if viz_ikfk_h5_path is not None else ikfk_h5_path
-                ),
-                output_path=postprocessed_dir / "summary_video.mp4",
-                muscle_vrange=params.muscle_vrange,
-                play_fps=play_fps,
-                playback_speed=actual_playback_speed,
-                crf=params.visualization_crf,
-                preset=params.visualization_preset,
-                flip_confidence_threshold=params.flip_confidence_threshold,
-                flip_mask_window=params.visualize_flip_mask_window,
-                orientation_filter_sigma=params.orientation_filter_sigma,
-                num_workers=params.visualization_num_workers,
-                composite_workers=params.visualization_composite_workers,
-                profile=params.profile_visualization,
-                colormap=params.colormap,
-            )
-        finally:
-            if viz_ikfk_h5_path is not None:
-                viz_ikfk_h5_path.unlink(missing_ok=True)
+        generate_summary_video(
+            recording_dir=recording_dir,
+            postprocessed_dir=postprocessed_dir,
+            alignment=params.alignment,
+            crop_dim=params.crop_dim,
+            with_muscle=params.muscle,
+            with_pose2d=params.pose2d,
+            with_ik=params.ik,
+            flipped_prob=(behavior_result["flipped_prob"] if behavior_result else None),
+            muscle_h5_path=muscle_h5_path,
+            muscle_dataset_name=muscle_dataset_name,
+            kinematics_h5_path=kinematics_h5_path,
+            pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
+            output_path=postprocessed_dir / "summary_video.mp4",
+            muscle_vrange=params.muscle_vrange,
+            play_fps=play_fps,
+            playback_speed=actual_playback_speed,
+            crf=params.visualization_crf,
+            preset=params.visualization_preset,
+            flip_confidence_threshold=params.flip_confidence_threshold,
+            ik_mismatch_threshold=params.ik_max_mismatch,
+            flip_mask_window=params.visualize_flip_mask_window,
+            orientation_filter_sigma=params.orientation_filter_sigma,
+            num_workers=params.visualization_num_workers,
+            composite_workers=params.visualization_composite_workers,
+            profile=params.profile_visualization,
+            colormap=params.colormap,
+        )
         visualization_total_s = time.perf_counter() - t_step
         logger.info(f"STEP TIME visualization_total: {visualization_total_s:.1f}s")
 

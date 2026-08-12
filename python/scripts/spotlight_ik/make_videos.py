@@ -1,12 +1,13 @@
 #!/usr/bin/env python
-"""Renders QA video clips of `solve_ik.py`'s periods+IK/FK `.h5` output: one
-short clip per sampled period. Raw predictions (`pred_2d_px`) are drawn in
-white; with `--with-ik`, the IK forward-kinematics result (`fk_2d_px`) is
-drawn on top with the same per-leg-chain colors as `visualize_predictions.
-py` (see `spotlight_pose2d.viz`), the thorax is omitted from the raw layer
-(the IK layer already draws it there), the two SLEAP-skeleton edges from
-the thorax to the midleg ThC nodes are never drawn (see
-`EXCLUDED_EDGE_NAME_PAIRS`), and a second panel is added: a
+"""Renders QA video clips of `solve_ik.py`'s dense `kinematics.h5` output:
+one short clip per sampled IK-attempted run (a contiguous non-NaN stretch of
+`inverse_kinematics/dof_angles`; see `find_ik_runs`). Raw predictions
+(`pred_2d_px`) are drawn in white; with `--with-ik`, the IK forward-
+kinematics result (`fk_2d_px`) is drawn on top with the same per-leg-chain
+colors as `visualize_predictions.py` (see `spotlight_pose2d.viz`), the
+thorax is omitted from the raw layer (the IK layer already draws it there),
+the two SLEAP-skeleton edges from the thorax to the midleg ThC nodes are
+never drawn (see `EXCLUDED_EDGE_NAME_PAIRS`), and a second panel is added: a
 synthetic 3D view of the IK reconstruction (`fk_3d_mm`, same colors) plus a
 ground-plane grid, using an orthographic camera that recenters on the
 thorax and tracks the fly's heading (yaw only) every frame -- the fly stays
@@ -16,8 +17,9 @@ implementation of the same idea. cv2-only drawing (no matplotlib); video
 I/O via `pvio`, GPU (NVENC) encoded.
 
 Usage:
-    python tools/spotlight_ik/make_videos.py \\
-        --input-path trial_ikfk.h5 --output-dir qa_videos/ --with-ik
+    python scripts/spotlight_ik/make_videos.py \\
+        --input-path trial_kinematics.h5 --video-path trial_aligned.mp4 \\
+        --output-dir qa_videos/ --with-ik
 """
 
 from pathlib import Path
@@ -27,8 +29,9 @@ import numpy as np
 import pvio
 import tyro
 from loguru import logger
+from scipy import ndimage
 
-from spotlight_postprocessing.spotlight_ik.io_utils import Period, load_ikfk_h5
+from spotlight_postprocessing.spotlight_ik.io_utils import load_kinematics_h5
 from spotlight_postprocessing.spotlight_pose2d.io_utils import load_skeleton_json
 from spotlight_postprocessing.spotlight_pose2d.viz import (
     build_edge_colors,
@@ -77,13 +80,28 @@ GRID_LINE_THICKNESS = 1
 EXCLUDED_EDGE_NAME_PAIRS = {frozenset({"Th", "LM_ThC"}), frozenset({"Th", "RM_ThC"})}
 
 
-def select_periods(periods: list[Period], n: int) -> list[Period]:
-    """The `n` longest periods, in chronological order (or all, if fewer than
+def find_ik_runs(dof_angles: np.ndarray) -> list[tuple[int, int]]:
+    """Contiguous non-NaN stretches of `dof_angles` (`kinematics.h5`'s
+    `inverse_kinematics/` no longer has an explicit period concept -- an
+    IK attempt existing at all, frame to frame, is the only "this is one
+    contiguous stretch" signal left), as `(start, end)` (`end` exclusive).
+    """
+    attempted = ~np.isnan(dof_angles).any(axis=-1)
+    labeled, n_runs = ndimage.label(attempted)
+    return [
+        (int(idxs[0]), int(idxs[-1]) + 1)
+        for run_id in range(1, n_runs + 1)
+        for idxs in (np.flatnonzero(labeled == run_id),)
+    ]
+
+
+def select_runs(runs: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
+    """The `n` longest runs, in chronological order (or all, if fewer than
     `n` exist). Longest-first is a deterministic, reproducible choice that
     also tends to pick the most informative footage for a QA spot check.
     """
-    longest = sorted(periods, key=lambda p: p.end_idx - p.start_idx, reverse=True)
-    return sorted(longest[:n], key=lambda p: p.start_idx)
+    longest = sorted(runs, key=lambda r: r[1] - r[0], reverse=True)
+    return sorted(longest[:n], key=lambda r: r[0])
 
 
 def compute_camera_orientation(
@@ -280,8 +298,12 @@ def draw_fk_3d_panel(
             )
 
 
-def render_period_clip(
-    period: Period,
+def render_run_clip(
+    start: int,
+    end: int,
+    pred_2d_px: np.ndarray,
+    fk_2d_px: np.ndarray | None,
+    fk_3d_mm: np.ndarray | None,
     video_path: Path,
     edges: list[tuple[int, int]],
     edge_colors: list[tuple[int, int, int]],
@@ -293,8 +315,15 @@ def render_period_clip(
     with_ik: bool,
     crf: int,
 ) -> None:
-    """Render one period's clip to `output_path`. See module docstring."""
-    frame_indices = list(range(period.start_idx, period.end_idx))
+    """Render one run's clip to `output_path`. See module docstring.
+
+    Args:
+        start, end: This run's frame range (`end` exclusive) into
+            `pred_2d_px`/`fk_2d_px`/`fk_3d_mm`, which cover the whole trial.
+        pred_2d_px, fk_2d_px, fk_3d_mm: `kinematics.h5`'s own dense, whole-
+            trial arrays (`fk_2d_px`/`fk_3d_mm` only needed if `with_ik`).
+    """
+    frame_indices = list(range(start, end))
     frames, fps = pvio.read_frames_from_video(video_path, frame_indices)
     fps = fps or 30.0
 
@@ -304,7 +333,7 @@ def render_period_clip(
     white_point_colors = [WHITE] * n_nodes
 
     for i, frame in enumerate(frames):
-        raw_points = period.pred_2d_px[i].copy()
+        raw_points = pred_2d_px[start + i].copy()
         if with_ik:
             # Omitted from the raw layer: the IK layer already draws it, and
             # overlapping the two dots at (near-)identical positions read as
@@ -322,7 +351,7 @@ def render_period_clip(
         if with_ik:
             draw_pose(
                 frame,
-                period.fk_2d_px[i],
+                fk_2d_px[start + i],
                 edges,
                 edge_colors,
                 point_colors,
@@ -335,7 +364,7 @@ def render_period_clip(
 
     if with_ik:
         for i in range(len(frames)):
-            fk_3d_mm_frame = period.fk_3d_mm[i]
+            fk_3d_mm_frame = fk_3d_mm[start + i]
             # Orientation tracks yaw every frame; grid must be recomputed
             # alongside it (see `compute_camera_orientation`/
             # `compute_grid_lines`).
@@ -363,6 +392,7 @@ def render_period_clip(
 
 def main(
     input_path: Path,
+    video_path: Path,
     output_dir: Path,
     skeleton_json_path: Path = Path(
         "bulk_data/motion_prior/2dpose_model/labels/metadata.json"
@@ -377,21 +407,27 @@ def main(
     docstring.
 
     Args:
-        input_path: `solve_ik.py` output `.h5` (see `spotlight_ik.io_utils.
-            save_ikfk_h5`).
+        input_path: `solve_ik.py` output `kinematics.h5` (see
+            `spotlight_ik.io_utils.save_kinematics_h5`). Must have an
+            `inverse_kinematics/` group (i.e. was generated with
+            `--with-ik`): that group's own dof_angles NaN pattern is what
+            defines a "run" to sample a clip from, whether or not
+            `with_ik` below actually draws the FK overlay.
+        video_path: The aligned behavior video these predictions came
+            from (`kinematics.h5` no longer carries this itself).
         output_dir: Directory to save clips into (one `.mp4` per sampled
-            period, named `<input_path stem>_period<id>.mp4`); created if
+            run, named `<input_path stem>_run<start>.mp4`); created if
             missing.
         skeleton_json_path: Real skeleton (nodes, edges), from
             `extract_metadata_from_initial_slp.py`. Its node names must
-            match `input_path`'s own `node_names` exactly, order included.
+            match `input_path`'s own keypoint order exactly, order included.
         with_ik: If True, also draws `fk_2d_px` (per-leg colors) on top of
             the raw (white) skeleton, and adds a second panel with a
             synthetic 3D view of `fk_3d_mm`. Off by default: a plain QA
-            look at the raw predictions within good periods.
-        videos_per_trial: Number of periods to render clips for (the
-            longest periods, deterministically; see `select_periods`), or
-            all of them if fewer exist.
+            look at the raw predictions within IK-attempted runs.
+        videos_per_trial: Number of runs to render clips for (the longest
+            runs, deterministically; see `select_runs`), or all of them
+            if fewer exist.
         video_height: Output panel height in pixels; the left (video) panel
             is resized to this height (aspect ratio preserved), and, with
             `with_ik`, the right (3D) panel is a `video_height` square next
@@ -401,8 +437,14 @@ def main(
             passed to `pvio.write_frames_to_video` as `quality`.
         override: If True, overwrite an existing clip instead of skipping it.
     """
-    data = load_ikfk_h5(input_path)
+    data = load_kinematics_h5(input_path)
     node_names = data["node_names"]
+    ik = data["inverse_kinematics"]
+    if ik is None:
+        raise SystemExit(
+            f"{input_path} has no inverse_kinematics/ group -- regenerate it "
+            "with solve_ik.py's --with-ik."
+        )
 
     skeleton = load_skeleton_json(skeleton_json_path)
     skeleton_node_names = [node.name for node in skeleton.nodes]
@@ -428,20 +470,24 @@ def main(
         name_to_idx["RH_ThC"],
     )
 
-    periods = select_periods(data["periods"], videos_per_trial)
-    if not periods:
-        logger.warning(f"{input_path} has no periods; nothing to render.")
+    runs = select_runs(find_ik_runs(ik.dof_angles), videos_per_trial)
+    if not runs:
+        logger.warning(f"{input_path} has no IK-attempted runs; nothing to render.")
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    for period in periods:
-        output_path = output_dir / f"{input_path.stem}_period{period.start_idx}.mp4"
+    for start, end in runs:
+        output_path = output_dir / f"{input_path.stem}_run{start}.mp4"
         if output_path.exists() and not override:
             logger.info(f"{output_path} already exists; skipping (pass --override).")
             continue
-        render_period_clip(
-            period,
-            data["video_path"],
+        render_run_clip(
+            start,
+            end,
+            data["keypoint_positions_2d_px"],
+            ik.keypoint_positions_2d_px,
+            ik.keypoint_positions_3d_mm,
+            video_path,
             edges,
             edge_colors,
             point_colors,

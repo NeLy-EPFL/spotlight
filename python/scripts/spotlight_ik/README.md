@@ -15,7 +15,7 @@ Reusable, general-purpose CLI tools for fitting inverse kinematics (via
 `scripts/spotlight_pose2d/`), and for rendering QA videos of the fit. Each
 takes `--input-path`/`--output-path` (or `--output-dir`) and other CLI args
 (run `--help` on either of them for the full list). Library code
-(`calibration.py`, `periods.py`, `neuromechfly.py`, `io_utils.py`) lives in
+(`calibration.py`, `neuromechfly.py`, `io_utils.py`) lives in
 `src/spotlight_postprocessing/spotlight_ik/`.
 
 ### One-time setup: the body-plan asset
@@ -26,18 +26,21 @@ via `../flygym/scripts/export_model_for_quickik.py` (writes to the current
 directory):
 
 ```sh
-cd tools/src/spotlight_tools/assets && uv run python ../../../../../flygym/scripts/export_model_for_quickik.py
+cd python/src/spotlight_tools/assets && uv run python ../../../../../flygym/scripts/export_model_for_quickik.py
 ```
 
 ### Single-trial pipeline
 
 1. `solve_ik.py`: takes one trial's dense pose `.h5` (see
-   `spotlight_pose2d.io_utils.save_pose_h5`), finds contiguous
-   high-confidence periods, fits IK/FK to each via QuickIK, and saves a
-   periods+IK/FK `.h5` (see `spotlight_ik.io_utils.save_ikfk_h5`).
-2. `make_videos.py`: takes one `solve_ik.py` output `.h5` and renders a
-   short QA clip per sampled period - the raw prediction skeleton (white),
-   and, with `--with-ik`, the IK/FK fit on top in the same per-leg colors as
+   `spotlight_pose2d.io_utils.save_pose_h5`), fits IK/FK per frame via
+   QuickIK (skipping frames the orient model flagged flipped or with low
+   2D-pose confidence -- an internal decision, not exposed as a period),
+   and saves a dense per-frame `kinematics.h5` (see
+   `spotlight_ik.io_utils.save_kinematics_h5`).
+2. `make_videos.py`: takes one `solve_ik.py` output `kinematics.h5` (plus
+   the aligned behavior video it came from) and renders a short QA clip per
+   sampled IK-attempted run - the raw prediction skeleton (white), and,
+   with `--with-ik`, the IK/FK fit on top in the same per-leg colors as
    `visualize_predictions.py` (see `spotlight_pose2d.viz`), plus a second
    panel with a synthetic 3D view of the IK reconstruction.
 

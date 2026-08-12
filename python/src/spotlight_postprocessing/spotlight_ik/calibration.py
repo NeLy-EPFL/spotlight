@@ -1,8 +1,9 @@
 """Per-trial calibration loading and pixel/mm conversion helpers.
 
-Used by `tools/spotlight_ik/solve_ik.py`: `convert_px_to_mm` to get physical
-(mm) keypoints to feed QuickIK, and `convert_mm_to_px` (the reverse) to map
-its FK output back to the aligned pixel domain for `fk_2d_px`.
+Used by `scripts/spotlight_ik/solve_ik.py`: `convert_px_to_mm` to get
+physical (mm) keypoints to feed QuickIK, and `convert_mm_to_px` (the
+reverse) to map its FK output back to the aligned pixel domain for
+`fk_2d_px`.
 """
 
 from pathlib import Path
@@ -59,6 +60,20 @@ def load_transform_matrices(trial_dir: Path) -> np.ndarray:
     """
     with h5py.File(trial_dir / TRANSFORMS_RELPATH, "r") as f:
         return f["transform_matrices"][:]
+
+
+def load_flipped_prob(trial_dir: Path) -> np.ndarray:
+    """Load a trial's per-frame orient-model flip probability.
+
+    Args:
+        trial_dir: Trial directory containing `TRANSFORMS_RELPATH` (the
+            same file `load_transform_matrices` reads).
+
+    Returns:
+        `(n_frames,)` post-sigmoid flip probability.
+    """
+    with h5py.File(trial_dir / TRANSFORMS_RELPATH, "r") as f:
+        return f["flipped_prob"][:]
 
 
 def load_stage_positions_mm(trial_dir: Path) -> np.ndarray:

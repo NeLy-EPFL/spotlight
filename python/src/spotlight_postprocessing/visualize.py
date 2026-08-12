@@ -3,8 +3,8 @@ matplotlib and cmasher are used only to borrow a font path and a colormap
 (as a precomputed lookup table), never for actual plotting/rendering.
 Two-row panel grid:
 
-    row 1: raw + orient-box overlay | cropped+aligned (blank if flipped) | muscle (if requested)
-    row 2: pose2d skeleton overlay (if requested)          | synthetic 3D IK (if requested)
+    row 1: raw + orient-box overlay | cropped+aligned (best effort) | muscle (if requested)
+    row 2: pose2d skeleton overlay (if requested)     | synthetic 3D IK (if requested)
 
 Row 2 only exists when `with_pose2d`; its column 2 (synthetic 3D IK) is
 omitted entirely when `with_ik` is off, the same way the muscle panel is
@@ -12,10 +12,22 @@ omitted (not blanked) when `with_muscle` is off. Panel 1 is padded to a
 square (matching the other row-1 panels) whenever the recording has an
 aligned domain at all (`alignment in ("aligned", "both")`); in
 `"fullsize"` mode there is no row 2 (pose2d/IK both require an aligned
-domain) and panel 1 keeps its native aspect ratio. Reads back
-already-computed outputs (video files, muscle H5, pose2d H5, IK/FK H5) --
-no model re-inference here, that already happened in
-`behavior.process_behavior_pipeline`.
+domain) and panel 1 keeps its native aspect ratio.
+
+Row 1's cropped/muscle panels are always shown, even on a frame the orient
+model flagged flipped (best-effort crop, same as an unflipped frame) --
+flip only suppresses row 2's own overlay drawing (2D pose skeleton, IK
+fit): the pose2d panel's background (the same cropped frame) still shows.
+IK is additionally not drawn wherever `kinematics.h5`'s `inverse_kinematics/`
+group has no fit for that frame (an internal gap-detection decision made by
+`solve_ik.py`, not exposed here) or wherever its fk-to-prediction mismatch
+exceeds `ik_mismatch_threshold` (a display-only rejection; kinematics.h5
+itself never drops data for this) -- the raw 2D pose skeleton itself is
+still drawn in either case, whenever the frame isn't flipped.
+
+Reads back already-computed outputs (video files, muscle H5,
+`kinematics.h5`) -- no model re-inference here, that already happened in
+`behavior.process_behavior_pipeline` and `scripts/spotlight_ik/solve_ik.py`.
 
 Rendering is chunked and parallelized (joblib): each worker composites its
 own frame range and encodes it directly to its own small temp video via
@@ -63,11 +75,12 @@ from spotlight_postprocessing.spotlight_pose2d.viz import (
 
 PANEL_SIZE = 450
 FLIP_DECISION_THRESHOLD_DEFAULT = 0.5
+IK_MISMATCH_THRESHOLD_DEFAULT = 0.3
 # RGB -- frames go straight to `pvio.write_frames_to_video` (no cv2.imwrite
 # in between, which is what used to make BGR the right choice here, back
 # when a JPEG scratch-write step sat between drawing and pvio).
 YELLOW = (255, 255, 0)
-WHITE = (255, 255, 255)
+GRAY = (0x88, 0x88, 0x88)
 TEXT_COLOR = (0xDD, 0xDD, 0xDD)
 BORDER_COLOR = (0x33, 0x33, 0x33)
 DEFAULT_COLORMAP = "lilac"
@@ -85,7 +98,7 @@ this lets each of those processes composite several frames at once while
 encoding stays exactly as GPU-session-limited as before."""
 
 SCALE_BAR_UM = 500
-LABEL_FONT_SIZE = 13
+LABEL_FONT_SIZE = 16  # +20% over the original 13pt, for scale bar/legend text
 TITLE_FONT_SIZE = 16
 OVERLAY_MARGIN = 12
 
@@ -96,13 +109,14 @@ PANEL_NAMES = {
     "pose2d": "2D pose",
     "ik3d": "IK-reconstructed 3D pose",
 }
-POSE2D_IK_LEGEND_LINES = ["white: raw predictions", "colored: IK fit"]
+POSE2D_RAW_LEGEND_LINE = "gray: raw predictions"
+POSE2D_IK_LEGEND_LINES = [POSE2D_RAW_LEGEND_LINE, "colored: IK fit"]
 RAW_BOX_LEGEND_LINES = [
     "yellow: accepted",
-    "white: rejected (not upright, too close to edge)",
+    "gray: rejected (not upright or too close to edge)",
 ]
 
-_IK_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts" / "spotlight_ik"
+_IK_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "spotlight_ik"
 
 
 def _round_to_multiple(value: int, multiple: int = 16) -> int:
@@ -131,12 +145,32 @@ def _pad_to_width(panel: np.ndarray, target_width: int) -> np.ndarray:
     """Left-justifies `panel` in a black canvas `target_width` wide (same
     height) -- padding goes on the right only, so panels stay flush left
     and a future additional panel can be appended there. No-op if `panel`
-    is already that wide or wider."""
+    is already that wide or wider. Used to match row 1's and row 2's total
+    widths; NOT for panel 1's own square-padding (see
+    `_pad_to_width_centered`)."""
     width = panel.shape[1]
     if width >= target_width:
         return panel
     return cv2.copyMakeBorder(
         panel, 0, 0, 0, target_width - width, cv2.BORDER_CONSTANT, value=(0, 0, 0)
+    )
+
+
+def _pad_to_width_centered(panel: np.ndarray, target_width: int) -> np.ndarray:
+    """Centers `panel` in a black canvas `target_width` wide (same height) --
+    padding split across both sides, so the image sits centered within its
+    block. Used only for panel 1's own square-padding (the full-size
+    behavior recording panel, whose native aspect ratio usually isn't
+    square); row 1/row 2 total-width matching stays left-justified (see
+    `_pad_to_width`). No-op if `panel` is already that wide or wider."""
+    width = panel.shape[1]
+    if width >= target_width:
+        return panel
+    total_pad = target_width - width
+    left = total_pad // 2
+    right = total_pad - left
+    return cv2.copyMakeBorder(
+        panel, 0, 0, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0)
     )
 
 
@@ -338,7 +372,9 @@ def _compute_border_lines(
     """Line segments, in the final composited frame's own coordinates, at
     every seam between adjacent panels (and between row 1 and row 2, if
     row 2 exists) -- computed once per trial from panel slot widths, which
-    are fixed for the whole trial, not per frame."""
+    are fixed for the whole trial, not per frame. Row 2 also gets a
+    trailing line after its own last column (unlike row 1, which doesn't),
+    marking the grid's edge past the synthetic 3D IK panel."""
     lines = []
     row1_height = PANEL_SIZE
     total_width = max(sum(row1_widths), sum(row2_widths) if row2_widths else 0)
@@ -351,7 +387,7 @@ def _compute_border_lines(
 
     if row2_widths:
         x = 0
-        for w in row2_widths[:-1]:
+        for w in row2_widths:
             x += w
             lines.append(((x, row1_height), (x, total_height)))
         lines.append(((0, row1_height), (total_width, row1_height)))
@@ -394,7 +430,7 @@ def _precompute_panel_overlays(
     native_h, native_w = sample_raw.shape[:2]
     raw_panel = _resize_to_height(sample_raw, PANEL_SIZE)
     if show_aligned:
-        raw_panel = _pad_to_width(raw_panel, PANEL_SIZE)
+        raw_panel = _pad_to_width_centered(raw_panel, PANEL_SIZE)
     raw_h, raw_w = raw_panel.shape[:2]
 
     def scale_bar_px(native_size: int) -> float | None:
@@ -404,7 +440,7 @@ def _precompute_panel_overlays(
 
     raw_scale_bar_px = scale_bar_px(native_h)
     crop_scale_bar_px = scale_bar_px(crop_dim) if crop_dim else None
-    scale_bar_label = f"{SCALE_BAR_UM} um"
+    scale_bar_label = f"{SCALE_BAR_UM / 1000:g} mm"
 
     overlays = {
         "raw": _make_panel_overlay(
@@ -436,7 +472,9 @@ def _precompute_panel_overlays(
         overlays["pose2d"] = _make_panel_overlay(
             PANEL_SIZE, PANEL_SIZE, PANEL_NAMES["pose2d"],
             crop_scale_bar_px, scale_bar_label, None,
-            extra_title_lines=POSE2D_IK_LEGEND_LINES if with_ik else None,
+            extra_title_lines=(
+                POSE2D_IK_LEGEND_LINES if with_ik else [POSE2D_RAW_LEGEND_LINE]
+            ),
         )  # fmt: skip
         row2_widths.append(PANEL_SIZE)
     if with_row2 and with_ik:
@@ -556,7 +594,9 @@ def _render_chunk(
     point_colors: list[tuple[int, int, int]] | None,
     edge_colors: list[tuple[int, int, int]] | None,
     with_ik: bool,
-    ik_periods_by_frame: dict,
+    fk_2d_px: np.ndarray | None,
+    fk_3d_mm: np.ndarray | None,
+    show_ik: np.ndarray | None,
     th_idx_ik: int | None,
     thc_idxs: tuple | None,
     play_fps: float,
@@ -631,15 +671,18 @@ def _render_chunk(
                 keypoints_pre[i], canonical_points, pred_direction_override=direction_override
             )  # fmt: skip
             if corners is not None:
-                color = WHITE if flipped_i else YELLOW
+                color = GRAY if flipped_i else YELLOW
                 cv2.polylines(
                     raw_bgr, [corners.astype(np.int32)], True, color, 4, cv2.LINE_AA
                 )
         raw_panel = _resize_to_height(raw_bgr, PANEL_SIZE)
         if show_aligned:
-            raw_panel = _pad_to_width(raw_panel, PANEL_SIZE)
+            raw_panel = _pad_to_width_centered(raw_panel, PANEL_SIZE)
         row1.append(_apply_overlay(raw_panel, panel_overlays.get("raw")))
 
+        # Cropped behavior and muscle frames are shown even on a flipped
+        # frame (best-effort orient-model crop; only the 2D pose/IK overlay
+        # drawing below is skipped when flipped).
         aligned_frame = None
         if show_aligned:
             # Re-derive the aligned crop directly from the raw frame using
@@ -652,15 +695,14 @@ def _render_chunk(
                 borderValue=0,
             )  # fmt: skip
             aligned_frame = cv2.cvtColor(aligned_gray, cv2.COLOR_GRAY2BGR)
-            display_aligned_frame = (
-                row1_black if flipped_i else _resize_square(aligned_frame, PANEL_SIZE)
-            )
             row1.append(
-                _apply_overlay(display_aligned_frame, panel_overlays.get("aligned"))
-            )
+                _apply_overlay(
+                    _resize_square(aligned_frame, PANEL_SIZE), panel_overlays.get("aligned")
+                )
+            )  # fmt: skip
 
         if with_muscle:
-            muscle_img = None if flipped_i else muscle_row_by_frame.get(i)
+            muscle_img = muscle_row_by_frame.get(i)
             if muscle_img is not None:
                 norm = np.clip(
                     (muscle_img.astype(np.float32) - muscle_vrange[0])
@@ -675,76 +717,74 @@ def _render_chunk(
             row1.append(_apply_overlay(muscle_bgr, panel_overlays.get("muscle")))
 
         # --- row 2 ---
+        # Both panels below key their overlay drawing only on `flipped_i`
+        # (best-effort background always shown, same as row 1's aligned/
+        # muscle panels) and `show_ik[i]` (IK actually attempted for this
+        # frame -- see `solve_ik.py`'s internal gap detection -- and not
+        # display-rejected for excessive fk-to-prediction mismatch): the 2D
+        # pose overlay is drawn whenever not flipped, regardless of
+        # `show_ik`, since it doesn't depend on IK having run at all.
         row2 = []
-        period_info = ik_periods_by_frame.get(i)
         if with_pose2d:
-            if flipped_i:
-                pose_panel = row1_black.copy()
-            else:
-                # Resize the background to final display resolution
-                # *before* drawing (not after -- drawing on the native
-                # crop_dim canvas then shrinking the whole panel scales
-                # LINE_THICKNESS/POINT_RADIUS down with it, making markers
-                # sub-pixel-thin). Scale point coordinates by the same
-                # ratio so they land in the right place.
-                pose_panel = (
-                    _resize_square(aligned_frame, PANEL_SIZE)
-                    if aligned_frame is not None
-                    else row1_black.copy()
-                )
+            # Resize the background to final display resolution *before*
+            # drawing (not after -- drawing on the native crop_dim canvas
+            # then shrinking the whole panel scales LINE_THICKNESS/
+            # POINT_RADIUS down with it, making markers sub-pixel-thin).
+            # Scale point coordinates by the same ratio so they land right.
+            pose_panel = (
+                _resize_square(aligned_frame, PANEL_SIZE)
+                if aligned_frame is not None
+                else row1_black.copy()
+            )
+            if not flipped_i:
                 point_scale = PANEL_SIZE / crop_dim
                 raw_points = pose2d_data[i] * point_scale
-                if with_ik and period_info is not None:
-                    period, local_i = period_info
-                    draw_pose(
-                        pose_panel,
-                        raw_points,
-                        edges,
-                        [WHITE] * len(edges),
-                        [WHITE] * len(node_names),
-                    )
-                    # Colored (IK/FK) drawn after white (raw) -- already on
+                draw_pose(
+                    pose_panel,
+                    raw_points,
+                    edges,
+                    [GRAY] * len(edges),
+                    [GRAY] * len(node_names),
+                )
+                if with_ik and show_ik is not None and show_ik[i]:
+                    # Colored (IK/FK) drawn after gray (raw) -- already on
                     # top -- at 2x thickness/radius so it reads clearly
-                    # over the white raw skeleton wherever they overlap.
+                    # over the raw skeleton wherever they overlap.
                     draw_pose(
                         pose_panel,
-                        period.fk_2d_px[local_i] * point_scale,
+                        fk_2d_px[i] * point_scale,
                         edges,
                         edge_colors,
                         point_colors,
                         line_thickness=LINE_THICKNESS * IK_LINE_THICKNESS_SCALE,
                         point_radius=POINT_RADIUS * IK_POINT_RADIUS_SCALE,
                     )
-                else:
-                    draw_pose(pose_panel, raw_points, edges, edge_colors, point_colors)
             row2.append(_apply_overlay(pose_panel, panel_overlays.get("pose2d")))
 
         if with_row2 and with_ik:
-            if flipped_i:
-                panel_3d = row1_black.copy()
-            else:
-                panel_3d = np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
-                if (
-                    period_info is not None
-                    and th_idx_ik is not None
-                    and all(idx is not None for idx in thc_idxs)
-                ):
-                    period, local_i = period_info
-                    fk_3d_mm_frame = period.fk_3d_mm[local_i]
-                    right_axis, up_axis, view_dir = compute_camera_orientation(
-                        fk_3d_mm_frame, thc_idxs
-                    )
-                    draw_grid_floor(
-                        panel_3d, compute_grid_lines(right_axis, up_axis, PANEL_SIZE)
-                    )
-                    centered = fk_3d_mm_frame - fk_3d_mm_frame[th_idx_ik]
-                    points_2d = project_relative_to_panel(
-                        centered, right_axis, up_axis, PANEL_SIZE
-                    )
-                    depths = centered @ view_dir
-                    draw_fk_3d_panel(
-                        panel_3d, points_2d, depths, edges, edge_colors, point_colors
-                    )
+            panel_3d = np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
+            if (
+                not flipped_i
+                and show_ik is not None
+                and show_ik[i]
+                and th_idx_ik is not None
+                and all(idx is not None for idx in thc_idxs)
+            ):
+                fk_3d_mm_frame = fk_3d_mm[i]
+                right_axis, up_axis, view_dir = compute_camera_orientation(
+                    fk_3d_mm_frame, thc_idxs
+                )
+                draw_grid_floor(
+                    panel_3d, compute_grid_lines(right_axis, up_axis, PANEL_SIZE)
+                )
+                centered = fk_3d_mm_frame - fk_3d_mm_frame[th_idx_ik]
+                points_2d = project_relative_to_panel(
+                    centered, right_axis, up_axis, PANEL_SIZE
+                )
+                depths = centered @ view_dir
+                draw_fk_3d_panel(
+                    panel_3d, points_2d, depths, edges, edge_colors, point_colors
+                )
             row2.append(_apply_overlay(panel_3d, panel_overlays.get("ik3d")))
 
         row1_img = np.hstack(row1)
@@ -823,9 +863,8 @@ def generate_summary_video(
     flipped_prob: np.ndarray | None,
     muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
-    pose2d_h5_path: Path | None,
+    kinematics_h5_path: Path | None,
     pose2d_skeleton_json_path: Path | None,
-    ikfk_h5_path: Path | None,
     output_path: Path,
     muscle_vrange: tuple[int, int] | None,
     play_fps: float,
@@ -833,6 +872,7 @@ def generate_summary_video(
     crf: int,
     preset: str | None,
     flip_confidence_threshold: float = FLIP_DECISION_THRESHOLD_DEFAULT,
+    ik_mismatch_threshold: float = IK_MISMATCH_THRESHOLD_DEFAULT,
     flip_mask_window: int = 5,
     orientation_filter_sigma: float = 5.0,
     num_workers: int = DEFAULT_NUM_WORKERS,
@@ -873,10 +913,15 @@ def generate_summary_video(
         )
 
     pose2d_data = node_names = edges = point_colors = edge_colors = None
+    fk_2d_px = fk_3d_mm = show_ik = None
+    th_idx_ik = None
+    thc_idxs = None
     if with_pose2d:
-        with h5py.File(pose2d_h5_path, "r") as f:
-            pose2d_data = f["poses"][:n_frames]
-            node_names = [str(n) for n in f.attrs["node_names"]]
+        from spotlight_postprocessing.spotlight_ik.io_utils import load_kinematics_h5
+
+        kinematics = load_kinematics_h5(kinematics_h5_path)
+        node_names = kinematics["node_names"]
+        pose2d_data = kinematics["keypoint_positions_2d_px"][:n_frames]
         skeleton = json.loads(pose2d_skeleton_json_path.read_text())
         name_to_idx = {name: i for i, name in enumerate(node_names)}
         edges = [
@@ -891,24 +936,30 @@ def generate_summary_video(
         point_colors = build_node_colors(node_names)
         edge_colors = build_edge_colors(edges, node_names)
 
-    ik_periods_by_frame = {}
-    th_idx_ik = None
-    thc_idxs = None
-    if with_ik and ikfk_h5_path is not None and ikfk_h5_path.exists():
-        from spotlight_postprocessing.spotlight_ik.io_utils import load_ikfk_h5
+        ik = kinematics["inverse_kinematics"]
+        if with_ik and ik is not None:
+            sys.path.insert(0, str(_IK_SCRIPTS_DIR))
+            from solve_ik import leg_keypoint_indices, nanreduce_ignore_all_nan
 
-        ik_data = load_ikfk_h5(ikfk_h5_path)
-        ik_node_names = ik_data["node_names"]
-        for period in ik_data["periods"]:
-            for local_i, frame_idx in enumerate(
-                range(period.start_idx, period.end_idx)
-            ):
-                ik_periods_by_frame[frame_idx] = (period, local_i)
-        ik_name_to_idx = {name: i for i, name in enumerate(ik_node_names)}
-        th_idx_ik = ik_name_to_idx.get("Th")
-        thc_idxs = tuple(
-            ik_name_to_idx.get(n) for n in ("LF_ThC", "RF_ThC", "LH_ThC", "RH_ThC")
-        )
+            fk_2d_px = ik.keypoint_positions_2d_px[:n_frames]
+            fk_3d_mm = ik.keypoint_positions_3d_mm[:n_frames]
+            th_idx_ik = name_to_idx.get("Th")
+            thc_idxs = tuple(
+                name_to_idx.get(n) for n in ("LF_ThC", "RF_ThC", "LH_ThC", "RH_ThC")
+            )
+
+            ik_attempted = ~np.isnan(ik.dof_angles[:n_frames]).any(axis=-1)
+            # Display-time-only rejection (see `spotlight_ik.solve_ik`'s
+            # module docstring): kinematics.h5 itself never drops data
+            # based on fk-to-prediction mismatch, only on whether IK was
+            # attempted at all.
+            pose2d_mm = kinematics["keypoint_positions_2d_mm"][:n_frames]
+            leg_idxs = leg_keypoint_indices(node_names)
+            dist = np.linalg.norm(
+                pose2d_mm[:, leg_idxs] - fk_3d_mm[:, leg_idxs, :2], axis=-1
+            )
+            frame_max_mismatch = nanreduce_ignore_all_nan(np.nanmax, dist, axis=-1)
+            show_ik = ik_attempted & (frame_max_mismatch <= ik_mismatch_threshold)
 
     muscle_meta = None
     if with_muscle:
@@ -962,7 +1013,7 @@ def generate_summary_video(
                 muscle_meta=muscle_meta, muscle_vrange=muscle_vrange, muscle_lut=muscle_lut,
                 with_pose2d=with_pose2d, pose2d_data=pose2d_data, node_names=node_names,
                 edges=edges, point_colors=point_colors, edge_colors=edge_colors,
-                with_ik=with_ik, ik_periods_by_frame=ik_periods_by_frame,
+                with_ik=with_ik, fk_2d_px=fk_2d_px, fk_3d_mm=fk_3d_mm, show_ik=show_ik,
                 th_idx_ik=th_idx_ik, thc_idxs=thc_idxs, play_fps=play_fps, crf=crf,
                 preset=preset, mode=encode_mode, composite_workers=composite_workers,
             )  # fmt: skip

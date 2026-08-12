@@ -10,7 +10,7 @@ OUTPUT_DIR="bulk_data/motion_prior/2dpose_model/inverse_kinematics/ikfk"
 OUTPUT_SUFFIX="_ikfk.h5"
 
 repo_root="$(pwd)"
-tools_dir="$repo_root/tools/spotlight_ik"
+tools_dir="$repo_root/scripts/spotlight_ik"
 
 source "$repo_root/.venv/bin/activate"
 

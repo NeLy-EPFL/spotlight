@@ -22,9 +22,9 @@ import quickik
 # QuickIK's own NeuroMechFly example (../quickik/benchmark/plot/
 # render_video_2d.py) uses 10x the library default `neutral_weight` (1e-3),
 # i.e. 0.01. Comparing 0.01/0.05/0.1/0.25/0.5 on this project's own rendered
-# 3D reconstructions (see `tools/spotlight_ik/make_videos.py`'s 3D panel,
-# with `solve_ik.py`'s own `--max-mismatch` filter disabled so a bad fit
-# shows up instead of being silently dropped): 0.5 and 0.25 both give
+# 3D reconstructions (see `scripts/spotlight_ik/make_videos.py`'s 3D panel,
+# with mismatch-based rejection disabled so a bad fit shows up instead of
+# being silently dropped): 0.5 and 0.25 both give
 # stable, physically plausible poses throughout, with 0.25 fitting the raw
 # 2D predictions visibly tighter; 0.1 already shows occasional implausible
 # single-frame outliers; 0.05 bends a mid-leg into an unrealistic
@@ -134,6 +134,20 @@ def base_observation_weight(joint_name: str) -> float:
     return DISTAL_WEIGHT  # trochanterfemur_tibia, tibia_tarsus, claw
 
 
+def sleap_keypoint_weight_scale() -> dict[str, float]:
+    """`base_observation_weight`, keyed by SLEAP node name instead of
+    body-plan joint name, for recording alongside a solve's own results
+    (see `kinematics.h5`'s `inverse_kinematics/` attrs). Excludes "Th": it
+    was never a real observation to begin with (see `solve_period_ik`), so
+    it has no meaningful weight to report here.
+    """
+    return {
+        sleap_name: base_observation_weight(joint_name)
+        for sleap_name, joint_name in build_sleap_to_joint_name_map().items()
+        if joint_name != "thorax"
+    }
+
+
 def reorder_to_joint_order(
     sleap_points: np.ndarray, sleap_node_names: list[str], joint_names: list[str]
 ) -> np.ndarray:
@@ -221,14 +235,22 @@ def solve_period_ik(
     # are different physical points on the fly (Th is an anatomical marker;
     # the body plan's thorax origin is an internal reference for the leg
     # attachment geometry), so Th is never a valid observation for the root
-    # (`base_observation_weight` returns 0.0 for it): always missing, so the
-    # leg-tip observations (through the kinematic chain) drive the root
-    # pose entirely.
+    # (`base_observation_weight` returns 0.0 for it) -- the leg-tip
+    # observations (through the kinematic chain) drive the root pose
+    # entirely.
     base_weights = np.array(
         [base_observation_weight(name) for name in joint_names], dtype=np.float32
     )
     weights = np.where(missing, 0.0, base_weights[np.newaxis, :]).astype(np.float32)
     positions = np.nan_to_num(positions, nan=0.0).astype(np.float32)
+    # Zero the root's own position outright too, instead of letting
+    # whatever SLEAP happened to predict for "Th" flow through unused --
+    # its weight above is already 0 unconditionally, but this makes "never
+    # real observed data" explicit rather than incidental. QuickIK's own
+    # API requires one array slot per body-plan joint (root included, see
+    # `validate_position_weight_shapes` in its Rust source) regardless, so
+    # this can't be dropped from the array entirely -- only zeroed.
+    positions[..., joint_names.index("thorax"), :] = 0.0
 
     seq_solver = quickik.SequenceSolver(
         body_plan.tree,
