@@ -1,3 +1,5 @@
+"""CLI for post-processing one Spotlight recording. See help message for details."""
+
 import logging
 import os
 import shutil
@@ -37,134 +39,144 @@ SOLVE_IK_SCRIPT_PATH = PYTHON_ROOT / "scripts/spotlight_ik/solve_ik.py"
 
 @dataclass
 class PostprocessingParams:
-    """Configuration for `postprocess_recording_data`. Pipeline: stage-position
-    interpolation, behavior frame decode + TinyLocalizationModel alignment (+
-    optional pose2d/muscle, run in the same streaming pass, no video
-    round-trip), optional IK/FK fit, optional 5-panel QA visualization."""
+    """Configuration for `postprocess_recording_data`. See each option's own
+    help text (`--help`) for details."""
 
+    # --- Output video geometry and timing ---
     crop_dim: int = 900
-    """Output aligned-frame dimensions (crop_dim x crop_dim)."""
+    """Aligned-frame output size, in pixels (`crop_dim` x `crop_dim`)."""
 
     thorax_y_normalized: float = 0.5
-    """Where the thorax sits in the crop's y-axis (0=top, 1=bottom)."""
+    """Where the thorax sits on the crop's y-axis: 0 is the top, 1 is the
+    bottom."""
 
     alignment: Literal["aligned", "fullsize", "both"] = "aligned"
-    """Which behavior video(s) to produce."""
+    """Which behavior video(s) to produce: the thorax-aligned crop, the raw
+    full-size frame, or both."""
 
     playback_speed: float = 0.1
-    """Output videos (behavior and visualization alike) play at this
-    fraction of the recording's own real-time rate. The exact fps this
-    implies (`playback_speed * behavior_fps`) is usually not an integer,
-    so it's approximated as a fraction with denominator <= 20 (Python's
-    `Fraction.limit_denominator`); the QA video's on-screen speed label
-    shows the speed this approximation actually achieves, which can differ
-    slightly from the requested value."""
+    """Output videos play at this fraction of the recording's real-time
+    rate. The achieved fps is rounded to a nearby value ffmpeg can encode
+    cleanly, so actual speed may differ slightly; the QA video's on-screen
+    speed label always shows the real value."""
 
+    # --- Pipeline stages to run ---
     visualize: bool = True
-    muscle: bool = True
-    pose2d: bool = True
-    ik: bool = True
+    """Generate the QA summary video."""
 
+    muscle: bool = True
+    """Process the muscle-imaging channel and include it in the QA video."""
+
+    pose2d: bool = True
+    """Run 2D pose estimation."""
+
+    ik: bool = True
+    """Fit inverse kinematics from the 2D pose. Requires `pose2d`."""
+
+    # --- Model batch sizes ---
     localization_batch_size: int | Literal["auto"] = "auto"
-    """fp16 peak ~5.1GB on a 12GB GPU, measured (see Task #54 benchmark).
-    "auto" (default) sizes it as `LOCALIZATION_BATCH_SIZE_VRAM_FRACTION` (0.04)
-    times the active GPU's total VRAM in MiB, so it scales up on bigger
-    GPUs instead of leaving headroom unused -- ~512 on a 12 GB GPU,
-    matching this pipeline's previously-hardcoded default."""
+    """Localization model batch size. "auto" (default) scales with the
+    GPU's VRAM, about 512 on a 12 GB GPU."""
 
     pose2d_batch_size: int | Literal["auto"] = "auto"
-    """fp16 peak ~4.1GB on a 12GB GPU, measured (see Task #54 benchmark).
-    "auto" (default) sizes it as `POSE2D_BATCH_SIZE_VRAM_FRACTION` (0.02)
-    times the active GPU's total VRAM in MiB -- ~256 on a 12 GB GPU,
-    matching this pipeline's previously-hardcoded default."""
+    """2D pose model batch size. "auto" (default) scales with the GPU's
+    VRAM, about 256 on a 12 GB GPU."""
 
+    # --- Inverse kinematics ---
     ik_prior_weight: float = 0.2
-    """Passed through as `solve_ik.py`'s `neutral_weight`."""
+    """IK solver's pull toward the body plan's neutral pose (`solve_ik.py`'s
+    `neutral_weight`). Higher trusts the neutral pose over the observed
+    keypoints more."""
 
     ik_max_mismatch: float = 0.3
-    """Max tolerated xy mismatch (mm) between the 2D prediction and the
-    IK/FK fit before the QA video stops drawing the IK overlay for that
-    frame. Purely a `visualize.py` display decision (see its module
-    docstring); `kinematics.h5` itself always keeps whatever IK result
-    `solve_ik.py` computed, mismatch included, for downstream curation in
-    poseforge2."""
+    """QA video only: max mismatch (mm) allowed between the 2D prediction
+    and the IK fit before the video hides that frame's IK overlay.
+    `kinematics.h5` itself always keeps the full IK result regardless."""
 
+    # --- QA video display smoothing ---
     flip_confidence_threshold: float = 0.5
-    """Localization model's flip-probability cutoff for the QA video's flip
-    decision (box color, and darkening panels 2-5): >= this counts as
-    flipped. Raising it calls more frames not-flipped."""
+    """QA video only: localization model's flip-probability cutoff. At or
+    above this, a frame is treated as flipped (gray box, overlay hidden)."""
 
     acceptance_mask_window: int = 15
-    """Binary opening+closing window (frames) denoising the flip decision,
-    the IK-acceptance decision (attempted and within `ik_max_mismatch`),
-    and the pose2d/IK-overlay confidence decision (weighted keypoint
-    confidence >= 0.5) before any of them is used, so a single noisy frame
-    doesn't flicker the QA video's darkened panels or overlays. -1 disables
-    this (use each raw per-frame decision as-is)."""
+    """QA video only: smooths the flip, IK-acceptance, and pose-confidence
+    decisions over this many frames, so a single noisy frame doesn't
+    flicker the display. -1 disables smoothing."""
 
     orientation_filter_sigma: float = 5.0
-    """Gaussian smoothing sigma (frames) applied to the fitted neck-thorax-
-    abdomen orientation line before computing the QA video's raw-frame box
-    overlay, so per-frame keypoint noise doesn't make the box jitter/rotate
-    independently of the fly's own motion. -1 uses each frame's own fit
-    unsmoothed."""
+    """QA video only: Gaussian smoothing (frames) for the fly's fitted body
+    orientation, so keypoint noise doesn't jitter the box overlay. -1
+    disables smoothing."""
 
+    # --- Muscle channel ---
     num_orphan_muscle_frames: int | None = None
+    """Number of leading muscle frames to skip as recorded-before-behavior-
+    started orphans. Auto-detected from timestamps if not set."""
+
     muscle_vrange: tuple[int, int] | None = None
-
-    behavior_video_crf: int = 12
-    behavior_video_preset: str = "medium"
-    """NVENC "medium" measured ~2.5x faster AND smaller output than "slow"
-    at every CRF tested (constant-QP mode, not libx264 -- preset here
-    mainly affects encoder search effort/file size, not achieved quality;
-    visually indistinguishable from "slow" at CRF 18 on a real trial)."""
-
-    visualization_crf: int = 20
-    visualization_preset: str = "medium"
-
-    colormap: str = "lilac"
-    """The QA video's muscle panel colormap: any cmasher name (e.g.
-    "lilac") or matplotlib-registered name (e.g. "viridis", or cmasher's
-    own "cmr.lilac" form)."""
+    """Muscle-image intensity range (min, max) mapped onto `colormap`.
+    Auto-computed from a percentile sample of the data if not set."""
 
     missing_muscle_frames_tolerance: int = 3
-    num_muscle_samples: int = 100
+    """Max unexplained missing muscle frames tolerated before raising an
+    error."""
+
+    # --- Encoding ---
+    behavior_video_crf: int = 12
+    """Behavior video encode quality (CRF). Lower is higher quality and a
+    larger file."""
+
+    behavior_video_preset: str = "medium"
+    """NVENC encoder preset for the behavior video. "medium" measured
+    faster and smaller than "slow" here with no visible quality loss."""
+
+    visualization_crf: int = 20
+    """QA video encode quality (CRF). Lower is higher quality and a larger
+    file."""
+
+    visualization_preset: str = "medium"
+    """NVENC encoder preset for the QA video."""
+
+    colormap: str = "lilac"
+    """QA video's muscle-panel colormap: a cmasher name (e.g. "lilac") or a
+    matplotlib-registered name (e.g. "viridis")."""
+
+    # --- Parallelism ---
     num_cpu_workers: int = -1
-    """CPU-only parallelism: raw-frame decode and muscle-image warping
-    (both plain cv2 work, never GPU compute) -- also doubles as this
-    pipeline's only inference-time "data loading" worker count, for the
-    decode step that feeds the localization model. Passed straight through to
-    joblib's own `n_jobs`, so -1 (default) means joblib auto-detects all
-    cores; never resolved to a concrete number ourselves."""
+    """CPU worker count for raw-frame decode and muscle-image warping
+    (plain cv2, no GPU). -1 (default) uses all cores, via joblib's
+    `n_jobs`."""
+
     visualization_num_workers: int = 6
-    """Separate from num_cpu_workers: the QA video's per-chunk render+
-    encode step's own worker count. Encoding shares the GPU's own
-    concurrent-NVENC-session limit across workers (unlike decode/muscle
-    warping, which don't touch the GPU), so this defaults much lower than
-    num_cpu_workers' usual -1 (all cores) to avoid exceeding it -- see
-    `visualize.DEFAULT_NUM_WORKERS`'s own comment for the measured 8-session
-    hard cap this leaves headroom under."""
+    """QA video's render+encode worker count. Kept low (unlike
+    `num_cpu_workers`) because encoding shares the GPU's own limited
+    concurrent-NVENC-session count."""
 
     visualization_composite_workers: int = 4
-    """Threads per visualization_num_workers *process* used to composite
-    (not encode) frames. Compositing is CPU-bound and dominated by cv2/
-    numpy calls that release the GIL, so it can use more parallelism than
-    visualization_num_workers without touching the GPU-session limit that
-    caps that number."""
+    """Threads per QA video worker used for compositing frames (not
+    encoding them). Compositing is CPU-only, so it can use more
+    parallelism than `visualization_num_workers` without hitting the GPU
+    session limit."""
 
+    # --- Misc ---
     profile_visualization: bool = False
-    """Profile the QA video's first render chunk with cProfile (run
-    synchronously, not in a parallel worker, so the profile reflects only
-    that chunk's own work). Logs the top 20 functions by cumulative time
-    and saves the full profile to postprocessed_dir/viz_chunk_profile.prof
-    (inspect with e.g. `snakeviz`)."""
+    """Profile the QA video's first render chunk with cProfile and save it
+    to `viz_chunk_profile.prof` (inspect with e.g. `snakeviz`)."""
 
     log_level: str = "info"
+    """Logging verbosity, e.g. "debug", "info", "warning"."""
+
     overwrite: bool = False
+    """Overwrite an existing `postprocessed/` directory."""
+
     skip_behavior: bool = False
-    """Renamed from the old `reuse_behavior_alignment`; skip stage
-    interpolation + localization decode/align and reuse existing outputs."""
+    """Skip stage-position interpolation and localization decode/align, and
+    reuse existing outputs."""
+
     homography_path: Path | str | None = None
+    """Homography calibration file for muscle-to-behavior frame mapping.
+    Defaults to `metadata/homography_parameters.yaml` in the recording
+    directory."""
 
 
 def postprocess_recording_data(
