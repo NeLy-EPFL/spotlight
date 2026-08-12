@@ -1,0 +1,97 @@
+[project]
+name = "spotlight-tools"
+version = "0.3.0"
+description = ""
+authors = [
+    { name = "Sibo Wang-Chen", email = "sibo.wang@epfl.ch" }
+]
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+
+dependencies = [
+    # spotlight_tools (calibration, arena registration): generic numerics/CV,
+    # AprilTag generation & detection, packaging/CLI/IO -- no heavy ML deps,
+    # so this is what a plain `uv sync` installs.
+    "opencv-python>=4.11,<5.0",
+    "pillow>=11.0,<12.0",
+    "numpy>=2.0,<3.0",
+    "pandas>=2.2,<3.0",
+    "scipy>=1.15,<2.0",
+    "scikit-learn>=1.6,<2.0",
+    "h5py>=3.14,<4.0",
+    "matplotlib>=3.10,<4.0",  # calibration/model.py's own RANSAC/residual diagnostic plots
+    "pylibdmtx==0.1.10",
+    "pupil-apriltags>=1.0,<2.0",
+    "mmh3>=5.0,<6.0",
+    "pymupdf>=1.0,<2.0",
+    "setuptools>=78,<79",
+    "tyro>=1.0,<2",
+    "loguru>=0.7",
+    "joblib>=1.5,<2.0",
+    "tqdm>=4.67,<5.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+# spotlight_postprocessing (behavior/orient alignment, pose2d, muscle,
+# inverse kinematics, QA video): `uv sync --extra postprocessing`, or
+# `pip install '.[postprocessing]'`.
+postprocessing = [
+    # Pose estimation for fly alignment & cropping (spotlight_orient/spotlight_pose2d
+    # training-loop tools; live inference no longer uses sleap, see spotlight_orient)
+    "sleap[nn]==1.6.3",
+    "sleap-io==0.7.0",
+    "sleap-nn==0.2.0",
+    "torch==2.12.*",
+    "torchvision==0.27.*",
+    "timm>=1.0.28",
+    "tensorboard>=2.19,<3",
+    "onnx>=1.22.0",
+    "onnxscript>=0.7.1",
+
+    # spotlight_ik: QuickIK-based IK/FK fit (FlyGym physics replay stays in
+    # poseforge2 -- this pipeline only needs the IK solve + a cv2 3D panel)
+    "quickik",
+
+    # QA video: matplotlib is in the base deps already (calibration needs
+    # it too); cmasher is the QA video's own colormap borrowing (see
+    # visualize.py's own module docstring -- never real plotting).
+    "cmasher>=1.9,<2.0",
+    "vidgear==0.3.4",
+    "parallel-video-io==0.1.9",
+]
+
+[tool.uv.sources]
+# Rust/PyO3 inverse kinematics solver
+quickik = { path = "../../quickik/python", editable = true }
+
+[tool.uv]
+torch-backend = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "ruff>=0.15.21",
+    "ipython>=9.0,<10.0",
+    "ipykernel>=6.29,<7.0",
+    "ipywidgets>=8.1,<9.0",
+]
+
+[project.scripts]
+fit-arena-registration = "spotlight_tools.cli.fit_arena_registration:main"
+visualize-stage-trajectory = "spotlight_tools.cli.visualize_stage_trajectory:main"
+fit-homography = "spotlight_tools.cli.fit_homography:main"
+postprocess-recording = "spotlight_postprocessing.cli.postprocess_recording:main"
+
+[build-system]
+requires = ["setuptools>=78", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spotlight_tools = ["assets/**"]
