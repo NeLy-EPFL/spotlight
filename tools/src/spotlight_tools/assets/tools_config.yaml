@@ -5,3 +5,19 @@ pose2d:
     N: neck
     Th: thorax
     Ab: abdomen tip
+
+# Paths below are relative to the `tools/` package root (i.e. `tools/bulk_data/...`,
+# a symlink to /mnt/datassd/spotlight/bulk_data, gitignored) -- callers must resolve
+# them against that root, not against the current working directory.
+
+# TinyOrientModel (coarse neck/thorax/abdomen + flip flag on raw frames), migrated
+# from poseforge2's spotlight_orient. See scripts/spotlight_orient/README.md.
+orient_model:
+  checkpoint_path: "bulk_data/orient_model/checkpoints/v13/best.pt"
+
+# RepVGGPoseModel (37-keypoint full pose on the aligned crop), migrated from
+# poseforge2's spotlight_pose2d. See scripts/spotlight_pose2d/README.md.
+pose2d_model:
+  checkpoint_path: "bulk_data/pose2d_model/checkpoints/iter2b/best.pt"
+  skeleton_json_path: "bulk_data/pose2d_model/skeleton_metadata.json"
+  num_keypoints: 37
