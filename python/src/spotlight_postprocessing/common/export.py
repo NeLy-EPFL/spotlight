@@ -1,7 +1,7 @@
 """Shared helper for exporting a trained model to ONNX and TorchScript, at
 both fp32 and fp16, following the `<output_stem>.{fp32,fp16}.{onnx,
 torchscript.pt}` naming convention used by `scripts/spotlight_pose2d/
-export_model.py` and `scripts/spotlight_orient/export_model.py`.
+export_model.py` and `scripts/spotlight_localization/export_model.py`.
 """
 
 import copy

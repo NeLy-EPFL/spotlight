@@ -1,4 +1,4 @@
-"""Behavior frame processing: decode pseudo-BGR JPEGs, run the `TinyOrientModel`
+"""Behavior frame processing: decode pseudo-BGR JPEGs, run the `TinyLocalizationModel`
 (replacing the old SLEAP-based 3-keypoint aligner), align/crop each frame, and
 -- in the same streaming pass, no video round-trip -- run the pose2d model on
 the aligned crop and warp whichever muscle frames land in the current chunk.
@@ -28,19 +28,19 @@ from spotlight_postprocessing.muscle import (
     MuscleBehaviorMapping,
     warp_muscle_chunk,
 )
-from spotlight_postprocessing.spotlight_orient.dataset import (
-    OUTPUT_SIZE as ORIENT_OUTPUT_SIZE,
+from spotlight_postprocessing.spotlight_localization.dataset import (
+    OUTPUT_SIZE as LOCALIZATION_OUTPUT_SIZE,
 )
-from spotlight_postprocessing.spotlight_orient.dataset import (
-    SCALE_FACTOR as ORIENT_SCALE_FACTOR,
+from spotlight_postprocessing.spotlight_localization.dataset import (
+    SCALE_FACTOR as LOCALIZATION_SCALE_FACTOR,
 )
-from spotlight_postprocessing.spotlight_orient.model import TinyOrientModel
+from spotlight_postprocessing.spotlight_localization.model import TinyLocalizationModel
 from spotlight_postprocessing.spotlight_pose2d.dataset import (
     INPUT_SIZE as POSE2D_INPUT_SIZE,
 )
 from spotlight_postprocessing.spotlight_pose2d.model import RepVGGPoseModel
 
-# See `tools/scripts/spotlight_orient/visualize_predictions.py`'s own
+# See `scripts/spotlight_localization/visualize_predictions.py`'s own
 # FLIP_DECISION_THRESHOLD -- the model's own sigmoid decision boundary,
 # distinct from `flip_label.FLIPPED_THRESHOLD` (a *training*-label proxy).
 FLIP_DECISION_THRESHOLD = 0.5
@@ -49,7 +49,7 @@ FLIP_DECISION_THRESHOLD = 0.5
 # Hardcoded so a batch size tuned (via measured fp16 peak usage, see
 # `PostprocessingParams`) on a 12 GB GPU scales automatically to bigger
 # GPUs instead of leaving headroom unused there.
-ORIENT_BATCH_SIZE_VRAM_FRACTION = 0.04
+LOCALIZATION_BATCH_SIZE_VRAM_FRACTION = 0.04
 POSE2D_BATCH_SIZE_VRAM_FRACTION = 0.02
 # No GPU to size a batch against; CPU inference isn't this pipeline's
 # tuned/expected path, so this is just a modest, safe constant.
@@ -60,7 +60,7 @@ def _resolve_batch_size(
     batch_size: int | str, vram_fraction: float, device: str
 ) -> int:
     """`batch_size` as given, or (if `"auto"`) `vram_fraction` of the
-    active GPU's total VRAM in MiB -- see `ORIENT_BATCH_SIZE_VRAM_
+    active GPU's total VRAM in MiB -- see `LOCALIZATION_BATCH_SIZE_VRAM_
     FRACTION`/`POSE2D_BATCH_SIZE_VRAM_FRACTION`."""
     if batch_size != "auto":
         return int(batch_size)
@@ -90,20 +90,22 @@ def _expand_chunk(paths: list[Path], num_cpu_workers: int) -> list[np.ndarray]:
     return frames
 
 
-def _load_orient_model(checkpoint_path: Path, device: str) -> TinyOrientModel:
-    model = TinyOrientModel(n_keypoints=3, use_global_context=True).to(device)
+def _load_localization_model(
+    checkpoint_path: Path, device: str
+) -> TinyLocalizationModel:
+    model = TinyLocalizationModel(n_keypoints=3, use_global_context=True).to(device)
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
     return model
 
 
-def _run_orient_batch(
-    model: TinyOrientModel, frames: list[np.ndarray], device: str
+def _run_localization_batch(
+    model: TinyLocalizationModel, frames: list[np.ndarray], device: str
 ) -> tuple[np.ndarray, np.ndarray]:
     """`frames`: list of `(H, W)` uint8 monochrome. Returns
     `(keypoints, flipped_prob)`: keypoints `(n, 3, 2)` in raw fullsize
     pixel space (matching `dataset.NATIVE_FRAME_SIZE`), flipped_prob `(n,)`."""
-    width, height = ORIENT_OUTPUT_SIZE
+    width, height = LOCALIZATION_OUTPUT_SIZE
     batch = np.stack([cv2.resize(f, (width, height)) for f in frames])
     batch = np.repeat(batch[:, :, :, None], 3, axis=-1)
     tensor = torch.from_numpy(batch).permute(0, 3, 1, 2).float().to(device) / 255.0
@@ -118,8 +120,8 @@ def _run_orient_batch(
 
     raw_points = (
         pred_keypoints.float().cpu().numpy()
-        * np.array(ORIENT_OUTPUT_SIZE, dtype=np.float32)
-        * ORIENT_SCALE_FACTOR
+        * np.array(LOCALIZATION_OUTPUT_SIZE, dtype=np.float32)
+        * LOCALIZATION_SCALE_FACTOR
     )
     flipped_prob = torch.sigmoid(pred_flip_logit).float().cpu().numpy()[:, 0]
     return raw_points, flipped_prob
@@ -216,7 +218,7 @@ def transform_single_frame_to_align(
 def process_behavior_pipeline(
     *,
     raw_behavior_frame_paths: list[Path],
-    orient_checkpoint_path: Path,
+    localization_checkpoint_path: Path,
     alignment: str,  # "aligned" | "fullsize" | "both"
     thorax_y_normalized: float,
     crop_dim: int,
@@ -226,7 +228,7 @@ def process_behavior_pipeline(
     behavior_video_fps: float,
     behavior_video_crf: int,
     behavior_video_preset: str,
-    orient_batch_size: int | str,
+    localization_batch_size: int | str,
     run_pose2d: bool,
     pose2d_checkpoint_path: Path | None,
     pose2d_skeleton_json_path: Path | None,
@@ -238,7 +240,7 @@ def process_behavior_pipeline(
     muscle_dataset_name: str | None,
     num_cpu_workers: int = -1,
 ) -> dict:
-    """The single streaming pass: decode -> orient -> align -> (pose2d,
+    """The single streaming pass: decode -> localize -> align -> (pose2d,
     muscle) -> write video(s), chunk by chunk. Model inference always runs
     on in-memory arrays, strictly before any frame is bound into a video
     (the aligned/fullsize videos and the muscle H5 are the only things
@@ -249,8 +251,8 @@ def process_behavior_pipeline(
     """
     logger = logging.getLogger(__name__)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    orient_batch_size = _resolve_batch_size(
-        orient_batch_size, ORIENT_BATCH_SIZE_VRAM_FRACTION, device
+    localization_batch_size = _resolve_batch_size(
+        localization_batch_size, LOCALIZATION_BATCH_SIZE_VRAM_FRACTION, device
     )
     pose2d_batch_size = _resolve_batch_size(
         pose2d_batch_size, POSE2D_BATCH_SIZE_VRAM_FRACTION, device
@@ -263,7 +265,8 @@ def process_behavior_pipeline(
         n_jobs=num_cpu_workers, backend="loky"
     )._effective_n_jobs()
     logger.info(
-        f"Orient/pose2d device: {device}, orient_batch_size={orient_batch_size}, "
+        f"Localization/pose2d device: {device}, "
+        f"localization_batch_size={localization_batch_size}, "
         f"pose2d_batch_size={pose2d_batch_size}, "
         f"num_cpu_workers={num_cpu_workers} (effective: {effective_cpu_workers})"
     )  # fmt: skip
@@ -273,7 +276,7 @@ def process_behavior_pipeline(
     if output_fullsize_video_path is not None:
         check_output_path_against_alignment_flag(output_fullsize_video_path, alignment)
 
-    orient_model = _load_orient_model(orient_checkpoint_path, device)
+    localization_model = _load_localization_model(localization_checkpoint_path, device)
     write_aligned = alignment in ("aligned", "both")
     write_fullsize = alignment in ("fullsize", "both")
 
@@ -338,8 +341,8 @@ def process_behavior_pipeline(
         return time.perf_counter()
 
     # Chunk over raw (pseudo-BGR) files, sized so the expanded frame count
-    # per chunk is close to orient_batch_size (each file expands to 3 frames).
-    path_chunk_size = max(orient_batch_size // 3, 1)
+    # per chunk is close to localization_batch_size (each file expands to 3 frames).
+    path_chunk_size = max(localization_batch_size // 3, 1)
     for path_start in range(0, len(raw_behavior_frame_paths), path_chunk_size):
         path_end = min(path_start + path_chunk_size, len(raw_behavior_frame_paths))
         chunk_start = path_start * 3
@@ -353,8 +356,10 @@ def process_behavior_pipeline(
         timers["decode"] += _tick() - t0
 
         t0 = _tick()
-        raw_points, flip_probs = _run_orient_batch(orient_model, chunk_frames, device)
-        timers["orient_infer"] += _tick() - t0
+        raw_points, flip_probs = _run_localization_batch(
+            localization_model, chunk_frames, device
+        )
+        timers["localization_infer"] += _tick() - t0
         keypoints_xy_pre_alignment[chunk_start:chunk_end] = raw_points
         flipped_prob[chunk_start:chunk_end] = flip_probs
 
@@ -379,7 +384,7 @@ def process_behavior_pipeline(
                     ]
                     if not valid_in_chunk:
                         raise RuntimeError(
-                            "Orient model produced NaN keypoints for the entire "
+                            "Localization model produced NaN keypoints for the entire "
                             "leading chunk; cannot align."
                         )
                     keypoints = valid_in_chunk[0]

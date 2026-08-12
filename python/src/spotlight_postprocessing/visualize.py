@@ -3,7 +3,7 @@ matplotlib and cmasher are used only to borrow a font path and a colormap
 (as a precomputed lookup table), never for actual plotting/rendering.
 Two-row panel grid:
 
-    row 1: raw + orient-box overlay | cropped+aligned (best effort) | muscle (if requested)
+    row 1: raw + localization-box overlay | cropped+aligned (best effort) | muscle (if requested)
     row 2: pose2d skeleton overlay (if requested)     | synthetic 3D IK (if requested)
 
 Row 2 only exists when `with_pose2d`; its column 2 (synthetic 3D IK) is
@@ -14,10 +14,11 @@ aligned domain at all (`alignment in ("aligned", "both")`); in
 `"fullsize"` mode there is no row 2 (pose2d/IK both require an aligned
 domain) and panel 1 keeps its native aspect ratio.
 
-Row 1's cropped/muscle panels are always shown, even on a frame the orient
-model flagged flipped (best-effort crop, same as an unflipped frame) --
-flip only suppresses row 2's own overlay drawing (2D pose skeleton, IK
-fit): the pose2d panel's background (the same cropped frame) still shows.
+Row 1's cropped/muscle panels are always shown, even on a frame the
+localization model flagged flipped (best-effort crop, same as an unflipped
+frame) -- flip only suppresses row 2's own overlay drawing (2D pose
+skeleton, IK fit): the pose2d panel's background (the same cropped frame)
+still shows.
 IK is additionally not drawn wherever `kinematics.h5`'s `inverse_kinematics/`
 group has no fit for that frame (an internal gap-detection decision made by
 `solve_ik.py`, not exposed here) or wherever its fk-to-prediction mismatch
@@ -62,7 +63,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy.ndimage import binary_closing, binary_opening, gaussian_filter1d
 from spotlight_tools.calibration.mapper import SpotlightPositionMapper
 from spotlight_postprocessing.common.video import pad_to_macroblock
-from spotlight_postprocessing.spotlight_orient.box import (
+from spotlight_postprocessing.spotlight_localization.box import (
     fit_disambiguated_direction,
     raw_domain_box_corners,
 )
@@ -526,7 +527,7 @@ def _compute_smoothed_directions(keypoints_pre: np.ndarray, sigma: float) -> np.
 
     Smooths the unit direction VECTOR's x/y components (not the raw
     angle), which sidesteps the wraparound a naive angle average would hit
-    near +/-180 degrees. NaN frames (no orient-model prediction) are
+    near +/-180 degrees. NaN frames (no localization-model prediction) are
     filled from their nearest valid neighbor before smoothing, matching
     the forward/backward-fill already used elsewhere for keypoint gaps.
 
@@ -681,7 +682,7 @@ def _render_chunk(
         row1.append(_apply_overlay(raw_panel, panel_overlays.get("raw")))
 
         # Cropped behavior and muscle frames are shown even on a flipped
-        # frame (best-effort orient-model crop; only the 2D pose/IK overlay
+        # frame (best-effort localization-model crop; only the 2D pose/IK overlay
         # drawing below is skipped when flipped).
         aligned_frame = None
         if show_aligned:

@@ -63,7 +63,7 @@ def load_transform_matrices(trial_dir: Path) -> np.ndarray:
 
 
 def load_flipped_prob(trial_dir: Path) -> np.ndarray:
-    """Load a trial's per-frame orient-model flip probability.
+    """Load a trial's per-frame localization-model flip probability.
 
     Args:
         trial_dir: Trial directory containing `TRANSFORMS_RELPATH` (the

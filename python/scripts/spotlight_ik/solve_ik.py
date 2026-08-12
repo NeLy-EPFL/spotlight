@@ -8,9 +8,9 @@ e.g., FlyGym snippet selection" now happens downstream in poseforge2,
 using this file's own per-frame confidence/mismatch data, not a pre-baked
 accept/reject decision made here.
 
-IK is skipped (left NaN) for frames the orient model flagged flipped
+IK is skipped (left NaN) for frames the localization model flagged flipped
 (`flipped_prob >= FLIP_PROB_THRESHOLD`) or where the 2D pose's own
-weighted confidence (`spotlight_orient.flip_label.weighted_confidence` --
+weighted confidence (`spotlight_localization.flip_label.weighted_confidence` --
 the SAME proxy used to pseudo-label that model's own training data) is
 below `WEIGHTED_CONFIDENCE_THRESHOLD`: both indicate the fly's own crop/
 orientation is unreliable enough that fitting IK to it isn't meaningful,
@@ -67,7 +67,9 @@ from spotlight_postprocessing.spotlight_ik.neuromechfly import (
     sleap_keypoint_weight_scale,
     solve_period_ik,
 )
-from spotlight_postprocessing.spotlight_orient.flip_label import weighted_confidence
+from spotlight_postprocessing.spotlight_localization.flip_label import (
+    weighted_confidence,
+)
 from spotlight_postprocessing.spotlight_pose2d.io_utils import (
     check_output_path,
     load_pose_h5,

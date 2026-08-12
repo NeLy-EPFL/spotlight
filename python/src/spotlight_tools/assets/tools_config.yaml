@@ -10,10 +10,11 @@ pose2d:
 # a symlink to /mnt/datassd/spotlight/bulk_data, gitignored) -- callers must resolve
 # them against that root, not against the current working directory.
 
-# TinyOrientModel (coarse neck/thorax/abdomen + flip flag on raw frames), migrated
-# from poseforge2's spotlight_orient. See scripts/spotlight_orient/README.md.
-orient_model:
-  checkpoint_path: "bulk_data/orient_model/checkpoints/v13/best.pt"
+# TinyLocalizationModel (coarse neck/thorax/abdomen + flip flag on raw frames),
+# migrated from poseforge2's spotlight_orient (poseforge2's own name for it,
+# unchanged there). See scripts/spotlight_localization/README.md.
+localization_model:
+  checkpoint_path: "bulk_data/localization_model/checkpoints/v13/best.pt"
 
 # RepVGGPoseModel (37-keypoint full pose on the aligned crop), migrated from
 # poseforge2's spotlight_pose2d. See scripts/spotlight_pose2d/README.md.

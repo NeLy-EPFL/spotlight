@@ -33,12 +33,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# spotlight_postprocessing (behavior/orient alignment, pose2d, muscle,
+# spotlight_postprocessing (behavior/localization alignment, pose2d, muscle,
 # inverse kinematics, QA video): `uv sync --extra postprocessing`, or
 # `pip install '.[postprocessing]'`.
 postprocessing = [
-    # Pose estimation for fly alignment & cropping (spotlight_orient/spotlight_pose2d
-    # training-loop tools; live inference no longer uses sleap, see spotlight_orient)
+    # Pose estimation for fly alignment & cropping (spotlight_localization/
+    # spotlight_pose2d training-loop tools; live inference no longer uses
+    # sleap, see spotlight_localization)
     "sleap[nn]==1.6.3",
     "sleap-io==0.7.0",
     "sleap-nn==0.2.0",

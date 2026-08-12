@@ -1,6 +1,6 @@
 """
 spotlight_postprocessing -- full offline processing pipeline for recordings
-(behavior/orient alignment, pose2d, muscle warping, inverse kinematics, QA
+(behavior/localization alignment, pose2d, muscle warping, inverse kinematics, QA
 video). Needs the heavy ML/IK stack (torch, quickik, sleap, ...); the
 lighter `spotlight_tools` (calibration, arena registration) doesn't depend
 on this package at all, so it can be installed and run without any of this.
@@ -12,7 +12,7 @@ Install this package's own deps with the "postprocessing" extra:
 Modules
 -------
 behavior
-    Decode pseudo-BGR JPEGs, run `TinyOrientModel` alignment, and (in the
+    Decode pseudo-BGR JPEGs, run `TinyLocalizationModel` alignment, and (in the
     same streaming pass) pose2d inference on the aligned crop. Entry point:
     process_behavior_pipeline.
 muscle
@@ -27,7 +27,7 @@ visualize
 io
     Low-level helpers: find per-frame files, check output path consistency,
     append muscle frames to an HDF5 dataset.
-spotlight_orient, spotlight_pose2d, spotlight_ik
+spotlight_localization, spotlight_pose2d, spotlight_ik
     The fly-alignment, 2D-pose, and inverse-kinematics models/pipelines
     used by the modules above.
 """

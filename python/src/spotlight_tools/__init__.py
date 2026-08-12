@@ -1,7 +1,7 @@
 """
 spotlight_tools -- lightweight calibration/arena tools for the Spotlight
 setup, with no heavy ML dependencies (no torch/quickik/sleap). The full
-recording-postprocessing pipeline (behavior/orient alignment, pose2d,
+recording-postprocessing pipeline (behavior/localization alignment, pose2d,
 muscle warping, IK, QA video) is the separate `spotlight_postprocessing`
 package, which depends on this one but not vice versa -- so installing
 just this package (the default) keeps the dependency tree light for

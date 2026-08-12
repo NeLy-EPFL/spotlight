@@ -33,7 +33,7 @@ cd python/src/spotlight_tools/assets && uv run python ../../../../../flygym/scri
 
 1. `solve_ik.py`: takes one trial's dense pose `.h5` (see
    `spotlight_pose2d.io_utils.save_pose_h5`), fits IK/FK per frame via
-   QuickIK (skipping frames the orient model flagged flipped or with low
+   QuickIK (skipping frames the localization model flagged flipped or with low
    2D-pose confidence -- an internal decision, not exposed as a period),
    and saves a dense per-frame `kinematics.h5` (see
    `spotlight_ik.io_utils.save_kinematics_h5`).

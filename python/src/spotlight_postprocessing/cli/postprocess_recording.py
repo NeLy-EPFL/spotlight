@@ -23,7 +23,9 @@ from spotlight_postprocessing.visualize import generate_summary_video
 sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
 PYTHON_ROOT = Path(__file__).resolve().parents[3]  # python/
-ORIENT_CHECKPOINT_PATH = PYTHON_ROOT / "bulk_data/orient_model/checkpoints/v13/best.pt"
+LOCALIZATION_CHECKPOINT_PATH = (
+    PYTHON_ROOT / "bulk_data/localization_model/checkpoints/v13/best.pt"
+)
 POSE2D_CHECKPOINT_PATH = (
     PYTHON_ROOT / "bulk_data/pose2d_model/checkpoints/iter2b/best.pt"
 )
@@ -36,7 +38,7 @@ SOLVE_IK_SCRIPT_PATH = PYTHON_ROOT / "scripts/spotlight_ik/solve_ik.py"
 @dataclass
 class PostprocessingParams:
     """Configuration for `postprocess_recording_data`. Pipeline: stage-position
-    interpolation, behavior frame decode + TinyOrientModel alignment (+
+    interpolation, behavior frame decode + TinyLocalizationModel alignment (+
     optional pose2d/muscle, run in the same streaming pass, no video
     round-trip), optional IK/FK fit, optional 5-panel QA visualization."""
 
@@ -63,9 +65,9 @@ class PostprocessingParams:
     pose2d: bool = True
     ik: bool = True
 
-    orient_batch_size: int | Literal["auto"] = "auto"
+    localization_batch_size: int | Literal["auto"] = "auto"
     """fp16 peak ~5.1GB on a 12GB GPU, measured (see Task #54 benchmark).
-    "auto" (default) sizes it as `ORIENT_BATCH_SIZE_VRAM_FRACTION` (0.04)
+    "auto" (default) sizes it as `LOCALIZATION_BATCH_SIZE_VRAM_FRACTION` (0.04)
     times the active GPU's total VRAM in MiB, so it scales up on bigger
     GPUs instead of leaving headroom unused -- ~512 on a 12 GB GPU,
     matching this pipeline's previously-hardcoded default."""
@@ -88,7 +90,7 @@ class PostprocessingParams:
     poseforge2."""
 
     flip_confidence_threshold: float = 0.5
-    """Orient model's flip-probability cutoff for the QA video's flip
+    """Localization model's flip-probability cutoff for the QA video's flip
     decision (box color, and darkening panels 2-5): >= this counts as
     flipped. Raising it calls more frames not-flipped."""
 
@@ -129,7 +131,7 @@ class PostprocessingParams:
     """CPU-only parallelism: raw-frame decode and muscle-image warping
     (both plain cv2 work, never GPU compute) -- also doubles as this
     pipeline's only inference-time "data loading" worker count, for the
-    decode step that feeds the orient model. Passed straight through to
+    decode step that feeds the localization model. Passed straight through to
     joblib's own `n_jobs`, so -1 (default) means joblib auto-detects all
     cores; never resolved to a concrete number ourselves."""
     visualization_num_workers: int = 8
@@ -157,7 +159,7 @@ class PostprocessingParams:
     overwrite: bool = False
     skip_behavior: bool = False
     """Renamed from the old `reuse_behavior_alignment`; skip stage
-    interpolation + orient decode/align and reuse existing outputs."""
+    interpolation + localization decode/align and reuse existing outputs."""
     homography_path: Path | str | None = None
 
 
@@ -307,10 +309,10 @@ def postprocess_recording_data(
 
         t_step = time.perf_counter()
         logger.info(f"Processing {len(raw_behavior_paths)} behavior frames "
-                    "(decode + orient align + pose2d + muscle, streaming)...")  # fmt: skip
+                    "(decode + localize align + pose2d + muscle, streaming)...")  # fmt: skip
         behavior_result = process_behavior_pipeline(
             raw_behavior_frame_paths=raw_behavior_paths,
-            orient_checkpoint_path=ORIENT_CHECKPOINT_PATH,
+            localization_checkpoint_path=LOCALIZATION_CHECKPOINT_PATH,
             alignment=params.alignment,
             thorax_y_normalized=params.thorax_y_normalized,
             crop_dim=params.crop_dim,
@@ -320,7 +322,7 @@ def postprocess_recording_data(
             behavior_video_fps=play_fps,
             behavior_video_crf=params.behavior_video_crf,
             behavior_video_preset=params.behavior_video_preset,
-            orient_batch_size=params.orient_batch_size,
+            localization_batch_size=params.localization_batch_size,
             run_pose2d=params.pose2d,
             pose2d_checkpoint_path=POSE2D_CHECKPOINT_PATH,
             pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
@@ -393,7 +395,7 @@ def postprocess_recording_data(
 
     timers = behavior_result["timers"] if behavior_result else {}
     report = [
-        ("orient model", timers.get("orient_infer")),
+        ("localization model", timers.get("localization_infer")),
         ("2d pose model", timers.get("pose2d_infer")),
         ("muscle warping", timers.get("muscle_warp")),
         (
