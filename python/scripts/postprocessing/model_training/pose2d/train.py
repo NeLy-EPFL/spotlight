@@ -126,7 +126,7 @@ def mean_keypoint_pixel_error(
 
 def export_checkpoints(checkpoint_dir: Path, n_keypoints: int) -> None:
     """Exports whichever of `last.pt`/`best.pt` exist under `checkpoint_dir`
-    to ONNX and TorchScript (fp32 and fp16 each), via
+    to a plain fp16 state_dict, TorchScript, and ONNX, via
     `pose2d.export.export_checkpoint`.
     """
     for name in ("last", "best"):

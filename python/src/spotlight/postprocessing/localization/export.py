@@ -1,17 +1,17 @@
-"""Exports a trained `TinyLocalizationModel` checkpoint to ONNX and TorchScript,
-each at fp32 and fp16. The TorchScript files (`*.torchscript.pt`) are for
-loading in a different codebase's own PyTorch inference code without that
-codebase needing this project's `TinyLocalizationModel` class at all (unlike a
-plain `state_dict` checkpoint, which needs the exact same class already
-defined and imported wherever it's loaded); the ONNX files (`*.onnx`) are
-for running outside of PyTorch entirely. Mirrors `pose2d.export`'s role.
+"""Exports a trained `TinyLocalizationModel` checkpoint to a plain fp16
+`state_dict` checkpoint (`*.pt`, this project's own runtime format, see
+`behavior._load_localization_model`), fp16 TorchScript (`*.torchscript.pt`,
+for loading in a different codebase's own PyTorch inference code without
+that codebase needing this project's `TinyLocalizationModel` class at
+all), and fp16 ONNX (`*.onnx`, for running outside of PyTorch entirely).
+Mirrors `pose2d.export`'s role.
 """
 
 from pathlib import Path
 
 import torch
 
-from spotlight.postprocessing.common import export_onnx_and_torchscript
+from spotlight.postprocessing.common import export_model
 from spotlight.postprocessing.localization.constants import OUTPUT_SIZE
 from spotlight.postprocessing.localization.model import TinyLocalizationModel
 
@@ -22,16 +22,15 @@ def export_checkpoint(
     use_global_context: bool = True,
     override: bool = False,
 ) -> None:
-    """Export a trained `TinyLocalizationModel` checkpoint to ONNX and
-    TorchScript, at fp32 and fp16.
+    """Export a trained `TinyLocalizationModel` checkpoint to a plain fp16
+    `state_dict`, fp16 TorchScript, and fp16 ONNX.
 
     Args:
         checkpoint_path: Trained `TinyLocalizationModel` state dict.
         output_stem: Base path (no extension) for the exported files, e.g.
-            `bulk_data/.../best`; saves `<output_stem>.fp32.onnx`,
-            `<output_stem>.fp16.onnx`, `<output_stem>.fp32.torchscript.pt`,
-            and `<output_stem>.fp16.torchscript.pt`. Aborts if any already
-            exists, unless `override` is set.
+            `bulk_data/.../best`; saves `<output_stem>.pt`,
+            `<output_stem>.torchscript.pt`, and `<output_stem>.onnx`.
+            Aborts if any already exists, unless `override` is set.
         use_global_context: Must match what `checkpoint_path` was actually
             trained with: False for v1-v5 checkpoints (trained before
             `model.GlobalContextBlock` existed), True from v6 on.
@@ -42,7 +41,7 @@ def export_checkpoint(
     model.eval()
 
     width, height = OUTPUT_SIZE
-    export_onnx_and_torchscript(
+    export_model(
         model_fp32=model,
         checkpoint_path=checkpoint_path,
         output_stem=output_stem,

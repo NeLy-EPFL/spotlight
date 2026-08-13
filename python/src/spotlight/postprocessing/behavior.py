@@ -2,9 +2,10 @@
 model (replacing the old SLEAP-based 3-keypoint aligner), align/crop each
 frame, and (in the same streaming pass, no video round-trip) run the
 pose2d model on the aligned crop and warp whichever muscle frames land in
-the current chunk. Both models load as self-contained fp16 TorchScript
-exports (`torch.jit.load`, see `_load_torchscript_model`), not their own
-Python model classes plus a state-dict checkpoint.
+the current chunk. Both models load as plain (eager) checkpoints (see
+`_load_localization_model`/`_load_pose2d_model`), not the TorchScript/ONNX
+exports `common.export.export_model` also produces (those are for other
+codebases/runtimes, not this one).
 
 See `spotlight.postprocessing.muscle`/`visualize` for the muscle and
 QA-video stages that consume this module's outputs.
@@ -38,9 +39,14 @@ from spotlight.postprocessing.localization.constants import (
 from spotlight.postprocessing.localization.constants import (
     SCALE_FACTOR as LOCALIZATION_SCALE_FACTOR,
 )
+from spotlight.postprocessing.localization.model import TinyLocalizationModel
 from spotlight.postprocessing.pose2d.constants import (
     INPUT_SIZE as POSE2D_INPUT_SIZE,
 )
+from spotlight.postprocessing.pose2d.constants import (
+    N_KEYPOINTS as POSE2D_N_KEYPOINTS,
+)
+from spotlight.postprocessing.pose2d.model import RepVGGPoseModel, import_timm
 
 # See `scripts/postprocessing/model_training/localization/visualize_predictions.py`'s own
 # FLIP_DECISION_THRESHOLD: the model's own sigmoid decision boundary,
@@ -92,26 +98,44 @@ def _expand_chunk(paths: list[Path], num_cpu_workers: int) -> list[np.ndarray]:
     return frames
 
 
-def _load_torchscript_model(
+def _load_localization_model(
     checkpoint_path: Path, device: str
-) -> torch.jit.ScriptModule:
-    """Loads an fp16 TorchScript export directly (see `common.export.
-    export_onnx_and_torchscript`). It's self-contained, no model class needed
-    here at all, unlike a plain state-dict checkpoint. Downgraded to fp32
-    on CPU, since fp16 CPU inference is unsupported/slow for many ops."""
-    # `map_location` alone doesn't reliably relocate every tensor a traced
-    # module carries (e.g. a coordinate grid computed once and traced in as
-    # a constant, rather than a registered buffer); an explicit `.to()`
-    # does, since it recurses over the whole module.
-    model = torch.jit.load(checkpoint_path, map_location=device).to(device)
-    if device == "cpu":
-        model = model.float()
+) -> TinyLocalizationModel:
+    """Loads a plain fp16 `TinyLocalizationModel` checkpoint (see
+    `localization.export.export_checkpoint`): `load_state_dict` upcasts it
+    losslessly into the freshly constructed (fp32) module, which then stays
+    fp32 on CPU (fp16 CPU inference is unsupported/slow for many ops) or
+    gets cast back to fp16 on GPU (this pipeline's tuned/expected path).
+    `use_global_context=True` must match the checkpoint's own training
+    config (True for the currently deployed model; see `export_checkpoint`'s
+    docstring)."""
+    model = TinyLocalizationModel(use_global_context=True)
+    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
+    model = model.eval().to(device)
+    if device == "cuda":
+        model = model.half()
+    return model
+
+
+def _load_pose2d_model(checkpoint_path: Path, device: str) -> RepVGGPoseModel:
+    """Loads a plain fp16 `RepVGGPoseModel` checkpoint (see `pose2d.export.
+    export_checkpoint`), upcast/re-cast the same way as
+    `_load_localization_model`. The checkpoint is already RepVGG-
+    reparameterized (fused inference-time convs, not the multi-branch
+    training-time ones), so the model must be reparameterized before
+    `load_state_dict` to match."""
+    model = RepVGGPoseModel(POSE2D_N_KEYPOINTS, pretrained_backbone=False)
     model.eval()
+    model = import_timm().utils.reparameterize_model(model)
+    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
+    model = model.to(device)
+    if device == "cuda":
+        model = model.half()
     return model
 
 
 def _run_localization_batch(
-    model: torch.jit.ScriptModule, frames: list[np.ndarray], device: str
+    model: TinyLocalizationModel, frames: list[np.ndarray], device: str
 ) -> tuple[np.ndarray, np.ndarray]:
     """`frames`: list of `(H, W)` uint8 monochrome. Returns
     `(keypoints, flipped_prob)`: keypoints `(n, 3, 2)` in raw fullsize
@@ -119,8 +143,8 @@ def _run_localization_batch(
     width, height = LOCALIZATION_OUTPUT_SIZE
     batch = np.stack([cv2.resize(f, (width, height)) for f in frames])
     batch = np.repeat(batch[:, :, :, None], 3, axis=-1)
-    # Matches the model's own weight dtype (see `_load_torchscript_model`):
-    # fp16 on GPU (what it was exported as), fp32 on CPU.
+    # Matches the model's own weight dtype (see `_load_localization_model`/
+    # `_load_pose2d_model`): fp16 on GPU, fp32 on CPU.
     dtype = torch.float16 if device == "cuda" else torch.float32
     tensor = torch.from_numpy(batch).permute(0, 3, 1, 2).to(device=device, dtype=dtype)
     tensor = tensor / 255.0
@@ -149,14 +173,14 @@ def _heatmaps_to_points(heatmaps: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _run_pose2d_batch(
-    model, frames_bgr_or_gray: np.ndarray, device: str, batch_size: int
+    model: RepVGGPoseModel, frames_bgr_or_gray: np.ndarray, device: str, batch_size: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """`frames_bgr_or_gray`: `(n, H, W)` uint8 aligned crops (single channel).
     Returns `(poses, keypoint_scores)`: `(n, n_keypoints, 2)` in the aligned
     crop's own pixel space, `(n, n_keypoints)`."""
     n = len(frames_bgr_or_gray)
-    # Matches the model's own weight dtype (see `_load_torchscript_model`):
-    # fp16 on GPU (what it was exported as), fp32 on CPU.
+    # Matches the model's own weight dtype (see `_load_localization_model`/
+    # `_load_pose2d_model`): fp16 on GPU, fp32 on CPU.
     dtype = torch.float16 if device == "cuda" else torch.float32
     all_poses, all_scores = [], []
     for start in range(0, n, batch_size):
@@ -382,7 +406,7 @@ def process_behavior_pipeline(
     if output_fullsize_video_path is not None:
         check_output_path_against_alignment_flag(output_fullsize_video_path, alignment)
 
-    localization_model = _load_torchscript_model(localization_checkpoint_path, device)
+    localization_model = _load_localization_model(localization_checkpoint_path, device)
     write_aligned = alignment in ("aligned", "both")
     write_fullsize = alignment in ("fullsize", "both")
 
@@ -409,7 +433,7 @@ def process_behavior_pipeline(
         pose2d_node_names = json.loads(pose2d_skeleton_json_path.read_text())[
             "node_names"
         ]
-        pose2d_model = _load_torchscript_model(pose2d_checkpoint_path, device)
+        pose2d_model = _load_pose2d_model(pose2d_checkpoint_path, device)
 
     muscle_writer = None
     if run_muscle:

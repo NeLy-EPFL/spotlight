@@ -63,11 +63,11 @@ JSON other tools take as
 (seeded train/val split that always keeps a well-hand-labeled trial in
 train).
 
-Exporting a checkpoint (RepVGG, to ONNX, on hold until real-time
-inference moves to C++, and TorchScript, for loading in a different
-codebase without it; both at fp32 and fp16) is a plain importable
-function: `pose2d.export.export_checkpoint`. `train.py` calls it
-automatically whenever training stops.
+Exporting a checkpoint (RepVGG, fp16 only: a plain `state_dict` for this
+project's own runtime, TorchScript for loading in a different codebase
+without it, and ONNX, on hold until real-time inference moves to C++) is a
+plain importable function: `pose2d.export.export_checkpoint`. `train.py`
+calls it automatically whenever training stops.
 
 ## Caller scripts
 

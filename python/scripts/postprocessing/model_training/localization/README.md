@@ -40,9 +40,10 @@ already exists unless `--override` is passed:
   reconstructed on the raw frame (see `box.py`), colored by predicted
   flip state.
 
-Exporting a checkpoint to ONNX and TorchScript (fp32 and fp16 each), for
-loading outside this project's own `TinyLocalizationModel` class or
-outside PyTorch entirely, is a plain importable function:
+Exporting a checkpoint to a plain fp16 `state_dict` (this project's own
+runtime format), fp16 TorchScript, and fp16 ONNX, for loading outside this
+project's own `TinyLocalizationModel` class or outside PyTorch entirely,
+is a plain importable function:
 `localization.export.export_checkpoint`. Mirrors `pose2d.export`'s role;
 `train.py` calls it automatically whenever training stops.
 

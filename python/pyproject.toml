@@ -71,9 +71,16 @@ postprocessing = [
 quickik = { path = "../../quickik/python", editable = true }
 # CPU physics replay for the QA video's row-2 panel
 flygym = { path = "../../flygym", editable = true }
+# Pinned to a CUDA 12.6 build (not plain PyPI's default, currently CUDA 13),
+# since this needs to run on nodes whose driver caps out below that, e.g.
+# driver 550-series reporting CUDA 12.6 as its max supported runtime.
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
 
-[tool.uv]
-torch-backend = "auto"
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -338,7 +338,7 @@ def evaluate(
 
 def export_checkpoints(checkpoint_dir: Path, use_global_context: bool) -> None:
     """Exports whichever of `last.pt`/`best.pt` exist under `checkpoint_dir`
-    to ONNX and TorchScript (fp32 and fp16 each), via
+    to a plain fp16 state_dict, TorchScript, and ONNX, via
     `localization.export.export_checkpoint`.
     """
     for name in ("last", "best"):
