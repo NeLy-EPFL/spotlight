@@ -426,3 +426,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,git,vim,cmake,linux,macos,python,windows,platformio,visualstudiocode,kicad
+# Small version-tracked test fixtures (overrides *.jpg/*.csv/*.mp4 above;
+# must stay last so it wins over every earlier matching pattern).
+!python/tests/data/**

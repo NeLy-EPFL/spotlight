@@ -75,6 +75,9 @@ flygym = { path = "../../flygym", editable = true }
 [tool.uv]
 torch-backend = "auto"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1",

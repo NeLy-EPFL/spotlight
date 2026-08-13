@@ -1,0 +1,8 @@
+behavior_fps: 396
+muscle_imaging_enabled: true
+muscle_sync_ratio: 6
+behavior_exposure_time_us: 1000
+muscle_light_on_time_us: 1000
+muscle_nominal_exposure_us: 15141
+muscle_buffer_time_us: 549
+experiment_protocol: 1980/ch3/on;2178/ch3/off;6138/ch3/on;6336/ch3/off;10296/ch3/on;10494/ch3/off;14454/ch3/on;14652/ch3/off;18612/ch3/on;18810/ch3/off;20790/x/stop;

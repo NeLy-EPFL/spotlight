@@ -1,0 +1,36 @@
+stage_and_pixel_to_physical:
+  physical_pos_x:
+    stage_pos_x: -1.0032191475024874
+    stage_pos_y: 0.0004413289853352168
+    pixel_pos_x: -0.005515710312260149
+    pixel_pos_y: -3.8644644947443695e-05
+    bias: 106.96228815032559
+  physical_pos_y:
+    stage_pos_x: -0.008921453956856293
+    stage_pos_y: 1.0023137609237742
+    pixel_pos_x: -3.376263984422365e-05
+    pixel_pos_y: 0.005545734270052766
+    bias: -46.86757973273863
+stage_and_physical_to_pixel:
+  pixel_pos_x:
+    stage_pos_x: -181.8874570801416
+    stage_pos_y: 1.3462437127289593
+    physical_pos_x: -181.29257895607157
+    physical_pos_y: -1.2633110430834127
+    bias: 19332.260738776018
+  pixel_pos_y:
+    stage_pos_x: 0.5013679191757112
+    stage_pos_y: -180.72779173615587
+    physical_pos_x: -1.1037160728701998
+    physical_pos_y: 180.311082102159
+    bias: 8568.800013741808
+fit_metrics:
+  n_total: 287
+  n_inliers: 287
+  n_outliers: 0
+  rmse_x_mm: 0.0176335400499968
+  rmse_y_mm: 0.01917591767321876
+  rmse_euclidean_mm: 0.026051056663884187
+  max_residual_mm: 0.06051658810545306
+  r2_x: 0.9999984245880933
+  r2_y: 0.9999993847649549
