@@ -4,7 +4,7 @@
 single-video `.slp` per trial, named by this project's
 `<genotype>__<fly_trial>` stem convention (parsed from each video's own
 path via
-`spotlight_postprocessing.pose2d.io_utils.parse_trial_identity`).
+`spotlight.postprocessing.pose2d.io_utils.parse_trial_identity`).
 
 `slp_convert_h5.py --slp-to-h5` is single-video only, so a merged `.slp`
 needs this step first before it can be converted to the dense pose `.h5`
@@ -22,7 +22,7 @@ import sleap_io as sio
 import tyro
 from loguru import logger
 
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     parse_trial_identity,
 )

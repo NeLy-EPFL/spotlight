@@ -44,7 +44,7 @@ import tyro
 from loguru import logger
 from slp_convert_legacy import is_legacy_format
 
-from spotlight_postprocessing.pose2d.io_utils import check_output_path
+from spotlight.postprocessing.pose2d.io_utils import check_output_path
 
 # Each leg's chain of adjacent joints, in order. Node names are "{prefix}_{joint}".
 LEG_PREFIXES = ("LF", "LM", "LH", "RF", "RM", "RH")

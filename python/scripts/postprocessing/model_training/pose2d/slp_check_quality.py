@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 """Checks a merged `.slp` file (current format) for label-quality issues
-across every labeled frame -- any `LabeledFrame` with at least one
+across every labeled frame: any `LabeledFrame` with at least one
 non-`PredictedInstance`, so both genuinely hand-labeled and
 confidence-promoted frames are checked, not just raw predictions.
 Read-only: never writes to `input_path` or anywhere else.
 
 Three checks, run over every labeled instance:
 
-1. Visibility: every keypoint should be visible (and present -- a missing
+1. Visibility: every keypoint should be visible (and present: a missing
    keypoint's coordinates are `nan`), unless `--allow-invisible` is set.
 2. Segment-length outliers: for each skeleton edge, a frame's segment
    length (Euclidean distance between its two node positions) is flagged
@@ -48,7 +48,7 @@ from loguru import logger
 from scipy import stats
 from tqdm import tqdm
 
-from spotlight_postprocessing.pose2d.io_utils import parse_trial_identity
+from spotlight.postprocessing.pose2d.io_utils import parse_trial_identity
 
 REPORT_WIDTH = 80
 REPORT_INDENT = "    "

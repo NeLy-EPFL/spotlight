@@ -4,13 +4,13 @@
 Thin wrapper: handles both top-down (centroid + centered-instance) and
 single-instance models transparently, since `sleap-track` itself already
 auto-detects which pipeline a model directory implements from its own
-training config -- pass one `--model` for a single-instance model, two
+training config: pass one `--model` for a single-instance model, two
 (centroid, then centered-instance) for a top-down one.
 
 Also handles both model generations: current, sleap-nn (PyTorch) models
 (`training_config.yaml`) run via this environment's own `sleap-track`, but
 older, pre-sleap-nn (TensorFlow) models (`training_config.json`, e.g. the
-original two-stage LM model) can't -- this environment has no TensorFlow at
+original two-stage LM model) can't: this environment has no TensorFlow at
 all, and the checkpoint format itself (Keras `best_model.h5`, not a PyTorch
 state dict) is different, so there's no simple load-and-convert. Those are
 instead dispatched to the isolated `sleap==1.4.1` conda env (same one
@@ -43,7 +43,7 @@ from slp_convert_legacy import (
     is_legacy_format,
 )
 
-from spotlight_postprocessing.pose2d.io_utils import check_output_path
+from spotlight.postprocessing.pose2d.io_utils import check_output_path
 
 
 def is_legacy_model_dir(model_dir: Path) -> bool:

@@ -4,7 +4,7 @@ predictions (see `infer.py`): the model's own raw per-keypoint heatmaps
 (re-run live from cached model-input frames, since `infer.py` only saves
 the extracted points, not the heatmaps themselves), turned into proper
 spatial probabilities and max-pooled into one combined map per frame, same
-convention as `spotlight_pose2d.visualize_predictions`'s overlay --
+convention as `spotlight_pose2d.visualize_predictions`'s overlay:
 overlaid live, then the predicted head/thorax/abdomen as small colored
 dots, plus the RepVGG-A0 pipeline's own 900x900 aligned-domain box
 reconstructed on the raw frame (see `box.py`), colored yellow when upright
@@ -13,12 +13,12 @@ encoded.
 
 Reads the source video in chunks (`READ_CHUNK_SIZE` frames at a time,
 resizing each chunk immediately and discarding the native-resolution copy)
-rather than all at once -- at this model's native fullsize resolution
+rather than all at once: at this model's native fullsize resolution
 (dataset.NATIVE_FRAME_SIZE, much bigger than spotlight_pose2d's 900x900
 aligned domain), reading an entire ~20k-frame trial natively before
 resizing would need on the order of 150-200GB of RAM. The final resized
 frame list still has to fit in memory before `pvio.write_frames_to_video`
-(which takes a plain list, not a stream) -- at `scale=0.5` that's still
+(which takes a plain list, not a stream): at `scale=0.5` that's still
 roughly 45GB for a full ~20k-frame trial, so `max_frames` is worth using
 for a full-trial run on a memory-constrained machine.
 
@@ -45,23 +45,23 @@ from infer import cached_frame_paths, load_batch
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.localization.box import (
-    RAW_TO_ALIGNED_SCALE,
+from spotlight.postprocessing.localization.box import (
     measure_canonical_aligned_points,
     raw_domain_box_corners,
 )
-from spotlight_postprocessing.localization.dataset import (
+from spotlight.postprocessing.localization.constants import (
     COARSE_KEYPOINTS,
     OUTPUT_SIZE,
+    RAW_TO_ALIGNED_SCALE,
 )
-from spotlight_postprocessing.localization.io_utils import (
+from spotlight.postprocessing.localization.io_utils import (
     load_localization_predictions_h5,
 )
-from spotlight_postprocessing.localization.model import (
+from spotlight.postprocessing.localization.model import (
     TinyLocalizationModel,
     heatmap_probs,
 )
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     parse_trial_identity,
 )
@@ -77,7 +77,7 @@ POINT_RADIUS = 4
 BOX_THICKNESS = 2
 BOX_COLOR_UPRIGHT = (255, 255, 0)  # yellow
 BOX_COLOR_FLIPPED = (160, 160, 160)  # gray
-# The model's own sigmoid decision boundary -- unrelated to
+# The model's own sigmoid decision boundary: unrelated to
 # flip_label.FLIPPED_THRESHOLD, which derives *training* labels from a
 # different model's (RepVGG-A0's) confidence, not this model's own output.
 FLIP_DECISION_THRESHOLD = 0.5
@@ -97,7 +97,7 @@ def predict_combined_heatmaps(
     """Each of `frame_indices`'s combined per-frame heatmap: `TinyLocalizationModel`'s
     raw per-keypoint heatmaps turned into proper spatial probabilities
     (`model.heatmap_probs`), each keypoint's own map rescaled by its own
-    peak, then max-pooled across keypoints into one map -- the same
+    peak, then max-pooled across keypoints into one map: the same
     combined-heatmap convention `spotlight_pose2d.visualize_predictions`
     uses for its own overlay.
 
@@ -126,7 +126,7 @@ def predict_combined_heatmaps(
 
     Returns:
         `{frame_idx: (heatmap_height, heatmap_width) float32 array}`, only
-        for frame indices with a cached input frame -- exactly the frames
+        for frame indices with a cached input frame: exactly the frames
         `infer.py` itself could predict (others are already reported via
         `main`'s own NaN-keypoint check).
     """
@@ -156,7 +156,7 @@ def predict_combined_heatmaps(
 def overlay_heatmap(frame: np.ndarray, heatmap: np.ndarray) -> None:
     """Alpha-blends `heatmap` (this frame's combined keypoint-attention map,
     already rescaled to `[0, 1]` by `predict_combined_heatmaps`) onto
-    `frame`, in place -- upsampled to `frame`'s own size and colored via
+    `frame`, in place: upsampled to `frame`'s own size and colored via
     `HEATMAP_COLORMAP`, alpha scaling with the map's own value so confident
     regions are visibly tinted and everything else stays close to the raw
     frame.
@@ -186,12 +186,12 @@ def draw_predictions(
 
     Args:
         keypoint_names: `points`' own names, in order (see
-            `dataset.KeypointSpec`) -- each must have a `POINT_COLORS` entry.
-        box_scale: Raw-to-aligned scale (see `box.RAW_TO_ALIGNED_SCALE`) --
+            `dataset.KeypointSpec`): each must have a `POINT_COLORS` entry.
+        box_scale: Raw-to-aligned scale (see `box.RAW_TO_ALIGNED_SCALE`):
             a fixed physical constant, keeps the reconstructed box's size
             constant across frames.
         display_scale: This video's own display resize factor (`main`'s
-            `scale`) -- unrelated to `box_scale`, just converts raw-domain
+            `scale`): unrelated to `box_scale`, just converts raw-domain
             pixel coordinates to this particular output video's resolution.
         heatmap: This frame's combined heatmap (see
             `predict_combined_heatmaps`), or None to skip the overlay
@@ -248,7 +248,7 @@ def main(
             `infer.py`, which only keeps the extracted points).
         canonical_h5_paths: pose2d `final_predictions.h5` files to measure
             the canonical aligned-domain coarse-keypoint position from
-            (see `box.measure_canonical_aligned_points`) -- typically every
+            (see `box.measure_canonical_aligned_points`): typically every
             trial's, not just this one's.
         frame_cache_root: Root directory
             `scripts/postprocessing/model_training/localization/cache_fullsize_frames.py` wrote
@@ -256,7 +256,7 @@ def main(
         output_path: Where to save the rendered `.mp4`. Aborts if this
             already exists, unless `override` is set.
         use_global_context: Must match what `checkpoint_path` was actually
-            trained with -- False for v1-v5 checkpoints, True from v6 on
+            trained with: False for v1-v5 checkpoints, True from v6 on
             (see `model.GlobalContextBlock`/`train.py`'s own flag).
         scale: Output video size relative to the raw fullsize source video
             (`dataset.NATIVE_FRAME_SIZE`), e.g. 0.5 -> half resolution.
@@ -285,7 +285,7 @@ def main(
     logger.info(f"Canonical {keypoint_names}: {canonical_points.tolist()}")
     box_scale = RAW_TO_ALIGNED_SCALE
     logger.info(
-        f"Raw-to-aligned box scale: {box_scale} (fixed physical constant, not fit -- "
+        f"Raw-to-aligned box scale: {box_scale} (fixed physical constant, not fit; "
         "see box.py's docstring)"
     )
 

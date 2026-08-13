@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Runs a trained pose2d checkpoint over every frame of one aligned-domain
 video, producing a dense pose `.h5` (see
-`spotlight_postprocessing.pose2d.io_utils`) with `is_label` all
+`spotlight.postprocessing.pose2d.io_utils`) with `is_label` all
 False, so it can be ported into a `.slp` for GUI correction via
 `slp_convert_h5.py --h5-to-slp`.
 
@@ -24,13 +24,13 @@ import tyro
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.pose2d.dataset import INPUT_SIZE
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.constants import INPUT_SIZE, N_KEYPOINTS
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     load_skeleton_json,
     save_pose_h5,
 )
-from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
+from spotlight.postprocessing.pose2d.model import RepVGGPoseModel
 
 
 def heatmaps_to_points(heatmaps: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -55,7 +55,7 @@ def main(
     video_path: Path,
     skeleton_json_path: Path,
     output_path: Path,
-    n_keypoints: int = 37,
+    n_keypoints: int = N_KEYPOINTS,
     batch_size: int = 32,
     override: bool = False,
 ) -> None:

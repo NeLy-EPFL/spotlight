@@ -8,7 +8,7 @@ based auto-promotion isn't trusted as a real label here.
 
 `--frames-per-trial`, if set, only predicts that many randomly-sampled
 (fixed seed 0, independently per trial) candidate frames per trial instead
-of every one -- for a fast per-round quality check, meant to be re-run
+of every one, for a fast per-round quality check, meant to be re-run
 after every training pass. Leave it unset for exhaustive, every-frame
 predictions (e.g. for a real labeling round rather than a spot check).
 
@@ -16,8 +16,8 @@ Genuine hand-labeled frames (protected from re-prediction) are derived
 from `--first-round-slp-path`, by matching its videos' paths to trials
 under `data_root` via `io_utils.parse_genotype_trial`'s own matching
 logic, unioned with any genuinely corrected (non-predicted) instances in
-`--corrected-slp-paths` -- e.g. a prior round's own merged sample
-predictions, after GUI review -- so a later round's checkpoint doesn't
+`--corrected-slp-paths` (e.g. a prior round's own merged sample
+predictions, after GUI review), so a later round's checkpoint doesn't
 silently overwrite corrections a human already made. `data_root`'s own
 `.h5` files never see those corrections (they aren't retroactively
 updated), so this is the only thing that protects them here.
@@ -49,7 +49,8 @@ from loguru import logger
 from predict_unlabeled_frames import main as predict_unlabeled
 from slp_merge import main as merge_slp
 
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.constants import N_KEYPOINTS
+from spotlight.postprocessing.pose2d.io_utils import (
     parse_genotype_trial,
     parse_trial_identity,
     user_labeled_frames,
@@ -78,8 +79,8 @@ def true_hand_label_indices_by_trial(
 
 def corrected_frame_indices_by_trial(corrected_slp_path: Path) -> dict[str, list[int]]:
     """`{"<genotype>__<fly_trial>": [frame_idx, ...]}` for every trial with
-    a genuinely corrected (non-predicted) instance in `corrected_slp_path`
-    -- an aligned-domain merged `.slp` (e.g. a prior round's own sample
+    a genuinely corrected (non-predicted) instance in `corrected_slp_path`:
+    an aligned-domain merged `.slp` (e.g. a prior round's own sample
     predictions, after GUI review), keyed by `parse_trial_identity` rather
     than `io_utils.parse_genotype_trial`, since
     this is a different video-path convention (aligned, not raw fullsize).
@@ -112,7 +113,7 @@ def main(
     output_dir: Path | None = None,
     corrected_slp_paths: list[Path] | None = None,
     frames_per_trial: int | None = None,
-    n_keypoints: int = 37,
+    n_keypoints: int = N_KEYPOINTS,
     batch_size: int = 200,
 ) -> None:
     """Predict every trial's dense pose `.h5` under `data_root`.
@@ -120,7 +121,7 @@ def main(
     Args:
         checkpoint_path: Trained `RepVGGPoseModel` state dict.
         data_root: Directory containing each trial's `*_pose.h5` (see
-            `spotlight_postprocessing.pose2d.io_utils.save_pose_h5`);
+            `spotlight.postprocessing.pose2d.io_utils.save_pose_h5`);
             every match gets predicted. Shared across rounds, so this stays
             flat rather than moving into a per-round subfolder.
         frame_cache_root: Root directory `cache_video_frames.py` wrote
@@ -148,7 +149,7 @@ def main(
             another round's outputs. Defaults to `data_root` itself.
         frames_per_trial: If set, only predict this many randomly-sampled
             (fixed seed 0, independent per trial) candidate frames per
-            trial, instead of every one -- for a fast per-round quality
+            trial, instead of every one, for a fast per-round quality
             check. Unset predicts every candidate frame.
         n_keypoints: Must match the checkpoint's `n_keypoints`.
         batch_size: Frames per inference batch.

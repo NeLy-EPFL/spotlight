@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Decodes a video once, sequentially, and caches every frame as JPEG at one
 or more resolutions, for training pipelines (like
-`spotlight_postprocessing.pose2d`) that need fast repeated access to
+`spotlight.postprocessing.pose2d`) that need fast repeated access to
 individual frames without paying for video seeking every time. Sequential
 decode measured at ~2.6 ms/frame over a CIFS-mounted NAS video, vs.
 ~210 ms/frame for random-seeking into the same file (~80x), so this always

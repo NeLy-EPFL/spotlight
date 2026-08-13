@@ -28,7 +28,7 @@ import sleap_io as sio
 import tyro
 from loguru import logger
 
-from spotlight_postprocessing.pose2d.io_utils import check_output_path
+from spotlight.postprocessing.pose2d.io_utils import check_output_path
 
 # The `sleap==1.4.1a2` conda env described in this directory's README; the
 # only installed environment able to write the legacy format.

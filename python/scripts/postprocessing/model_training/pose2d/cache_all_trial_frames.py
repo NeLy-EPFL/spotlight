@@ -2,9 +2,9 @@
 """Caches every frame of each of the 29 trials' aligned videos as JPEG (see
 `cache_video_frames.py`'s own docstring for why: sequential decode measured
 ~80x faster than the per-labeled-frame random seeking
-`spotlight_postprocessing.pose2d`'s dataset previously did). Caches
+`spotlight.postprocessing.pose2d`'s dataset previously did). Caches
 ALL frames, not just currently-labeled ones, independent of any particular
-labeling iteration -- which frames end up labeled changes across
+labeling iteration: which frames end up labeled changes across
 train/predict/correct rounds, but the underlying video frames don't, so
 every future iteration reuses this cache without touching the NAS again.
 

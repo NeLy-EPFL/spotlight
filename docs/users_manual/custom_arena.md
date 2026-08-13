@@ -49,18 +49,18 @@ encodes the marker geometry using colored shapes:
 - **Black (#000000) shapes** → active-area / maze walls.
 
 The red and green boxes should be squares. For **arena146x146**, pre-generated assets
-are already bundled in `python/src/spotlight_tools/assets/arena_configs/arena146x146/` — skip to Step 2, Option A.
+are already bundled in `python/src/spotlight/assets/arena_configs/arena146x146/` — skip to Step 2, Option A.
 
 ### Step 2 — Generate the arena config assets from the spec PDF
 
 The arena directory needs three derived files before the registration scan:
 `metadata.yaml`, `mapping_board.pdf`, and `active_area.png`. You can generate these
-using the `spotlight_tools.arena` module. For example, the following is used for
+using the `spotlight.arena` module. For example, the following is used for
 the default 146x146 mm rounded-corner arena:
 
 ```python
-from spotlight_tools import get_assets_dir
-from spotlight_tools.arena import ArenaConfig
+from spotlight import get_assets_dir
+from spotlight.arena import ArenaConfig
 
 arena_spec_path = get_assets_dir() / "arena_configs/arena146x146/arena_spec.pdf"
 arena_config = ArenaConfig(arena_spec_path)

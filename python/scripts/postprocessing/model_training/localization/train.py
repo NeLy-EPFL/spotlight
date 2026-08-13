@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Trains a `TinyLocalizationModel` on one or more trials' `final_predictions.h5`
-files (RepVGG-A0's own exhaustive per-frame output, used as pseudo-labels --
+files (RepVGG-A0's own exhaustive per-frame output, used as pseudo-labels;
 see `dataset.py`). Plain PyTorch training loop, same rationale as
 `tools/spotlight_pose2d/train.py`: a single-model, single-GPU setup doesn't
 need more than that.
@@ -35,15 +35,15 @@ from torch.utils.data import DataLoader, get_worker_info
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from spotlight_postprocessing.localization.dataset import (
+from spotlight.postprocessing.localization.constants import (
     COARSE_KEYPOINTS,
     NATIVE_FRAME_SIZE,
     OUTPUT_SIZE,
     SCALE_FACTOR,
-    TinyLocalizationDataset,
 )
-from spotlight_postprocessing.localization.export import export_checkpoint
-from spotlight_postprocessing.localization.model import (
+from spotlight.postprocessing.localization.dataset import TinyLocalizationDataset
+from spotlight.postprocessing.localization.export import export_checkpoint
+from spotlight.postprocessing.localization.model import (
     TinyLocalizationModel,
     heatmap_probs,
     heatmap_variance,
@@ -59,13 +59,13 @@ def gaussian_heatmap_loss(
     """Cross-entropy between the predicted heatmap distribution
     (`model.heatmap_probs`) and a target isotropic Gaussian centered at
     each keypoint's own true (label) location, with a fixed real-world
-    sigma -- the analytical alternative to rasterizing/caching a target
-    heatmap image the way `pose2d.dataset.points_to_heatmaps`
+    sigma. This is the analytical alternative to rasterizing/caching a
+    target heatmap image the way `pose2d.dataset.points_to_heatmaps`
     does: the target's log-density is evaluated directly at the (small,
     e.g. 124x92) heatmap's own grid coordinates from the closed-form
     Gaussian formula, on the fly from each sample's own label, then
     turned into a proper discrete distribution the same way the
-    prediction is (a softmax) -- so no separate normalization/epsilon
+    prediction is (a softmax), so no separate normalization/epsilon
     handling is needed.
 
     Directly supervises the heatmap's whole shape (position and spread)
@@ -83,7 +83,7 @@ def gaussian_heatmap_loss(
         native_frame_size: `(width, height)`, see `dataset.NATIVE_FRAME_SIZE`.
             The target sigma is converted to normalized coordinates
             per-axis (not by a single shared factor), since the native
-            frame isn't square -- an isotropic real-world sigma is NOT
+            frame isn't square: an isotropic real-world sigma is NOT
             isotropic in normalized-coordinate units.
 
     Returns:
@@ -164,7 +164,7 @@ def mean_keypoint_pixel_error(
 ) -> float:
     """Mean Euclidean distance between predicted/target head/thorax/abdomen,
     in `dataset.NATIVE_FRAME_SIZE`'s own raw fullsize pixel domain
-    (denormalizing by `output_size` then `dataset.SCALE_FACTOR` -- the
+    (denormalizing by `output_size` then `dataset.SCALE_FACTOR`: the
     inverse of `dataset.points_to_model_space`).
 
     Unlike the raw MSE loss (in squared-normalized-coordinate units, not
@@ -178,7 +178,7 @@ def mean_keypoint_pixel_error(
     return float(np.linalg.norm((pred - targ) * scale, axis=-1).mean())
 
 
-# The model's own sigmoid decision boundary -- unrelated to
+# The model's own sigmoid decision boundary: unrelated to
 # flip_label.FLIPPED_THRESHOLD, which derives *training* labels from a
 # different model's (RepVGG-A0's) confidence, not this model's own output.
 FLIP_DECISION_THRESHOLD = 0.5
@@ -226,10 +226,10 @@ def compute_loss(
     true point sits off-center, worse for points far from that centroid.
     Supervising the heatmap's whole shape against a fixed-sigma Gaussian
     label keeps it peaked instead. `mean_heatmap_variance` (see
-    `model.heatmap_variance`) isn't part of the loss -- it's a cheap,
+    `model.heatmap_variance`) isn't part of the loss; it's a cheap,
     interpretable "how peaked is the heatmap actually" diagnostic to
     watch alongside `heatmap_loss` (e.g. 0.17 for a uniform heatmap,
-    ~0.001-0.003 for a well-converged peaked one -- see v1-v3's own
+    ~0.001-0.003 for a well-converged peaked one; see v1-v3's own
     TensorBoard logs).
     """
     pred_keypoints, pred_flip_logit, heatmaps = model(images, return_heatmaps=True)
@@ -272,7 +272,7 @@ def evaluate(
     "flipped" class this rare, most batches have 0-1 positive examples, so
     a per-batch precision/recall would be dominated by noise.
 
-    Runs in fp16 (regardless of the training run's own autocast dtype --
+    Runs in fp16 (regardless of the training run's own autocast dtype:
     see `main`'s `amp_dtype`), since fp16 is this tiny model's target
     inference precision.
     """
@@ -354,8 +354,8 @@ def export_checkpoints(checkpoint_dir: Path, use_global_context: bool) -> None:
 
 
 def backbone_modules(model: TinyLocalizationModel) -> list[torch.nn.Module]:
-    """Every keypoint-relevant submodule -- i.e. all of `model` except
-    `flip_trunk`/`flipped_head` -- for `freeze_backbone` to freeze (weights
+    """Every keypoint-relevant submodule (i.e. all of `model` except
+    `flip_trunk`/`flipped_head`) for `freeze_backbone` to freeze (weights
     and BatchNorm running stats) and to re-pin to eval mode each epoch
     (`model.train()` would otherwise flip them back to train mode).
     """
@@ -414,7 +414,7 @@ def main(
             loss it's added to: empirically, ~9.3 nats for a uniform
             (untrained) heatmap, ~24-27 for an overly sharp one that
             doesn't match the target's own spread, and ~2.7-3 (its
-            theoretical floor -- the target Gaussian's own entropy) for a
+            theoretical floor, the target Gaussian's own entropy) for a
             well-matched one, versus keypoint_loss converging to
             ~0.0003-0.0006. The default keeps its weighted contribution
             comparable to (not dominant over) keypoint_loss at
@@ -427,24 +427,24 @@ def main(
             this weight if heatmaps stay diffuse, lower it if keypoint
             error regresses.
         target_sigma_native_px: `gaussian_heatmap_loss`'s target label
-            sigma, in raw camera pixels -- half of `spotlight_pose2d`'s
+            sigma, in raw camera pixels: half of `spotlight_pose2d`'s
             own effective Gaussian heatmap sigma (`HEATMAP_SIGMA=2.0` at
             its 60x60 output, 30px once converted through to raw pixels).
         lr_schedule: `"constant"` keeps `learning_rate` fixed throughout
             (every round before this one); `"cosine"` decays it to ~0 via
-            `CosineAnnealingLR` over `n_epochs`, stepped once per epoch --
+            `CosineAnnealingLR` over `n_epochs`, stepped once per epoch;
             worth it mainly when `learning_rate` itself is on the higher
             side, to keep late-training updates from overshooting once
             the loss is already close to converged.
-        use_global_context: See `model.GlobalContextBlock` -- broadcasts a
+        use_global_context: See `model.GlobalContextBlock`, which broadcasts a
             global-average-pooled context vector back to every heatmap
             location. False reconstructs v1-v5's own architecture (their
             receptive field, measured empirically, covers only ~20% of the
-            fly's own body length -- likely why keypoint predictions never
+            fly's own body length, likely why keypoint predictions never
             got much past ~28-32px and looked multi-modal rather than
             single-peaked). True from v6 on.
         init_checkpoint: Optional trained `TinyLocalizationModel` state dict to
-            warm-start from instead of random initialization -- e.g. a
+            warm-start from instead of random initialization, e.g. a
             keypoint-only checkpoint's already-converged trunk, when
             adding a new loss term (like flip detection) that would
             otherwise have to re-learn the keypoint task from scratch
@@ -458,7 +458,7 @@ def main(
             its random initialization was, so this loads cleanly either
             way).
         freeze_backbone: Freeze `conv1`/`conv2`/`conv3`/`global_context`/
-            `heatmap_head` (everything but `flip_trunk`/`flipped_head`) --
+            `heatmap_head` (everything but `flip_trunk`/`flipped_head`):
             weights AND BatchNorm running stats, so the keypoint-relevant
             trunk truly cannot move at all, no matter how `flip_loss_weight`
             is set. This is the actual fix for `init_checkpoint`'s own
@@ -466,7 +466,7 @@ def main(
             trunk (see v10's own run) shrinks the flip head's gradient by
             the same factor, which starves a freshly-initialized flip
             head of the signal it needs (v10: `val_flip_loss` was still
-            slowly falling, 1.76 -> 1.32, after 21 epochs -- learning,
+            slowly falling, 1.76 -> 1.32, after 21 epochs: learning,
             just far too slowly to be useful). Freezing decouples the two
             completely: the trunk is now protected structurally, not by a
             delicate loss-weight balance, so `flip_loss_weight` can go
@@ -506,7 +506,7 @@ def main(
             p.numel() for m in backbone_modules(model) for p in m.parameters()
         )
         logger.info(
-            f"Backbone frozen ({n_frozen:,} params) -- only flip_trunk/"
+            f"Backbone frozen ({n_frozen:,} params); only flip_trunk/"
             "flipped_head will train"
         )
     n_params = sum(p.numel() for p in model.parameters())
@@ -680,7 +680,7 @@ def main(
         # With freeze_backbone, val_pixel_error is bit-for-bit constant
         # (the trunk that produces it literally cannot change), so it
         # would never register an "improvement" past epoch 0 and trigger
-        # early stopping almost immediately -- track val_flip_loss
+        # early stopping almost immediately: track val_flip_loss
         # instead in that case, the only thing actually still training.
         tracked_metric = val_flip_loss if freeze_backbone else val_pixel_error
         if tracked_metric < best_tracked_metric:

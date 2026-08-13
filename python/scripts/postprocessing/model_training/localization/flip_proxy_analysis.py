@@ -2,7 +2,7 @@
 """Validates `flip_label.proximal_leg_confidence` as an "is the fly flipped"
 proxy: plots its distribution over every trial's `final_predictions.h5`
 (excluding hand-labeled/hand-corrected frames, which have no confidence at
-all -- see `flip_label.py`'s docstring), then samples both sides of
+all: see `flip_label.py`'s docstring), then samples both sides of
 `FLIPPED_THRESHOLD` for visual inspection.
 
 Saves, all under `OUTPUT_DIR`:
@@ -11,7 +11,7 @@ Saves, all under `OUTPUT_DIR`:
   without re-reading every `.h5`.
 - `flip_confidence_pooled_hist.png`: one histogram over every trial pooled.
 - `flip_confidence_per_trial_hist.png`: a small-multiples grid, one
-  histogram per trial -- checks whether the two modes (if any) sit at a
+  histogram per trial: checks whether the two modes (if any) sit at a
   consistent location across recording sessions, rather than pooling and
   hoping session-to-session confidence drift doesn't smear them.
 - `flipped_samples/`, `unflipped_samples/`: N_SAMPLES_PER_CASE aligned-domain
@@ -33,12 +33,12 @@ import pvio
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.localization.flip_label import (
+from spotlight.postprocessing.localization.flip_label import (
     FLIPPED_THRESHOLD,
     is_flipped,
     valid_frames,
 )
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     load_pose_h5,
     parse_trial_identity,
 )
@@ -48,7 +48,7 @@ DATA_DIR = REPO_ROOT / "bulk_data/motion_prior/2dpose_model/labels/final_predict
 OUTPUT_DIR = REPO_ROOT / "bulk_data/motion_prior/localization_model/flip_proxy_analysis"
 N_BINS = 100
 N_SAMPLES_PER_CASE = 1000
-SAMPLE_SIZE = (225, 225)  # (width, height) -- 0.25x of the 900x900 aligned video.
+SAMPLE_SIZE = (225, 225)  # (width, height): 0.25x of the 900x900 aligned video.
 JPEG_QUALITY = 90
 SEED = 0
 

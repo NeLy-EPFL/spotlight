@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Decodes each trial's raw fullsize video once, sequentially, and caches
-every frame resized 0.25x (`TinyLocalizationModel`'s own input resolution -- see
-`spotlight_postprocessing.localization.dataset.OUTPUT_SIZE`) as JPEG.
+every frame resized 0.25x (`TinyLocalizationModel`'s own input resolution: see
+`spotlight.postprocessing.localization.dataset.OUTPUT_SIZE`) as JPEG.
 
 Same rationale as `spotlight_pose2d/cache_video_frames.py`: `TinyLocalizationDataset`
 otherwise reads frames via `pvio`'s random-access seeking, measured at
@@ -11,7 +11,7 @@ decode is far faster and only needs to happen once.
 
 Trials come from `labels/final_predictions/*.h5`'s own `video_path` attr
 (that trial's aligned video; `FULLSIZE_VIDEO_RELPATH` swaps it for the
-sibling raw video) -- the same 29 trials `TinyLocalizationDataset` draws from,
+sibling raw video), the same 29 trials `TinyLocalizationDataset` draws from,
 independent of any particular train/val split, so every future training
 round reuses this cache without touching the NAS again.
 
@@ -38,11 +38,9 @@ from joblib import Parallel, delayed
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.localization.dataset import (
-    FULLSIZE_VIDEO_RELPATH,
-    OUTPUT_SIZE,
-)
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.localization.constants import OUTPUT_SIZE
+from spotlight.postprocessing.localization.dataset import FULLSIZE_VIDEO_RELPATH
+from spotlight.postprocessing.pose2d.io_utils import (
     load_pose_h5,
     parse_trial_identity,
     trial_dir_from_video_path,
@@ -65,7 +63,7 @@ def to_2d(frame: np.ndarray) -> np.ndarray:
 
 def worker_slot() -> int:
     """This joblib/loky worker process's 0-indexed slot, stable for its
-    lifetime -- lets each of the N_WORKERS concurrent per-trial progress
+    lifetime: lets each of the N_WORKERS concurrent per-trial progress
     bars claim its own terminal row (via tqdm's `position`) instead of all
     of them clobbering the same line. Falls back to 0 outside a worker
     process (e.g. N_WORKERS=1, running inline).

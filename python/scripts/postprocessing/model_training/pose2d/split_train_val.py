@@ -5,11 +5,11 @@ any trial with more than `min_hand_labeled_frames` genuine hand labels (see
 `extract_metadata_from_initial_slp.py`) is always forced into train. Those
 are this project's only real ground truth, and `train.py`'s `PoseDataset`
 only trains on a trial's own `.h5` when that whole file is in the train
-set (see `dataset.py`) -- letting one land in validation-only would mean
+set (see `dataset.py`): letting one land in validation-only would mean
 none of its labels ever reach a gradient update.
 
-Trials with zero labeled (`is_label=True`) frames -- e.g. one a still-in-
-progress hand-correction pass hasn't reached yet -- are excluded from the
+Trials with zero labeled (`is_label=True`) frames (e.g. one a still-in-
+progress hand-correction pass hasn't reached yet) are excluded from the
 split entirely, neither train nor validation: `PoseDataset` requires every
 `.h5` path it's given to contribute at least one labeled frame, and a
 trial with none would otherwise crash it (`np.stack` on an empty list) or,
@@ -38,7 +38,7 @@ import numpy as np
 import tyro
 from loguru import logger
 
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     load_pose_h5,
 )

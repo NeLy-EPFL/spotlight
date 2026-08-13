@@ -2,7 +2,7 @@
 """Renders a quick annotated video of one trial's dense pose predictions:
 the model's own raw per-frame heatmap output (max-pooled across all
 keypoints into one combined map, linearly upsampled from its native low
-resolution to the display size -- no extra smoothing, this is exactly
+resolution to the display size: no extra smoothing, this is exactly
 what the model predicted) overlaid live, with the predicted skeleton
 drawn on top. Skeleton edges/nodes are read from a metadata JSON (see
 extract_metadata_from_initial_slp.py) rather than hardcoded fly-leg
@@ -31,15 +31,15 @@ import tyro
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.pose2d.dataset import INPUT_SIZE
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.constants import INPUT_SIZE, N_KEYPOINTS
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     load_pose_h5,
     load_skeleton_json,
     parse_trial_identity,
 )
-from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
-from spotlight_postprocessing.pose2d.viz import (
+from spotlight.postprocessing.pose2d.model import RepVGGPoseModel
+from spotlight.postprocessing.pose2d.viz import (
     build_edge_colors,
     build_node_colors,
     draw_pose,
@@ -77,7 +77,7 @@ def predict_combined_heatmaps(
     """The model's raw output heatmap for every frame, max-pooled across
     keypoints into one map per frame and clipped to `[0, 1]` (the model's
     own training target range; MSE regression can slightly over/undershoot
-    it) -- no additional smoothing.
+    it), with no additional smoothing.
 
     Args:
         model: Trained `RepVGGPoseModel`, in eval mode.
@@ -112,7 +112,7 @@ def main(
     output_path: Path,
     scale: float = 0.5,
     max_frames: int | None = None,
-    n_keypoints: int = 37,
+    n_keypoints: int = N_KEYPOINTS,
     batch_size: int = 128,
     crf: int = 23,
     override: bool = False,

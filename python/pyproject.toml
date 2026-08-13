@@ -1,5 +1,5 @@
 [project]
-name = "spotlight-tools"
+name = "spotlight"
 version = "0.3.0"
 description = ""
 authors = [
@@ -9,8 +9,8 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 
 dependencies = [
-    # spotlight_tools (calibration, arena registration): generic numerics/CV,
-    # AprilTag generation & detection, packaging/CLI/IO -- no heavy ML deps,
+    # spotlight (calibration, arena registration): generic numerics/CV,
+    # AprilTag generation & detection, packaging/CLI/IO. No heavy ML deps,
     # so this is what a plain `uv sync` installs.
     "opencv-python>=4.11,<5.0",
     "pillow>=11.0,<12.0",
@@ -33,13 +33,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# spotlight_postprocessing (behavior/localization alignment, pose2d, muscle,
+# spotlight.postprocessing (behavior/localization alignment, pose2d, muscle,
 # inverse kinematics, QA video): `uv sync --extra postprocessing`, or
 # `pip install '.[postprocessing]'`.
 postprocessing = [
-    # Pose estimation for fly alignment & cropping (spotlight_localization/
-    # spotlight_pose2d training-loop tools; live inference no longer uses
-    # sleap, see localization)
+    # Pose estimation for fly alignment & cropping (localization/pose2d
+    # training-loop tools; live inference no longer uses sleap, see
+    # spotlight.postprocessing.localization)
     "sleap[nn]==1.6.3",
     "sleap-io==0.7.0",
     "sleap-nn==0.2.0",
@@ -50,15 +50,17 @@ postprocessing = [
     "onnx>=1.22.0",
     "onnxscript>=0.7.1",
 
-    # invkin: QuickIK-based IK/FK fit, plus a CPU FlyGym physics replay of
-    # the solved joint angles for the QA video's row-2 replay panel (see
-    # invkin/flygym_replay.py).
+    # invkin: QuickIK-based IK/FK fit. replay: CPU FlyGym physics replay of
+    # the solved joint angles for the QA video's row-2 replay panel. Both
+    # are imported lazily (only once --inverse-kinematics.enabled /
+    # --physics-replay.enabled is actually used), so this extra is only
+    # needed for those two stages, not the rest of postprocessing.
     "quickik",
     "flygym",
 
     # QA video: matplotlib is in the base deps already (calibration needs
     # it too); cmasher is the QA video's own colormap borrowing (see
-    # visualize.py's own module docstring -- never real plotting).
+    # visualize.py's own module docstring: never real plotting).
     "cmasher>=1.9,<2.0",
     "vidgear==0.3.4",
     "parallel-video-io==0.1.9",
@@ -83,10 +85,10 @@ dev = [
 ]
 
 [project.scripts]
-fit-arena-registration = "spotlight_tools.cli.fit_arena_registration:main"
-visualize-stage-trajectory = "spotlight_tools.cli.visualize_stage_trajectory:main"
-fit-homography = "spotlight_tools.cli.fit_homography:main"
-postprocess-recording = "spotlight_postprocessing.cli.postprocess_recording:main"
+fit-arena-registration = "spotlight.arena.cli.fit_arena_registration:main"
+visualize-stage-trajectory = "spotlight.arena.cli.visualize_stage_trajectory:main"
+fit-homography = "spotlight.calibration.cli.fit_homography:main"
+postprocess-recording = "spotlight.postprocessing.cli.postprocess_recording:main"
 
 [build-system]
 requires = ["setuptools>=78", "wheel"]
@@ -99,4 +101,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-spotlight_tools = ["assets/**"]
+spotlight = ["assets/**"]

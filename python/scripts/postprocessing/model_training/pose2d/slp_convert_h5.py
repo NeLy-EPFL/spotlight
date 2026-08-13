@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Convert one trial's poses between a `.slp` file and the shared `.h5` array
 format (see
-`spotlight_postprocessing.pose2d.io_utils.save_pose_h5`/`load_pose_h5`).
+`spotlight.postprocessing.pose2d.io_utils.save_pose_h5`/`load_pose_h5`).
 
 Single-video only: a `.slp` file with more than one video can't round-trip
 through this dense, one-row-per-frame `.h5` schema. Combining many trials
@@ -45,7 +45,7 @@ import sleap_io as sio
 import tyro
 from loguru import logger
 
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     load_pose_h5,
     load_skeleton_json,
@@ -67,7 +67,7 @@ def extract_video_arrays(
 
     Returns:
         poses, keypoint_scores, instance_score, is_label: See
-        `spotlight_postprocessing.pose2d.io_utils.save_pose_h5`.
+        `spotlight.postprocessing.pose2d.io_utils.save_pose_h5`.
     """
     n_nodes = len(node_names)
     frames = [lf for lf in labels.labeled_frames if lf.video is video]

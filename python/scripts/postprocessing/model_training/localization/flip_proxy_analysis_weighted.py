@@ -2,14 +2,14 @@
 """Validates `flip_label.weighted_confidence` as an alternative "is the fly
 flipped" proxy: plots its distribution over every trial's
 `final_predictions.h5` (excluding hand-labeled/hand-corrected frames, which
-have no confidence at all -- see `flip_label.py`'s docstring), then samples
+have no confidence at all: see `flip_label.py`'s docstring), then samples
 both sides of `FLIPPED_THRESHOLD` for visual inspection.
 
 A variant of `flip_proxy_analysis.py`, not a replacement: that script
 validates `proximal_leg_confidence` (mean confidence over just the 12
 proximal leg joints, ThC/CTr), the proxy actual training labels use. This
 one instead weights EVERY node into the average, with the same 12 proximal
-joints weighted 5x higher than everything else -- the intuition being that
+joints weighted 5x higher than everything else: the intuition being that
 a fly merely close to the arena wall/edge (not actually flipped) should
 still show good confidence at the other nodes (distal leg segments,
 antennae, wings, etc.), which a proximal-only average can't see, and which
@@ -23,7 +23,7 @@ Saves, all under `OUTPUT_DIR`:
   without re-reading every `.h5`.
 - `flip_confidence_pooled_hist.png`: one histogram over every trial pooled.
 - `flip_confidence_per_trial_hist.png`: a small-multiples grid, one
-  histogram per trial -- checks whether the two modes (if any) sit at a
+  histogram per trial: checks whether the two modes (if any) sit at a
   consistent location across recording sessions, rather than pooling and
   hoping session-to-session confidence drift doesn't smear them.
 - `flipped_samples/`, `unflipped_samples/`: N_SAMPLES_PER_CASE aligned-domain
@@ -45,13 +45,13 @@ import pvio
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.localization.flip_label import (
+from spotlight.postprocessing.localization.flip_label import (
     FLIPPED_THRESHOLD,
     is_flipped,
     valid_frames,
     weighted_confidence,
 )
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     load_pose_h5,
     parse_trial_identity,
 )
@@ -63,7 +63,7 @@ OUTPUT_DIR = (
 )
 N_BINS = 100
 N_SAMPLES_PER_CASE = 1000
-SAMPLE_SIZE = (225, 225)  # (width, height) -- 0.25x of the 900x900 aligned video.
+SAMPLE_SIZE = (225, 225)  # (width, height): 0.25x of the 900x900 aligned video.
 JPEG_QUALITY = 90
 SEED = 0
 

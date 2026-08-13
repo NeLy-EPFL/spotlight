@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Runs a trained pose2d checkpoint over one trial's not-yet-labeled frames,
 producing a new dense pose `.h5` (see
-`spotlight_postprocessing.pose2d.io_utils`) and a matching
+`spotlight.postprocessing.pose2d.io_utils`) and a matching
 current-format `.slp` for GUI correction, where frames explicitly listed in
 `protected_frame_indices` are kept as real (unpromoted-safe) labels and
-every other frame gets a fresh, unpromoted prediction from this model --
+every other frame gets a fresh, unpromoted prediction from this model,
 for seeding the next labeling iteration from an already-ported dataset
 without re-running the older LM model.
 
@@ -44,18 +44,19 @@ from infer import heatmaps_to_points
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.pose2d.dataset import (
+from spotlight.postprocessing.pose2d.constants import (
     ALIGNED_FRAME_SIZE,
     INPUT_SIZE,
+    N_KEYPOINTS,
 )
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     load_pose_h5,
     load_skeleton_json,
     parse_trial_identity,
     save_pose_h5,
 )
-from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
+from spotlight.postprocessing.pose2d.model import RepVGGPoseModel
 
 
 def build_slp(
@@ -104,7 +105,7 @@ def main(
     output_slp_path: Path,
     protected_frame_indices: list[int] | None = None,
     frames_per_trial: int | None = None,
-    n_keypoints: int = 37,
+    n_keypoints: int = N_KEYPOINTS,
     batch_size: int = 128,
     override: bool = False,
 ) -> None:
@@ -133,7 +134,7 @@ def main(
             "label"). Empty/unset means every frame is a candidate.
         frames_per_trial: If set, only predict this many randomly-sampled
             (fixed seed 0, independently per trial) non-protected frames,
-            instead of every one -- for a fast per-round quality check
+            instead of every one, for a fast per-round quality check
             rather than exhaustive predictions. Frames neither protected
             nor sampled are left as NaN in the `.h5` (not carried over from
             `input_path`, for the same reason `protected_frame_indices`

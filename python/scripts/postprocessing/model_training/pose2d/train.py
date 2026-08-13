@@ -28,13 +28,14 @@ from torch.utils.data import DataLoader, get_worker_info
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from spotlight_postprocessing.pose2d.dataset import (
+from spotlight.postprocessing.pose2d.constants import (
     HEATMAP_SIGMA,
     INPUT_SIZE,
-    PoseDataset,
+    N_KEYPOINTS,
 )
-from spotlight_postprocessing.pose2d.export import export_checkpoint
-from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
+from spotlight.postprocessing.pose2d.dataset import PoseDataset
+from spotlight.postprocessing.pose2d.export import export_checkpoint
+from spotlight.postprocessing.pose2d.model import RepVGGPoseModel
 
 
 def build_model(
@@ -172,7 +173,7 @@ def main(
     val_h5_paths: list[Path],
     checkpoint_dir: Path,
     frame_cache_root: Path,
-    n_keypoints: int = 37,
+    n_keypoints: int = N_KEYPOINTS,
     batch_size: int = 16,
     n_epochs: int = 20,
     learning_rate: float = 1e-3,
@@ -205,22 +206,22 @@ def main(
         learning_rate: AdamW learning rate for the heatmap head, reached at
             the end of warmup.
         backbone_lr_scale: The pretrained RepVGG-A0 backbone trains at
-            `learning_rate * backbone_lr_scale`, not `learning_rate` itself
-            -- a uniform LR sized for the randomly-initialized head is too
+            `learning_rate * backbone_lr_scale`, not `learning_rate` itself:
+            a uniform LR sized for the randomly-initialized head is too
             aggressive for a pretrained backbone and destabilizes its
             BatchNorm running statistics. 1.0 disables the split (backbone
             == head LR).
         warmup_steps: Linearly ramp both LRs from 10% to 100% of their
-            target over this many optimizer steps, then hold constant --
+            target over this many optimizer steps, then hold constant:
             matters most here since the head's early gradients (random
             init) are large and noisy. 0 disables warmup.
         pretrained_backbone: Start the RepVGG-A0 backbone from ImageNet weights.
             Pointless (and wastes a download) if `init_checkpoint_path` is
-            also set, since that overwrites the whole model right after --
+            also set, since that overwrites the whole model right after:
             pass `--no-pretrained-backbone` alongside it.
         init_checkpoint_path: If set, load this full model state dict (e.g.
             a previous round's `best.pt`) right after building the model,
-            before training -- for fine-tuning an already-trained checkpoint
+            before training, for fine-tuning an already-trained checkpoint
             on a new, smaller dataset instead of starting from ImageNet
             weights and a randomly-initialized head. Unset trains from
             scratch (`pretrained_backbone` alone), as every round through
@@ -233,7 +234,7 @@ def main(
             real training run.
         heatmap_sigma: Standard deviation (in heatmap-output pixels, e.g. at
             a 60x60 output that's `INPUT_SIZE / 60` input pixels) of each
-            keypoint's Gaussian training target -- see `dataset.HEATMAP_SIGMA`.
+            keypoint's Gaussian training target: see `dataset.HEATMAP_SIGMA`.
         seed: Random seed for model init (when not using
             `init_checkpoint_path`), data shuffling, and augmentation, plus
             `cudnn.deterministic=True`/`cudnn.benchmark=False` below, so a
@@ -263,7 +264,7 @@ def main(
         if pretrained_backbone:
             logger.warning(
                 "init_checkpoint_path is set; pretrained_backbone's ImageNet "
-                "init will be immediately overwritten -- pass "
+                "init will be immediately overwritten. Pass "
                 "--no-pretrained-backbone to skip the wasted download."
             )
         logger.info(f"Initializing from checkpoint: {init_checkpoint_path}")

@@ -1,7 +1,7 @@
 #!/bin/bash -l
 # Converts each trial's final promoted `.slp` into the dense, one-row-per-
 # frame `.h5` schema (via `slp_convert_h5.py --slp-to-h5`) that
-# `spotlight_postprocessing.pose2d`'s training `Dataset` reads.
+# `spotlight.postprocessing.pose2d`'s training `Dataset` reads.
 # `slp_convert_h5.py` is single-video only, so this runs once per trial
 # rather than on the combined `merged_promoted.slp`.
 #

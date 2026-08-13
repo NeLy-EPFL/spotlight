@@ -3,8 +3,8 @@
 `.slp` (`labels/first_round/labels.v005.slp`) into one small, versionable
 JSON:
 
-- The real skeleton (node names, edges, symmetries) -- see
-  `spotlight_postprocessing.pose2d.io_utils.skeleton_json_dict`/
+- The real skeleton (node names, edges, symmetries): see
+  `spotlight.postprocessing.pose2d.io_utils.skeleton_json_dict`/
   `load_skeleton_json`. Building a skeleton from bare node names elsewhere
   drops edges, leaving the SLEAP GUI unable to draw it.
 - `hand_labeled_frames`: `{"<genotype>__<fly_trial>": [frame_idx, ...]}` for
@@ -27,7 +27,7 @@ import sleap_io as sio
 import tyro
 from loguru import logger
 
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     parse_genotype_trial,
     skeleton_json_dict,

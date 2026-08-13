@@ -3,7 +3,7 @@
 one trial (see `scripts/postprocessing/model_training/localization/cache_fullsize_frames.py`),
 predicting head/thorax/abdomen position and flip probability for each.
 
-Reads cached frames directly, not the source video -- that trial must
+Reads cached frames directly, not the source video: that trial must
 already be cached at `output_size` first. Predictions are saved densely
 (one row per raw video frame, NaN for any frame missing from the cache),
 with keypoints converted back to the raw fullsize camera frame's own pixel
@@ -29,17 +29,17 @@ import tyro
 from loguru import logger
 from tqdm import tqdm
 
-from spotlight_postprocessing.localization.dataset import (
+from spotlight.postprocessing.localization.constants import (
     COARSE_KEYPOINTS,
-    FULLSIZE_VIDEO_RELPATH,
     OUTPUT_SIZE,
     SCALE_FACTOR,
 )
-from spotlight_postprocessing.localization.io_utils import (
+from spotlight.postprocessing.localization.dataset import FULLSIZE_VIDEO_RELPATH
+from spotlight.postprocessing.localization.io_utils import (
     save_localization_predictions_h5,
 )
-from spotlight_postprocessing.localization.model import TinyLocalizationModel
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.localization.model import TinyLocalizationModel
+from spotlight.postprocessing.pose2d.io_utils import (
     check_output_path,
     load_pose_h5,
     parse_trial_identity,
@@ -96,7 +96,7 @@ def main(
         output_size: `(width, height)` cached frames were resized to; see
             `dataset.OUTPUT_SIZE`.
         use_global_context: Must match what `checkpoint_path` was actually
-            trained with -- False for v1-v5 checkpoints, True from v6 on
+            trained with: False for v1-v5 checkpoints, True from v6 on
             (see `model.GlobalContextBlock`/`train.py`'s own flag).
         batch_size: Frames per inference batch.
         override: If True, overwrite `output_h5_path` if it already exists.

@@ -32,7 +32,7 @@ from pathlib import Path
 import sleap_io as sio
 from loguru import logger
 
-from spotlight_postprocessing.pose2d.io_utils import (
+from spotlight.postprocessing.pose2d.io_utils import (
     parse_genotype_trial,
     rebuild_instance,
     user_labeled_frames,
