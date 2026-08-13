@@ -1,6 +1,3 @@
-> [!NOTE]
-> **Index of Spotlight-related repositories:** see [go.epfl.ch/spotlight-poseforge](http://go.epfl.ch/spotlight-poseforge#code).
-
 # spotlight
 
 Offline Python tools for the Spotlight recording system:
@@ -38,3 +35,10 @@ postprocess-recording ~/data/spotlight/20250613-fly1b-002/
 | *(run directly)* | `scripts/tools/set_up_arenas.py` | Regenerate every bundled arena's config assets from its `arena_spec.pdf`. |
 
 See the [wiki](https://github.com/NeLy-EPFL/spotlight-control/wiki) for the full procedure.
+
+## Testing
+
+```bash
+uv sync --extra postprocessing
+uv run pytest
+```
