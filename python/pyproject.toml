@@ -50,9 +50,11 @@ postprocessing = [
     "onnx>=1.22.0",
     "onnxscript>=0.7.1",
 
-    # invkin: QuickIK-based IK/FK fit (FlyGym physics replay stays in
-    # poseforge2 -- this pipeline only needs the IK solve + a cv2 3D panel)
+    # invkin: QuickIK-based IK/FK fit, plus a CPU FlyGym physics replay of
+    # the solved joint angles for the QA video's row-2 replay panel (see
+    # invkin/flygym_replay.py).
     "quickik",
+    "flygym",
 
     # QA video: matplotlib is in the base deps already (calibration needs
     # it too); cmasher is the QA video's own colormap borrowing (see
@@ -65,6 +67,8 @@ postprocessing = [
 [tool.uv.sources]
 # Rust/PyO3 inverse kinematics solver
 quickik = { path = "../../quickik/python", editable = true }
+# CPU physics replay for the QA video's row-2 panel
+flygym = { path = "../../flygym", editable = true }
 
 [tool.uv]
 torch-backend = "auto"

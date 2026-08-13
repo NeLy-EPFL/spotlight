@@ -73,6 +73,11 @@ class PostprocessingParams:
     ik: bool = True
     """Fit inverse kinematics from the 2D pose. Requires `pose2d`."""
 
+    replay: bool = True
+    """QA video only: replay the solved IK joint angles in FlyGym (CPU
+    physics) and show it as the row-2 panel next to the synthetic 3D IK
+    view. Requires `ik`."""
+
     # --- Model batch sizes ---
     localization_batch_size: int | Literal["auto"] = "auto"
     """Localization model batch size. "auto" (default) scales with the
@@ -157,6 +162,12 @@ class PostprocessingParams:
     encoding them). Compositing is CPU-only, so it can use more
     parallelism than `visualization_num_workers` without hitting the GPU
     session limit."""
+
+    replay_num_workers: int = -1
+    """FlyGym replay worker count (one IK period per task). CPU-only and
+    runs before the QA video's own render/encode step starts, so unlike
+    `visualization_num_workers` it isn't limited by the GPU's NVENC session
+    count. -1 (default) uses all cores, via joblib's `n_jobs`."""
 
     # --- Misc ---
     profile_visualization: bool = False
@@ -386,6 +397,8 @@ def postprocess_recording_data(
             with_muscle=params.muscle,
             with_pose2d=params.pose2d,
             with_ik=params.ik,
+            with_replay=params.replay,
+            behavior_fps=behavior_fps,
             flipped_prob=(behavior_result["flipped_prob"] if behavior_result else None),
             muscle_h5_path=muscle_h5_path,
             muscle_dataset_name=muscle_dataset_name,
@@ -403,6 +416,7 @@ def postprocess_recording_data(
             orientation_filter_sigma=params.orientation_filter_sigma,
             num_workers=params.visualization_num_workers,
             composite_workers=params.visualization_composite_workers,
+            replay_num_workers=params.replay_num_workers,
             profile=params.profile_visualization,
             colormap=params.colormap,
         )

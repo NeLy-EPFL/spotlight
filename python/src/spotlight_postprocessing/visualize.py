@@ -129,6 +129,7 @@ PANEL_NAMES = {
     "muscle": "Muscle recording (cropped)",
     "pose2d": "2D pose",
     "ik3d": "IK-reconstructed 3D pose",
+    "replay": "NeuroMechFly replay",
 }
 POSE2D_RAW_LEGEND_LINE = "gray: raw predictions"
 POSE2D_IK_LEGEND_LINES = [POSE2D_RAW_LEGEND_LINE, "colored: IK fit"]
@@ -430,12 +431,13 @@ def _precompute_panel_overlays(
     with_pose2d: bool,
     with_row2: bool,
     with_ik: bool,
+    with_replay: bool,
     crop_dim: int | None,
     playback_speed: float,
 ) -> tuple[dict, list[tuple[tuple[int, int], tuple[int, int]]]]:
     """One `_make_panel_overlay` per active panel slot, keyed "raw",
-    "aligned", "muscle", "pose2d", "ik3d", plus "speed" (the whole-frame
-    playback-speed indicator) -- each sized to that panel's own actual
+    "aligned", "muscle", "pose2d", "ik3d", "replay", plus "speed" (the
+    whole-frame playback-speed indicator) -- each sized to that panel's own actual
     final rendered dimensions, computed once per trial (not per frame or
     per chunk) and reused by every `_render_chunk` worker. Also returns
     the panel-border line segments (see `_compute_border_lines`), which
@@ -509,6 +511,11 @@ def _precompute_panel_overlays(
         grid_label = f"grid: {GRID_SPACING_MM:g} mm"
         overlays["ik3d"] = _make_panel_overlay(
             PANEL_SIZE, PANEL_SIZE, PANEL_NAMES["ik3d"], None, None, grid_label
+        )
+        row2_widths.append(PANEL_SIZE)
+    if with_row2 and with_ik and with_replay:
+        overlays["replay"] = _make_panel_overlay(
+            PANEL_SIZE, PANEL_SIZE, PANEL_NAMES["replay"], None, None, None
         )
         row2_widths.append(PANEL_SIZE)
 
@@ -662,6 +669,9 @@ def _render_chunk(
     show_ik: np.ndarray | None,
     th_idx: int | None,
     thc_idxs: tuple | None,
+    with_replay: bool,
+    replay_frames_h5_path: Path | None,
+    replay_frame_lookup: np.ndarray | None,
     play_fps: float,
     crf: int,
     preset: str | None,
@@ -713,6 +723,25 @@ def _render_chunk(
                 int(fi): fetched[slot_by_pos[int(p)]]
                 for fi, p in zip(frame_idxs, row_pos)
                 if p >= 0
+            }
+
+    # Same batched-read pattern as the muscle rows above: this chunk's
+    # replay frames live in `replay_frames_h5_path` (a full-trial dataset,
+    # too large to pass through joblib's per-chunk pickling), so fetch only
+    # the unique frame indices this chunk actually needs.
+    replay_frame_by_idx = {}
+    if with_replay and replay_frames_h5_path is not None:
+        frame_idxs = np.arange(chunk_start, chunk_end)
+        chunk_lookup = replay_frame_lookup[chunk_start:chunk_end]
+        needed = sorted({int(idx) for idx in chunk_lookup if idx >= 0})
+        if needed:
+            with h5py.File(replay_frames_h5_path, "r") as f:
+                fetched = f["frames"][needed]
+            slot_by_idx = {idx: s for s, idx in enumerate(needed)}
+            replay_frame_by_idx = {
+                int(fi): fetched[slot_by_idx[int(idx)]]
+                for fi, idx in zip(frame_idxs, chunk_lookup)
+                if idx >= 0
             }
 
     if with_ik:
@@ -878,6 +907,24 @@ def _render_chunk(
                 )
             row2.append(_apply_overlay(panel_3d, panel_overlays.get("ik3d")))
 
+        if with_row2 and with_ik and with_replay:
+            # Gated on the same show_pose_overlay/show_ik condition as the
+            # ik3d panel above (this is a replay of the same IK fit), via
+            # `replay_frame_lookup[i]`: -1 wherever that condition doesn't
+            # hold (see `generate_summary_video`), else an index into
+            # `flygym_replay_frames.h5`, already batch-fetched into
+            # `replay_frame_by_idx` above -- already nearest-neighbor-held
+            # across any `show_ik`-bridged gap the same way `fk_3d_mm` is.
+            replay_img = replay_frame_by_idx.get(i)
+            if replay_img is not None:
+                # flygym's own renderer output is already RGB, matching
+                # this whole pipeline's convention (see module comment on
+                # `YELLOW`/`GRAY`/etc.) -- no BGR conversion needed here.
+                replay_panel = replay_img
+            else:
+                replay_panel = np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
+            row2.append(_apply_overlay(replay_panel, panel_overlays.get("replay")))
+
         row1_img = np.hstack(row1)
         if with_row2:
             row2_img = np.hstack(row2)
@@ -951,6 +998,8 @@ def generate_summary_video(
     with_muscle: bool,
     with_pose2d: bool,
     with_ik: bool,
+    with_replay: bool,
+    behavior_fps: float,
     flipped_prob: np.ndarray | None,
     muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
@@ -968,6 +1017,7 @@ def generate_summary_video(
     orientation_filter_sigma: float = 5.0,
     num_workers: int = DEFAULT_NUM_WORKERS,
     composite_workers: int = DEFAULT_COMPOSITE_WORKERS,
+    replay_num_workers: int = -1,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     max_frames: int | None = None,
     profile: bool = False,
@@ -1005,12 +1055,13 @@ def generate_summary_video(
 
     pose2d_data = node_names = edges = point_colors = edge_colors = None
     fk_2d_px = fk_3d_mm = show_ik = show_pose_overlay = None
+    replay_frames_h5_path = replay_frame_lookup = None
     th_idx = None
     thc_idxs = None
     if with_pose2d:
         from spotlight_postprocessing.invkin.io_utils import load_kinematics_h5
 
-        from make_videos import EXCLUDED_EDGE_NAME_PAIRS
+        from make_videos import EXCLUDED_EDGE_NAME_PAIRS, find_ik_runs
 
         kinematics = load_kinematics_h5(kinematics_h5_path)
         node_names = kinematics["node_names"]
@@ -1087,6 +1138,108 @@ def generate_summary_video(
             fk_2d_px = _fill_gap_frames(fk_2d_px, ik_attempted, show_ik)
             fk_3d_mm = _fill_gap_frames(fk_3d_mm, ik_attempted, show_ik)
 
+            if with_replay:
+                from flygym.compose import ActuatorType
+
+                from spotlight_postprocessing.invkin.flygym_replay import (
+                    build_dof_reorder_index,
+                    build_fly_and_world,
+                    replay_period_in_worker,
+                )
+
+                periods = find_ik_runs(ik.dof_angles[:n_frames])
+                logger.info(
+                    f"Replaying {len(periods)} IK period(s) in FlyGym for the "
+                    "QA video's row-2 replay panel..."
+                )
+                # Only used here for its DOF ordering (fly/world/orbit_cam
+                # themselves aren't simulated in this process): each
+                # parallel worker below builds its own via
+                # `replay_period_in_worker`, since these aren't picklable
+                # across process boundaries.
+                probe_fly, _, _ = build_fly_and_world()
+                actuated_dof_order = probe_fly.get_actuated_jointdofs_order(
+                    ActuatorType.POSITION
+                )
+                reorder_index = build_dof_reorder_index(ik.dof_names, actuated_dof_order)
+
+                # One period per task, run across a persistent joblib/loky
+                # worker pool (CPU-bound, no GPU contention with the later
+                # chunk-encode step, which hasn't started yet) -- periods are
+                # fully independent, so this parallelizes the same way the
+                # chunk rendering below does. Each worker builds and caches
+                # its own fly/world once (see `replay_period_in_worker`), not
+                # once per period. `return_as="generator"` (order preserved,
+                # same as the chunk-encode pool below) streams each period's
+                # frames to disk as soon as it's ready instead of collecting
+                # every period's frames in memory before writing any of them
+                # -- a full trial's worth would otherwise be several GB held
+                # at once.
+                replay_pool = Parallel(n_jobs=replay_num_workers, return_as="generator")
+                rendered_by_period = replay_pool(
+                    delayed(replay_period_in_worker)(
+                        ik.dof_angles[start:end][:, reorder_index],
+                        behavior_fps,
+                        PANEL_SIZE,
+                    )
+                    for start, end in periods
+                )  # fmt: skip
+
+                # Written as a real (not temp) file, like kinematics.h5:
+                # a per-frame render buffer for a full trial is too large
+                # to pass through joblib/loky's pickling on every chunk
+                # (`_render_chunk` runs in separate worker processes), so
+                # `_render_chunk` instead opens this file itself and reads
+                # only the frames its own chunk needs (see `muscle_h5_path`'s
+                # identical pattern for the muscle channel). `chunks=(1, ...)`
+                # and a low gzip level follow `MuscleH5Writer`'s own
+                # profiled convention (one frame per HDF5 chunk avoids
+                # read-modify-write on partial chunks when writing a
+                # period's worth of frames at a time; level 1 measured 6x
+                # faster than the default for a small size cost, and this
+                # file is a throwaway intermediate, not an archived output).
+                replay_frames_h5_path = postprocessed_dir / "flygym_replay_frames.h5"
+                total_replay_frames = sum(end - start for start, end in periods)
+                replay_frame_lookup = np.full(n_frames, -1, dtype=np.int64)
+                log_every = max(1, len(periods) // 20)
+                with h5py.File(replay_frames_h5_path, "w") as f_replay:
+                    replay_ds = f_replay.create_dataset(
+                        "frames",
+                        shape=(total_replay_frames, PANEL_SIZE, PANEL_SIZE, 3),
+                        dtype="uint8",
+                        chunks=(1, PANEL_SIZE, PANEL_SIZE, 3),
+                        compression="gzip",
+                        compression_opts=1,
+                    )
+                    next_frame_idx = 0
+                    for n_done, ((start, end), rendered) in enumerate(
+                        zip(periods, rendered_by_period), start=1
+                    ):
+                        replay_ds[next_frame_idx : next_frame_idx + len(rendered)] = (
+                            rendered
+                        )
+                        replay_frame_lookup[start:end] = np.arange(
+                            next_frame_idx, next_frame_idx + len(rendered)
+                        )
+                        next_frame_idx += len(rendered)
+                        if n_done % log_every == 0 or n_done == len(periods):
+                            logger.info(
+                                f"Replayed {n_done}/{len(periods)} IK periods..."
+                            )
+                # Nearest-neighbor-hold the replay across any gap
+                # `show_ik`'s own closing bridged (same mechanism as
+                # `fk_2d_px`/`fk_3d_mm` above; works unchanged on an index
+                # array like this one). This only fills in frames `show_ik`
+                # wants shown but `ik_attempted` doesn't cover -- the
+                # reverse case (attempted, i.e. a valid `replay_frame_lookup`
+                # entry, but rejected by `show_ik`'s own mismatch/flip
+                # gating) isn't touched by it, so it's cleared explicitly
+                # right after, matching the ik3d panel's own display gate.
+                replay_frame_lookup = _fill_gap_frames(
+                    replay_frame_lookup, ik_attempted, show_ik
+                )
+                replay_frame_lookup[~show_ik] = -1
+
     muscle_meta = None
     if with_muscle:
         muscle_meta = pd.read_csv(postprocessed_dir / "muscle_frames_metadata.csv")
@@ -1109,6 +1262,7 @@ def generate_summary_video(
         with_pose2d=with_pose2d,
         with_row2=with_pose2d,
         with_ik=with_ik,
+        with_replay=with_replay,
         crop_dim=crop_dim,
         playback_speed=playback_speed,
     )
@@ -1150,7 +1304,10 @@ def generate_summary_video(
                 edges=edges, point_colors=point_colors, edge_colors=edge_colors,
                 show_pose_overlay=show_pose_overlay,
                 with_ik=with_ik, fk_2d_px=fk_2d_px, fk_3d_mm=fk_3d_mm, show_ik=show_ik,
-                th_idx=th_idx, thc_idxs=thc_idxs, play_fps=play_fps, crf=crf,
+                th_idx=th_idx, thc_idxs=thc_idxs,
+                with_replay=with_replay, replay_frames_h5_path=replay_frames_h5_path,
+                replay_frame_lookup=replay_frame_lookup,
+                play_fps=play_fps, crf=crf,
                 preset=preset, mode=encode_mode, composite_workers=composite_workers,
             )  # fmt: skip
 
