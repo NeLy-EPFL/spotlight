@@ -1,6 +1,6 @@
 """QA visualization for one postprocessed recording, cv2/pvio/numpy only:
-matplotlib and cmasher are used only to borrow a font path and a colormap
-(as a precomputed lookup table), never for actual plotting/rendering.
+matplotlib and cmasher are used only to borrow a colormap (as a
+precomputed lookup table), never for actual plotting/rendering.
 Two-row panel grid:
 
     row 1: raw + localization-box overlay | cropped+aligned (best effort) | muscle (if requested)
@@ -64,6 +64,7 @@ import pvio
 from joblib import Parallel, delayed
 from PIL import Image, ImageDraw, ImageFont
 from spotlight.calibration.mapper import SpotlightPositionMapper
+from spotlight.common import get_assets_dir
 from spotlight.postprocessing.common.frame_range import (
     resolve_frame_range_to_file_slice,
 )
@@ -197,18 +198,10 @@ def _pad_to_width_centered(panel: np.ndarray, target_width: int) -> np.ndarray:
 
 
 @functools.lru_cache(maxsize=None)
-def _find_font_path(family: str, weight: str = "normal", style: str = "normal") -> str:
-    """The file path of a matching installed font (e.g. "Arial", "bold")."""
-    import matplotlib.font_manager as fm
-
-    font_props = fm.FontProperties(family=family, weight=weight, style=style)
-    return fm.findfont(font_props)
-
-
-@functools.lru_cache(maxsize=None)
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    path = _find_font_path("Arial", weight="bold" if bold else "normal")
-    return ImageFont.truetype(path, size)
+    filename = "OpenSans-Bold.ttf" if bold else "OpenSans-Regular.ttf"
+    path = get_assets_dir() / "fonts" / "open_sans" / filename
+    return ImageFont.truetype(str(path), size)
 
 
 def _build_colormap_lut(name: str) -> np.ndarray:
