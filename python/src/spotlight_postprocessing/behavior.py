@@ -1,7 +1,10 @@
-"""Behavior frame processing: decode pseudo-BGR JPEGs, run the `TinyLocalizationModel`
-(replacing the old SLEAP-based 3-keypoint aligner), align/crop each frame, and
--- in the same streaming pass, no video round-trip -- run the pose2d model on
-the aligned crop and warp whichever muscle frames land in the current chunk.
+"""Behavior frame processing: decode pseudo-BGR JPEGs, run the localization
+model (replacing the old SLEAP-based 3-keypoint aligner), align/crop each
+frame, and -- in the same streaming pass, no video round-trip -- run the
+pose2d model on the aligned crop and warp whichever muscle frames land in
+the current chunk. Both models load as self-contained fp16 TorchScript
+exports (`torch.jit.load`, see `_load_torchscript_model`), not their own
+Python model classes plus a state-dict checkpoint.
 
 See `spotlight_postprocessing.muscle`/`visualize` for the muscle and
 QA-video stages that consume this module's outputs.
@@ -18,6 +21,7 @@ import h5py
 import numpy as np
 import torch
 from joblib import Parallel, delayed
+from scipy.ndimage import gaussian_filter1d
 
 from spotlight_postprocessing.common.video import StreamingVideoWriter
 from spotlight_postprocessing.io import (
@@ -34,11 +38,9 @@ from spotlight_postprocessing.localization.dataset import (
 from spotlight_postprocessing.localization.dataset import (
     SCALE_FACTOR as LOCALIZATION_SCALE_FACTOR,
 )
-from spotlight_postprocessing.localization.model import TinyLocalizationModel
 from spotlight_postprocessing.pose2d.dataset import (
     INPUT_SIZE as POSE2D_INPUT_SIZE,
 )
-from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
 
 # See `scripts/postprocessing/model_training/localization/visualize_predictions.py`'s own
 # FLIP_DECISION_THRESHOLD -- the model's own sigmoid decision boundary,
@@ -90,17 +92,26 @@ def _expand_chunk(paths: list[Path], num_cpu_workers: int) -> list[np.ndarray]:
     return frames
 
 
-def _load_localization_model(
+def _load_torchscript_model(
     checkpoint_path: Path, device: str
-) -> TinyLocalizationModel:
-    model = TinyLocalizationModel(n_keypoints=3, use_global_context=True).to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+) -> torch.jit.ScriptModule:
+    """Loads an fp16 TorchScript export directly (see `common.export.
+    export_onnx_and_torchscript`) -- self-contained, no model class needed
+    here at all, unlike a plain state-dict checkpoint. Downgraded to fp32
+    on CPU, since fp16 CPU inference is unsupported/slow for many ops."""
+    # `map_location` alone doesn't reliably relocate every tensor a traced
+    # module carries (e.g. a coordinate grid computed once and traced in as
+    # a constant, rather than a registered buffer) -- an explicit `.to()`
+    # does, since it recurses over the whole module.
+    model = torch.jit.load(checkpoint_path, map_location=device).to(device)
+    if device == "cpu":
+        model = model.float()
     model.eval()
     return model
 
 
 def _run_localization_batch(
-    model: TinyLocalizationModel, frames: list[np.ndarray], device: str
+    model: torch.jit.ScriptModule, frames: list[np.ndarray], device: str
 ) -> tuple[np.ndarray, np.ndarray]:
     """`frames`: list of `(H, W)` uint8 monochrome. Returns
     `(keypoints, flipped_prob)`: keypoints `(n, 3, 2)` in raw fullsize
@@ -108,14 +119,13 @@ def _run_localization_batch(
     width, height = LOCALIZATION_OUTPUT_SIZE
     batch = np.stack([cv2.resize(f, (width, height)) for f in frames])
     batch = np.repeat(batch[:, :, :, None], 3, axis=-1)
-    tensor = torch.from_numpy(batch).permute(0, 3, 1, 2).float().to(device) / 255.0
+    # Matches the model's own weight dtype (see `_load_torchscript_model`):
+    # fp16 on GPU (what it was exported as), fp32 on CPU.
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    tensor = torch.from_numpy(batch).permute(0, 3, 1, 2).to(device=device, dtype=dtype)
+    tensor = tensor / 255.0
 
-    with (
-        torch.no_grad(),
-        torch.autocast(
-            device_type=device, dtype=torch.float16, enabled=device == "cuda"
-        ),
-    ):
+    with torch.no_grad():
         pred_keypoints, pred_flip_logit = model(tensor)
 
     raw_points = (
@@ -125,13 +135,6 @@ def _run_localization_batch(
     )
     flipped_prob = torch.sigmoid(pred_flip_logit).float().cpu().numpy()[:, 0]
     return raw_points, flipped_prob
-
-
-def _load_pose2d_model(checkpoint_path: Path, n_keypoints: int, device: str):
-    model = RepVGGPoseModel(n_keypoints, pretrained_backbone=False).to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    model.eval()
-    return model
 
 
 def _heatmaps_to_points(heatmaps: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -152,6 +155,9 @@ def _run_pose2d_batch(
     Returns `(poses, keypoint_scores)`: `(n, n_keypoints, 2)` in the aligned
     crop's own pixel space, `(n, n_keypoints)`."""
     n = len(frames_bgr_or_gray)
+    # Matches the model's own weight dtype (see `_load_torchscript_model`):
+    # fp16 on GPU (what it was exported as), fp32 on CPU.
+    dtype = torch.float16 if device == "cuda" else torch.float32
     all_poses, all_scores = [], []
     for start in range(0, n, batch_size):
         sub = frames_bgr_or_gray[start : start + batch_size]
@@ -160,14 +166,10 @@ def _run_pose2d_batch(
             [cv2.resize(f, (POSE2D_INPUT_SIZE, POSE2D_INPUT_SIZE)) for f in sub_rgb]
         )
         tensor = (
-            torch.from_numpy(resized).permute(0, 3, 1, 2).float().to(device) / 255.0
+            torch.from_numpy(resized).permute(0, 3, 1, 2).to(device=device, dtype=dtype)
         )
-        with (
-            torch.no_grad(),
-            torch.autocast(
-                device_type=device, dtype=torch.float16, enabled=device == "cuda"
-            ),
-        ):
+        tensor = tensor / 255.0
+        with torch.no_grad():
             heatmaps = model(tensor).float().cpu().numpy()
         input_scale = POSE2D_INPUT_SIZE / sub.shape[2]  # sub width (crop_dim)
         heatmap_scale = POSE2D_INPUT_SIZE / heatmaps.shape[-1] / input_scale
@@ -186,13 +188,25 @@ def transform_single_frame_to_align(
     neck_idx: int,
     abdomen_idx: int,
     thorax_y_normalized: float = 0.5,
+    position: np.ndarray | None = None,
+    heading: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Rotate so the fly faces upward (head toward negative y) and crop
     around the thorax. `thorax_y_normalized` places the thorax at that
     fraction of the crop's height (0=top, 1=bottom, 0.5=old centered
-    behavior); horizontal placement is always centered."""
-    rotation_pivot = keypoints[thorax_idx, :]
-    heading = keypoints[neck_idx, :] - keypoints[abdomen_idx, :]
+    behavior); horizontal placement is always centered.
+
+    `position`/`heading` (both `(2,)`) override this frame's own raw thorax
+    position / neck-abdomen heading vector for the rotation itself -- the
+    streaming pass passes in time-smoothed values here (see
+    `_smooth_position_and_heading`), while `keypoints` (used below to build
+    `transformed_keypoints`) always stays this exact frame's own raw fit,
+    smoothed or not. `None` (the default) uses this frame's own raw values
+    for both, unchanged from the pre-smoothing behavior.
+    """
+    rotation_pivot = keypoints[thorax_idx, :] if position is None else position
+    if heading is None:
+        heading = keypoints[neck_idx, :] - keypoints[abdomen_idx, :]
     current_angle = np.rad2deg(np.arctan2(heading[1], heading[0]))
     target_angle = -90
     rotation_angle = target_angle - current_angle
@@ -213,6 +227,87 @@ def transform_single_frame_to_align(
     keypoints_homogeneous = np.hstack([keypoints, np.ones((keypoints.shape[0], 1))])
     transformed_keypoints = (transform_matrix @ keypoints_homogeneous.T).T
     return output_frame, transformed_keypoints, transform_matrix
+
+
+def _fill_nan_keypoints(
+    window: np.ndarray, seed: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Forward-fills any all-NaN frame in `window` (`(n, 3, 2)`) from the
+    previous valid frame, seeded by `seed` (the last valid frame carried
+    over from the previous chunk, or `None` only at the very start of the
+    trial). A leading run with no valid predecessor at all (only possible
+    when `seed` is `None`) is filled from `window`'s own first valid frame
+    instead -- same fallback the old per-frame-only version of this fill
+    used, just applied over this whole (possibly padded) window at once.
+
+    Returns:
+        `(filled, new_seed)`: `new_seed` is the last valid (pre-fill) frame
+        in `window`, to seed the next chunk's call.
+    """
+    filled = window.copy()
+    valid = ~np.isnan(window).any(axis=(1, 2))
+    if not valid.any():
+        if seed is None:
+            raise RuntimeError(
+                "Localization model produced NaN keypoints for the entire "
+                "leading window; cannot align."
+            )
+        filled[:] = seed
+        return filled, seed
+
+    last = seed
+    first_valid = window[np.flatnonzero(valid)[0]]
+    for i in range(len(filled)):
+        if valid[i]:
+            last = filled[i]
+        elif last is not None:
+            filled[i] = last
+        else:
+            filled[i] = first_valid
+    return filled, last
+
+
+def _smooth_position_and_heading(
+    filled_keypoints: np.ndarray,
+    thorax_idx: int,
+    neck_idx: int,
+    abdomen_idx: int,
+    position_denoise_sigma: float,
+    heading_denoise_sigma: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Time-smoothed thorax position and neck-abdomen heading vector, over
+    `filled_keypoints`'s (NaN-free, see `_fill_nan_keypoints`) frame axis.
+
+    Smooths the heading VECTOR's x/y components (not the angle
+    `transform_single_frame_to_align` derives from it), which sidesteps the
+    wraparound a naive angle average would hit near +/-180 degrees --
+    `transform_single_frame_to_align` only ever reads this vector's angle,
+    so no renormalization is needed afterward. `*_denoise_sigma == -1`
+    disables smoothing on that one axis (position or heading independently).
+
+    Args:
+        filled_keypoints: `(n, 3, 2)`, NaN-free.
+        position_denoise_sigma / heading_denoise_sigma: Gaussian sigma, in
+            frames, or -1 to disable.
+
+    Returns:
+        `(position, heading)`, both `(n, 2)` float64.
+    """
+    position = filled_keypoints[:, thorax_idx, :].astype(np.float64)
+    heading = (
+        filled_keypoints[:, neck_idx, :] - filled_keypoints[:, abdomen_idx, :]
+    ).astype(np.float64)
+    if position_denoise_sigma != -1:
+        position = np.stack(
+            [gaussian_filter1d(position[:, a], sigma=position_denoise_sigma) for a in range(2)],
+            axis=1,
+        )  # fmt: skip
+    if heading_denoise_sigma != -1:
+        heading = np.stack(
+            [gaussian_filter1d(heading[:, a], sigma=heading_denoise_sigma) for a in range(2)],
+            axis=1,
+        )  # fmt: skip
+    return position, heading
 
 
 def process_behavior_pipeline(
@@ -239,12 +334,23 @@ def process_behavior_pipeline(
     output_muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
     num_cpu_workers: int = -1,
+    position_denoise_sigma: float = -1,
+    heading_denoise_sigma: float = -1,
+    encode_mode: str = "auto",
 ) -> dict:
     """The single streaming pass: decode -> localize -> align -> (pose2d,
     muscle) -> write video(s), chunk by chunk. Model inference always runs
     on in-memory arrays, strictly before any frame is bound into a video
     (the aligned/fullsize videos and the muscle H5 are the only things
     encoded/written to disk here; pose2d never has to decode a video).
+
+    `position_denoise_sigma`/`heading_denoise_sigma` (frames, `-1` disables)
+    Gaussian-smooth the thorax position / neck-abdomen heading actually used
+    for each frame's crop (see `_smooth_position_and_heading`) -- this is a
+    real change to the alignment itself, not a display-only effect: a small
+    lookahead (see `pad_frames` below) is decoded and localized past each
+    chunk's own end purely to give that smoothing real context at the chunk
+    boundary, then discarded.
 
     Returns a dict with `flipped_prob` (`(n_frames,)`, for visualization),
     `n_frames`, and whichever output paths were actually produced.
@@ -276,14 +382,14 @@ def process_behavior_pipeline(
     if output_fullsize_video_path is not None:
         check_output_path_against_alignment_flag(output_fullsize_video_path, alignment)
 
-    localization_model = _load_localization_model(localization_checkpoint_path, device)
+    localization_model = _load_torchscript_model(localization_checkpoint_path, device)
     write_aligned = alignment in ("aligned", "both")
     write_fullsize = alignment in ("fullsize", "both")
 
     aligned_writer = (
         StreamingVideoWriter(
             output_aligned_video_path, behavior_video_fps, behavior_video_crf,
-            behavior_video_preset,
+            behavior_video_preset, mode=encode_mode,
         )
         if write_aligned
         else None
@@ -291,7 +397,7 @@ def process_behavior_pipeline(
     fullsize_writer = (
         StreamingVideoWriter(
             output_fullsize_video_path, behavior_video_fps, behavior_video_crf,
-            behavior_video_preset,
+            behavior_video_preset, mode=encode_mode,
         )
         if write_fullsize
         else None
@@ -303,9 +409,7 @@ def process_behavior_pipeline(
         pose2d_node_names = json.loads(pose2d_skeleton_json_path.read_text())[
             "node_names"
         ]
-        pose2d_model = _load_pose2d_model(
-            pose2d_checkpoint_path, len(pose2d_node_names), device
-        )
+        pose2d_model = _load_torchscript_model(pose2d_checkpoint_path, device)
 
     muscle_writer = None
     if run_muscle:
@@ -340,6 +444,13 @@ def process_behavior_pipeline(
     def _tick():
         return time.perf_counter()
 
+    # Padding (raw files) purely to give position/heading smoothing real
+    # context at each chunk's boundary -- see the docstring above. `+1`
+    # keeps a whole-frame margin against `2 * sigma`'s own rounding.
+    sigmas = [s for s in (position_denoise_sigma, heading_denoise_sigma) if s != -1]
+    pad_frames = int(np.ceil(2 * max(sigmas))) + 1 if sigmas else 0
+    pad_files = -(-pad_frames // 3)  # ceil division
+
     # Chunk over raw (pseudo-BGR) files, sized so the expanded frame count
     # per chunk is close to localization_batch_size (each file expands to 3 frames).
     path_chunk_size = max(localization_batch_size // 3, 1)
@@ -348,20 +459,56 @@ def process_behavior_pipeline(
         chunk_start = path_start * 3
         chunk_end = min(path_end * 3, n_frames)
         chunk_paths = raw_behavior_frame_paths[path_start:path_end]
+        # Lookahead-only: extra raw files past this chunk's own end, decoded
+        # and localized purely for the smoothing window's right edge below,
+        # never written to any output. The left edge instead reuses this
+        # trial's own already-computed history (free, no extra decode) --
+        # see `pad_pre`.
+        lookahead_paths = raw_behavior_frame_paths[path_end : path_end + pad_files]
 
         t0 = _tick()
         chunk_frames = _expand_chunk(chunk_paths, num_cpu_workers)[
             : chunk_end - chunk_start
         ]
+        lookahead_frames = (
+            _expand_chunk(lookahead_paths, num_cpu_workers) if lookahead_paths else []
+        )
         timers["decode"] += _tick() - t0
 
         t0 = _tick()
         raw_points, flip_probs = _run_localization_batch(
             localization_model, chunk_frames, device
         )
+        lookahead_points = (
+            _run_localization_batch(localization_model, lookahead_frames, device)[0]
+            if lookahead_frames
+            else np.empty((0, 3, 2), dtype=np.float32)
+        )
         timers["localization_infer"] += _tick() - t0
         keypoints_xy_pre_alignment[chunk_start:chunk_end] = raw_points
         flipped_prob[chunk_start:chunk_end] = flip_probs
+
+        pad_pre = min(pad_frames, chunk_start)
+        window = np.concatenate(
+            [
+                keypoints_xy_pre_alignment[chunk_start - pad_pre : chunk_start],
+                raw_points,
+                lookahead_points,
+            ],
+            axis=0,
+        )
+        window, last_valid_keypoints = _fill_nan_keypoints(window, last_valid_keypoints)
+        smoothed_position, smoothed_heading = _smooth_position_and_heading(
+            window, thorax_idx, neck_idx, abdomen_idx,
+            position_denoise_sigma, heading_denoise_sigma,
+        )  # fmt: skip
+        # Trim the padding back off: everything above ran over
+        # [chunk_start - pad_pre, chunk_end + len(lookahead_frames)) so the
+        # Gaussian filter had real neighbors at this chunk's own edges; only
+        # this chunk's own frames are actually used below.
+        filled_keypoints = window[pad_pre : pad_pre + len(raw_points)]
+        smoothed_position = smoothed_position[pad_pre : pad_pre + len(raw_points)]
+        smoothed_heading = smoothed_heading[pad_pre : pad_pre + len(raw_points)]
 
         aligned_batch = np.empty(
             (len(chunk_frames), crop_dim, crop_dim), dtype=np.uint8
@@ -371,29 +518,10 @@ def process_behavior_pipeline(
         )
         t0 = _tick()
         for i, frame in enumerate(chunk_frames):
-            keypoints = raw_points[i]
-            if np.isnan(keypoints).any():
-                # Forward-fill (matches the old whole-trial fill_gaps_in_2dpose_sequence
-                # for interior gaps); a leading all-NaN run at the very start of the
-                # trial is the one case that can't be forward-filled -- fall back to
-                # this chunk's own first valid frame once one appears.
-                keypoints = last_valid_keypoints
-                if keypoints is None:
-                    valid_in_chunk = [
-                        p for p in raw_points[i:] if not np.isnan(p).any()
-                    ]
-                    if not valid_in_chunk:
-                        raise RuntimeError(
-                            "Localization model produced NaN keypoints for the entire "
-                            "leading chunk; cannot align."
-                        )
-                    keypoints = valid_in_chunk[0]
-            else:
-                last_valid_keypoints = keypoints
-
             aligned_frame, aligned_kp, transform_matrix = transform_single_frame_to_align(
-                frame, keypoints, crop_dim, thorax_idx, neck_idx, abdomen_idx,
-                thorax_y_normalized,
+                frame, filled_keypoints[i], crop_dim, thorax_idx, neck_idx, abdomen_idx,
+                thorax_y_normalized, position=smoothed_position[i],
+                heading=smoothed_heading[i],
             )  # fmt: skip
             aligned_batch[i] = aligned_frame
             keypoints_xy_post_alignment[chunk_start + i] = aligned_kp

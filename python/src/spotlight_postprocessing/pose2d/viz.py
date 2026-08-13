@@ -1,6 +1,6 @@
 """Shared skeleton coloring and cv2 drawing for this project's pose
 visualizations. Used by `scripts/postprocessing/model_training/pose2d/visualize_predictions.py`
-and `scripts/postprocessing/make_videos.py`, so both draw the same skeleton in
+and `invkin.qa_clips`, so both draw the same skeleton in
 the same colors.
 """
 

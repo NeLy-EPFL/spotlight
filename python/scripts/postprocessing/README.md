@@ -10,6 +10,16 @@ the end of that section for what changed in the move).
 
 ## Tools
 
+**Update**: `solve_ik.py` and `make_videos.py` (and the `run_solve_ik.sh`/
+`run_make_videos.sh` caller scripts below) no longer exist as standalone
+CLIs -- their logic is now plain importable functions,
+`spotlight_postprocessing.invkin.solve_ik.solve_ik` and
+`spotlight_postprocessing.invkin.qa_clips.render_qa_clips`, called directly
+(no subprocess) from `postprocess-recording`'s own pipeline. The rest of
+this section, and the "Caller scripts" history below, describes the
+now-superseded CLI-based workflow as it was used at the time; kept for the
+experiment record, not as current usage instructions.
+
 Reusable, general-purpose CLI tools for fitting inverse kinematics (via
 [QuickIK](../../../../quickik)) to this project's 2D pose predictions (see
 `scripts/postprocessing/model_training/pose2d/`), and for rendering QA videos of the fit. Each
@@ -44,7 +54,7 @@ cd python/src/spotlight_tools/assets && uv run python ../../../../../flygym/scri
    `visualize_predictions.py` (see `pose2d.viz`), plus a second
    panel with a synthetic 3D view of the IK reconstruction.
 
-## Caller scripts
+## Caller scripts (historical; scripts since removed, see note above)
 
 Hardcoded-parameter orchestration scripts for this project's specific
 dataset - no CLI args, chaining the reusable tools above over

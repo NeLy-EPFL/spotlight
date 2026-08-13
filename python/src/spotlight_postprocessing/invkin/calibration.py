@@ -1,6 +1,6 @@
 """Per-trial calibration loading and pixel/mm conversion helpers.
 
-Used by `scripts/postprocessing/solve_ik.py`: `convert_px_to_mm` to get
+Used by `invkin.solve_ik`: `convert_px_to_mm` to get
 physical (mm) keypoints to feed QuickIK, and `convert_mm_to_px` (the
 reverse) to map its FK output back to the aligned pixel domain for
 `fk_2d_px`.

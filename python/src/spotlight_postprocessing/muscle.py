@@ -357,6 +357,30 @@ def plan_muscle_behavior_mapping(
     )
 
 
+def restrict_mapping_to_frame_range(
+    mapping: MuscleBehaviorMapping, frame_start: int, frame_end: int
+) -> MuscleBehaviorMapping:
+    """Restrict a mapping (built against the *full* trial) to muscle frames
+    whose `corresponding_behavior_frame_id` falls in `[frame_start,
+    frame_end)`, re-expressed relative to `frame_start` (see
+    `--frame-range`'s CLI docs): once the behavior pipeline itself only
+    processes that sub-range, its own frame 0 *is* `frame_start`, so this
+    mapping's behavior-frame ids must shift to match, not just filter.
+    """
+    ids = mapping.corresponding_behavior_frame_id
+    keep = (ids >= frame_start) & (ids < frame_end)
+    return MuscleBehaviorMapping(
+        muscle_image_paths=[p for p, k in zip(mapping.muscle_image_paths, keep) if k],
+        corresponding_behavior_frame_id=ids[keep] - frame_start,
+        x_pos_mm_interp=mapping.x_pos_mm_interp[keep],
+        y_pos_mm_interp=mapping.y_pos_mm_interp[keep],
+        acquired_time_us=mapping.acquired_time_us[keep],
+        received_time_us=mapping.received_time_us[keep],
+        homography_mapper=mapping.homography_mapper,
+        output_dim=mapping.output_dim,
+    )
+
+
 def warp_single_muscle_frame_to_behavior(
     muscle2behavior_trans_mat: np.ndarray,
     behavior_alignment_trans_mat: np.ndarray,

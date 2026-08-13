@@ -23,7 +23,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import tyro
-from export_model import main as export_checkpoint
 from loguru import logger
 from torch.utils.data import DataLoader, get_worker_info
 from torch.utils.tensorboard import SummaryWriter
@@ -34,6 +33,7 @@ from spotlight_postprocessing.pose2d.dataset import (
     INPUT_SIZE,
     PoseDataset,
 )
+from spotlight_postprocessing.pose2d.export import export_checkpoint
 from spotlight_postprocessing.pose2d.model import RepVGGPoseModel
 
 
@@ -125,8 +125,8 @@ def mean_keypoint_pixel_error(
 
 def export_checkpoints(checkpoint_dir: Path, n_keypoints: int) -> None:
     """Exports whichever of `last.pt`/`best.pt` exist under `checkpoint_dir`
-    to ONNX and TorchScript (fp32 and fp16 each), via `export_model.py`'s
-    own `main` (called directly, not as a subprocess).
+    to ONNX and TorchScript (fp32 and fp16 each), via
+    `pose2d.export.export_checkpoint`.
     """
     for name in ("last", "best"):
         checkpoint_path = checkpoint_dir / f"{name}.pt"

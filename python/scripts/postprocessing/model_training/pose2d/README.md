@@ -62,11 +62,17 @@ several single-video `.slp` files with disjoint videos into one),
 outliers, left/right separation), `extract_metadata_from_initial_slp.py`
 (the real skeleton plus which frames are genuinely hand-labeled, into one
 JSON other tools take as `--skeleton-json-path`/`--metadata-json-path`),
-`split_train_val.py` (seeded train/val split that always keeps a
-well-hand-labeled trial in train), and `export_model.py` (RepVGG checkpoint
-to ONNX -- on hold until real-time inference moves to C++ -- and
-TorchScript, for loading in a different codebase without it; both at fp32
-and fp16).
+and `split_train_val.py` (seeded train/val split that always keeps a
+well-hand-labeled trial in train).
+
+Exporting a checkpoint (RepVGG, to ONNX -- on hold until real-time inference
+moves to C++ -- and TorchScript, for loading in a different codebase
+without it; both at fp32 and fp16) is a plain importable function now, not
+a CLI tool: `pose2d.export.export_checkpoint`, in
+`src/spotlight_postprocessing/pose2d/`. `train.py` calls it automatically
+whenever training stops -- there's no separate standalone invocation for
+it anymore (run it ad hoc via `tyro.cli` if a checkpoint ever needs
+re-exporting outside of training).
 
 ## Caller scripts
 

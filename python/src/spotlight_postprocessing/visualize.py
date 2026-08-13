@@ -21,17 +21,19 @@ skeleton, IK fit): the pose2d panel's background (the same cropped frame)
 still shows. Row 2's overlay is likewise hidden (background still shown)
 wherever the raw 2D pose's own weighted keypoint confidence drops below
 `POSE2D_CONFIDENCE_THRESHOLD` (see `show_pose_overlay`) -- both this and
-the flip decision are denoised with `acceptance_mask_window` before use.
-IK is additionally not drawn wherever `kinematics.h5`'s `inverse_kinematics/`
-group has no fit for that frame (an internal gap-detection decision made by
-`solve_ik.py`, not exposed here) or wherever its fk-to-prediction mismatch
-exceeds `ik_mismatch_threshold` (a display-only rejection; kinematics.h5
-itself never drops data for this) -- the raw 2D pose skeleton itself is
-still drawn in either case, whenever `show_pose_overlay` allows it.
+the flip decision are denoised (`confidence_denoise_window`/
+`flip_denoise_window`) before use. IK is additionally not drawn wherever
+`inverse_kinematics.h5`'s own `mismatch_mask` rejects that frame (already
+denoised and saved by `solve_ik.py` itself, see `invkin.io_utils`'s module
+docstring -- never drops data from the file itself, only gates display) --
+the raw 2D pose skeleton itself is still drawn regardless, whenever
+`show_pose_overlay` allows it.
 
-Reads back already-computed outputs (video files, muscle H5,
-`kinematics.h5`) -- no model re-inference here, that already happened in
-`behavior.process_behavior_pipeline` and `scripts/postprocessing/solve_ik.py`.
+Reads back already-computed outputs (video files, muscle H5, `pose2d.h5`,
+`inverse_kinematics.h5`, `physics_replay.h5`) -- no model re-inference and
+no FlyGym replay here, that already happened in
+`behavior.process_behavior_pipeline`, `invkin.solve_ik`, and
+`invkin.replay_physics`.
 
 Rendering is chunked and parallelized (joblib): each worker composites its
 own frame range and encodes it directly to its own small temp video via
@@ -49,10 +51,8 @@ import json
 import logging
 import pstats
 import subprocess
-import sys
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cmasher as cmr
@@ -63,16 +63,19 @@ import pandas as pd
 import pvio
 from joblib import Parallel, delayed
 from PIL import Image, ImageDraw, ImageFont
-from scipy.ndimage import binary_closing, binary_opening, gaussian_filter1d
 from spotlight_tools.calibration.mapper import SpotlightPositionMapper
-from spotlight_postprocessing.common.video import pad_to_macroblock
-from spotlight_postprocessing.localization.box import (
-    fit_disambiguated_direction,
-    raw_domain_box_corners,
+from spotlight_postprocessing.common.frame_range import (
+    resolve_frame_range_to_file_slice,
 )
+from spotlight_postprocessing.common.smoothing import (
+    smooth_acceptance_mask,
+    smooth_unit_vectors,
+)
+from spotlight_postprocessing.common.video import pad_to_macroblock
 from spotlight_postprocessing.localization.flip_label import (
     weighted_confidence,
 )
+from spotlight_postprocessing.pose2d.geometry import apply_affine, invert_affine
 from spotlight_postprocessing.pose2d.viz import LINE_THICKNESS, POINT_RADIUS
 from spotlight_postprocessing.pose2d.viz import (
     build_edge_colors,
@@ -82,7 +85,6 @@ from spotlight_postprocessing.pose2d.viz import (
 
 PANEL_SIZE = 450
 FLIP_DECISION_THRESHOLD_DEFAULT = 0.5
-IK_MISMATCH_THRESHOLD_DEFAULT = 0.3
 # Not exposed as a CLI flag: an internal display-only cutoff, same value
 # and same `weighted_confidence` proxy as `solve_ik.py`'s own (also
 # internal, also unexposed) IK gap-detection threshold -- below this, the
@@ -129,7 +131,7 @@ PANEL_NAMES = {
     "muscle": "Muscle recording (cropped)",
     "pose2d": "2D pose",
     "ik3d": "IK-reconstructed 3D pose",
-    "replay": "NeuroMechFly replay",
+    "replay": "Physics replay",
 }
 POSE2D_RAW_LEGEND_LINE = "gray: raw predictions"
 POSE2D_IK_LEGEND_LINES = [POSE2D_RAW_LEGEND_LINE, "colored: IK fit"]
@@ -137,13 +139,6 @@ RAW_BOX_LEGEND_LINES = [
     "yellow: accepted",
     "gray: rejected (not upright or too close to edge)",
 ]
-
-_IK_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "postprocessing"
-# Registered once here rather than at each of this module's three `from
-# make_videos import ...` call sites: those stay lazy/conditional (skipping
-# make_videos.py's own import cost when with_ik/with_pose2d is off), but
-# there's no reason to re-insert the same sys.path entry three times.
-sys.path.insert(0, str(_IK_SCRIPTS_DIR))
 
 
 def _round_to_multiple(value: int, multiple: int = 16) -> int:
@@ -335,6 +330,27 @@ def _make_speed_overlay(width: int, height: int, text: str) -> np.ndarray:
     return np.asarray(image, dtype=np.float32) / 255.0
 
 
+UNAVAILABLE_TEXT_COLOR = (0x55, 0x55, 0x55)
+
+
+@functools.lru_cache(maxsize=1)
+def _unavailable_panel(size: int = PANEL_SIZE) -> np.ndarray:
+    """A `size` x `size` black RGB panel with "Unavailable" centered in
+    `UNAVAILABLE_TEXT_COLOR` -- substituted for a bare black panel wherever
+    a given frame simply has no data for that panel (e.g. no muscle frame
+    mapped to it, or IK/replay rejected for it), so a QA viewer can tell
+    "genuinely no data" apart from "rendered black for some other reason".
+    Cached (like `_load_font`): computed once, reused for every such frame.
+    """
+    image = Image.new("RGB", (size, size), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text(
+        (size // 2, size // 2), "Unavailable", fill=UNAVAILABLE_TEXT_COLOR,
+        font=_load_font(LABEL_FONT_SIZE, bold=True), anchor="mm",
+    )  # fmt: skip
+    return np.asarray(image, dtype=np.uint8)
+
+
 _TEXT_COLOR_ARR = np.array(TEXT_COLOR, dtype=np.float32)
 
 # (row0, col0, cropped_alpha, full_shape) -- see `_crop_overlay_to_content`.
@@ -506,7 +522,7 @@ def _precompute_panel_overlays(
         )  # fmt: skip
         row2_widths.append(PANEL_SIZE)
     if with_row2 and with_ik:
-        from make_videos import GRID_SPACING_MM
+        from spotlight_postprocessing.invkin.qa_clips import GRID_SPACING_MM
 
         grid_label = f"grid: {GRID_SPACING_MM:g} mm"
         overlays["ik3d"] = _make_panel_overlay(
@@ -514,9 +530,15 @@ def _precompute_panel_overlays(
         )
         row2_widths.append(PANEL_SIZE)
     if with_row2 and with_ik and with_replay:
-        overlays["replay"] = _make_panel_overlay(
-            PANEL_SIZE, PANEL_SIZE, PANEL_NAMES["replay"], None, None, None
+        from spotlight_postprocessing.invkin.flygym_replay import (
+            GROUND_CHECKER_SQUARE_MM,
         )
+
+        replay_grid_label = f"grid: {GROUND_CHECKER_SQUARE_MM:g} mm"
+        overlays["replay"] = _make_panel_overlay(
+            PANEL_SIZE, PANEL_SIZE, PANEL_NAMES["replay"], None, None,
+            replay_grid_label,
+        )  # fmt: skip
         row2_widths.append(PANEL_SIZE)
 
     total_width = max(sum(row1_widths), sum(row2_widths) if row2_widths else 0)
@@ -532,6 +554,24 @@ def _precompute_panel_overlays(
 
     border_lines = _compute_border_lines(row1_widths, row2_widths)
     return overlays, border_lines
+
+
+def _compute_raw_domain_box_corners(
+    transform_matrices: np.ndarray, crop_dim: int
+) -> np.ndarray:
+    """`(n_frames, 4, 2)` box corners in raw pixel space: the aligned
+    `crop_dim` x `crop_dim` square's own corners, mapped back through each
+    frame's own transform -- the SAME raw-to-aligned transform used for the
+    real crop (see `behavior.transform_single_frame_to_align`), not an
+    independent fit. Computed once, up front, for the whole trial: drawing
+    panel 1's box (see `_render_chunk`) is then pure rendering, with no
+    per-frame fitting or smoothing of its own.
+    """
+    aligned_corners = np.array(
+        [[0, 0], [crop_dim, 0], [crop_dim, crop_dim], [0, crop_dim]], dtype=np.float64
+    )
+    aligned_corners = np.broadcast_to(aligned_corners, (len(transform_matrices), 4, 2))
+    return apply_affine(aligned_corners, invert_affine(transform_matrices))
 
 
 def _fill_gap_frames(
@@ -573,68 +613,6 @@ def _fill_gap_frames(
     return filled
 
 
-def _smooth_acceptance_mask(mask: np.ndarray, window: int) -> np.ndarray:
-    """Denoises a boolean per-frame acceptance time series with a binary
-    opening (drops isolated accepted spikes) followed by a closing (fills
-    isolated rejected gaps inside a longer accepted stretch) -- both using a
-    `window`-sized 1D structuring element. `window == -1` skips this
-    denoising step entirely (the raw per-frame mask is used as-is). Used for
-    both the flip-based frame-acceptance mask and the IK-acceptance mask
-    (see `acceptance_mask_window`)."""
-    if window == -1:
-        return mask
-    structure = np.ones(window, dtype=bool)
-    mask = binary_opening(mask, structure=structure)
-    mask = binary_closing(mask, structure=structure)
-    return mask
-
-
-def _compute_smoothed_directions(keypoints_pre: np.ndarray, sigma: float) -> np.ndarray:
-    """Per-frame fitted neck/thorax/abdomen direction (see
-    `box.fit_disambiguated_direction`), optionally smoothed over time.
-
-    Smooths the unit direction VECTOR's x/y components (not the raw
-    angle), which sidesteps the wraparound a naive angle average would hit
-    near +/-180 degrees. NaN frames (no localization-model prediction) are
-    filled from their nearest valid neighbor before smoothing, matching
-    the forward/backward-fill already used elsewhere for keypoint gaps.
-
-    Args:
-        keypoints_pre: `(n_frames, 3, 2)` raw-domain neck/thorax/abdomen.
-        sigma: Gaussian smoothing sigma, in frames. `-1` returns the raw
-            per-frame fit unsmoothed (still disambiguated).
-
-    Returns:
-        `(n_frames, 2)` unit direction vectors, or an all-NaN row for any
-        frame that had no valid neighbor to fill from at all.
-    """
-    n_frames = len(keypoints_pre)
-    directions = np.full((n_frames, 2), np.nan, dtype=np.float64)
-    for i in range(n_frames):
-        points = keypoints_pre[i]
-        if np.isnan(points).any():
-            continue
-        directions[i] = fit_disambiguated_direction(points)
-
-    valid = ~np.isnan(directions).any(axis=1)
-    if not valid.any():
-        return directions
-    valid_idxs = np.flatnonzero(valid)
-    for axis in range(2):
-        directions[:, axis] = np.interp(
-            np.arange(n_frames), valid_idxs, directions[valid_idxs, axis]
-        )
-
-    if sigma != -1:
-        for axis in range(2):
-            directions[:, axis] = gaussian_filter1d(directions[:, axis], sigma=sigma)
-        norms = np.linalg.norm(directions, axis=1, keepdims=True)
-        directions = directions / np.clip(norms, 1e-8, None)
-
-    directions[~valid] = np.nan
-    return directions
-
-
 def _render_chunk(
     *,
     chunk_start: int,
@@ -644,9 +622,7 @@ def _render_chunk(
     show_aligned: bool,
     crop_dim: int | None,
     transform_matrices: np.ndarray | None,
-    keypoints_pre: np.ndarray | None,
-    smoothed_directions: np.ndarray | None,
-    canonical_points: np.ndarray | None,
+    box_corners: np.ndarray | None,
     is_flipped: np.ndarray | None,
     panel_overlays: dict,
     border_lines: list[tuple[tuple[int, int], tuple[int, int]]],
@@ -668,9 +644,9 @@ def _render_chunk(
     fk_3d_mm: np.ndarray | None,
     show_ik: np.ndarray | None,
     th_idx: int | None,
-    thc_idxs: tuple | None,
+    smoothed_forward_xy: np.ndarray | None,
     with_replay: bool,
-    replay_frames_h5_path: Path | None,
+    physics_replay_h5_path: Path | None,
     replay_frame_lookup: np.ndarray | None,
     play_fps: float,
     crf: int,
@@ -697,8 +673,8 @@ def _render_chunk(
     """
     # OpenCV's own internal thread pool (TBB/pthreads, depending on build)
     # parallelizes individual calls (resize, warpAffine, ...) by default;
-    # left enabled, it fights the `composite_workers` ThreadPoolExecutor
-    # below for the same cores and is a known source of intermittent
+    # left enabled, it fights the `composite_workers` thread pool below for
+    # the same cores and is a known source of intermittent
     # native crashes under concurrent multi-threaded cv2 use (the process
     # just dies -- no Python traceback -- which joblib then reports as "A
     # worker stopped..." and silently retries elsewhere). Idempotent and
@@ -726,16 +702,16 @@ def _render_chunk(
             }
 
     # Same batched-read pattern as the muscle rows above: this chunk's
-    # replay frames live in `replay_frames_h5_path` (a full-trial dataset,
+    # replay frames live in `physics_replay_h5_path` (a full-trial dataset,
     # too large to pass through joblib's per-chunk pickling), so fetch only
     # the unique frame indices this chunk actually needs.
     replay_frame_by_idx = {}
-    if with_replay and replay_frames_h5_path is not None:
+    if with_replay and physics_replay_h5_path is not None:
         frame_idxs = np.arange(chunk_start, chunk_end)
         chunk_lookup = replay_frame_lookup[chunk_start:chunk_end]
         needed = sorted({int(idx) for idx in chunk_lookup if idx >= 0})
         if needed:
-            with h5py.File(replay_frames_h5_path, "r") as f:
+            with h5py.File(physics_replay_h5_path, "r") as f:
                 fetched = f["frames"][needed]
             slot_by_idx = {idx: s for s, idx in enumerate(needed)}
             replay_frame_by_idx = {
@@ -745,8 +721,8 @@ def _render_chunk(
             }
 
     if with_ik:
-        from make_videos import (
-            compute_camera_orientation,
+        from spotlight_postprocessing.invkin.qa_clips import (
+            camera_axes_from_forward_xy,
             compute_grid_lines,
             draw_fk_3d_panel,
             draw_grid_floor,
@@ -762,20 +738,11 @@ def _render_chunk(
         # --- row 1 ---
         row1 = []
         raw_bgr = cv2.cvtColor(raw_frame, cv2.COLOR_GRAY2BGR)
-        if show_aligned and canonical_points is not None and keypoints_pre is not None:
-            direction_override = (
-                smoothed_directions[i] if smoothed_directions is not None else None
+        if show_aligned and box_corners is not None:
+            color = GRAY if flipped_i else YELLOW
+            cv2.polylines(
+                raw_bgr, [box_corners[i].astype(np.int32)], True, color, 4, cv2.LINE_AA
             )
-            if direction_override is not None and np.isnan(direction_override).any():
-                direction_override = None
-            corners = raw_domain_box_corners(
-                keypoints_pre[i], canonical_points, pred_direction_override=direction_override
-            )  # fmt: skip
-            if corners is not None:
-                color = GRAY if flipped_i else YELLOW
-                cv2.polylines(
-                    raw_bgr, [corners.astype(np.int32)], True, color, 4, cv2.LINE_AA
-                )
         raw_panel = _resize_to_height(raw_bgr, PANEL_SIZE)
         if show_aligned:
             raw_panel = _pad_to_width_centered(raw_panel, PANEL_SIZE)
@@ -814,7 +781,7 @@ def _render_chunk(
                 muscle_bgr = muscle_lut[lut_idx]
                 muscle_bgr = _resize_square(muscle_bgr, PANEL_SIZE)
             else:
-                muscle_bgr = row1_black
+                muscle_bgr = _unavailable_panel()
             row1.append(_apply_overlay(muscle_bgr, panel_overlays.get("muscle")))
 
         # --- row 2 ---
@@ -875,18 +842,24 @@ def _render_chunk(
             row2.append(_apply_overlay(pose_panel, panel_overlays.get("pose2d")))
 
         if with_row2 and with_ik:
-            panel_3d = np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
-            if (
+            ik3d_available = (
                 show_pose_overlay is not None
                 and show_pose_overlay[i]
                 and show_ik is not None
                 and show_ik[i]
                 and th_idx is not None
-                and all(idx is not None for idx in thc_idxs)
-            ):
+                and smoothed_forward_xy is not None
+                and not np.isnan(smoothed_forward_xy[i]).any()
+            )
+            panel_3d = (
+                np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
+                if ik3d_available
+                else _unavailable_panel().copy()
+            )
+            if ik3d_available:
                 fk_3d_mm_frame = fk_3d_mm[i]
-                right_axis, up_axis, view_dir = compute_camera_orientation(
-                    fk_3d_mm_frame, thc_idxs
+                right_axis, up_axis, view_dir = camera_axes_from_forward_xy(
+                    smoothed_forward_xy[i]
                 )
                 draw_grid_floor(
                     panel_3d, compute_grid_lines(right_axis, up_axis, PANEL_SIZE)
@@ -922,7 +895,7 @@ def _render_chunk(
                 # `YELLOW`/`GRAY`/etc.) -- no BGR conversion needed here.
                 replay_panel = replay_img
             else:
-                replay_panel = np.zeros((PANEL_SIZE, PANEL_SIZE, 3), dtype=np.uint8)
+                replay_panel = _unavailable_panel()
             row2.append(_apply_overlay(replay_panel, panel_overlays.get("replay")))
 
         row1_img = np.hstack(row1)
@@ -956,10 +929,15 @@ def _render_chunk(
         if group_frame_idxs:
             groups.append((path_idx, group_frame_idxs))
 
+    # `backend="threading"` (not the default `"loky"`, which would spawn
+    # separate processes and need to pickle frames back to this one): cv2's
+    # calls release the GIL, so plain threads already give real parallelism
+    # here, at a fraction of process-pool overhead. Same `Parallel` idiom as
+    # every other worker pool in this pipeline, just a different backend.
+    compose_pool = Parallel(n_jobs=composite_workers, backend="threading")
     frame_by_idx = {}
-    with ThreadPoolExecutor(max_workers=composite_workers) as executor:
-        for group_result in executor.map(lambda g: composite_group(*g), groups):
-            frame_by_idx.update(group_result)
+    for group_result in compose_pool(delayed(composite_group)(*g) for g in groups):
+        frame_by_idx.update(group_result)
     frames = [frame_by_idx[i] for i in range(chunk_start, chunk_end)]
 
     chunk_path = str(Path(tmpdir) / f"chunk_{chunk_start:09d}.mp4")
@@ -1003,7 +981,9 @@ def generate_summary_video(
     flipped_prob: np.ndarray | None,
     muscle_h5_path: Path | None,
     muscle_dataset_name: str | None,
-    kinematics_h5_path: Path | None,
+    pose2d_h5_path: Path | None,
+    inverse_kinematics_h5_path: Path | None,
+    physics_replay_h5_path: Path | None,
     pose2d_skeleton_json_path: Path | None,
     output_path: Path,
     muscle_vrange: tuple[int, int] | None,
@@ -1012,60 +992,65 @@ def generate_summary_video(
     crf: int,
     preset: str | None,
     flip_confidence_threshold: float = FLIP_DECISION_THRESHOLD_DEFAULT,
-    ik_mismatch_threshold: float = IK_MISMATCH_THRESHOLD_DEFAULT,
-    acceptance_mask_window: int = 15,
-    orientation_filter_sigma: float = 5.0,
-    num_workers: int = DEFAULT_NUM_WORKERS,
-    composite_workers: int = DEFAULT_COMPOSITE_WORKERS,
-    replay_num_workers: int = -1,
+    flip_denoise_window: int = 15,
+    confidence_denoise_window: int = 15,
+    viz_heading_denoise_sigma: float = -1,
+    num_encode_workers: int = DEFAULT_NUM_WORKERS,
+    num_compose_workers: int = DEFAULT_COMPOSITE_WORKERS,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
-    max_frames: int | None = None,
+    frame_range: tuple[int, int] | None = None,
     profile: bool = False,
     colormap: str = DEFAULT_COLORMAP,
+    prefer_gpu: bool = True,
 ) -> None:
     logger = logging.getLogger(__name__)
     muscle_lut = _build_colormap_lut(colormap) if with_muscle else None
-    encode_mode = _resolve_encode_mode()
+    encode_mode = _resolve_encode_mode() if prefer_gpu else "cpu"
     show_aligned = alignment in ("aligned", "both")
 
     # Every pseudo-BGR file packs 3 consecutive monochrome behavior frames
-    # (see behavior.py); n_frames counts the real, expanded frames.
-    raw_paths = sorted((recording_dir / "behavior_images").glob("behavior_frame_*.jpg"))
+    # (see behavior.py); n_frames counts the real, expanded frames. Every
+    # h5/video this reads back is itself already exactly `n_frames` long
+    # (produced by the same `frame_range`-restricted upstream run, if any),
+    # so only this raw-file glob needs the explicit slice.
+    all_raw_paths = sorted(
+        (recording_dir / "behavior_images").glob("behavior_frame_*.jpg")
+    )
+    file_start, file_end = resolve_frame_range_to_file_slice(
+        frame_range, len(all_raw_paths)
+    )
+    raw_paths = all_raw_paths[file_start:file_end]
     n_frames = len(raw_paths) * 3
-    if max_frames is not None:
-        n_frames = min(n_frames, max_frames)
 
-    keypoints_pre = is_flipped = canonical_points = transform_matrices = None
-    smoothed_directions = None
+    is_flipped = transform_matrices = box_corners = None
     alignment_metadata_path = postprocessed_dir / "behavior_alignment_transforms.h5"
     if show_aligned and alignment_metadata_path.exists():
         with h5py.File(alignment_metadata_path, "r") as f:
-            keypoints_pre = f["keypoints_xy_pre_alignment"][:n_frames]
-            keypoints_post = f["keypoints_xy_post_alignment"][:n_frames]
             transform_matrices = f["transform_matrices"][:n_frames]
             if flipped_prob is None:
                 flipped_prob = f["flipped_prob"][:n_frames]
-        canonical_points = np.nanmean(keypoints_post, axis=0)
-        is_flipped = _smooth_acceptance_mask(
-            flipped_prob >= flip_confidence_threshold, acceptance_mask_window
+        is_flipped = smooth_acceptance_mask(
+            flipped_prob >= flip_confidence_threshold, flip_denoise_window
         )
-        smoothed_directions = _compute_smoothed_directions(
-            keypoints_pre, orientation_filter_sigma
-        )
+        # Panel 1's box overlay is the SAME transform used for the real
+        # crop, not an independent fit -- see `_compute_raw_domain_box_
+        # corners`. Computed once here, not per frame: drawing it in
+        # `_render_chunk` is then pure rendering.
+        box_corners = _compute_raw_domain_box_corners(transform_matrices, crop_dim)
 
     pose2d_data = node_names = edges = point_colors = edge_colors = None
-    fk_2d_px = fk_3d_mm = show_ik = show_pose_overlay = None
-    replay_frames_h5_path = replay_frame_lookup = None
+    fk_2d_px = fk_3d_mm = show_ik = show_pose_overlay = smoothed_forward_xy = None
+    replay_frame_lookup = None
     th_idx = None
     thc_idxs = None
     if with_pose2d:
-        from spotlight_postprocessing.invkin.io_utils import load_kinematics_h5
+        from spotlight_postprocessing.pose2d.io_utils import load_pose_h5
 
-        from make_videos import EXCLUDED_EDGE_NAME_PAIRS, find_ik_runs
+        from spotlight_postprocessing.invkin.qa_clips import EXCLUDED_EDGE_NAME_PAIRS
 
-        kinematics = load_kinematics_h5(kinematics_h5_path)
-        node_names = kinematics["node_names"]
-        pose2d_data = kinematics["keypoint_positions_2d_px"][:n_frames]
+        pose2d = load_pose_h5(pose2d_h5_path)
+        node_names = pose2d["node_names"]
+        pose2d_data = pose2d["poses"][:n_frames]
         skeleton = json.loads(pose2d_skeleton_json_path.read_text())
         name_to_idx = {name: i for i, name in enumerate(node_names)}
         th_idx = name_to_idx.get("Th")
@@ -1092,24 +1077,25 @@ def generate_summary_video(
         # Hides the 2D pose/IK overlay drawing specifically (the frame
         # itself still shows, same as a flipped frame) wherever the raw 2D
         # pose's own weighted keypoint confidence is too low to trust --
-        # no extra processing needed, `keypoint_positions_confidence` is
-        # already in kinematics.h5 and `weighted_confidence` is the same
-        # proxy `solve_ik.py` uses internally for its own gap detection.
-        pose2d_confidence = kinematics["keypoint_positions_confidence"][:n_frames]
-        confident_enough = _smooth_acceptance_mask(
+        # `weighted_confidence` is the same proxy `solve_ik.py` uses
+        # internally for its own gap detection.
+        pose2d_confidence = pose2d["keypoint_scores"][:n_frames]
+        confident_enough = smooth_acceptance_mask(
             weighted_confidence(pose2d_confidence, node_names)
             >= POSE2D_CONFIDENCE_THRESHOLD,
-            acceptance_mask_window,
+            confidence_denoise_window,
         )
         not_flipped = (
             ~is_flipped if is_flipped is not None else np.ones(n_frames, dtype=bool)
         )
         show_pose_overlay = confident_enough & not_flipped
 
-        ik = kinematics["inverse_kinematics"]
-        if with_ik and ik is not None:
-            from solve_ik import leg_keypoint_indices, nanreduce_ignore_all_nan
+        if with_ik:
+            from spotlight_postprocessing.invkin.io_utils import (
+                load_inverse_kinematics_h5,
+            )
 
+            ik = load_inverse_kinematics_h5(inverse_kinematics_h5_path)
             fk_2d_px = ik.keypoint_positions_2d_px[:n_frames]
             fk_3d_mm = ik.keypoint_positions_3d_mm[:n_frames]
             thc_idxs = tuple(
@@ -1117,124 +1103,62 @@ def generate_summary_video(
             )
 
             ik_attempted = ~np.isnan(ik.dof_angles[:n_frames]).any(axis=-1)
-            # Display-time-only rejection (see `spotlight_ik.solve_ik`'s
-            # module docstring): kinematics.h5 itself never drops data
-            # based on fk-to-prediction mismatch, only on whether IK was
-            # attempted at all.
-            pose2d_mm = kinematics["keypoint_positions_2d_mm"][:n_frames]
-            leg_idxs = leg_keypoint_indices(node_names)
-            dist = np.linalg.norm(
-                pose2d_mm[:, leg_idxs] - fk_3d_mm[:, leg_idxs, :2], axis=-1
-            )
-            frame_max_mismatch = nanreduce_ignore_all_nan(np.nanmax, dist, axis=-1)
-            show_ik = _smooth_acceptance_mask(
-                ik_attempted & (frame_max_mismatch <= ik_mismatch_threshold),
-                acceptance_mask_window,
-            )
+            # `mismatch_mask` (IK attempted, fk-to-prediction mismatch
+            # within tolerance, denoised) is computed once and stored by
+            # `solve_ik.py` itself (see `invkin.io_utils`'s module
+            # docstring) -- purely a display-acceptance gate, never drops
+            # data from `inverse_kinematics.h5` itself.
+            show_ik = ik.mismatch_mask[:n_frames]
+
+            # The ik3d panel's camera yaw-tracks the fly's own heading (see
+            # `qa_clips.compute_camera_orientation`); smoothed here, once
+            # per IK-attempted run (not across the gap between two runs,
+            # which would blend unrelated stretches at the seam), rather
+            # than recomputed raw every frame.
+            smoothed_forward_xy = None
+            if all(idx is not None for idx in thc_idxs):
+                from spotlight_postprocessing.invkin.qa_clips import (
+                    compute_forward_xy,
+                    find_ik_runs,
+                )
+
+                smoothed_forward_xy = np.full((n_frames, 2), np.nan, dtype=np.float64)
+                for start, end in find_ik_runs(ik.dof_angles[:n_frames]):
+                    raw = np.stack(
+                        [compute_forward_xy(fk_3d_mm[i], thc_idxs) for i in range(start, end)]
+                    )  # fmt: skip
+                    smoothed_forward_xy[start:end] = smooth_unit_vectors(
+                        raw, viz_heading_denoise_sigma
+                    )
+
             # `show_ik`'s own closing can mark a frame as shown even though
             # that exact frame's IK data is still NaN (a small gap bridged
             # for display continuity) -- hold the nearest real
             # reconstruction across it rather than drawing/casting NaN.
             fk_2d_px = _fill_gap_frames(fk_2d_px, ik_attempted, show_ik)
             fk_3d_mm = _fill_gap_frames(fk_3d_mm, ik_attempted, show_ik)
+            if smoothed_forward_xy is not None:
+                smoothed_forward_xy = _fill_gap_frames(
+                    smoothed_forward_xy, ik_attempted, show_ik
+                )
 
             if with_replay:
-                from flygym.compose import ActuatorType
-
-                from spotlight_postprocessing.invkin.flygym_replay import (
-                    build_dof_reorder_index,
-                    build_fly_and_world,
-                    replay_period_in_worker,
+                from spotlight_postprocessing.invkin.replay_io import (
+                    load_physics_replay_frame_lookup,
                 )
 
-                periods = find_ik_runs(ik.dof_angles[:n_frames])
-                logger.info(
-                    f"Replaying {len(periods)} IK period(s) in FlyGym for the "
-                    "QA video's row-2 replay panel..."
-                )
-                # Only used here for its DOF ordering (fly/world/orbit_cam
-                # themselves aren't simulated in this process): each
-                # parallel worker below builds its own via
-                # `replay_period_in_worker`, since these aren't picklable
-                # across process boundaries.
-                probe_fly, _, _ = build_fly_and_world()
-                actuated_dof_order = probe_fly.get_actuated_jointdofs_order(
-                    ActuatorType.POSITION
-                )
-                reorder_index = build_dof_reorder_index(ik.dof_names, actuated_dof_order)
-
-                # One period per task, run across a persistent joblib/loky
-                # worker pool (CPU-bound, no GPU contention with the later
-                # chunk-encode step, which hasn't started yet) -- periods are
-                # fully independent, so this parallelizes the same way the
-                # chunk rendering below does. Each worker builds and caches
-                # its own fly/world once (see `replay_period_in_worker`), not
-                # once per period. `return_as="generator"` (order preserved,
-                # same as the chunk-encode pool below) streams each period's
-                # frames to disk as soon as it's ready instead of collecting
-                # every period's frames in memory before writing any of them
-                # -- a full trial's worth would otherwise be several GB held
-                # at once.
-                replay_pool = Parallel(n_jobs=replay_num_workers, return_as="generator")
-                rendered_by_period = replay_pool(
-                    delayed(replay_period_in_worker)(
-                        ik.dof_angles[start:end][:, reorder_index],
-                        behavior_fps,
-                        PANEL_SIZE,
-                    )
-                    for start, end in periods
-                )  # fmt: skip
-
-                # Written as a real (not temp) file, like kinematics.h5:
-                # a per-frame render buffer for a full trial is too large
-                # to pass through joblib/loky's pickling on every chunk
-                # (`_render_chunk` runs in separate worker processes), so
-                # `_render_chunk` instead opens this file itself and reads
-                # only the frames its own chunk needs (see `muscle_h5_path`'s
-                # identical pattern for the muscle channel). `chunks=(1, ...)`
-                # and a low gzip level follow `MuscleH5Writer`'s own
-                # profiled convention (one frame per HDF5 chunk avoids
-                # read-modify-write on partial chunks when writing a
-                # period's worth of frames at a time; level 1 measured 6x
-                # faster than the default for a small size cost, and this
-                # file is a throwaway intermediate, not an archived output).
-                replay_frames_h5_path = postprocessed_dir / "flygym_replay_frames.h5"
-                total_replay_frames = sum(end - start for start, end in periods)
-                replay_frame_lookup = np.full(n_frames, -1, dtype=np.int64)
-                log_every = max(1, len(periods) // 20)
-                with h5py.File(replay_frames_h5_path, "w") as f_replay:
-                    replay_ds = f_replay.create_dataset(
-                        "frames",
-                        shape=(total_replay_frames, PANEL_SIZE, PANEL_SIZE, 3),
-                        dtype="uint8",
-                        chunks=(1, PANEL_SIZE, PANEL_SIZE, 3),
-                        compression="gzip",
-                        compression_opts=1,
-                    )
-                    next_frame_idx = 0
-                    for n_done, ((start, end), rendered) in enumerate(
-                        zip(periods, rendered_by_period), start=1
-                    ):
-                        replay_ds[next_frame_idx : next_frame_idx + len(rendered)] = (
-                            rendered
-                        )
-                        replay_frame_lookup[start:end] = np.arange(
-                            next_frame_idx, next_frame_idx + len(rendered)
-                        )
-                        next_frame_idx += len(rendered)
-                        if n_done % log_every == 0 or n_done == len(periods):
-                            logger.info(
-                                f"Replayed {n_done}/{len(periods)} IK periods..."
-                            )
-                # Nearest-neighbor-hold the replay across any gap
-                # `show_ik`'s own closing bridged (same mechanism as
-                # `fk_2d_px`/`fk_3d_mm` above; works unchanged on an index
-                # array like this one). This only fills in frames `show_ik`
-                # wants shown but `ik_attempted` doesn't cover -- the
-                # reverse case (attempted, i.e. a valid `replay_frame_lookup`
-                # entry, but rejected by `show_ik`'s own mismatch/flip
-                # gating) isn't touched by it, so it's cleared explicitly
-                # right after, matching the ik3d panel's own display gate.
+                # `frames` itself isn't loaded here -- too large for a full
+                # trial to pass through joblib's per-chunk pickling below;
+                # `_render_chunk` opens `physics_replay_h5_path` itself and
+                # reads only the rows its own chunk needs (same pattern as
+                # `muscle_h5_path`).
+                replay_frame_lookup = load_physics_replay_frame_lookup(
+                    physics_replay_h5_path
+                )[:n_frames]
+                # Same nearest-neighbor-hold/re-mask treatment as
+                # `fk_2d_px`/`fk_3d_mm` above -- `replay_physics.py` ran
+                # against every IK-attempted stretch, not `show_ik`'s own
+                # (smoothed, mismatch-gated) subset of it.
                 replay_frame_lookup = _fill_gap_frames(
                     replay_frame_lookup, ik_attempted, show_ik
                 )
@@ -1279,12 +1203,12 @@ def generate_summary_video(
     # the lost work automatically and every run finishes with a complete,
     # correct video, so this stays a monitored, benign warning rather than
     # chased further without real native debugging tools (gdb/core dumps).
-    encode_pool = Parallel(n_jobs=num_workers, return_as="generator")
+    encode_pool = Parallel(n_jobs=num_encode_workers, return_as="generator")
     logger.info(
         f"Rendering {n_frames} visualization frames across {len(chunks)} "
-        f"parallel chunks of ~{chunk_size} frames each ({num_workers} encode workers, "
-        f"effective: {encode_pool._effective_n_jobs()}, x {composite_workers} composite "
-        f"threads each, mode={encode_mode})..."
+        f"parallel chunks of ~{chunk_size} frames each ({num_encode_workers} encode "
+        f"workers, effective: {encode_pool._effective_n_jobs()}, x "
+        f"{num_compose_workers} composite threads each, mode={encode_mode})..."
     )
 
     t_render = time.perf_counter()
@@ -1294,8 +1218,7 @@ def generate_summary_video(
             return dict(
                 chunk_start=start, chunk_end=end, tmpdir=tmpdir, raw_paths=raw_paths,
                 show_aligned=show_aligned, crop_dim=crop_dim,
-                transform_matrices=transform_matrices, keypoints_pre=keypoints_pre,
-                smoothed_directions=smoothed_directions, canonical_points=canonical_points,
+                transform_matrices=transform_matrices, box_corners=box_corners,
                 is_flipped=is_flipped, panel_overlays=panel_overlays,
                 border_lines=border_lines, with_muscle=with_muscle,
                 muscle_h5_path=muscle_h5_path, muscle_dataset_name=muscle_dataset_name,
@@ -1304,11 +1227,11 @@ def generate_summary_video(
                 edges=edges, point_colors=point_colors, edge_colors=edge_colors,
                 show_pose_overlay=show_pose_overlay,
                 with_ik=with_ik, fk_2d_px=fk_2d_px, fk_3d_mm=fk_3d_mm, show_ik=show_ik,
-                th_idx=th_idx, thc_idxs=thc_idxs,
-                with_replay=with_replay, replay_frames_h5_path=replay_frames_h5_path,
+                th_idx=th_idx, smoothed_forward_xy=smoothed_forward_xy,
+                with_replay=with_replay, physics_replay_h5_path=physics_replay_h5_path,
                 replay_frame_lookup=replay_frame_lookup,
                 play_fps=play_fps, crf=crf,
-                preset=preset, mode=encode_mode, composite_workers=composite_workers,
+                preset=preset, mode=encode_mode, composite_workers=num_compose_workers,
             )  # fmt: skip
 
         # Optionally profile one real chunk (the first), run synchronously

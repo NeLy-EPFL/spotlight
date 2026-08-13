@@ -1,58 +1,70 @@
-"""CLI for post-processing one Spotlight recording. See help message for details."""
+"""CLI for post-processing one Spotlight recording. See help message for
+details.
+
+Pipeline (each stage's own params group below): alignment (+ pose2d, muscle,
+fused into one streaming pass -- see `behavior.process_behavior_pipeline`)
+-> inverse-kinematics -> physics-replay -> summary-video. `--start-from`
+resumes partway through this chain, reusing whichever earlier stages'
+outputs are already on disk instead of recomputing them.
+"""
 
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import tyro
 import yaml
 
 from spotlight_postprocessing.behavior import process_behavior_pipeline
+from spotlight_postprocessing.common.frame_range import (
+    resolve_frame_range_to_file_slice,
+)
+from spotlight_postprocessing.common.parallel import resolve_num_workers
+from spotlight_postprocessing.common.smoothing import (
+    seconds_to_frames,
+    seconds_to_odd_frames,
+)
+from spotlight_postprocessing.invkin.flygym_replay import (
+    DEFAULT_ACTUATOR_GAIN,
+    DEFAULT_ADHESION_GAIN,
+    DEFAULT_FALL_TILT_THRESHOLD_DEG,
+    DEFAULT_TARSAL_STIFFNESS,
+)
+from spotlight_postprocessing.invkin.replay_physics import replay_physics
+from spotlight_postprocessing.invkin.solve_ik import solve_ik
 from spotlight_postprocessing.muscle import (
     plan_muscle_behavior_mapping,
+    restrict_mapping_to_frame_range,
     save_muscle_metadata_csv,
 )
 from spotlight_postprocessing.stage import interp_stage_pos_at_behavior_frames
 from spotlight_postprocessing.visualize import generate_summary_video
+from spotlight_tools.common import get_assets_dir
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
 PYTHON_ROOT = Path(__file__).resolve().parents[3]  # python/
-LOCALIZATION_CHECKPOINT_PATH = (
-    PYTHON_ROOT / "bulk_data/localization_model/checkpoints/v13/best.pt"
-)
-POSE2D_CHECKPOINT_PATH = (
-    PYTHON_ROOT / "bulk_data/pose2d_model/checkpoints/iter2b/best.pt"
-)
 POSE2D_SKELETON_JSON_PATH = (
     PYTHON_ROOT / "bulk_data/pose2d_model/skeleton_metadata.json"
 )
-SOLVE_IK_SCRIPT_PATH = PYTHON_ROOT / "scripts/postprocessing/solve_ik.py"
+DEFAULT_LOCALIZATION_MODEL_PATH = (
+    get_assets_dir() / "localization_model.fp16.torchscript.pt"
+)
+DEFAULT_POSE2D_MODEL_PATH = get_assets_dir() / "pose2d_model.fp16.torchscript.pt"
+
+StartFrom = Literal["start", "inverse-kinematics", "physics-replay"]
 
 
 @dataclass
-class PostprocessingParams:
-    """Configuration for `postprocess_recording_data`. See each option's own
-    help text (`--help`) for details."""
-
-    # --- Output video geometry and timing ---
-    crop_dim: int = 900
-    """Aligned-frame output size, in pixels (`crop_dim` x `crop_dim`)."""
-
-    thorax_y_normalized: float = 0.5
-    """Where the thorax sits on the crop's y-axis: 0 is the top, 1 is the
-    bottom."""
-
-    alignment: Literal["aligned", "fullsize", "both"] = "aligned"
-    """Which behavior video(s) to produce: the thorax-aligned crop, the raw
-    full-size frame, or both."""
+class BehaviorVideoParams:
+    """The aligned/full-size behavior video(s) themselves (encoding only --
+    see `AlignmentParams` for what gets cropped/aligned)."""
 
     playback_speed: float = 0.1
     """Output videos play at this fraction of the recording's real-time
@@ -60,147 +72,398 @@ class PostprocessingParams:
     cleanly, so actual speed may differ slightly; the QA video's on-screen
     speed label always shows the real value."""
 
-    # --- Pipeline stages to run ---
-    visualize: bool = True
-    """Generate the QA summary video."""
+    crf: int = 12
+    """Encode quality (CRF). Lower is higher quality and a larger file."""
 
-    muscle: bool = True
-    """Process the muscle-imaging channel and include it in the QA video."""
+    preset: str = "medium"
+    """Encoder preset. "medium" measured faster and smaller than "slow"
+    here with no visible quality loss."""
 
-    pose2d: bool = True
-    """Run 2D pose estimation."""
 
-    ik: bool = True
-    """Fit inverse kinematics from the 2D pose. Requires `pose2d`."""
+@dataclass
+class AlignmentParams:
+    """Thorax-crop alignment. Also owns the raw-frame decode this pipeline's
+    pose2d/muscle stages piggyback on (see `behavior.process_behavior_pipeline`),
+    since decoding/localizing/aligning/pose2d/muscle-warping all happen in
+    one streaming pass over the raw frames, not as independent stages."""
 
-    replay: bool = True
-    """QA video only: replay the solved IK joint angles in FlyGym (CPU
-    physics) and show it as the row-2 panel next to the synthetic 3D IK
-    view. Requires `ik`."""
+    mode: Literal["aligned", "fullsize", "both"] = "aligned"
+    """Which behavior video(s) to produce: the thorax-aligned crop, the raw
+    full-size frame, or both."""
 
-    # --- Model batch sizes ---
+    crop_dim: int = 900
+    """Aligned-frame output size, in pixels (`crop_dim` x `crop_dim`).
+    Ignored if `mode` is "fullsize"."""
+
+    thorax_y_normalized: float = 0.5
+    """Where the thorax sits on the crop's y-axis: 0 is the top, 1 is the
+    bottom."""
+
+    localization_model: Path = DEFAULT_LOCALIZATION_MODEL_PATH
+    """Localization model checkpoint."""
+
     localization_batch_size: int | Literal["auto"] = "auto"
     """Localization model batch size. "auto" (default) scales with the
     GPU's VRAM, about 512 on a 12 GB GPU."""
 
-    pose2d_batch_size: int | Literal["auto"] = "auto"
-    """2D pose model batch size. "auto" (default) scales with the GPU's
-    VRAM, about 256 on a 12 GB GPU."""
-
-    # --- Inverse kinematics ---
-    ik_prior_weight: float = 0.2
-    """IK solver's pull toward the body plan's neutral pose (`solve_ik.py`'s
-    `neutral_weight`). Higher trusts the neutral pose over the observed
-    keypoints more."""
-
-    ik_max_mismatch: float = 0.3
-    """QA video only: max mismatch (mm) allowed between the 2D prediction
-    and the IK fit before the video hides that frame's IK overlay.
-    `kinematics.h5` itself always keeps the full IK result regardless."""
-
-    # --- QA video display smoothing ---
     flip_confidence_threshold: float = 0.5
-    """QA video only: localization model's flip-probability cutoff. At or
-    above this, a frame is treated as flipped (gray box, overlay hidden)."""
+    """Localization model's flip-probability cutoff. At or above this, a
+    frame is treated as flipped."""
 
-    acceptance_mask_window: int = 15
-    """QA video only: smooths the flip, IK-acceptance, and pose-confidence
-    decisions over this many frames, so a single noisy frame doesn't
-    flicker the display. -1 disables smoothing."""
+    flip_denoise_window_sec: float = 0.05
+    """QA video only: smooths the flip decision over this many seconds
+    (converted to an odd frame count via `behavior_fps`), so a single noisy
+    frame doesn't flicker the display. -1 disables smoothing."""
 
-    orientation_filter_sigma: float = 5.0
-    """QA video only: Gaussian smoothing (frames) for the fly's fitted body
-    orientation, so keypoint noise doesn't jitter the box overlay. -1
-    disables smoothing."""
+    heading_denoise_sigma_sec: float = 0.015
+    """Gaussian smoothing (seconds, converted to frames via `behavior_fps`)
+    applied to the fly's fitted heading before cropping -- a real change to
+    the aligned crop itself, not just a display effect. -1 disables."""
 
-    # --- Muscle channel ---
-    num_orphan_muscle_frames: int | None = None
-    """Number of leading muscle frames to skip as recorded-before-behavior-
-    started orphans. Auto-detected from timestamps if not set."""
+    position_denoise_sigma_sec: float = 0.005
+    """Gaussian smoothing (seconds) applied to the thorax position used to
+    center each frame's crop -- same real-not-display caveat as
+    `heading_denoise_sigma_sec`. -1 disables."""
 
-    muscle_vrange: tuple[int, int] | None = None
-    """Muscle-image intensity range (min, max) mapped onto `colormap`.
-    Auto-computed from a percentile sample of the data if not set."""
+    transform_workers: int | Literal["auto"] = "auto"
+    """CPU worker count feeding the localization/pose2d models: raw-frame
+    decode plus muscle-image warping (both plain cv2, no GPU). "auto"
+    (default) uses `$SLURM_CPUS_PER_TASK` if set, else all cores."""
 
-    missing_muscle_frames_tolerance: int = 3
+
+@dataclass
+class MuscleParams:
+    """Muscle-imaging channel."""
+
+    mode: Literal["on", "off", "auto"] = "auto"
+    """"auto" (default) processes the muscle channel if `muscle_images/`
+    exists in the recording, else skips it silently. "on" processes it
+    unconditionally, erroring out if the folder is missing. "off" always
+    skips it."""
+
+    max_missing_frames: int = 3
     """Max unexplained missing muscle frames tolerated before raising an
     error."""
 
-    # --- Encoding ---
-    behavior_video_crf: int = 12
-    """Behavior video encode quality (CRF). Lower is higher quality and a
-    larger file."""
+    orphan_frames: int | Literal["auto"] = "auto"
+    """Number of leading muscle frames to skip as recorded-before-behavior-
+    started orphans. "auto" (default) detects this from the frames
+    themselves."""
 
-    behavior_video_preset: str = "medium"
-    """NVENC encoder preset for the behavior video. "medium" measured
-    faster and smaller than "slow" here with no visible quality loss."""
+    homography_path: Path | Literal["native"] = "native"
+    """Homography calibration file for muscle-to-behavior frame mapping.
+    "native" (default) uses `metadata/homography_parameters.yaml` in the
+    recording directory."""
 
-    visualization_crf: int = 20
-    """QA video encode quality (CRF). Lower is higher quality and a larger
-    file."""
 
-    visualization_preset: str = "medium"
-    """NVENC encoder preset for the QA video."""
+@dataclass
+class Pose2DParams:
+    """2D pose estimation, on the aligned crop."""
 
-    colormap: str = "lilac"
-    """QA video's muscle-panel colormap: a cmasher name (e.g. "lilac") or a
+    enabled: bool = False
+    """Run 2D pose estimation. Requires `--alignment.mode` to be "aligned"
+    or "both"."""
+
+    output_path: Path | None = None
+    """Where to save the dense per-frame 2D pose predictions. Defaults to
+    `pose2d.h5` under the recording's `postprocessed/` directory."""
+
+    model: Path = DEFAULT_POSE2D_MODEL_PATH
+    """2D pose model checkpoint."""
+
+    batch_size: int | Literal["auto"] = "auto"
+    """2D pose model batch size. "auto" (default) scales with the GPU's
+    VRAM, about 256 on a 12 GB GPU."""
+
+    min_confidence: float = 0.5
+    """QA video only: below this weighted keypoint confidence, a frame's
+    2D pose/IK overlay is hidden (the frame itself still shows)."""
+
+    confidence_denoise_window_sec: float = 0.05
+    """QA video only: smooths the confidence-acceptance decision (a binary
+    mask, via morphological opening/closing -- the confidence values
+    themselves are never filtered) over this many seconds, converted to an
+    odd frame count via `behavior_fps`. -1 disables smoothing."""
+
+
+@dataclass
+class InverseKinematicsParams:
+    """Fit inverse kinematics (QuickIK) from the 2D pose. Requires
+    `--pose2d.enabled`."""
+
+    enabled: bool = False
+    """Fit inverse kinematics."""
+
+    output_path: Path | None = None
+    """Where to save the IK fit. Defaults to `inverse_kinematics.h5` under
+    the recording's `postprocessed/` directory."""
+
+    dof_prior_weight: float = 0.2
+    """IK solver's pull toward the body plan's neutral pose. Higher trusts
+    the neutral pose over the observed keypoints more."""
+
+    upright_prior_weight: float = 0.1
+    """Reserved for a future upright-body prior; currently unused."""
+
+    max_mismatch: float = 0.3
+    """QA video only: max mismatch (mm) allowed between the 2D prediction
+    and the IK fit before its display-acceptance mask (`mismatch_mask`,
+    saved alongside the fit itself) rejects that frame."""
+
+    mismatch_denoise_window_sec: float = 0.05
+    """`mismatch_mask` is denoised over this many seconds (converted to an
+    odd frame count via `behavior_fps`); both this and `max_mismatch` are
+    saved as attrs alongside the fit."""
+
+    viz_heading_denoise_sigma_sec: float = 0.015
+    """QA video only: Gaussian smoothing (seconds, converted to frames via
+    `behavior_fps`) applied to the synthetic 3D IK panel's own camera, so
+    keypoint noise doesn't jitter its yaw-tracking. Display-only -- unlike
+    `--alignment.heading-denoise-sigma-sec`, this never touches the real
+    IK fit. -1 disables smoothing."""
+
+
+@dataclass
+class PhysicsReplayParams:
+    """Replay the solved IK joint angles in FlyGym (CPU physics), for the
+    QA video's row-2 replay panel. Requires `--inverse-kinematics.enabled`."""
+
+    enabled: bool = False
+    """Run the physics replay."""
+
+    output_path: Path | None = None
+    """Where to save the replay. Defaults to `physics_replay.h5` under the
+    recording's `postprocessed/` directory."""
+
+    actuator_gain: float = DEFAULT_ACTUATOR_GAIN
+    """Position-actuator gain (uN*mm/rad) on the leg DOFs."""
+
+    tarsus_stiffness: float = DEFAULT_TARSAL_STIFFNESS
+    """Passive spring stiffness of the (unactuated) tarsal joints."""
+
+    adhesion_force: float = DEFAULT_ADHESION_GAIN
+    """Leg adhesion force (uN)."""
+
+    max_tilt: float = DEFAULT_FALL_TILT_THRESHOLD_DEG
+    """Restart the physics state (the mechanism for recovering a fallen
+    fly) once the thorax tips this many degrees from vertical."""
+
+    viz_heading_denoise_sigma_sec: float = 0.015
+    """Display-only: Gaussian smoothing (seconds, converted to frames via
+    `behavior_fps`) applied to the replay camera's own yaw-tracking, so
+    keypoint/physics noise doesn't jitter it -- never touches the physics
+    itself. Costs a second, renderer-less physics pass per period. -1
+    disables smoothing (and that second pass)."""
+
+    workers: int | Literal["auto"] = "auto"
+    """One IK period per task, across this many workers. "auto" (default)
+    uses `$SLURM_CPUS_PER_TASK` if set, else all cores."""
+
+
+@dataclass
+class SummaryVideoParams:
+    """The two-row QA panel-grid video."""
+
+    enabled: bool = True
+    """Generate the summary video."""
+
+    force_redo: bool = False
+    """Regenerate the summary video even if `output_path` already exists."""
+
+    output_path: Path | None = None
+    """Where to save the summary video. Defaults to `summary_video.mp4`
+    under the recording's `postprocessed/` directory."""
+
+    crf: int = 21
+    """Encode quality (CRF). Lower is higher quality and a larger file."""
+
+    preset: str = "medium"
+    """Encoder preset."""
+
+    muscle_vrange: tuple[int, int] | Literal["auto"] = "auto"
+    """Muscle-image intensity range (min, max) mapped onto `muscle_colormap`.
+    "auto" (default) computes this from a percentile sample of the data.
+    Ignored if muscle processing is skipped."""
+
+    muscle_colormap: str = "lilac"
+    """Muscle-panel colormap: a cmasher name (e.g. "lilac") or a
     matplotlib-registered name (e.g. "viridis")."""
 
-    # --- Parallelism ---
-    num_cpu_workers: int = -1
-    """CPU worker count for raw-frame decode and muscle-image warping
-    (plain cv2, no GPU). -1 (default) uses all cores, via joblib's
-    `n_jobs`."""
+    profile: bool = False
+    """Profile the video's first render chunk with cProfile and save it to
+    `viz_chunk_profile.prof` (inspect with e.g. `snakeviz`)."""
 
-    visualization_num_workers: int = 6
-    """QA video's render+encode worker count. Kept low (unlike
-    `num_cpu_workers`) because encoding shares the GPU's own limited
-    concurrent-NVENC-session count."""
+    compose_workers: int | Literal["auto"] = "auto"
+    """CPU threads for compositing (not encoding) frames. "auto" (default)
+    uses `$SLURM_CPUS_PER_TASK` if set, else all cores."""
 
-    visualization_composite_workers: int = 4
-    """Threads per QA video worker used for compositing frames (not
-    encoding them). Compositing is CPU-only, so it can use more
-    parallelism than `visualization_num_workers` without hitting the GPU
-    session limit."""
 
-    replay_num_workers: int = -1
-    """FlyGym replay worker count (one IK period per task). CPU-only and
-    runs before the QA video's own render/encode step starts, so unlike
-    `visualization_num_workers` it isn't limited by the GPU's NVENC session
-    count. -1 (default) uses all cores, via joblib's `n_jobs`."""
+@dataclass
+class VideoCodecParams:
+    """Encoding backend, shared by the behavior video and the summary
+    video (decoding has no GPU path to select -- see `pvio`'s own docs)."""
 
-    # --- Misc ---
-    profile_visualization: bool = False
-    """Profile the QA video's first render chunk with cProfile and save it
-    to `viz_chunk_profile.prof` (inspect with e.g. `snakeviz`)."""
+    prefer_gpu: bool = True
+    """Try GPU (NVENC) encoding, falling back to CPU (libx264) if
+    unavailable."""
+
+    nvenc_sessions: int = 8
+    """Concurrent NVENC sessions the GPU driver allows; the summary
+    video's encode-worker count is capped a couple below this for margin.
+    Ignored if `prefer_gpu` is False."""
+
+
+@dataclass
+class PostprocessingParams:
+    behavior_video: BehaviorVideoParams = field(default_factory=BehaviorVideoParams)
+    alignment: AlignmentParams = field(default_factory=AlignmentParams)
+    muscle: MuscleParams = field(default_factory=MuscleParams)
+    pose2d: Pose2DParams = field(default_factory=Pose2DParams)
+    inverse_kinematics: InverseKinematicsParams = field(
+        default_factory=InverseKinematicsParams
+    )
+    physics_replay: PhysicsReplayParams = field(default_factory=PhysicsReplayParams)
+    summary_video: SummaryVideoParams = field(default_factory=SummaryVideoParams)
+    video_codec: VideoCodecParams = field(default_factory=VideoCodecParams)
 
     log_level: str = "info"
     """Logging verbosity, e.g. "debug", "info", "warning"."""
 
     overwrite: bool = False
-    """Overwrite an existing `postprocessed/` directory."""
+    """Required to proceed at all if `postprocessed/` already exists (this
+    CLI never silently reuses a directory)."""
 
-    skip_behavior: bool = False
-    """Skip stage-position interpolation and localization decode/align, and
-    reuse existing outputs."""
+    frame_range: tuple[int, int] | None = None
+    """Restrict processing to real frames `[start, end)` (rounded outward
+    to whole raw files, so up to 2 frames wider than requested on either
+    side) -- for quick iteration on a slice of a trial, not full runs."""
 
-    homography_path: Path | str | None = None
-    """Homography calibration file for muscle-to-behavior frame mapping.
-    Defaults to `metadata/homography_parameters.yaml` in the recording
-    directory."""
+    start_from: StartFrom = "start"
+    """Resume partway through the pipeline, reusing earlier stages'
+    already-saved outputs instead of recomputing them: "inverse-kinematics"
+    skips alignment/pose2d/muscle (requires their outputs to already
+    exist); "physics-replay" additionally skips inverse kinematics
+    (requires `inverse_kinematics.h5` to already exist)."""
+
+
+def _validate_inputs(recording_dir: Path, params: PostprocessingParams) -> None:
+    """Fast, upfront logical/file-existence checks -- run before any heavy
+    (GPU/decode) work starts, so a misconfigured invocation fails
+    immediately instead of after minutes of wasted processing."""
+    errors = []
+
+    if params.pose2d.enabled and params.alignment.mode == "fullsize":
+        errors.append("--pose2d.enabled requires --alignment.mode aligned or both.")
+    if params.inverse_kinematics.enabled and not params.pose2d.enabled:
+        errors.append("--inverse-kinematics.enabled requires --pose2d.enabled.")
+    if params.physics_replay.enabled and not params.inverse_kinematics.enabled:
+        errors.append("--physics-replay.enabled requires --inverse-kinematics.enabled.")
+
+    if params.muscle.mode == "on" and not (recording_dir / "muscle_images").is_dir():
+        errors.append(
+            f"--muscle.mode on requires {recording_dir / 'muscle_images'} to exist."
+        )
+    if not (recording_dir / "behavior_images").is_dir():
+        errors.append(f"{recording_dir / 'behavior_images'} does not exist.")
+
+    metadata_dir = recording_dir / "metadata"
+    required_metadata = ["experiment_parameters.yaml"]
+    if (
+        params.muscle.mode in ("on", "auto")
+        and (recording_dir / "muscle_images").is_dir()
+    ):
+        if params.muscle.homography_path == "native":
+            required_metadata.append("homography_parameters.yaml")
+    for name in required_metadata:
+        if not (metadata_dir / name).is_file():
+            errors.append(f"{metadata_dir / name} does not exist.")
+
+    if params.start_from != "start":
+        postprocessed_dir = recording_dir / "postprocessed"
+        required_outputs = [postprocessed_dir / _pose2d_output_name(params)]
+        if params.alignment.mode in ("aligned", "both"):
+            required_outputs.append(postprocessed_dir / "aligned_behavior_video.mp4")
+        if params.alignment.mode == "fullsize":
+            required_outputs.append(postprocessed_dir / "fullsize_behavior_video.mp4")
+        if params.start_from == "physics-replay":
+            required_outputs.append(postprocessed_dir / _ik_output_name(params))
+        for path in required_outputs:
+            if not path.exists():
+                errors.append(f"--start-from {params.start_from} requires {path}.")
+
+    if errors:
+        raise SystemExit(
+            "Invalid configuration:\n" + "\n".join(f"  - {e}" for e in errors)
+        )
+
+
+def _pose2d_output_name(params: PostprocessingParams) -> str:
+    return params.pose2d.output_path.name if params.pose2d.output_path else "pose2d.h5"
+
+
+def _ik_output_name(params: PostprocessingParams) -> str:
+    return (
+        params.inverse_kinematics.output_path.name
+        if params.inverse_kinematics.output_path
+        else "inverse_kinematics.h5"
+    )
 
 
 def postprocess_recording_data(
     recording_dir: tyro.conf.Positional[Path],
-    params: tyro.conf.OmitArgPrefixes[PostprocessingParams] = PostprocessingParams(),
+    behavior_video: BehaviorVideoParams = BehaviorVideoParams(),  # noqa: B008
+    alignment: AlignmentParams = AlignmentParams(),  # noqa: B008
+    muscle: MuscleParams = MuscleParams(),  # noqa: B008
+    pose2d: Pose2DParams = Pose2DParams(),  # noqa: B008
+    inverse_kinematics: InverseKinematicsParams = InverseKinematicsParams(),  # noqa: B008
+    physics_replay: PhysicsReplayParams = PhysicsReplayParams(),  # noqa: B008
+    summary_video: SummaryVideoParams = SummaryVideoParams(),  # noqa: B008
+    video_codec: VideoCodecParams = VideoCodecParams(),  # noqa: B008
+    log_level: Annotated[
+        str, tyro.conf.arg(help='Logging verbosity, e.g. "debug", "info", "warning".')
+    ] = "info",
+    overwrite: Annotated[
+        bool,
+        tyro.conf.arg(
+            help="Required to proceed at all if `postprocessed/` already exists "
+            "(this CLI never silently reuses a directory)."
+        ),
+    ] = False,
+    frame_range: Annotated[
+        tuple[int, int] | None,
+        tyro.conf.arg(
+            help="Restrict processing to real frames [start, end) (rounded "
+            "outward to whole raw files, so up to 2 frames wider than "
+            "requested on either side) -- for quick iteration on a slice of "
+            "a trial, not full runs."
+        ),
+    ] = None,
+    start_from: Annotated[
+        StartFrom,
+        tyro.conf.arg(
+            help="Resume partway through the pipeline, reusing earlier stages' "
+            "already-saved outputs instead of recomputing them: "
+            "'inverse-kinematics' skips alignment/pose2d/muscle (requires "
+            "their outputs to already exist); 'physics-replay' additionally "
+            "skips inverse kinematics (requires inverse_kinematics.h5 to "
+            "already exist)."
+        ),
+    ] = "start",
 ) -> None:
     """High-level post-processing pipeline for a single Spotlight recording.
 
     Args:
         recording_dir: Path to the recording directory created by the
             Spotlight recorder program.
-        params: See `PostprocessingParams`.
+        See each other group's own fields (`--help`) for details.
     """
+    params = PostprocessingParams(
+        behavior_video=behavior_video, alignment=alignment, muscle=muscle,
+        pose2d=pose2d, inverse_kinematics=inverse_kinematics,
+        physics_replay=physics_replay, summary_video=summary_video,
+        video_codec=video_codec, log_level=log_level, overwrite=overwrite,
+        frame_range=frame_range, start_from=start_from,
+    )  # fmt: skip
     t_start = time.perf_counter()
     numeric_level = getattr(logging, params.log_level.upper(), None)
     if not isinstance(numeric_level, int):
@@ -211,16 +474,13 @@ def postprocess_recording_data(
     )  # fmt: skip
     logger = logging.getLogger(__name__)
 
-    if params.pose2d and params.alignment == "fullsize":
-        raise SystemExit("--pose2d requires --alignment aligned or both.")
-    if params.ik and not params.pose2d:
-        raise SystemExit("--ik requires --pose2d.")
-
     recording_dir = Path(recording_dir)
+    _validate_inputs(recording_dir, params)
+
     postprocessed_dir = recording_dir / "postprocessed"
-    if postprocessed_dir.exists() and not params.overwrite and not params.skip_behavior:
+    if postprocessed_dir.exists() and not params.overwrite:
         raise FileExistsError(
-            f"{postprocessed_dir} already exists. Use --overwrite to overwrite."
+            f"{postprocessed_dir} already exists. Use --overwrite to proceed."
         )
     postprocessed_dir.mkdir(exist_ok=True, parents=True)
 
@@ -233,29 +493,44 @@ def postprocess_recording_data(
         (metadata_dir / "experiment_parameters.yaml").read_text()
     )
     behavior_fps = float(experiment_parameters["behavior_fps"])
-    # Playback speed for every output video (behavior and visualization
-    # alike) tracks the recording's own rate, not real time. The exact fps
-    # this implies is usually not an integer; approximating it as a small
+    # Playback speed for every output video (behavior and summary alike)
+    # tracks the recording's own rate, not real time. The exact fps this
+    # implies is usually not an integer; approximating it as a small
     # fraction (rather than just rounding to the nearest integer fps) gets
     # much closer to the requested speed while still landing on a fps
     # ffmpeg encodes cleanly.
     play_fps = float(
-        Fraction(params.playback_speed * behavior_fps).limit_denominator(20)
-    )
+        Fraction(params.behavior_video.playback_speed * behavior_fps).limit_denominator(20)
+    )  # fmt: skip
     actual_playback_speed = play_fps / behavior_fps
     logger.info(
-        f"behavior_fps={behavior_fps}, playback_speed={params.playback_speed} -> "
+        f"behavior_fps={behavior_fps}, "
+        f"playback_speed={params.behavior_video.playback_speed} -> "
         f"play_fps={play_fps} (actual_playback_speed={actual_playback_speed:.4f})"
     )
 
+    run_muscle = params.muscle.mode == "on" or (
+        params.muscle.mode == "auto" and (recording_dir / "muscle_images").is_dir()
+    )
+    logger.info(f"Muscle processing: {'on' if run_muscle else 'off'} "
+                f"(--muscle.mode {params.muscle.mode})")  # fmt: skip
+
+    encode_mode = "auto" if params.video_codec.prefer_gpu else "cpu"
+    transform_workers = resolve_num_workers(params.alignment.transform_workers)
+
     raw_behavior_images_dir = recording_dir / "behavior_images"
-    raw_behavior_paths = sorted(raw_behavior_images_dir.glob("behavior_frame_*.jpg"))
+    all_raw_paths = sorted(raw_behavior_images_dir.glob("behavior_frame_*.jpg"))
+    file_start, file_end = resolve_frame_range_to_file_slice(
+        params.frame_range, len(all_raw_paths)
+    )
+    raw_behavior_paths = all_raw_paths[file_start:file_end]
+
     stage_positions_path = recording_dir / "stage_position/stage_position.csv"
     behavior_frames_metadata_path = postprocessed_dir / "behavior_frames_metadata.csv"
     alignment_metadata_path = postprocessed_dir / "behavior_alignment_transforms.h5"
 
-    write_aligned = params.alignment in ("aligned", "both")
-    write_fullsize = params.alignment in ("fullsize", "both")
+    write_aligned = params.alignment.mode in ("aligned", "both")
+    write_fullsize = params.alignment.mode in ("fullsize", "both")
     aligned_video_path = (
         postprocessed_dir / "aligned_behavior_video.mp4" if write_aligned else None
     )
@@ -263,45 +538,32 @@ def postprocess_recording_data(
         postprocessed_dir / "fullsize_behavior_video.mp4" if write_fullsize else None
     )
     pose2d_h5_path = (
-        postprocessed_dir / "pose2d_predictions.h5" if params.pose2d else None
+        params.pose2d.output_path or postprocessed_dir / "pose2d.h5"
+        if params.pose2d.enabled
+        else None
     )
-    kinematics_h5_path = postprocessed_dir / "kinematics.h5" if params.pose2d else None
+    inverse_kinematics_h5_path = (
+        params.inverse_kinematics.output_path
+        or postprocessed_dir / "inverse_kinematics.h5"
+        if params.inverse_kinematics.enabled
+        else None
+    )
+    physics_replay_h5_path = (
+        params.physics_replay.output_path or postprocessed_dir / "physics_replay.h5"
+        if params.physics_replay.enabled
+        else None
+    )
+    summary_video_output_path = (
+        params.summary_video.output_path or postprocessed_dir / "summary_video.mp4"
+    )
 
-    muscle_mapping = None
-    muscle_dataset_name = None
-    muscle_h5_path = None
-    if params.muscle:
-        homography_path = (
-            Path(params.homography_path) if params.homography_path is not None
-            else metadata_dir / "homography_parameters.yaml"
-        )  # fmt: skip
-        # Muscle frames are produced in whichever domain the behavior video
-        # itself uses: aligned/cropped whenever an aligned output exists (i.e.
-        # alignment in ("aligned", "both")), fullsize only when alignment is
-        # exclusively "fullsize" -- matching output_dim's own selection below.
-        # Name by domain, not by the raw `alignment` string, so `--alignment
-        # both` doesn't produce a misleading "both_muscle_images.h5" (the data
-        # inside is actually aligned-domain only, never both at once).
-        muscle_dataset_name = (
-            "aligned_muscle_images" if write_aligned else "fullsize_muscle_images"
-        )
-        muscle_h5_path = postprocessed_dir / f"{muscle_dataset_name}.h5"
+    muscle_dataset_name = (
+        "aligned_muscle_images" if write_aligned else "fullsize_muscle_images"
+    )
+    muscle_h5_path = postprocessed_dir / f"{muscle_dataset_name}.h5"
 
-    if params.skip_behavior:
-        missing = [
-            p
-            for p in [behavior_frames_metadata_path, alignment_metadata_path]
-            if not p.exists()
-        ]
-        if missing:
-            raise FileNotFoundError(
-                f"--skip-behavior set but missing required existing outputs: {missing}"
-            )
-        logger.info(
-            "Skipping behavior processing (--skip-behavior); reusing existing outputs."
-        )
-        behavior_result = None
-    else:
+    flipped_prob = None
+    if params.start_from == "start":
         t_step = time.perf_counter()
         logger.info("Interpolating stage positions for behavior frames...")
         interp_stage_pos_at_behavior_frames(
@@ -311,25 +573,43 @@ def postprocess_recording_data(
         )
         logger.info(f"STEP TIME stage_interp: {time.perf_counter() - t_step:.1f}s")
 
-        if params.muscle:
+        muscle_mapping = None
+        if run_muscle:
             t_step = time.perf_counter()
             logger.info("Planning muscle<->behavior frame mapping...")
-            output_dim = (params.crop_dim, params.crop_dim) if write_aligned else None
+            output_dim = (
+                (params.alignment.crop_dim, params.alignment.crop_dim)
+                if write_aligned
+                else None
+            )
             if output_dim is None:
                 # fullsize-only: output_dim is the raw frame's own size.
                 import cv2
 
                 sample = cv2.imread(str(raw_behavior_paths[0]))
                 output_dim = (sample.shape[1], sample.shape[0])
+            homography_path = (
+                metadata_dir / "homography_parameters.yaml"
+                if params.muscle.homography_path == "native"
+                else Path(params.muscle.homography_path)
+            )
             muscle_mapping = plan_muscle_behavior_mapping(
                 raw_muscle_images_dir=recording_dir / "muscle_images",
                 experiment_parameters_path=metadata_dir / "experiment_parameters.yaml",
                 behavior_frames_metadata_path=behavior_frames_metadata_path,
                 homography_path=homography_path,
                 output_dim=output_dim,
-                missing_muscle_frames_tolerance=params.missing_muscle_frames_tolerance,
-                num_orphan_muscle_frames=params.num_orphan_muscle_frames,
+                missing_muscle_frames_tolerance=params.muscle.max_missing_frames,
+                num_orphan_muscle_frames=(
+                    None
+                    if params.muscle.orphan_frames == "auto"
+                    else params.muscle.orphan_frames
+                ),
             )
+            if params.frame_range is not None:
+                muscle_mapping = restrict_mapping_to_frame_range(
+                    muscle_mapping, file_start * 3, file_end * 3
+                )
             logger.info(
                 f"STEP TIME muscle_planning: {time.perf_counter() - t_step:.1f}s"
             )
@@ -339,115 +619,160 @@ def postprocess_recording_data(
                     "(decode + localize align + pose2d + muscle, streaming)...")  # fmt: skip
         behavior_result = process_behavior_pipeline(
             raw_behavior_frame_paths=raw_behavior_paths,
-            localization_checkpoint_path=LOCALIZATION_CHECKPOINT_PATH,
-            alignment=params.alignment,
-            thorax_y_normalized=params.thorax_y_normalized,
-            crop_dim=params.crop_dim,
+            localization_checkpoint_path=params.alignment.localization_model,
+            alignment=params.alignment.mode,
+            thorax_y_normalized=params.alignment.thorax_y_normalized,
+            crop_dim=params.alignment.crop_dim,
             output_aligned_video_path=aligned_video_path,
             output_fullsize_video_path=fullsize_video_path,
             output_alignment_metadata_path=alignment_metadata_path,
             behavior_video_fps=play_fps,
-            behavior_video_crf=params.behavior_video_crf,
-            behavior_video_preset=params.behavior_video_preset,
-            localization_batch_size=params.localization_batch_size,
-            run_pose2d=params.pose2d,
-            pose2d_checkpoint_path=POSE2D_CHECKPOINT_PATH,
+            behavior_video_crf=params.behavior_video.crf,
+            behavior_video_preset=params.behavior_video.preset,
+            localization_batch_size=params.alignment.localization_batch_size,
+            run_pose2d=params.pose2d.enabled,
+            pose2d_checkpoint_path=params.pose2d.model,
             pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
-            pose2d_batch_size=params.pose2d_batch_size,
+            pose2d_batch_size=params.pose2d.batch_size,
             output_pose2d_h5_path=pose2d_h5_path,
-            run_muscle=params.muscle,
+            run_muscle=run_muscle,
             muscle_mapping=muscle_mapping,
             output_muscle_h5_path=muscle_h5_path,
             muscle_dataset_name=muscle_dataset_name,
-            num_cpu_workers=params.num_cpu_workers,
+            num_cpu_workers=transform_workers,
+            encode_mode=encode_mode,
+            position_denoise_sigma=seconds_to_frames(
+                params.alignment.position_denoise_sigma_sec, behavior_fps
+            ),
+            heading_denoise_sigma=seconds_to_frames(
+                params.alignment.heading_denoise_sigma_sec, behavior_fps
+            ),
         )
         logger.info(
             f"STEP TIME behavior_pipeline_total: {time.perf_counter() - t_step:.1f}s"
         )
-        if params.muscle:
+        if run_muscle:
             save_muscle_metadata_csv(
                 muscle_mapping, postprocessed_dir / "muscle_frames_metadata.csv"
             )
-
-    if params.pose2d:
-        t_step = time.perf_counter()
-        logger.info("Building kinematics.h5 (pose2d + optional IK/FK)...")
-        subprocess.run(
-            [
-                sys.executable, str(SOLVE_IK_SCRIPT_PATH),
-                "--input-path", str(pose2d_h5_path),
-                "--output-path", str(kinematics_h5_path),
-                "--neutral-weight", str(params.ik_prior_weight),
-                "--with-ik" if params.ik else "--no-with-ik",
-                "--override",
-            ],
-            check=True,
-        )  # fmt: skip
-        logger.info(f"STEP TIME kinematics_solve: {time.perf_counter() - t_step:.1f}s")
-
-    visualization_total_s = None
-    if params.visualize:
-        t_step = time.perf_counter()
-        logger.info("Generating QA visualization video...")
-        generate_summary_video(
-            recording_dir=recording_dir,
-            postprocessed_dir=postprocessed_dir,
-            alignment=params.alignment,
-            crop_dim=params.crop_dim,
-            with_muscle=params.muscle,
-            with_pose2d=params.pose2d,
-            with_ik=params.ik,
-            with_replay=params.replay,
-            behavior_fps=behavior_fps,
-            flipped_prob=(behavior_result["flipped_prob"] if behavior_result else None),
-            muscle_h5_path=muscle_h5_path,
-            muscle_dataset_name=muscle_dataset_name,
-            kinematics_h5_path=kinematics_h5_path,
-            pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
-            output_path=postprocessed_dir / "summary_video.mp4",
-            muscle_vrange=params.muscle_vrange,
-            play_fps=play_fps,
-            playback_speed=actual_playback_speed,
-            crf=params.visualization_crf,
-            preset=params.visualization_preset,
-            flip_confidence_threshold=params.flip_confidence_threshold,
-            ik_mismatch_threshold=params.ik_max_mismatch,
-            acceptance_mask_window=params.acceptance_mask_window,
-            orientation_filter_sigma=params.orientation_filter_sigma,
-            num_workers=params.visualization_num_workers,
-            composite_workers=params.visualization_composite_workers,
-            replay_num_workers=params.replay_num_workers,
-            profile=params.profile_visualization,
-            colormap=params.colormap,
+        flipped_prob = behavior_result["flipped_prob"]
+    else:
+        logger.info(
+            f"--start-from {params.start_from}: skipping alignment/pose2d/muscle, "
+            "reusing existing outputs."
         )
-        visualization_total_s = time.perf_counter() - t_step
-        logger.info(f"STEP TIME visualization_total: {visualization_total_s:.1f}s")
 
-    timers = behavior_result["timers"] if behavior_result else {}
+    if params.inverse_kinematics.enabled and params.start_from != "physics-replay":
+        t_step = time.perf_counter()
+        logger.info("Solving inverse kinematics...")
+        solve_ik(
+            input_path=pose2d_h5_path,
+            output_path=inverse_kinematics_h5_path,
+            neutral_weight=params.inverse_kinematics.dof_prior_weight,
+            upright_prior_weight=params.inverse_kinematics.upright_prior_weight,
+            flip_confidence_threshold=params.alignment.flip_confidence_threshold,
+            min_confidence=params.pose2d.min_confidence,
+            max_mismatch=params.inverse_kinematics.max_mismatch,
+            mismatch_denoise_window_sec=params.inverse_kinematics.mismatch_denoise_window_sec,
+            frame_start=file_start * 3,
+            override=True,
+        )
+        logger.info(f"STEP TIME solve_ik: {time.perf_counter() - t_step:.1f}s")
 
-    def sum_present(*keys: str) -> float | None:
-        """Sum of `timers[key]` for whichever `keys` were actually recorded
-        (e.g. a video/encode step that didn't run), or None if none were."""
-        values = [timers[k] for k in keys if k in timers]
-        return sum(values) if values else None
+    if params.physics_replay.enabled:
+        t_step = time.perf_counter()
+        logger.info("Replaying IK in FlyGym...")
+        replay_physics(
+            input_path=inverse_kinematics_h5_path,
+            output_path=physics_replay_h5_path,
+            behavior_fps=behavior_fps,
+            actuator_gain=params.physics_replay.actuator_gain,
+            tarsal_stiffness=params.physics_replay.tarsus_stiffness,
+            adhesion_gain=params.physics_replay.adhesion_force,
+            fall_tilt_threshold_deg=params.physics_replay.max_tilt,
+            viz_heading_denoise_sigma_sec=params.physics_replay.viz_heading_denoise_sigma_sec,
+            num_workers=params.physics_replay.workers,
+            override=True,
+        )
+        logger.info(f"STEP TIME replay_physics: {time.perf_counter() - t_step:.1f}s")
 
-    report = [
-        ("localization model", timers.get("localization_infer")),
-        ("2d pose model", timers.get("pose2d_infer")),
-        ("muscle warping", timers.get("muscle_warp")),
-        (
-            "saving behavior video",
-            sum_present("aligned_video_encode", "fullsize_video_encode"),
-        ),
-        ("saving muscle h5", sum_present("muscle_h5_write", "muscle_h5_close")),
-        ("making summary video", visualization_total_s),
-        ("total", time.perf_counter() - t_start),
-    ]
+    summary_video_total_s = None
+    if params.summary_video.enabled:
+        if summary_video_output_path.exists() and not params.summary_video.force_redo:
+            logger.info(
+                f"{summary_video_output_path} already exists; skipping "
+                "(--summary-video.force-redo to regenerate)."
+            )
+        else:
+            t_step = time.perf_counter()
+            logger.info("Generating summary video...")
+            generate_summary_video(
+                recording_dir=recording_dir,
+                postprocessed_dir=postprocessed_dir,
+                alignment=params.alignment.mode,
+                crop_dim=params.alignment.crop_dim,
+                with_muscle=run_muscle,
+                with_pose2d=params.pose2d.enabled,
+                with_ik=params.inverse_kinematics.enabled,
+                with_replay=params.physics_replay.enabled,
+                behavior_fps=behavior_fps,
+                flipped_prob=flipped_prob,
+                muscle_h5_path=muscle_h5_path if run_muscle else None,
+                muscle_dataset_name=muscle_dataset_name if run_muscle else None,
+                pose2d_h5_path=pose2d_h5_path,
+                inverse_kinematics_h5_path=inverse_kinematics_h5_path,
+                physics_replay_h5_path=physics_replay_h5_path,
+                pose2d_skeleton_json_path=POSE2D_SKELETON_JSON_PATH,
+                output_path=summary_video_output_path,
+                muscle_vrange=(
+                    None
+                    if params.summary_video.muscle_vrange == "auto"
+                    else params.summary_video.muscle_vrange
+                ),
+                play_fps=play_fps,
+                playback_speed=actual_playback_speed,
+                crf=params.summary_video.crf,
+                preset=params.summary_video.preset,
+                flip_confidence_threshold=params.alignment.flip_confidence_threshold,
+                flip_denoise_window=seconds_to_odd_frames(
+                    params.alignment.flip_denoise_window_sec, behavior_fps
+                ),
+                confidence_denoise_window=seconds_to_odd_frames(
+                    params.pose2d.confidence_denoise_window_sec, behavior_fps
+                ),
+                viz_heading_denoise_sigma=seconds_to_frames(
+                    params.inverse_kinematics.viz_heading_denoise_sigma_sec,
+                    behavior_fps,
+                ),
+                num_encode_workers=(
+                    max(1, params.video_codec.nvenc_sessions - 2)
+                    if params.video_codec.prefer_gpu
+                    else transform_workers
+                ),
+                num_compose_workers=resolve_num_workers(
+                    params.summary_video.compose_workers
+                ),
+                frame_range=params.frame_range,
+                profile=params.summary_video.profile,
+                colormap=params.summary_video.muscle_colormap,
+                prefer_gpu=params.video_codec.prefer_gpu,
+            )
+            summary_video_total_s = time.perf_counter() - t_step
+            logger.info(f"STEP TIME summary_video_total: {summary_video_total_s:.1f}s")
+    else:
+        logger.info("--no-summary-video.enabled: skipping.")
+
     logger.info(
         "Walltime report: "
-        + ", ".join(f"{name}={secs:.1f}s" for name, secs in report if secs is not None)
+        + ", ".join(
+            f"{name}={secs:.1f}s"
+            for name, secs in [
+                ("summary_video", summary_video_total_s),
+                ("total", time.perf_counter() - t_start),
+            ]
+            if secs is not None
+        )
     )
-
     logger.info(f"Done. Outputs under {postprocessed_dir}")
 
 

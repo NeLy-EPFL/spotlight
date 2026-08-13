@@ -30,7 +30,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import tyro
-from export_model import main as export_checkpoint
 from loguru import logger
 from torch.utils.data import DataLoader, get_worker_info
 from torch.utils.tensorboard import SummaryWriter
@@ -43,6 +42,7 @@ from spotlight_postprocessing.localization.dataset import (
     SCALE_FACTOR,
     TinyLocalizationDataset,
 )
+from spotlight_postprocessing.localization.export import export_checkpoint
 from spotlight_postprocessing.localization.model import (
     TinyLocalizationModel,
     heatmap_probs,
@@ -338,8 +338,8 @@ def evaluate(
 
 def export_checkpoints(checkpoint_dir: Path, use_global_context: bool) -> None:
     """Exports whichever of `last.pt`/`best.pt` exist under `checkpoint_dir`
-    to ONNX and TorchScript (fp32 and fp16 each), via `export_model.py`'s
-    own `main` (called directly, not as a subprocess).
+    to ONNX and TorchScript (fp32 and fp16 each), via
+    `localization.export.export_checkpoint`.
     """
     for name in ("last", "best"):
         checkpoint_path = checkpoint_dir / f"{name}.pt"
