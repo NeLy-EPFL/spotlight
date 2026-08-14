@@ -1,0 +1,103 @@
+#!/bin/bash -l
+#
+# SLURM batch script for postprocess Spotlight recordings in bulk on SCITAS.
+# The manifest file is a TXT file containing absolute paths to trials to be
+# processed. This folders are expected to have metadata/, stage_positions/,
+# behavior_images/, and muscle_images/ compressed in ZIP files. The manifest
+# can be generated using a command like
+#
+#     printf '%s\n' spotlight_data/*x*/fly*_trial*/ > manifest.txt
+# 
+# (The `x` in the glob pattern selects crossed genotypes like "G213xCI55";
+# change this accordingly before use.)
+# 
+# The number of worker SLURM jobs is specified by `--array` below. E.g.,
+# `#SBATCH --array 0-9` will launch 10 jobs, with the $SLURM_ARRAY_TASK_ID
+# env var set to 0...9 for the jobs. The workload is split automatically
+# among the workers (e.g., if there are 100 trials in total and 10 jobs are
+# launched, then each job will get 10 trials to process). The caller should
+# however modify `--time` below: for reference, a 1-minute recording takes
+# a bit more than 1 hour to process with `--cpus-per-task 8`, alignment
+# mode "both", and pose2d, inverse kinematics, physics replay, summary
+# video all enabled on SCITAS Jed (no GPU).
+#
+# Notes:
+# 1. In the future, we might want to use pigz instead of plain zip/unzip for
+#    parallel compression/decompression.
+# 2. This script does not handle copying of data (with folders compressed) to
+#    SCITAS or copying of processed output back to NAS. For copying, run a
+#    long-running script with rclone or cp from the login node, using tmux,
+#    screen, or nohup, etc.
+#
+# ===== SLURM CONFIG BELOW =====
+#SBATCH --job-name postprocessing
+#SBATCH --nodes 1
+#SBATCH --ntasks 1
+#SBATCH --cpus-per-task 8
+#SBATCH --mem 50GB
+#SBATCH --time 10:00:00
+#SBATCH --partition standard
+#SBATCH --qos serial
+#SBATCH --output logs/%A-%a.log
+#SBATCH --array 0-43
+
+set -euo pipefail
+
+# Constants
+MANIFEST_FILE="manifest.txt"
+ZIP_FILES=(
+    "metadata.zip"
+    "stage_position.zip"
+    "behavior_images.zip"
+    "muscle_images.zip"
+)
+VENV_ACTIVATE_SCRIPT="$HOME/spotlight/python/.venv/bin/activate"
+
+# Setup
+echo "[$(date)] Starting job on $(hostname)"
+module load gcc ffmpeg
+source "$VENV_ACTIVATE_SCRIPT"
+
+# Assign workload
+n_trials_total=$(wc -l < "$MANIFEST_FILE")
+n_tasks=$(( SLURM_ARRAY_TASK_MAX + 1 ))  # +1 to 0-indexed ID of last task
+n_trials_per_task=$(( (n_trials_total + n_tasks - 1) / n_tasks ))
+start_line=$(( SLURM_ARRAY_TASK_ID * n_trials_per_task + 1 ))
+end_line=$(( (SLURM_ARRAY_TASK_ID + 1) * n_trials_per_task + 1 ))
+end_line=$(( end_line > n_trials_total + 1 ? n_trials_total + 1 : end_line ))
+echo "[$(date)] Assigned to lines [$start_line, $end_line) of the manifest"
+
+# Unzip data to the host node's own /tmp (faster than mounted NAS)
+tmp_basedir=$(mktemp -d)
+trap 'rm -rf "$tmp_basedir"' EXIT  # clean up in case of exit upon failure
+
+for (( line=$start_line; line<$end_line; line++ )); do
+    trial_dir=$(sed -n "${line}p" "$MANIFEST_FILE")
+    tmp_dir=$(mktemp -d -p "$tmp_basedir")
+
+    # Decompress zipped data
+    echo "[$(date)] Decompressing inputs for $trial_dir"
+    for f in "${ZIP_FILES[@]}"; do
+        unzip -q "$trial_dir/$f" -d "$tmp_dir" &
+    done
+    wait
+
+    # Run postprocessing
+    echo "[$(date)] Postprocessing $trial_dir"
+    postprocess-recording "$tmp_dir" \
+        --overwrite \
+        --skip-if-corrupted \
+        --alignment.mode both \
+        --pose2d.enabled \
+        --inverse-kinematics.enabled \
+        --physics-replay.enabled
+
+    # Copy output
+    echo "[$(date)] Copying output for $trial_dir"
+    cp -r "$tmp_dir/postprocessed" "$trial_dir"
+    rm -rf "$tmp_dir"
+
+    echo "[$(date)] All done for $trial_dir"
+done
+
+echo "[$(date)] All trials processed"
