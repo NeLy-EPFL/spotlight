@@ -23,7 +23,7 @@ alongside them in `invkin/`.
 ## One-time setup: the body-plan asset
 
 `solve_ik` fits the NeuroMechFly body plan; its JSON export
-(`src/spotlight/assets/neuromechfly_ypr_legs.json`) is generated once via
+(`src/spotlight/assets/inverse_kinematics/neuromechfly_ypr_legs.json`) is generated once via
 `../flygym/scripts/export_model_for_quickik.py` (writes to the current
 directory):
 

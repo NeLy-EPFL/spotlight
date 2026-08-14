@@ -72,7 +72,9 @@ from spotlight.postprocessing.pose2d.io_utils import (
 )
 from spotlight.common import get_assets_dir
 
-DEFAULT_BODY_PLAN_PATH = get_assets_dir() / "neuromechfly_ypr_legs.json"
+DEFAULT_BODY_PLAN_PATH = (
+    get_assets_dir() / "inverse_kinematics" / "neuromechfly_ypr_legs.json"
+)
 
 # Fit-quality smoothing (frames), unrelated to the flip/confidence gap
 # detection below: per-frame IK is noisy, so this stays a fixed constant

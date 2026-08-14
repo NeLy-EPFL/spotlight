@@ -47,9 +47,11 @@ from spotlight.common import get_assets_dir
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
-POSE2D_SKELETON_JSON_PATH = get_assets_dir() / "pose2d_skeleton_metadata.json"
-DEFAULT_LOCALIZATION_MODEL_PATH = get_assets_dir() / "localization_model.pt"
-DEFAULT_POSE2D_MODEL_PATH = get_assets_dir() / "pose2d_model.pt"
+POSE2D_SKELETON_JSON_PATH = (
+    get_assets_dir() / "models" / "pose2d_skeleton_metadata.json"
+)
+DEFAULT_LOCALIZATION_MODEL_PATH = get_assets_dir() / "models" / "localization_model.pt"
+DEFAULT_POSE2D_MODEL_PATH = get_assets_dir() / "models" / "pose2d_model.pt"
 
 StartFrom = Literal["start", "inverse-kinematics", "physics-replay"]
 
