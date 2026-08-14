@@ -1,6 +1,9 @@
 #!/bin/bash -l
 #
 # SLURM batch script for postprocess Spotlight recordings in bulk on SCITAS.
+# Important: this job uses the Jed (CPU-only) cluster, which is slower but
+# overall cheaper than using GPUs.
+#
 # The manifest file is a TXT file containing absolute paths to trials to be
 # processed. This folders are expected to have metadata/, stage_positions/,
 # behavior_images/, and muscle_images/ compressed in ZIP files. The manifest
@@ -28,8 +31,12 @@
 #    SCITAS or copying of processed output back to NAS. For copying, run a
 #    long-running script with rclone or cp from the login node, using tmux,
 #    screen, or nohup, etc.
+# 3. The easiest way to "globally" reduce the number of workers in parallel
+#    tasks is to fake the number of available CPU cores by changing
+#    $SLURM_CPUS_PER_TASK. This is useful if we run out of memory (see
+#    comments below).
 #
-# ===== SLURM CONFIG BELOW =====
+# ========== SLURM CONFIGS ==========
 #SBATCH --job-name postprocessing
 #SBATCH --nodes 1
 #SBATCH --ntasks 1
@@ -40,6 +47,7 @@
 #SBATCH --qos serial
 #SBATCH --output logs/%A-%a.log
 #SBATCH --array 0-43
+# ===================================
 
 set -euo pipefail
 
@@ -70,6 +78,15 @@ echo "[$(date)] Assigned to lines [$start_line, $end_line) of the manifest"
 # Unzip data to the host node's own /tmp (faster than mounted NAS)
 tmp_basedir=$(mktemp -d)
 trap 'rm -rf "$tmp_basedir"' EXIT  # clean up in case of exit upon failure
+
+# Optionally fake number of available CPU cores to change number of workers
+# for all parallel tasks. This is useful when we run out of memory: if we
+# simply increase `--mem`, the scheduler may rejected it because we're
+# requesting too much memory for the number of CPU cores we're requesting.
+# But if we request more CPU cores, `postprocess-recording` will by default
+# use more workers, potentially consuming more memory. In this case, it's
+# handy to, for example, set the env var to 1/2 of the requested cores.
+#SLURM_CPUS_PER_TASK=4
 
 for (( line=$start_line; line<$end_line; line++ )); do
     trial_dir=$(sed -n "${line}p" "$MANIFEST_FILE")
