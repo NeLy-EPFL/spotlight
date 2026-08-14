@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 import tyro
 import yaml
@@ -24,6 +24,7 @@ import yaml
 from spotlight import get_assets_dir
 from spotlight.postprocessing.behavior import process_behavior_pipeline
 from spotlight.postprocessing.common import (
+    SpotlightDataCorruptionError,
     resolve_frame_range_to_file_slice,
     resolve_num_workers,
     seconds_to_frames,
@@ -310,6 +311,10 @@ class VideoCodecParams:
 
 @dataclass
 class PostprocessingParams:
+    recording_dir: tyro.conf.Positional[Path]
+    """Path to the recording directory created by the Spotlight recorder
+    program."""
+
     behavior_video: BehaviorVideoParams = field(default_factory=BehaviorVideoParams)
     alignment: AlignmentParams = field(default_factory=AlignmentParams)
     muscle: MuscleParams = field(default_factory=MuscleParams)
@@ -339,6 +344,12 @@ class PostprocessingParams:
     skips alignment/pose2d/muscle (requires their outputs to already
     exist); "physics-replay" additionally skips inverse kinematics
     (requires `inverse_kinematics.h5` to already exist)."""
+
+    skip_if_corrupted: bool = False
+    """If set, skip the trial without raising an error if the input data is
+    corrupted. An error log will still be generated. Useful for batch
+    processing (so that a single corrupted trial doesn't stop the whole
+    batch)."""
 
 
 def _validate_inputs(recording_dir: Path, params: PostprocessingParams) -> None:
@@ -404,62 +415,11 @@ def _ik_output_name(params: PostprocessingParams) -> str:
     )
 
 
-def postprocess_recording_data(
-    recording_dir: tyro.conf.Positional[Path],
-    behavior_video: BehaviorVideoParams = BehaviorVideoParams(),  # noqa: B008
-    alignment: AlignmentParams = AlignmentParams(),  # noqa: B008
-    muscle: MuscleParams = MuscleParams(),  # noqa: B008
-    pose2d: Pose2DParams = Pose2DParams(),  # noqa: B008
-    inverse_kinematics: InverseKinematicsParams = InverseKinematicsParams(),  # noqa: B008
-    physics_replay: PhysicsReplayParams = PhysicsReplayParams(),  # noqa: B008
-    summary_video: SummaryVideoParams = SummaryVideoParams(),  # noqa: B008
-    video_codec: VideoCodecParams = VideoCodecParams(),  # noqa: B008
-    log_level: Annotated[
-        str, tyro.conf.arg(help='Logging verbosity, e.g. "debug", "info", "warning".')
-    ] = "info",
-    overwrite: Annotated[
-        bool,
-        tyro.conf.arg(
-            help="Required to proceed at all if `postprocessed/` already exists "
-            "(this CLI never silently reuses a directory)."
-        ),
-    ] = False,
-    frame_range: Annotated[
-        tuple[int, int] | None,
-        tyro.conf.arg(
-            help="Restrict processing to real frames [start, end) (rounded "
-            "outward to whole raw files, so up to 2 frames wider than "
-            "requested on either side), for quick iteration on a slice of "
-            "a trial, not full runs."
-        ),
-    ] = None,
-    start_from: Annotated[
-        StartFrom,
-        tyro.conf.arg(
-            help="Resume partway through the pipeline, reusing earlier stages' "
-            "already-saved outputs instead of recomputing them: "
-            "'inverse-kinematics' skips alignment/pose2d/muscle (requires "
-            "their outputs to already exist); 'physics-replay' additionally "
-            "skips inverse kinematics (requires inverse_kinematics.h5 to "
-            "already exist)."
-        ),
-    ] = "start",
-) -> None:
+def postprocess_recording_data(params: PostprocessingParams) -> None:
     """High-level post-processing pipeline for a single Spotlight recording.
 
-    Args:
-        recording_dir: Path to the recording directory created by the
-            Spotlight recorder program.
-        See each other group's own fields (`--help`) for details.
+    See each field's own docs (`--help`) for details.
     """
-    params = PostprocessingParams(
-        behavior_video=behavior_video, alignment=alignment, muscle=muscle,
-        pose2d=pose2d, inverse_kinematics=inverse_kinematics,
-        physics_replay=physics_replay, summary_video=summary_video,
-        video_codec=video_codec, log_level=log_level, overwrite=overwrite,
-        frame_range=frame_range, start_from=start_from,
-    )  # fmt: skip
-    t_start = time.perf_counter()
     numeric_level = getattr(logging, params.log_level.upper(), None)
     if not isinstance(numeric_level, int):
         raise ValueError(f"Invalid log level: {params.log_level}")
@@ -469,7 +429,23 @@ def postprocess_recording_data(
     )  # fmt: skip
     logger = logging.getLogger(__name__)
 
-    recording_dir = Path(recording_dir)
+    recording_dir = Path(params.recording_dir)
+    try:
+        _run_pipeline(recording_dir, params, logger)
+    except SpotlightDataCorruptionError as e:
+        if not params.skip_if_corrupted:
+            raise
+        logger.error(f"Corrupted input data in {recording_dir}, skipping: {e}")
+
+
+def _run_pipeline(
+    recording_dir: Path, params: PostprocessingParams, logger: logging.Logger
+) -> None:
+    """The actual pipeline, run under a try/except in
+    `postprocess_recording_data` so `--skip-corrupted-data` can turn a
+    `SpotlightDataCorruptionError` anywhere below into a skipped trial."""
+    t_start = time.perf_counter()
+
     _validate_inputs(recording_dir, params)
 
     postprocessed_dir = recording_dir / "postprocessed"
@@ -792,7 +768,8 @@ def postprocess_recording_data(
 
 
 def main():
-    tyro.cli(postprocess_recording_data)
+    params = tyro.cli(PostprocessingParams)
+    postprocess_recording_data(params)
 
 
 if __name__ == "__main__":
