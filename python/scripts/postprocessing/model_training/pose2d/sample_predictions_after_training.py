@@ -29,7 +29,7 @@ anything up.
 
 Usage:
     python tools/spotlight_pose2d/sample_predictions_after_training.py \\
-        --checkpoint-path bulk_data/.../checkpoints/iter1a/best.pt \\
+        --checkpoint-path bulk_data/.../checkpoints/iter1a/best.fp32.pt \\
         --data-root bulk_data/.../labels/ported_lm_predictions \\
         --output-dir bulk_data/.../labels/rounds/iter1a \\
         --frame-cache-root bulk_data/motion_prior/2dpose_model/frame_cache \\

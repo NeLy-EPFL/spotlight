@@ -23,7 +23,7 @@ filename.
 
 Usage:
     python tools/spotlight_pose2d/predict_unlabeled_frames.py \\
-        --checkpoint-path bulk_data/.../best.pt \\
+        --checkpoint-path bulk_data/.../best.fp32.pt \\
         --input-path bulk_data/.../<trial>_pose.h5 \\
         --frame-cache-root bulk_data/motion_prior/2dpose_model/frame_cache \\
         --skeleton-json-path bulk_data/.../labels/metadata.json \\

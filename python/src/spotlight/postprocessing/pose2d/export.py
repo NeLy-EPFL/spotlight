@@ -1,10 +1,10 @@
 """Exports a trained pose2d checkpoint to a plain fp16 `state_dict`
-checkpoint (`*.pt`, this project's own runtime format, see
-`behavior._load_pose2d_model`), fp16 TorchScript (`*.torchscript.pt`, for
-loading in a different codebase's own PyTorch inference code without that
-codebase needing this project's `RepVGGPoseModel` class at all), and fp16
-ONNX (`*.onnx`, for running outside of PyTorch entirely, e.g. in a
-real-time application). Mirrors `localization.export`'s role.
+checkpoint (`*.fp16.pt`, this project's own runtime format, see
+`behavior._load_pose2d_model`), fp16 TorchScript (`*.fp16.torchscript.pt`,
+for loading in a different codebase's own PyTorch inference code without
+that codebase needing this project's `RepVGGPoseModel` class at all), and
+fp16 ONNX (`*.fp16.onnx`, for running outside of PyTorch entirely, e.g. in
+a real-time application). Mirrors `localization.export`'s role.
 
 Fuses RepVGG's multi-branch train-time blocks into a single conv per block
 first (`timm.utils.reparameterize_model`), the whole point of RepVGG's
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import torch
 
-from spotlight.postprocessing.common import export_model
+from spotlight.postprocessing.common import export_neural_network_model
 from spotlight.postprocessing.pose2d.constants import INPUT_SIZE, N_KEYPOINTS
 from spotlight.postprocessing.pose2d.model import RepVGGPoseModel, import_timm
 
@@ -32,8 +32,8 @@ def export_checkpoint(
     Args:
         checkpoint_path: Trained `RepVGGPoseModel` state dict.
         output_stem: Base path (no extension) for the exported files, e.g.
-            `bulk_data/.../best`; saves `<output_stem>.pt`,
-            `<output_stem>.torchscript.pt`, and `<output_stem>.onnx`.
+            `bulk_data/.../best`; saves `<output_stem>.fp16.pt`,
+            `<output_stem>.fp16.torchscript.pt`, and `<output_stem>.fp16.onnx`.
             Aborts if any already exists, unless `override` is set.
         n_keypoints: Must match the checkpoint's `n_keypoints`.
         override: If True, overwrite existing output files.
@@ -43,7 +43,7 @@ def export_checkpoint(
     model.eval()
     model = import_timm().utils.reparameterize_model(model)
 
-    export_model(
+    export_neural_network_model(
         model_fp32=model,
         checkpoint_path=checkpoint_path,
         output_stem=output_stem,

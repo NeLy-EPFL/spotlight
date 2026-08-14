@@ -18,8 +18,8 @@ from flygym.compose import ActuatorType
 from joblib import Parallel, delayed
 from loguru import logger
 
-from spotlight.postprocessing.common.parallel import resolve_num_workers
-from spotlight.postprocessing.common.smoothing import (
+from spotlight.postprocessing.common import (
+    resolve_num_workers,
     seconds_to_frames,
     smooth_unit_vectors,
 )

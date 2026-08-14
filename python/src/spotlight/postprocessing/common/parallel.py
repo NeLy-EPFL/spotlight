@@ -1,20 +1,28 @@
-"""Shared CPU worker-count resolution for CLI knobs whose default is
-`"auto"`.
-"""
+"""Shared CPU worker-count resolution for CLI knobs."""
 
-import os
+from os import cpu_count, environ
 from typing import Literal
 
 
 def resolve_num_workers(num_workers: int | Literal["auto"]) -> int:
     """Resolve a `--*.num-workers`-style CLI value.
 
-    `"auto"` uses `$SLURM_CPUS_PER_TASK` if set (a Slurm job's own share of
-    a node, which can be smaller than the node's full core count), else -1
-    (joblib's own "all cores" auto-detection). Any other value is used as
-    given, matching joblib's `n_jobs` convention directly.
+    If `num_workers` is a positive integer, it is returned as-is.
+    If `num_workers` is -1, all available CPU cores are used; if -2, all but
+    one, etc., matching joblib's convention. 0 is invalid and raises.
+    If `num_workers` is "auto", `$SLURM_CPUS_PER_TASK` is used if set (i.e.
+    when running as a Slurm job on a cluster), else -1 (all available cores).
     """
-    if num_workers != "auto":
-        return int(num_workers)
-    slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
-    return int(slurm_cpus) if slurm_cpus else -1
+    if num_workers == 0:
+        raise ValueError("'num_workers == 0' is invalid")
+
+    if num_workers == "auto":
+        if slurm_tasks := environ.get("SLURM_CPUS_PER_TASK"):
+            return int(slurm_tasks)
+        else:
+            num_workers = -1
+
+    if num_workers < 0:
+        num_workers = max(cpu_count() + 1 + num_workers, 1)
+
+    return num_workers

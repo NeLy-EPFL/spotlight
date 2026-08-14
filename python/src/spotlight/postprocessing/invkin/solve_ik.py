@@ -40,10 +40,8 @@ import numpy as np
 from loguru import logger
 from scipy import ndimage
 
-from spotlight.postprocessing.common.smoothing import (
-    seconds_to_odd_frames,
-    smooth_acceptance_mask,
-)
+from spotlight import get_assets_dir
+from spotlight.postprocessing.common import seconds_to_frames, morph_denoise_1d_mask
 from spotlight.postprocessing.invkin.mapping import (
     convert_mm_to_px,
     convert_px_to_mm,
@@ -70,7 +68,6 @@ from spotlight.postprocessing.pose2d.io_utils import (
     load_pose_h5,
     trial_dir_from_video_path,
 )
-from spotlight.common import get_assets_dir
 
 DEFAULT_BODY_PLAN_PATH = (
     get_assets_dir() / "inverse_kinematics" / "neuromechfly_ypr_legs.json"
@@ -153,7 +150,7 @@ def compute_mismatch_mask(
     """Per-frame display-acceptance mask: IK was attempted and its
     fk-to-prediction mismatch (mm, worst leg keypoint) is within
     `max_mismatch`, denoised over `denoise_window` frames (see
-    `common.smoothing.smooth_acceptance_mask`). Also logs the raw
+    `common.filtering.morph_denoise_1d_mask`). Also logs the raw
     (undenoised) mismatch stats, purely informational.
     """
     dist = np.linalg.norm(pred_2d_mm[:, leg_idxs] - fk_3d_mm[:, leg_idxs, :2], axis=-1)
@@ -168,7 +165,7 @@ def compute_mismatch_mask(
             f"mean of per-frame worst keypoint={np.nanmean(frame_max_mismatch):.4f}"
         )
     raw_ok = ik_attempted & (frame_max_mismatch <= max_mismatch)
-    return smooth_acceptance_mask(raw_ok, denoise_window)
+    return morph_denoise_1d_mask(raw_ok, denoise_window)
 
 
 def solve_ik(
@@ -276,8 +273,8 @@ def solve_ik(
         fk_2d_px[start:end] = sub_fk_2d_px
 
     ik_attempted = ~np.isnan(dof_angles).any(axis=-1)
-    mismatch_denoise_window = seconds_to_odd_frames(
-        mismatch_denoise_window_sec, behavior_fps
+    mismatch_denoise_window = seconds_to_frames(
+        mismatch_denoise_window_sec, behavior_fps, odd_int=True
     )
     mismatch_mask = compute_mismatch_mask(
         ik_attempted, poses_mm, fk_3d_mm, leg_keypoint_indices(node_names),

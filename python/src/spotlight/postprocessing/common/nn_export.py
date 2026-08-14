@@ -1,10 +1,6 @@
-"""Shared helper for exporting a trained model to a plain fp16 `state_dict`,
-fp16 TorchScript, and fp16 ONNX, following the `<output_stem>.{pt,
-torchscript.pt, onnx}` naming convention used by `pose2d.export.
-export_checkpoint` and `localization.export.export_checkpoint`. fp16 only:
-that's this project's own runtime precision (see `behavior._load_
-localization_model`/`_load_pose2d_model`) and the only precision any other
-consumer of these exports has actually needed either.
+"""Helper for exporting a trained model using the naming convention
+`<output_stem>.<precision>.<suffix>`, where `<precision>` is `fp16` or `fp32`
+and `<suffix>` is `pt`, `torchscript.pt`, or `onnx`.
 """
 
 from pathlib import Path
@@ -16,7 +12,7 @@ from torch import nn
 from spotlight.postprocessing.pose2d.io_utils import check_output_path
 
 
-def export_model(
+def export_neural_network_model(
     model_fp32: nn.Module,
     checkpoint_path: Path,
     output_stem: Path,
@@ -27,14 +23,14 @@ def export_model(
     """Exports `model_fp32` to a plain fp16 `state_dict`, fp16 TorchScript,
     and fp16 ONNX.
 
-    Saves `<output_stem>.pt`, `<output_stem>.torchscript.pt`, and
-    `<output_stem>.onnx`. `<output_stem>.pt` is this project's own runtime
-    format (see `behavior._load_localization_model`/`_load_pose2d_model`):
-    a plain `state_dict`, loadable only with `model_fp32`'s own class
-    already defined and instantiated. `<output_stem>.torchscript.pt` is
-    self-contained (loadable via `torch.jit.load`, no model class needed),
-    for a different codebase's own PyTorch inference code.
-    `<output_stem>.onnx` is for running outside of PyTorch entirely.
+    Saves `<output_stem>.fp16.pt`, `<output_stem>.fp16.torchscript.pt`, and
+    `<output_stem>.fp16.onnx`. `<output_stem>.fp16.pt` is this project's own
+    runtime format (see `behavior._load_localization_model`/`_load_pose2d_
+    model`): a plain `state_dict`, loadable only with `model_fp32`'s own
+    class already defined and instantiated. `<output_stem>.fp16.torchscript.
+    pt` is self-contained (loadable via `torch.jit.load`, no model class
+    needed), for a different codebase's own PyTorch inference code.
+    `<output_stem>.fp16.onnx` is for running outside of PyTorch entirely.
 
     Args:
         model_fp32: Trained model, already `eval()`'d and otherwise ready
@@ -46,9 +42,9 @@ def export_model(
         onnx_output_names: `torch.onnx.export`'s `output_names`.
         override: If True, overwrite any output file that already exists.
     """
-    plain_path = output_stem.with_name(f"{output_stem.name}.pt")
-    torchscript_path = output_stem.with_name(f"{output_stem.name}.torchscript.pt")
-    onnx_path = output_stem.with_name(f"{output_stem.name}.onnx")
+    plain_path = output_stem.with_name(f"{output_stem.name}.fp16.pt")
+    torchscript_path = output_stem.with_name(f"{output_stem.name}.fp16.torchscript.pt")
+    onnx_path = output_stem.with_name(f"{output_stem.name}.fp16.onnx")
     for path in (plain_path, torchscript_path, onnx_path):
         check_output_path(path, override)
         path.parent.mkdir(parents=True, exist_ok=True)

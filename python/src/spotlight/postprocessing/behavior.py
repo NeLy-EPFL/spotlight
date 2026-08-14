@@ -4,8 +4,8 @@ frame, and (in the same streaming pass, no video round-trip) run the
 pose2d model on the aligned crop and warp whichever muscle frames land in
 the current chunk. Both models load as plain (eager) checkpoints (see
 `_load_localization_model`/`_load_pose2d_model`), not the TorchScript/ONNX
-exports `common.export.export_model` also produces (those are for other
-codebases/runtimes, not this one).
+exports `common.nn_export.export_neural_network_model` also produces (those
+are for other codebases/runtimes, not this one).
 
 See `spotlight.postprocessing.muscle`/`visualize` for the muscle and
 QA-video stages that consume this module's outputs.
@@ -24,15 +24,12 @@ import torch
 from joblib import Parallel, delayed
 from scipy.ndimage import gaussian_filter1d
 
-from spotlight.postprocessing.common.video import StreamingVideoWriter
+from spotlight.postprocessing.common import StreamingVideoWriter
 from spotlight.postprocessing.io import (
     MuscleH5Writer,
     check_output_path_against_alignment_flag,
 )
-from spotlight.postprocessing.muscle import (
-    MuscleBehaviorMapping,
-    warp_muscle_chunk,
-)
+from spotlight.postprocessing.muscle import MuscleBehaviorMapping, warp_muscle_chunk
 from spotlight.postprocessing.localization.constants import (
     OUTPUT_SIZE as LOCALIZATION_OUTPUT_SIZE,
 )

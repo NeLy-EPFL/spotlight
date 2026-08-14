@@ -7,32 +7,22 @@ import numpy as np
 from scipy.ndimage import binary_closing, binary_opening, gaussian_filter1d
 
 
-def seconds_to_odd_frames(seconds: float, fps: float) -> int:
-    """Convert a duration in seconds to an odd-sized frame window.
-
-    A symmetric structuring element (morphological open/close) needs an odd
-    size to have a well-defined center frame. `-1` means "disabled" and
-    passes through unchanged (see `smooth_acceptance_mask`).
-
-    Args:
-        seconds: Duration in seconds, or `-1` to disable.
-        fps: Behavior recording frame rate.
-
-    Returns:
-        Odd frame count (minimum 1), or `-1`.
+def seconds_to_frames(seconds: float, fps: float, odd_int: bool = False) -> float:
+    """Convert a filter size specified in seconds to frames. When odd_int is
+    True, the returned frame count is rounded to the nearest odd integer (for
+    things like a symmetrical morph transform kernel).
     """
+    # -1 means disabled - pass through
     if seconds == -1:
-        return -1
-    frames = max(1, round(seconds * fps))
-    return frames if frames % 2 == 1 else frames + 1
+        return seconds
 
-
-def seconds_to_frames(seconds: float, fps: float) -> float:
-    """Convert a Gaussian smoothing sigma from seconds to frames. Unlike
-    `seconds_to_odd_frames`, no rounding: `gaussian_filter1d` takes a plain
-    float sigma. `-1` means "disabled" and passes through unchanged.
-    """
-    return seconds if seconds == -1 else seconds * fps
+    if odd_int:
+        # For things like a symmetrical morph transform kernel
+        frames = max(1, round(seconds * fps))
+        return frames if frames % 2 == 1 else frames + 1
+    else:
+        # For things like a Gaussian sigma
+        return seconds * fps
 
 
 def smooth_unit_vectors(vectors: np.ndarray, sigma: float) -> np.ndarray:
@@ -61,7 +51,7 @@ def smooth_unit_vectors(vectors: np.ndarray, sigma: float) -> np.ndarray:
     return smoothed / np.clip(norms, 1e-8, None)
 
 
-def smooth_acceptance_mask(mask: np.ndarray, window: int) -> np.ndarray:
+def morph_denoise_1d_mask(mask: np.ndarray, window: int) -> np.ndarray:
     """Denoises a boolean per-frame acceptance time series with a binary
     opening (drops isolated accepted spikes) followed by a closing (fills
     isolated rejected gaps inside a longer accepted stretch), both using a

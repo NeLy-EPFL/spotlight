@@ -21,14 +21,12 @@ from typing import Annotated, Literal
 import tyro
 import yaml
 
+from spotlight import get_assets_dir
 from spotlight.postprocessing.behavior import process_behavior_pipeline
-from spotlight.postprocessing.common.frame_range import (
+from spotlight.postprocessing.common import (
     resolve_frame_range_to_file_slice,
-)
-from spotlight.postprocessing.common.parallel import resolve_num_workers
-from spotlight.postprocessing.common.smoothing import (
+    resolve_num_workers,
     seconds_to_frames,
-    seconds_to_odd_frames,
 )
 from spotlight.postprocessing.replay.constants import (
     DEFAULT_ACTUATOR_GAIN,
@@ -43,15 +41,17 @@ from spotlight.postprocessing.muscle import (
 )
 from spotlight.postprocessing.stage import interp_stage_pos_at_behavior_frames
 from spotlight.postprocessing.visualize import generate_summary_video
-from spotlight.common import get_assets_dir
+
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
 POSE2D_SKELETON_JSON_PATH = (
     get_assets_dir() / "models" / "pose2d_skeleton_metadata.json"
 )
-DEFAULT_LOCALIZATION_MODEL_PATH = get_assets_dir() / "models" / "localization_model.pt"
-DEFAULT_POSE2D_MODEL_PATH = get_assets_dir() / "models" / "pose2d_model.pt"
+DEFAULT_LOCALIZATION_MODEL_PATH = (
+    get_assets_dir() / "models" / "localization_model.fp16.pt"
+)
+DEFAULT_POSE2D_MODEL_PATH = get_assets_dir() / "models" / "pose2d_model.fp16.pt"
 
 StartFrom = Literal["start", "inverse-kinematics", "physics-replay"]
 
@@ -745,11 +745,15 @@ def postprocess_recording_data(
                 crf=params.summary_video.crf,
                 preset=params.summary_video.preset,
                 flip_confidence_threshold=params.alignment.flip_confidence_threshold,
-                flip_denoise_window=seconds_to_odd_frames(
-                    params.alignment.flip_denoise_window_sec, behavior_fps
+                flip_denoise_window=seconds_to_frames(
+                    params.alignment.flip_denoise_window_sec,
+                    behavior_fps,
+                    odd_int=True,
                 ),
-                confidence_denoise_window=seconds_to_odd_frames(
-                    params.pose2d.confidence_denoise_window_sec, behavior_fps
+                confidence_denoise_window=seconds_to_frames(
+                    params.pose2d.confidence_denoise_window_sec,
+                    behavior_fps,
+                    odd_int=True,
                 ),
                 viz_heading_denoise_sigma=seconds_to_frames(
                     params.inverse_kinematics.viz_heading_denoise_sigma_sec,

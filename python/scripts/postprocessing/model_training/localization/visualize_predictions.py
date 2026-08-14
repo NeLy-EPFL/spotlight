@@ -25,7 +25,7 @@ for a full-trial run on a memory-constrained machine.
 Usage:
     python scripts/postprocessing/model_training/localization/visualize_predictions.py \\
         --input-path bulk_data/.../localization_model/predictions/<trial>_localization_predictions.h5 \\
-        --checkpoint-path bulk_data/.../localization_model/checkpoints/v1/best.pt \\
+        --checkpoint-path bulk_data/.../localization_model/checkpoints/v1/best.fp32.pt \\
         --canonical-h5-paths bulk_data/.../final_predictions/*.h5 \\
         --frame-cache-root bulk_data/motion_prior/localization_model/frame_cache \\
         --output-path <trial>_localization_predictions.mp4 \\

@@ -2,9 +2,7 @@
 
 import pytest
 
-from spotlight.postprocessing.common.frame_range import (
-    resolve_frame_range_to_file_slice,
-)
+from spotlight.postprocessing.common import resolve_frame_range_to_file_slice
 
 
 def test_none_covers_whole_trial():

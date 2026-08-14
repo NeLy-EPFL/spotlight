@@ -15,8 +15,6 @@ arena
 calibration
     Legacy ArUco-based mapper; still used by `spotlight.postprocessing`'s
     muscle-to-behavior warping.
-common
-    Config loader (`get_assets_dir`, `load_spotlight_config`).
 """
 
 from importlib.resources import files

@@ -10,6 +10,7 @@ from scipy.interpolate import CubicSpline
 from pathlib import Path
 
 from spotlight.postprocessing.io import find_files_per_frame_by_suffix
+from spotlight.postprocessing.common import SpotlightDataCorruptionError
 
 
 def interp_stage_pos_at_behavior_frames(
@@ -35,7 +36,16 @@ def interp_stage_pos_at_behavior_frames(
     # Merge timestamps for each behavior frame
     logger.info("Merging timestamps for all behavior frames")
     files_by_frame = find_files_per_frame_by_suffix(frames_dir, ".csv", stride=3)
-    dataframes = [pd.read_csv(file) for file in files_by_frame.values()]
+    dataframes = []
+    for file in files_by_frame.values():
+        try:
+            df = pd.read_csv(file)
+            dataframes.append(df)
+        except pd.errors.EmptyDataError as e:
+            logger.error(
+                f"Empty metadata for behavior frame group: {file}. Skipping it."
+            )
+            raise SpotlightDataCorruptionError("Empty behavior metadata") from e
     concatenated_df = pd.concat(dataframes, ignore_index=True)
     acq_times_diff = np.diff(concatenated_df["acquired_time_us"].values)
     if not np.all(acq_times_diff > 0):

@@ -12,7 +12,7 @@ downstream use (e.g. driving an alignment/crop step).
 
 Usage:
     python scripts/postprocessing/model_training/localization/infer.py \\
-        --checkpoint-path bulk_data/.../localization_model/checkpoints/v1/best.pt \\
+        --checkpoint-path bulk_data/.../localization_model/checkpoints/v1/best.fp32.pt \\
         --input-path bulk_data/.../final_predictions/<trial>_pose2d_final_predictions.h5 \\
         --frame-cache-root bulk_data/motion_prior/localization_model/frame_cache \\
         --output-h5-path bulk_data/.../localization_model/predictions/<trial>_localization_predictions.h5

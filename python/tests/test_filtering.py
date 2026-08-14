@@ -1,30 +1,29 @@
-"""Unit tests for `common.smoothing`."""
+"""Unit tests for `common.filtering`."""
 
 import numpy as np
 import pytest
 
-from spotlight.postprocessing.common.smoothing import (
+from spotlight.postprocessing.common import (
     seconds_to_frames,
-    seconds_to_odd_frames,
-    smooth_acceptance_mask,
+    morph_denoise_1d_mask,
     smooth_unit_vectors,
 )
 
 
-class TestSecondsToOddFrames:
+class TestSecondsToFramesOddInt:
     def test_disabled_passes_through(self):
-        assert seconds_to_odd_frames(-1, fps=396.0) == -1
+        assert seconds_to_frames(-1, fps=396.0, odd_int=True) == -1
 
     def test_rounds_up_to_odd(self):
         # 0.01s * 396fps = 3.96 -> rounds to 4 -> bumped to the next odd, 5.
-        assert seconds_to_odd_frames(0.01, fps=396.0) == 5
+        assert seconds_to_frames(0.01, fps=396.0, odd_int=True) == 5
 
     def test_already_odd_stays_unchanged(self):
         # 0.005s * 396fps = 1.98 -> rounds to 2 -> bumped to 3.
-        assert seconds_to_odd_frames(0.005, fps=396.0) == 3
+        assert seconds_to_frames(0.005, fps=396.0, odd_int=True) == 3
 
     def test_minimum_is_one(self):
-        assert seconds_to_odd_frames(0.0, fps=396.0) == 1
+        assert seconds_to_frames(0.0, fps=396.0, odd_int=True) == 1
 
 
 class TestSecondsToFrames:
@@ -68,22 +67,22 @@ class TestSmoothUnitVectors:
         assert (result[:, 0] < -0.9).all()  # still pointing in -x, not +x
 
 
-class TestSmoothAcceptanceMask:
+class TestMorphDenoise1dMask:
     def test_disabled_passes_through(self):
         mask = np.array([True, False, True])
-        result = smooth_acceptance_mask(mask, window=-1)
+        result = morph_denoise_1d_mask(mask, window=-1)
         np.testing.assert_array_equal(result, mask)
 
     def test_opening_drops_isolated_interior_spike(self):
         mask = np.zeros(20, dtype=bool)
         mask[10] = True
-        result = smooth_acceptance_mask(mask, window=5)
+        result = morph_denoise_1d_mask(mask, window=5)
         assert not result.any()
 
     def test_closing_fills_isolated_interior_gap(self):
         mask = np.ones(20, dtype=bool)
         mask[10] = False
-        result = smooth_acceptance_mask(mask, window=5)
+        result = morph_denoise_1d_mask(mask, window=5)
         assert result[2:18].all()  # edges excluded, see test below
 
     def test_edges_are_always_rejected(self):
@@ -94,6 +93,6 @@ class TestSmoothAcceptanceMask:
         # content. Harmless for a real many-thousand-frame trial; worth
         # pinning down explicitly here since it's easy to get backwards.
         mask = np.ones(20, dtype=bool)
-        result = smooth_acceptance_mask(mask, window=5)
+        result = morph_denoise_1d_mask(mask, window=5)
         assert not result[:2].any()
         assert not result[-2:].any()

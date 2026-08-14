@@ -7,7 +7,7 @@ False, so it can be ported into a `.slp` for GUI correction via
 
 Usage:
     python tools/spotlight_pose2d/infer.py \\
-        --checkpoint-path bulk_data/.../best.pt \\
+        --checkpoint-path bulk_data/.../best.fp32.pt \\
         --video-path .../processed/aligned_behavior_video.mkv \\
         --skeleton-json-path <JSON file from extract_metadata_from_initial_slp.py> \\
         --output-path predictions.h5
@@ -63,7 +63,7 @@ def main(
 
     Args:
         checkpoint_path: Trained `RepVGGPoseModel` state dict (`train.py`'s
-            `best.pt`/`last.pt`).
+            `best.fp32.pt`/`last.fp32.pt`).
         video_path: Aligned-domain video to run inference on.
         skeleton_json_path: JSON file with the target skeleton, from
             `extract_metadata_from_initial_slp.py` (only its node

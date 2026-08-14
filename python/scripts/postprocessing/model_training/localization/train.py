@@ -9,9 +9,10 @@ Trains under autocast (bf16 if the GPU supports it, else fp16, with a
 `GradScaler` in the fp16 case) for speed, same as `spotlight_pose2d`.
 `evaluate` always runs in fp16 regardless of the training dtype, since fp16
 is this tiny model's target inference precision. Logs to TensorBoard under
-`checkpoint_dir/tensorboard`, and exports `last.pt`/`best.pt` to float16
-ONNX and TorchScript (see `export_model.py`) whenever training stops,
-however it stops.
+`checkpoint_dir/tensorboard`, and saves the raw fp32 `state_dict`s as
+`last.fp32.pt`/`best.fp32.pt`, exporting each to fp16 ONNX and TorchScript
+(see `postprocessing.common.nn_export.export_neural_network_model`) whenever
+training stops, however it stops.
 
 Usage:
     python scripts/postprocessing/model_training/localization/train.py \\
@@ -337,12 +338,12 @@ def evaluate(
 
 
 def export_checkpoints(checkpoint_dir: Path, use_global_context: bool) -> None:
-    """Exports whichever of `last.pt`/`best.pt` exist under `checkpoint_dir`
-    to a plain fp16 state_dict, TorchScript, and ONNX, via
+    """Exports whichever of `last.fp32.pt`/`best.fp32.pt` exist under
+    `checkpoint_dir` to a plain fp16 state_dict, TorchScript, and ONNX, via
     `localization.export.export_checkpoint`.
     """
     for name in ("last", "best"):
-        checkpoint_path = checkpoint_dir / f"{name}.pt"
+        checkpoint_path = checkpoint_dir / f"{name}.fp32.pt"
         if not checkpoint_path.is_file():
             continue
         export_checkpoint(
@@ -633,7 +634,7 @@ def main(
 
             if max_steps is not None and step >= max_steps:
                 logger.info(f"Reached max_steps={max_steps}, stopping")
-                torch.save(model.state_dict(), checkpoint_dir / "last.pt")
+                torch.save(model.state_dict(), checkpoint_dir / "last.fp32.pt")
                 export_checkpoints(checkpoint_dir, use_global_context)
                 return
 
@@ -676,7 +677,7 @@ def main(
             f"val_flip_precision={val_precision:.3f}, val_flip_recall={val_recall:.3f}"
         )
 
-        torch.save(model.state_dict(), checkpoint_dir / "last.pt")
+        torch.save(model.state_dict(), checkpoint_dir / "last.fp32.pt")
         # With freeze_backbone, val_pixel_error is bit-for-bit constant
         # (the trunk that produces it literally cannot change), so it
         # would never register an "improvement" past epoch 0 and trigger
@@ -686,7 +687,7 @@ def main(
         if tracked_metric < best_tracked_metric:
             best_tracked_metric = tracked_metric
             epochs_without_improvement = 0
-            torch.save(model.state_dict(), checkpoint_dir / "best.pt")
+            torch.save(model.state_dict(), checkpoint_dir / "best.fp32.pt")
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= patience:

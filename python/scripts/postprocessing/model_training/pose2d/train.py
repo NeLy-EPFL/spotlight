@@ -104,7 +104,7 @@ def mean_keypoint_pixel_error(
 
     More interpretable than heatmap MSE (which conflates localization error
     with heatmap sharpness/magnitude), so this is what early stopping and
-    `best.pt` selection are based on, not the loss. Keypoints missing from
+    `best.fp32.pt` selection are based on, not the loss. Keypoints missing from
     `target` (an all-zero heatmap, see `dataset.points_to_heatmaps`) are
     excluded, since their peak location is meaningless.
     """
@@ -125,12 +125,12 @@ def mean_keypoint_pixel_error(
 
 
 def export_checkpoints(checkpoint_dir: Path, n_keypoints: int) -> None:
-    """Exports whichever of `last.pt`/`best.pt` exist under `checkpoint_dir`
-    to a plain fp16 state_dict, TorchScript, and ONNX, via
+    """Exports whichever of `last.fp32.pt`/`best.fp32.pt` exist under
+    `checkpoint_dir` to a plain fp16 state_dict, TorchScript, and ONNX, via
     `pose2d.export.export_checkpoint`.
     """
     for name in ("last", "best"):
-        checkpoint_path = checkpoint_dir / f"{name}.pt"
+        checkpoint_path = checkpoint_dir / f"{name}.fp32.pt"
         if not checkpoint_path.is_file():
             continue
         export_checkpoint(
@@ -220,7 +220,7 @@ def main(
             also set, since that overwrites the whole model right after:
             pass `--no-pretrained-backbone` alongside it.
         init_checkpoint_path: If set, load this full model state dict (e.g.
-            a previous round's `best.pt`) right after building the model,
+            a previous round's `best.fp32.pt`) right after building the model,
             before training, for fine-tuning an already-trained checkpoint
             on a new, smaller dataset instead of starting from ImageNet
             weights and a randomly-initialized head. Unset trains from
@@ -359,7 +359,7 @@ def main(
 
             if max_steps is not None and step >= max_steps:
                 logger.info(f"Reached max_steps={max_steps}, stopping")
-                torch.save(model.state_dict(), checkpoint_dir / "last.pt")
+                torch.save(model.state_dict(), checkpoint_dir / "last.fp32.pt")
                 export_checkpoints(checkpoint_dir, n_keypoints)
                 return
 
@@ -376,11 +376,11 @@ def main(
             f"val_loss={val_loss:.5f}, val_pixel_error={pixel_error:.2f}px"
         )
 
-        torch.save(model.state_dict(), checkpoint_dir / "last.pt")
+        torch.save(model.state_dict(), checkpoint_dir / "last.fp32.pt")
         if pixel_error < best_pixel_error:
             best_pixel_error = pixel_error
             epochs_without_improvement = 0
-            torch.save(model.state_dict(), checkpoint_dir / "best.pt")
+            torch.save(model.state_dict(), checkpoint_dir / "best.fp32.pt")
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= patience:

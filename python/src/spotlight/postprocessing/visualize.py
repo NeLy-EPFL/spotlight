@@ -63,25 +63,23 @@ import pandas as pd
 import pvio
 from joblib import Parallel, delayed
 from PIL import Image, ImageDraw, ImageFont
+
+from spotlight import get_assets_dir
 from spotlight.calibration.mapper import SpotlightPositionMapper
-from spotlight.common import get_assets_dir
-from spotlight.postprocessing.common.frame_range import (
-    resolve_frame_range_to_file_slice,
-)
-from spotlight.postprocessing.common.smoothing import (
-    smooth_acceptance_mask,
-    smooth_unit_vectors,
-)
-from spotlight.postprocessing.common.video import pad_to_macroblock
-from spotlight.postprocessing.localization.flip_label import (
-    weighted_confidence,
-)
+from spotlight.postprocessing.localization.flip_label import weighted_confidence
 from spotlight.postprocessing.pose2d.geometry import apply_affine, invert_affine
-from spotlight.postprocessing.pose2d.viz import LINE_THICKNESS, POINT_RADIUS
 from spotlight.postprocessing.pose2d.viz import (
+    LINE_THICKNESS,
+    POINT_RADIUS,
     build_edge_colors,
     build_node_colors,
     draw_pose,
+)
+from spotlight.postprocessing.common import (
+    resolve_frame_range_to_file_slice,
+    morph_denoise_1d_mask,
+    smooth_unit_vectors,
+    pad_to_macroblock,
 )
 
 PANEL_SIZE = 450
@@ -572,7 +570,7 @@ def _fill_gap_frames(
 ) -> np.ndarray:
     """Nearest-neighbor-fills `arr`'s frame axis wherever `show` wants a
     frame displayed but `attempted` says that frame's own IK data is
-    actually NaN (a gap `_smooth_acceptance_mask`'s closing bridged over,
+    actually NaN (a gap `morph_denoise_1d_mask`'s closing bridged over,
     see `show_ik`), holds the nearest real IK reconstruction across the
     gap instead of leaving NaN there, which would otherwise reach
     `make_videos`'s synthetic-3D-panel helpers (built for a real, non-NaN
@@ -1022,7 +1020,7 @@ def generate_summary_video(
             transform_matrices = f["transform_matrices"][:n_frames]
             if flipped_prob is None:
                 flipped_prob = f["flipped_prob"][:n_frames]
-        is_flipped = smooth_acceptance_mask(
+        is_flipped = morph_denoise_1d_mask(
             flipped_prob >= flip_confidence_threshold, flip_denoise_window
         )
         # Panel 1's box overlay is the SAME transform used for the real
@@ -1073,7 +1071,7 @@ def generate_summary_video(
         # `weighted_confidence` is the same proxy `solve_ik.py` uses
         # internally for its own gap detection.
         pose2d_confidence = pose2d["keypoint_scores"][:n_frames]
-        confident_enough = smooth_acceptance_mask(
+        confident_enough = morph_denoise_1d_mask(
             weighted_confidence(pose2d_confidence, node_names)
             >= POSE2D_CONFIDENCE_THRESHOLD,
             confidence_denoise_window,

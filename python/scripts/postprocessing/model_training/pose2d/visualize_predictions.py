@@ -12,7 +12,7 @@ overlays); video I/O via `pvio`, GPU (NVENC) encoded.
 Usage:
     python tools/spotlight_pose2d/visualize_predictions.py \\
         --input-path bulk_data/.../<trial>_pose2d_final_predictions.h5 \\
-        --checkpoint-path bulk_data/.../checkpoints/iter2a/best.pt \\
+        --checkpoint-path bulk_data/.../checkpoints/iter2a/best.fp32.pt \\
         --frame-cache-root bulk_data/motion_prior/2dpose_model/frame_cache \\
         --skeleton-json-path bulk_data/.../labels/metadata.json \\
         --output-path <trial>_pose2d_final_predictions.mp4 \\
