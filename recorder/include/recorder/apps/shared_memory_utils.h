@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <fcntl.h>
 #include <pthread.h>
 #include <string>
@@ -18,6 +19,16 @@ struct FrameMetadata {
     uint64_t acquisition_time = 0;
 };
 
+// Nominal exposure of the PCO camera (us). The client writes `requested_us`;
+// the server applies it to the camera and then echoes it in `applied_us`, so
+// the client can wait until the change has taken effect. Lock-free atomics, so
+// no mutex is needed across processes.
+struct ShutterOpenTime {
+    std::atomic<unsigned int> requested_us;
+    std::atomic<unsigned int> applied_us;
+};
+static_assert(std::atomic<unsigned int>::is_always_lock_free);
+
 void setup_frame_data(
     const std::string &shm_frame_data_name,
     const size_t frame_buffer_size,
@@ -25,7 +36,7 @@ void setup_frame_data(
     bool create_new);
 void setup_shutter_open_time(
     const std::string &shm_shutter_open_time_name,
-    unsigned int *&shutter_open_time_ptr,
+    ShutterOpenTime *&shutter_open_time_ptr,
     bool create_new);
 void setup_frame_metadata(
     const std::string &shm_frame_metadata_name,

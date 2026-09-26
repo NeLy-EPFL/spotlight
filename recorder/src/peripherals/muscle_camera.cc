@@ -315,15 +315,33 @@ bool MuscleCamera::is_roi_valid() const {
 }
 
 void MuscleCamera::set_nominal_exposure_us(unsigned int exposure_us) {
-    if (shutter_open_time_ptr_ != nullptr) {
-        // The PCO camera server polls this shared value in its acquisition loop
-        // and applies it as the camera's nominal per-line exposure (see
-        // serve_frames() in pco_camera_server_main.cc). In continuous mode this
-        // also sets the free-run frame rate.
-        *shutter_open_time_ptr_ = exposure_us;
-    } else {
+    if (shutter_open_time_ptr_ == nullptr) {
         spdlog::error(
             "Cannot set exposure time. Shared memory pointer is null.");
+        return;
+    }
+
+    // The PCO camera server polls the requested value once per acquisition
+    // loop iteration (at least every WAIT_TIMEOUT_SECS), applies it to the
+    // camera, and echoes it back (see serve_frames() in
+    // pco_camera_server_main.cc). Waiting for the echo lets callers order
+    // later actions (e.g. re-syncing the trigger controller) after the change.
+    // The timeout is generous because the server only starts its loop after
+    // the (slow) camera setup.
+    constexpr auto timeout = std::chrono::seconds(10);
+    constexpr auto poll_interval = std::chrono::milliseconds(5);
+    shutter_open_time_ptr_->requested_us.store(exposure_us);
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (shutter_open_time_ptr_->applied_us.load() != exposure_us) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            spdlog::error(
+                "PCO camera server did not apply exposure time {} us within "
+                "{} s",
+                exposure_us,
+                timeout.count());
+            return;
+        }
+        std::this_thread::sleep_for(poll_interval);
     }
 }
 

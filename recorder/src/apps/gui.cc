@@ -942,8 +942,8 @@ void MainGUIWindow::start_recording() {
     // Switch the free-running camera to the recording muscle frame rate before
     // START_RECORDING, so it is already emitting common-time onsets at the
     // recording cadence when the firmware begins locking the behavior frames to
-    // them. The controller's cam_flush_time_us delay covers the transient while
-    // the new exposure takes effect.
+    // them. This blocks until the camera server has applied the new exposure,
+    // so START_RECORDING below is only sent afterwards.
     if (muscle_imaging_check_box_->isChecked()) {
         muscle_recording_state_->muscle_camera.load()->set_nominal_exposure_us(
             static_cast<unsigned int>(muscle_nominal_exposure_us));
@@ -1149,13 +1149,21 @@ void MainGUIWindow::end_recording(bool reached_programmed_end) {
         arduino_communication_->stop_recording();
     }
 
-    // Revert the free-running muscle camera to the streaming muscle frame rate,
-    // matching the streaming params the controller was just reverted to.
-    push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
-
     // Stop queuing frames. The acquirer threads flush any partial behavior
     // group and discard subsequent frames (see behavior_image_acquirer).
     program_state_->is_recording.store(false);
+
+    // Revert the free-running muscle camera to the streaming muscle frame rate,
+    // matching the streaming params the controller was just reverted to. This
+    // blocks until the camera server has applied it.
+    push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
+
+    // Re-stream now that the camera runs at the streaming rate. Until the new
+    // exposure took effect, the camera still ran at the (possibly faster)
+    // recording rate while the controller already expected streaming timing,
+    // which can latch a muscle-frame overrun error. A STREAM clears that error
+    // and restarts the controller's timing on the camera's new cadence.
+    arduino_communication_->stream(build_streaming_params());
 
     spdlog::info(
         "Recording STOPPED ({}): {} recording, muscle imaging {}",

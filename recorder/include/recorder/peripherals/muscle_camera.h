@@ -87,7 +87,8 @@ class MuscleCamera {
     // indefinitely. Idempotent and safe to call before destruction.
     void stop();
     FrameData wait_for_one_frame();
-    // Program the camera's nominal per-line exposure (us). In continuous
+    // Program the camera's nominal per-line exposure (us) and block until the
+    // camera server has applied it (logs an error on timeout). In continuous
     // (auto-sequence) mode this also sets the free-run frame rate, since the
     // camera runs at 1/(nominal_exposure + readout). Derive the value with
     // MuscleTriggerTiming::get_nominal_exposure_us().
@@ -106,7 +107,7 @@ class MuscleCamera {
     double sensor_readout_time_us_;
     pid_t pco_camera_server_pid_;
     uint8_t *frame_data_ptr_;
-    unsigned int *shutter_open_time_ptr_;
+    pco_shared_memory::ShutterOpenTime *shutter_open_time_ptr_;
     pco_shared_memory::FrameMetadata *frame_metadata_ptr_;
     pthread_mutex_t *mutex_ptr_;
     pthread_cond_t *cond_var_ptr_;

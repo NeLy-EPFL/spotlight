@@ -236,7 +236,7 @@ void serve_frames(
 
     spdlog::info(
         "PCO camera server: Setting up shared memory for exposure time");
-    unsigned int *shutter_open_time_ptr;
+    pco_shared_memory::ShutterOpenTime *shutter_open_time_ptr;
     pco_shared_memory::setup_shutter_open_time(
         shm_shutter_open_time_name, shutter_open_time_ptr, create_new);
 
@@ -259,7 +259,7 @@ void serve_frames(
 
     // Set default exposure time and initial frame count
     spdlog::info("Setting default exposure time in shared memory");
-    *shutter_open_time_ptr = default_shutter_open_time_us;
+    shutter_open_time_ptr->requested_us.store(default_shutter_open_time_us);
     // Mark "no frame published yet" before the (slow) camera setup below, so
     // the consumer (MuscleCamera::wait_for_one_frame) never mistakes the
     // zero-filled buffer for frame 0. Done here, right after the region is
@@ -295,18 +295,22 @@ void serve_frames(
     spdlog::info("Recording mode set to ring buffer with size {}", buffer_size);
 
     unsigned int current_exposure_time_us = default_shutter_open_time_us;
+    // setup_pco_camera() applied the default exposure; tell the client.
+    shutter_open_time_ptr->applied_us.store(current_exposure_time_us);
 
     // Data acquisition loop
     spdlog::info("PCO camera server starting its data acquisition loop");
     while (!shutdown_requested.load()) {
         // Check if we should change exposure time
-        unsigned int target_exposure_time = *shutter_open_time_ptr;
+        unsigned int target_exposure_time =
+            shutter_open_time_ptr->requested_us.load();
         if (target_exposure_time != current_exposure_time_us) {
             spdlog::info(
                 "PCO camera server is changing exposure time to {} us",
                 target_exposure_time);
             camera.setExposureTime(target_exposure_time / 1000000.0);
             current_exposure_time_us = target_exposure_time;
+            shutter_open_time_ptr->applied_us.store(current_exposure_time_us);
             spdlog::info(
                 "Changed exposure time to {} us", current_exposure_time_us);
         }

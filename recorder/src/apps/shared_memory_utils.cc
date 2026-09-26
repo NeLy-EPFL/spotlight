@@ -73,11 +73,11 @@ void setup_frame_data(
 
 void setup_shutter_open_time(
     const std::string &shm_shutter_open_time_name,
-    unsigned int *&shutter_open_time_ptr,
+    ShutterOpenTime *&shutter_open_time_ptr,
     bool create_new) {
-    shutter_open_time_ptr = static_cast<unsigned int *>(map_region(
+    shutter_open_time_ptr = static_cast<ShutterOpenTime *>(map_region(
         shm_shutter_open_time_name,
-        sizeof(unsigned int),
+        sizeof(ShutterOpenTime),
         create_new,
         "shutter-open time"));
 }
