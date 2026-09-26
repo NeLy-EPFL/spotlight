@@ -113,6 +113,7 @@ At 1 ms effective exposure, $f_{\rm max} = 68.5\ {\rm Hz}$.
 
 - Behavior: 1500×1984 px at 396 Hz.
 - Muscle: 1120×1120 px at 66 Hz.
+- Exposure time (effective, i.e. $t_{\rm lo}$: 1000 us.
 - Behavior/muscle synchronization ratio: 6.
 - This requires $t_{\rm b} = 10^6/66 - 13592.32 - 1000 - 4.5 = 554.695\ {\rm \mu s}$.
 - Empirically ~15 GiB of data per minute (~11.3 GiB behavior + ~3.6 GiB muscle).
