@@ -532,6 +532,10 @@ int main(int argc, char *argv[]) {
             e.what());
         PCO_CleanupLib();
         return 1;
+    } catch (std::exception &e) {
+        spdlog::critical("PCO camera server aborting: {}", e.what());
+        PCO_CleanupLib();
+        return 1;
     }
 
     PCO_CleanupLib();
