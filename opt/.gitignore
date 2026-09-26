@@ -1,12 +1,16 @@
 # Ignore everything...
 *
 
-# ... except the examples
+# ... except the examples and the standalone test programs
 !examples/
 !examples/**
+!pco_camera_clock_drift_profiling/
+!pco_camera_clock_drift_profiling/**
 
-# But ignore all build files even if they're under examples/
+# But ignore all build files even if they're under the folders above
 examples/**/build/
+pco_camera_clock_drift_profiling/**/build/
+pco_camera_clock_drift_profiling/**/.pio/
 
 # Finally, don't ignore this .gitignore file
 !.gitignore
