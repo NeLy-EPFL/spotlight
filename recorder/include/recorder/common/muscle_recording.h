@@ -19,10 +19,14 @@ struct MuscleRecordingState {
     // by several other threads (GUI, init wait loop, shutdown). atomic so that
     // publication and reads are not a data race; load()/store() it.
     std::atomic<std::shared_ptr<MuscleCamera>> muscle_camera;
-    std::queue<FrameData> muscle_image_queue;
+    std::queue<FramePair> muscle_image_queue;
     std::mutex muscle_image_queue_mutex;
     std::condition_variable muscle_image_queue_cond_var;
-    std::shared_ptr<LatestFrame> latest_frame_holder;
+    // Latest frame of each muscle camera, for live previews.
+    std::shared_ptr<LatestFrame> latest_calcium_frame_holder =
+        std::make_shared<LatestFrame>();
+    std::shared_ptr<LatestFrame> latest_fiducial_frame_holder =
+        std::make_shared<LatestFrame>();
 };
 
 class MuscleCameraROI {

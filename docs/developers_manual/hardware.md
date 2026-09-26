@@ -4,7 +4,7 @@ The software in this repository orchestrates the following hardware:
 
 - Camera to record fly behavior (JAI SP-5000M-CXP4 camera via Euresys Coaxlink Quad G3 frame grabber).
 - IR LED to provide illumination for behavior recording (CCS LDR2-74IR2-850-LA ring light via CCS PD3-3024-3-EI(A) controller).
-- Camera to record muscle activities (Excelitas pco.panda 4.2 camera with direct USB connection).
+- Two cameras to record muscle activities, one for the calcium indicator and one for fiducials (two Excelitas pco.panda 4.2 cameras, each with a direct USB connection).
 - Blue LED to provide excitation for calcium imaging (Thorlabs M470L3 LED via Thorlabs LEDD1B LED driver).
 - Translation stages to move the optical system to follow the fly (two Zaber LSQ150A-E01CT3A translation stages via a single Zaber X-MCC2 controller).
 - Two additional light control channels provided by the CCS PD3-3024-3-EI(A) controller for optogenetic stimulation. The controller allows for three channels, the first one being occupied by the IR LED. A vibrator can also be connected to the CCS controller in place of an LED to provide mechanical stimulation to the fly.

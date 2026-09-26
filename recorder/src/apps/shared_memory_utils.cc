@@ -62,6 +62,44 @@ void *map_region(
 }
 } // namespace
 
+std::string role_to_string(MuscleCameraRole role) {
+    switch (role) {
+    case MuscleCameraRole::calcium:
+        return "calcium";
+    case MuscleCameraRole::fiducial:
+        return "fiducial";
+    }
+    throw std::invalid_argument("Unknown muscle camera role");
+}
+
+MuscleCameraRole role_from_string(const std::string &name) {
+    if (name == "calcium") {
+        return MuscleCameraRole::calcium;
+    }
+    if (name == "fiducial") {
+        return MuscleCameraRole::fiducial;
+    }
+    throw std::invalid_argument(
+        "Unknown muscle camera role '" + name +
+        "' (expected 'calcium' or 'fiducial')");
+}
+
+SharedMemoryNames get_shared_memory_names(
+    const RecorderConfig &recorder_config, MuscleCameraRole role) {
+    std::string suffix = "_" + role_to_string(role);
+    auto get = [&](const std::string &key) {
+        return recorder_config.get_parameter<std::string>(
+            "muscle_camera", key + suffix);
+    };
+    return SharedMemoryNames{
+        .frame_data = get("shared_frame_data_name"),
+        .shutter_open_time = get("shared_shutter_open_time_name"),
+        .server_state = get("shared_server_state_name"),
+        .mutex = get("shared_mutex_name"),
+        .condvar = get("shared_condvar_name"),
+    };
+}
+
 void setup_frame_data(
     const std::string &shm_frame_data_name,
     const size_t frame_buffer_size,
@@ -82,15 +120,12 @@ void setup_shutter_open_time(
         "shutter-open time"));
 }
 
-void setup_frame_metadata(
-    const std::string &shm_frame_metadata_name,
-    FrameMetadata *&frame_metadata_ptr,
+void setup_server_state(
+    const std::string &shm_server_state_name,
+    ServerState *&server_state_ptr,
     bool create_new) {
-    frame_metadata_ptr = static_cast<FrameMetadata *>(map_region(
-        shm_frame_metadata_name,
-        sizeof(FrameMetadata),
-        create_new,
-        "frame metadata"));
+    server_state_ptr = static_cast<ServerState *>(map_region(
+        shm_server_state_name, sizeof(ServerState), create_new, "server state"));
 }
 
 void setup_mutex(
@@ -111,11 +146,11 @@ void setup_mutex(
 }
 
 void setup_condition_variable(
-    const std::string &shm_cond_var_name,
-    pthread_cond_t *&cond_var_ptr,
+    const std::string &shm_condvar_name,
+    pthread_cond_t *&condvar_ptr,
     bool create_new) {
-    cond_var_ptr = static_cast<pthread_cond_t *>(map_region(
-        shm_cond_var_name,
+    condvar_ptr = static_cast<pthread_cond_t *>(map_region(
+        shm_condvar_name,
         sizeof(pthread_cond_t),
         create_new,
         "condition variable"));
@@ -126,7 +161,7 @@ void setup_condition_variable(
         pthread_condattr_t attr;
         pthread_condattr_init(&attr);
         pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-        int err = pthread_cond_init(cond_var_ptr, &attr);
+        int err = pthread_cond_init(condvar_ptr, &attr);
         if (err != 0) {
             throw std::runtime_error(
                 "Failed to initialize condition variable: " +

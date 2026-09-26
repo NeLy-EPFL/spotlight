@@ -22,18 +22,22 @@
 // Acquisition model (see docs/data_acquisition.md): the operating mode is
 // selected per parameter set by TriggerParams::enable_muscle.
 //
-// When enable_muscle is true (muscle-synced mode), the muscle camera free-runs
-// in continuous mode and exposes a status signal that is HIGH during the common
-// time of every muscle frame. The controller waits for the onset of each common
-// time (DeviceIO::is_musc_common_time() becoming true) and, on that edge, fires
+// When enable_muscle is true (muscle-synced mode), the two muscle cameras
+// (calcium and fiducial) free-run in continuous mode, each exposing a status
+// signal that is HIGH during the common time of every muscle frame. The
+// cameras are started together by the shared acquire-enable line, which
+// reset_timing() pulses LOW whenever the timing restarts. The controller waits
+// for the onset of each calcium-camera common time
+// (DeviceIO::is_calcium_common_time() becoming true) and, on that edge, fires
 // the first behavior frame of a sync group together with the blue excitation
 // LED. It then fires the remaining beh_musc_sync_ratio - 1 behavior frames on
 // its own clock at beh_frame_rate before waiting for the next common-time
-// onset. The muscle camera is never triggered over TTL (it is open-loop), so
-// the muscle trigger pin stays idle.
+// onset. The fiducial camera's status is not used for triggering. The muscle
+// cameras are never triggered over TTL (they are open-loop), so the muscle
+// trigger pin stays idle.
 //
-// When enable_muscle is false (free-running mode), the muscle camera is ignored
-// entirely: the controller triggers the behavior camera on its own clock at
+// When enable_muscle is false (free-running mode), the muscle cameras are
+// ignored entirely (acquire enable simply stays HIGH): the controller triggers the behavior camera on its own clock at
 // beh_frame_rate, never reads the muscle common-time signal, and never pulses
 // the blue excitation LED. The muscle-only parameters (musc_eff_exp_time,
 // beh_musc_sync_ratio, pco_cam_rolling_time, pco_cam_readout_time) are unused.
@@ -103,6 +107,9 @@ class TriggerController {
     void run_free_running_triggers(unsigned long now_us);
     void process_op_sequence();
     void revert_to_streaming();
+    // Restart the timing loop: drop mid-pulse outputs, restart both muscle
+    // cameras in sync (muscle-synced mode only; blocks for about one muscle
+    // frame), and wait for the next calcium common-time onset.
     void reset_timing();
     void apply_params(const TriggerParams &params);
     // True when both cameras' exposure times are strictly shorter than their
@@ -150,7 +157,7 @@ class TriggerController {
 
     // Timing-loop state.
     bool awaiting_musc_edge_ = true;   // waiting for the next common-time onset
-    bool prev_common_time_ = false;    // previous is_musc_common_time() reading
+    bool prev_common_time_ = false; // previous is_calcium_common_time() reading
     unsigned long group_start_us_ = 0; // micros() at the current group's onset
     unsigned int frame_in_group_ = 0;  // next behavior frame index in the group
     unsigned long next_beh_frame_us_ =

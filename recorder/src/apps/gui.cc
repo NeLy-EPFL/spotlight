@@ -1380,7 +1380,7 @@ void MainGUIWindow::update_muscle_image_display() {
     }
 
     cv::Mat latest_frame =
-        muscle_recording_state_->latest_frame_holder->get_latest_frame_data()
+        muscle_recording_state_->latest_calcium_frame_holder->get_latest_frame_data()
             .image;
     if (latest_frame.empty()) {
         return;

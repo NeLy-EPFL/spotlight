@@ -126,7 +126,11 @@ void TriggerController::handle_start_recording(const Command &cmd) {
 
     // Let frames acquired with the previous parameters drain out of the camera
     // buffers before the recorded session begins (see cam_flush_time_us).
+    // Muscle acquire is dropped for the whole flush, so a muscle frame in
+    // progress completes (and is ignored by the recorder) during the flush;
+    // reset_timing() below then restarts both muscle cameras on one edge.
     device_.reset();
+    device_.disable_musc_acquire();
     delayMicroseconds(cam_flush_time_us);
 
     mode_ =
@@ -192,7 +196,7 @@ void TriggerController::run_triggers(unsigned long now_us) {
 void TriggerController::run_muscle_synced_triggers(unsigned long now_us) {
     // Detect the onset of the muscle camera's common time (signal HIGH). Each
     // onset starts a new sync group whose first behavior frame is locked to it.
-    bool common = device_.is_musc_common_time();
+    bool common = device_.is_calcium_common_time();
     bool onset = common && !prev_common_time_;
     prev_common_time_ = common;
 
@@ -320,10 +324,30 @@ void TriggerController::revert_to_streaming() {
 }
 
 void TriggerController::reset_timing() {
+    // Drop any output left mid-pulse to a known state.
+    device_.stop_beh_cam_trigger();
+    device_.turn_off_beh_led();
+    device_.turn_off_musc_led();
+    device_.stop_musc_cam_trigger();
+
+    // Synchronize the two free-running muscle cameras: stop both via acquire
+    // enable, then restart them on the same rising edge. The low time exceeds
+    // one muscle frame so that a frame in progress on either camera has
+    // finished and both are idle at release. The hold is skipped (it is not
+    // needed, and potentially long at low frame rates) when the muscle cameras
+    // are unused, but acquire is always left enabled.
+    if (muscle_enabled_) {
+        device_.disable_musc_acquire();
+        delayMicroseconds(
+            beh_period_us_ * sync_ratio_ +
+            config::musc_acquire_restart_margin_us);
+    }
+    device_.enable_musc_acquire();
+
     awaiting_musc_edge_ = true;
     // Seed the edge detector with the current level so a common time already in
-    // progress does not count as a fresh onset.
-    prev_common_time_ = device_.is_musc_common_time();
+    // progress does not count as a fresh onset. Read after the restart above.
+    prev_common_time_ = device_.is_calcium_common_time();
     frame_in_group_ = 0;
     group_start_us_ = micros();
     // Free-running mode: schedule the first behavior frame immediately.
@@ -331,11 +355,6 @@ void TriggerController::reset_timing() {
     beh_frame_active_ = false;
     musc_led_active_ = false;
     beh_frame_count_ = 0;
-
-    // Drop any output left mid-pulse to a known state.
-    device_.stop_beh_cam_trigger();
-    device_.turn_off_beh_led();
-    device_.turn_off_musc_led();
 }
 
 void TriggerController::apply_params(const TriggerParams &params) {

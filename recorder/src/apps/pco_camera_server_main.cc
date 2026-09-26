@@ -7,6 +7,7 @@ void print_help(const char *program_name) {
         << "Usage: " << program_name << " [OPTIONS]\n"
         << "Options:\n"
         << "  -h,  --help              Display this help message\n"
+        << "  -c,  --camera ROLE       Muscle camera to serve: calcium or fiducial (required)\n"
         << "  -p,  --profile-dir PATH  Path to profile directory (default: ~/Spotlight/default/)\n"
         << "  -x0, --x-min X_MIN       x_min coordinate of the region of interest (default: 1)\n"
         << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
@@ -52,6 +53,8 @@ CLIOptions parse_cli(int argc, char **argv) {
             options.log_level = spdlog::level::debug;
         } else if (arg == "--verbosity" && i + 1 < argc) {
             options.log_level = parse_log_level(argv[++i]);
+        } else if ((arg == "-c" || arg == "--camera") && i + 1 < argc) {
+            options.camera_role = argv[++i];
         } else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc) {
             options.profile_dir = argv[++i];
         } else if ((arg == "-x0" || arg == "--x-min") && i + 1 < argc) {
@@ -76,6 +79,12 @@ CLIOptions parse_cli(int argc, char **argv) {
             print_help(argv[0]);
             std::exit(1);
         }
+    }
+
+    if (options.camera_role.empty()) {
+        spdlog::critical("Missing required option --camera");
+        print_help(argv[0]);
+        std::exit(1);
     }
 
     return options;
@@ -123,6 +132,21 @@ uint64_t get_current_time_microseconds() {
         .count();
 }
 
+uint64_t pco_timestamp_to_epoch_us(const PCO_TIMESTAMP_STRUCT &timestamp) {
+    std::tm time = {};
+    time.tm_year = timestamp.wYear - 1900;
+    time.tm_mon = timestamp.wMonth - 1;
+    time.tm_mday = timestamp.wDay;
+    time.tm_hour = timestamp.wHour;
+    time.tm_min = timestamp.wMinute;
+    time.tm_sec = timestamp.wSecond;
+    // The camera clock has no time zone; interpret it as UTC so the result is
+    // independent of the host's time zone. Only differences between frames of
+    // the same camera are meaningful anyway.
+    return static_cast<uint64_t>(timegm(&time)) * 1000000 +
+           timestamp.dwMicroSeconds;
+}
+
 void setup_pco_camera(
     pco::Camera &camera,
     unsigned int default_shutter_open_time_us,
@@ -154,12 +178,28 @@ void setup_pco_camera(
     // set via the nominal exposure (see setExposureTime below and the
     // acquisition loop's live exposure updates).
     config.trigger_mode = TRIGGER_MODE_AUTOTRIGGER;
-    config.acquire_mode = ACQUIRE_MODE_AUTO;
+    // External acquire mode: the camera only starts new exposures while its
+    // acquire-enable input (HWIO 2, configured below) is active. The trigger
+    // firmware drives this line for both muscle cameras at once and pulses it
+    // LOW to restart them in sync.
+    pco::Description description = camera.getDescription();
+    if (!description.has_acquire_mode) {
+        throw std::runtime_error("PCO camera does not support acquire modes");
+    }
+    config.acquire_mode = ACQUIRE_MODE_EXTERNAL;
     // Zero inter-frame delay keeps the rolling shutter continuous (no idle
     // time). Any sync delay is implemented in the trigger firmware, not here.
     config.delay_time_s = delay_us / 1000000.0; // Convert to seconds
     config.noise_filter_mode = NOISE_FILTER_MODE_ON;
-    // config.timestamp_mode = TIMESTAMP_MODE_ASCII;
+    // Binary timestamps give each frame the camera's image counter and time
+    // (read back per frame in serve_frames()). Note that the camera writes them
+    // into the first pixels of the image's top row, overwriting pixel data.
+    if (!description.has_timestamp_mode ||
+        description.has_timestamp_mode_ascii_only) {
+        throw std::runtime_error(
+            "PCO camera does not support binary timestamps");
+    }
+    config.timestamp_mode = TIMESTAMP_MODE_BINARY;
     spdlog::info("Setting PCO camera configuration");
     camera.setConfiguration(config);
     spdlog::info("PCO camera configuration set");
@@ -185,12 +225,18 @@ void setup_pco_camera(
     camera.configureHWIO_1_exposureTrigger(
         true, pco::HWIO_EdgePolarity::rising_edge);
 
+    // Acquire enable on HWIO 2: HIGH = acquisition enabled (see acquire_mode
+    // above).
+    spdlog::info("Enabling PCO camera acquire-enable input (active high)");
+    camera.configureHWIO_2_acquireEnable(true, pco::HWIO_Polarity::high_level);
+
     // Drive SMA #4 as the muscle camera's "common time" reference for the
-    // trigger firmware. The firmware (trigger_firmware:
-    // DeviceIO::isMuscCommonTime) treats the line being HIGH as "in common
-    // time" and fires the behavior frame
-    // + blue LED on the LOW->HIGH onset, so the camera must drive the line HIGH
-    // for exactly the common-time window.
+    // trigger firmware. Both cameras output it; the firmware paces the behavior
+    // camera with the calcium camera's signal
+    // (DeviceIO::is_calcium_common_time): it treats the line being HIGH as "in
+    // common time" and fires the behavior frame + blue LED on the LOW->HIGH
+    // onset, so the camera must drive the line HIGH for exactly the
+    // common-time window.
     //
     // - signal_type status_expos: report the exposure status on SMA #4.
     // - timing global: for a rolling shutter, "global" is the interval when all
@@ -199,8 +245,7 @@ void setup_pco_camera(
     //   exposure envelope and would make the onset fire ~rolling_time too
     //   early.
     // - polarity high_level: status_expos is asserted during the global window,
-    // so
-    //   high_level makes the line HIGH during common time (LOW otherwise),
+    //   so high_level makes the line HIGH during common time (LOW otherwise),
     //   matching the firmware's edge.
     camera.configureHWIO_4_statusExpos(
         true,
@@ -210,12 +255,9 @@ void setup_pco_camera(
 }
 
 void serve_frames(
-    const std::string &shm_frame_data_name,
+    const pco_shared_memory::SharedMemoryNames &shm_names,
+    const DWORD serial_number,
     const size_t frame_buffer_size,
-    const std::string &shm_shutter_open_time_name,
-    const std::string &shm_frame_metadata_name,
-    const std::string &shm_mutex_name,
-    const std::string &shm_cond_var_name,
     const unsigned int default_shutter_open_time_us,
     const unsigned int x0,
     const unsigned int x1,
@@ -232,44 +274,50 @@ void serve_frames(
     spdlog::info("PCO camera server: Setting up shared memory for frame data");
     uint8_t *frame_data_ptr;
     pco_shared_memory::setup_frame_data(
-        shm_frame_data_name, frame_buffer_size, frame_data_ptr, create_new);
+        shm_names.frame_data, frame_buffer_size, frame_data_ptr, create_new);
 
     spdlog::info(
         "PCO camera server: Setting up shared memory for exposure time");
     pco_shared_memory::ShutterOpenTime *shutter_open_time_ptr;
     pco_shared_memory::setup_shutter_open_time(
-        shm_shutter_open_time_name, shutter_open_time_ptr, create_new);
+        shm_names.shutter_open_time, shutter_open_time_ptr, create_new);
 
     spdlog::info(
-        "PCO camera server: Setting up shared memory for frame metadata");
-    pco_shared_memory::FrameMetadata *frame_metadata_ptr;
-    pco_shared_memory::setup_frame_metadata(
-        shm_frame_metadata_name, frame_metadata_ptr, create_new);
+        "PCO camera server: Setting up shared memory for server state");
+    pco_shared_memory::ServerState *server_state_ptr;
+    pco_shared_memory::setup_server_state(
+        shm_names.server_state, server_state_ptr, create_new);
 
     spdlog::info("PCO camera server: Setting up shared memory for mutex");
     pthread_mutex_t *mutex_ptr;
-    pco_shared_memory::setup_mutex(shm_mutex_name, mutex_ptr, create_new);
+    pco_shared_memory::setup_mutex(shm_names.mutex, mutex_ptr, create_new);
 
-    spdlog::info("PCO camera server: Setting up shared memory for cond var");
-    pthread_cond_t *cond_var_ptr;
+    spdlog::info("PCO camera server: Setting up shared memory for condvar");
+    pthread_cond_t *condvar_ptr;
     pco_shared_memory::setup_condition_variable(
-        shm_cond_var_name, cond_var_ptr, create_new);
+        shm_names.condvar, condvar_ptr, create_new);
 
     spdlog::info("PCO camera server: Shared memory setup complete");
 
     // Set default exposure time and initial frame count
     spdlog::info("Setting default exposure time in shared memory");
     shutter_open_time_ptr->requested_us.store(default_shutter_open_time_us);
-    // Mark "no frame published yet" before the (slow) camera setup below, so
-    // the consumer (MuscleCamera::wait_for_one_frame) never mistakes the
-    // zero-filled buffer for frame 0. Done here, right after the region is
-    // created, so it is in place well before the consumer maps it. Real frames
-    // are numbered from 0.
-    frame_metadata_ptr->frame_count = -1;
+    // Mark "not ready" and "no frame published yet" before the (slow) camera
+    // setup below, so the consumer (PcoCameraClient) neither uses the server
+    // early nor mistakes the zero-filled buffer for frame 0. Real frames are
+    // numbered from 0.
+    server_state_ptr->is_ready.store(false);
+    server_state_ptr->latest_frame.frame_count = -1;
 
     // Initialize PCO camera
-    spdlog::info("Setting up PCO camera");
-    pco::Camera camera;
+    spdlog::info("Opening PCO camera with serial number {}", serial_number);
+    pco::Camera camera(pco::CameraInterface::Any, serial_number);
+    if (camera.getDescription().serial != serial_number) {
+        throw std::runtime_error(fmt::format(
+            "Opened PCO camera with serial number {}, expected {}",
+            camera.getDescription().serial,
+            serial_number));
+    }
     pco_camera_server::setup_pco_camera(
         camera,
         default_shutter_open_time_us,
@@ -297,6 +345,11 @@ void serve_frames(
     unsigned int current_exposure_time_us = default_shutter_open_time_us;
     // setup_pco_camera() applied the default exposure; tell the client.
     shutter_open_time_ptr->applied_us.store(current_exposure_time_us);
+
+    // The camera is configured and recording (frames arrive once the trigger
+    // firmware enables acquisition), so the client may start using the server.
+    server_state_ptr->is_ready.store(true);
+    spdlog::info("PCO camera server is ready");
 
     // Data acquisition loop
     spdlog::info("PCO camera server starting its data acquisition loop");
@@ -397,19 +450,25 @@ void serve_frames(
         frame_metadata.frame_count = frame_count++;
         frame_metadata.acquisition_time =
             pco_camera_server::get_current_time_microseconds();
+        frame_metadata.recorder_image_number =
+            pco_image.getRecorderImageNumber();
+        if (pco_image.timestamp) {
+            frame_metadata.camera_image_counter =
+                pco_image.timestamp->dwImgCounter;
+            frame_metadata.camera_timestamp_us =
+                pco_timestamp_to_epoch_us(*pco_image.timestamp);
+        }
 
-        // Mutex-protected zone! Updata image buffer and frame count
+        // Mutex-protected zone! Update image buffer and frame metadata
         pthread_mutex_lock(mutex_ptr);
         memcpy(frame_data_ptr, cv_image.data, frame_buffer_size);
-        memcpy(
-            frame_metadata_ptr,
-            &frame_metadata,
-            sizeof(pco_shared_memory::FrameMetadata));
-        pthread_cond_signal(cond_var_ptr);
+        server_state_ptr->latest_frame = frame_metadata;
+        pthread_cond_signal(condvar_ptr);
         // spdlog::debug("PCO camera server signaled new frame");
         pthread_mutex_unlock(mutex_ptr);
     }
 
+    server_state_ptr->is_ready.store(false);
     camera.stop();
     spdlog::info("PCO camera stopped.");
 }
@@ -482,22 +541,22 @@ int main(int argc, char *argv[]) {
     const size_t size_per_pixel = 2; // CV_16UC1
     const size_t frame_buffer_size = roi_width * roi_height * size_per_pixel;
 
-    // Set up shared memory buffers for frame data, mutex, and semaphore
-    const std::string shm_frame_data_name =
-        recorder_config.get_parameter<std::string>(
-            "muscle_camera", "shared_frame_data_name");
-    const std::string shm_shutter_open_time_name =
-        recorder_config.get_parameter<std::string>(
-            "muscle_camera", "shared_shutter_open_time_name");
-    const std::string shm_frame_metadata_name =
-        recorder_config.get_parameter<std::string>(
-            "muscle_camera", "shared_frame_metadata_name");
-    const std::string shm_mutex_name =
-        recorder_config.get_parameter<std::string>(
-            "muscle_camera", "shared_mutex_name");
-    const std::string shm_cond_var_name =
-        recorder_config.get_parameter<std::string>(
-            "muscle_camera", "shared_condition_variable_name");
+    // Which camera this server serves, and its shared-memory regions
+    pco_shared_memory::MuscleCameraRole role;
+    try {
+        role = pco_shared_memory::role_from_string(options.camera_role);
+    } catch (const std::invalid_argument &e) {
+        spdlog::critical(e.what());
+        return 1;
+    }
+    const pco_shared_memory::SharedMemoryNames shm_names =
+        pco_shared_memory::get_shared_memory_names(recorder_config, role);
+    const DWORD serial_number = recorder_config.get_parameter<DWORD>(
+        "muscle_camera", "serial_number_" + options.camera_role);
+    spdlog::info(
+        "pco-camera-server serving the {} camera (serial number {})",
+        options.camera_role,
+        serial_number);
 
     // The PCO SDK keeps global state (camera scan/open handles, recorder, etc.)
     // that must be initialized before any pco::Camera is constructed. Skipping
@@ -515,12 +574,9 @@ int main(int argc, char *argv[]) {
 
     try {
         pco_camera_server::serve_frames(
-            shm_frame_data_name,
+            shm_names,
+            serial_number,
             frame_buffer_size,
-            shm_shutter_open_time_name,
-            shm_frame_metadata_name,
-            shm_mutex_name,
-            shm_cond_var_name,
             default_shutter_open_time_us,
             options.x0,
             options.x1,

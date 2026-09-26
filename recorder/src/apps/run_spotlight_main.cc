@@ -154,11 +154,11 @@ bool quit_program() {
         behavior_camera->stop();
     }
 
-    // Terminate PCO camera server. stop() is bounded (SIGTERM, then SIGKILL
-    // after a grace period), so an unresponsive server can never block the
-    // shutdown indefinitely. Once the server is gone the muscle acquirer blocks
-    // forever in wait_for_one_frame()'s pthread_cond_wait; that thread is
-    // abandoned at std::exit() below.
+    // Terminate both PCO camera servers. stop() is bounded (SIGTERM, then
+    // SIGKILL after a grace period), so an unresponsive server can never block
+    // the shutdown indefinitely. Once the servers are gone the muscle acquirer
+    // blocks forever in wait_for_next_frame_pair()'s pthread_cond_wait; that
+    // thread is abandoned at std::exit() below.
     if (std::shared_ptr<MuscleCamera> muscle_camera =
             muscle_recording_state->muscle_camera.load()) {
         spdlog::info("Stopping acquisition on muscle camera");
@@ -273,8 +273,6 @@ int run_spotlight_main(int argc, char **argv) {
     behavior_recording_state->latest_frame_holder =
         std::make_shared<LatestFrame>();
     muscle_recording_state = std::make_shared<MuscleRecordingState>();
-    muscle_recording_state->latest_frame_holder =
-        std::make_shared<LatestFrame>();
 
     // Start tracking & motion control threads
     std::shared_ptr<TrackingControlState> tracking_control_state =
@@ -355,7 +353,7 @@ int run_spotlight_main(int argc, char **argv) {
     while (!muscle_recording_state->muscle_camera.load()) {
         // Wait for the muscle camera to be initialized
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        spdlog::warn("Waiting for muscle camera to be initialized...");
+        spdlog::debug("Waiting for muscle camera to be initialized...");
         retry_count++;
         if (retry_count % 10 == 0) {
             spdlog::warn("Muscle camera is not initialized.");

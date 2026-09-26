@@ -5,7 +5,8 @@
 // exercise the cached output-state bookkeeping that the rest of the firmware
 // relies on: the idempotent setters, the OptoChannel::all aggregation, and
 // reset(). They do not assert on electrical pin levels, only on the logical
-// state DeviceIO reports back through is_opto_ch_on().
+// state DeviceIO reports back through is_opto_ch_on() and
+// is_musc_acquire_enabled().
 
 #include <AUnit.h>
 #include <Arduino.h>
@@ -75,6 +76,17 @@ test(deviceIo_settersAreIdempotent) {
     dev.turn_off_opto_ch(OptoChannel::ch2);
     dev.turn_off_opto_ch(OptoChannel::ch2);
     assertFalse(dev.is_opto_ch_on(OptoChannel::ch2));
+}
+
+test(deviceIo_resetLeavesMuscleAcquireEnabled) {
+    DeviceIO &dev = DeviceIO::get_instance();
+    dev.disable_musc_acquire();
+    assertFalse(dev.is_musc_acquire_enabled());
+
+    // Acquire enable HIGH is the muscle cameras' normal running state, so the
+    // safe default restores it rather than dropping it like the other outputs.
+    dev.reset();
+    assertTrue(dev.is_musc_acquire_enabled());
 }
 
 test(deviceIo_unknownChannelIsRejected) {
