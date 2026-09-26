@@ -185,11 +185,14 @@ void setup_mutex(
     }
     close(shm_file_desc);
 
-    // First-time init for mutex
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(mutex_ptr, &attr);
+    // Only the creator initializes the mutex. Re-initializing a mutex that the
+    // other process may already hold is undefined behavior.
+    if (create_new) {
+        pthread_mutexattr_t attr;
+        pthread_mutexattr_init(&attr);
+        pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+        pthread_mutex_init(mutex_ptr, &attr);
+    }
 }
 
 void setup_condition_variable(
@@ -235,16 +238,19 @@ void setup_condition_variable(
     }
     close(shm_file_desc);
 
-    // First-time init for condition variable
-    pthread_condattr_t attr;
-    pthread_condattr_init(&attr);
-    pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    int err = pthread_cond_init(cond_var_ptr, &attr);
-    if (err != 0) {
-        std::string msg = "Failed to initialize condition variable: " +
-                          std::string(strerror(err));
-        spdlog::critical(msg);
-        throw std::runtime_error(msg);
+    // Only the creator initializes the condition variable. Re-initializing one
+    // that the other process may be waiting on is undefined behavior.
+    if (create_new) {
+        pthread_condattr_t attr;
+        pthread_condattr_init(&attr);
+        pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+        int err = pthread_cond_init(cond_var_ptr, &attr);
+        if (err != 0) {
+            std::string msg = "Failed to initialize condition variable: " +
+                              std::string(strerror(err));
+            spdlog::critical(msg);
+            throw std::runtime_error(msg);
+        }
     }
 }
 } // namespace pco_shared_memory
