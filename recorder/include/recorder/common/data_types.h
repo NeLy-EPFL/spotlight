@@ -10,6 +10,20 @@ struct FrameData {
     uint64_t acquisition_time = 0; // as returned by frame grabber
     uint64_t received_time = 0;    // as returned by frame grabber
     cv::Mat image;
+
+    // PCO muscle cameras only (zero for the behavior camera); see
+    // pco_shared_memory::FrameMetadata.
+    long server_frame_count = 0;
+    uint32_t recorder_image_number = 0;
+};
+
+// One frame from each of the two synchronized PCO muscle cameras.
+struct FramePair {
+    // Matches the acquirers' frame counters; -1 until the pair is assigned an
+    // id during recording.
+    long frame_id = -1;
+    FrameData calcium;
+    FrameData fiducial;
 };
 
 struct BehaviorCameraROI {
@@ -77,9 +91,9 @@ enum CalibrationScanDirection { row_by_row, column_by_column };
 struct ProgramState {
     std::atomic<bool> to_quit = false;
     std::atomic<bool> is_recording = false;
-    // Whether the current recording images the muscle camera. When false the
-    // muscle camera still free-runs (it is never TTL-triggered) but its frames
-    // are not saved -- a behavior-only recording. Set by the GUI before
+    // Whether the current recording images the muscle cameras. When false the
+    // muscle cameras still free-run (they are never TTL-triggered) but their
+    // frames are not saved -- a behavior-only recording. Set by the GUI before
     // is_recording is raised; read by the muscle image acquirer.
     std::atomic<bool> muscle_imaging_enabled = false;
 };

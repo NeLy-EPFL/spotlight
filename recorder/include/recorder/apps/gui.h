@@ -150,7 +150,10 @@ class MainGUIWindow : public QWidget {
     // Assemble the STREAM / START_RECORDING params from the current widget
     // values and the cached PCO timing.
     TriggerParams build_streaming_params() const;
-    TriggerParams build_recording_params() const;
+    // musc_resync_interval: see get_musc_resync_interval(), computed once per
+    // recording in start_recording().
+    TriggerParams build_recording_params(
+        unsigned int musc_resync_interval) const;
     // Program the free-running (auto-sequence) muscle camera's nominal exposure
     // so it produces muscle frames at beh_frame_rate / sync_ratio. Called at
     // startup, when a recording starts (recording rate), and when it ends
@@ -201,9 +204,12 @@ class MainGUIWindow : public QWidget {
     // Write the recording metadata files into the (already created) save
     // directory, reading the recording parameters directly from the widgets.
     // The muscle timing passed to write_experiment_parameters is the derived
-    // continuous-mode timing from validate_and_prepare_recording().
+    // continuous-mode timing from validate_and_prepare_recording() and the
+    // number of muscle frames between periodic re-syncs.
     void write_experiment_parameters(
-        int muscle_nominal_exposure_us, int muscle_buffer_time_us);
+        int muscle_nominal_exposure_us,
+        int muscle_buffer_time_us,
+        unsigned int musc_resync_interval);
     void write_recorder_config();
     void write_behavior_calibration_parameters();
     void copy_homography_parameters_if_present();

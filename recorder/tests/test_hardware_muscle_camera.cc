@@ -1,19 +1,21 @@
 // Hardware tests: PCO muscle camera init-configure-destroy cycles.
 //
 // Two tests:
-//   1. Standalone pco-camera-server: spawns the binary directly, verifies it
-//      stays alive through its startup sequence, then stops it with SIGTERM
-//      and checks for a clean exit.
+//   1. Standalone pco-camera-server: spawns the binary directly for the calcium
+//      camera, verifies it stays alive through its startup sequence, then stops
+//      it with SIGTERM and checks for a clean exit.
 //   2. MuscleCamera class: constructs the in-process API object (which spawns
-//      the server internally), verifies the server is alive after settling,
-//      then calls stop().
+//      both camera servers internally and waits until they are ready),
+//      verifies the servers are alive after settling, then calls stop().
 //
-// wait_for_one_frame() is intentionally not called: it uses pthread_cond_wait
-// with no timeout, so it would block indefinitely if the server crashed or
-// never produced a frame.  The alive-after-N-seconds check is a good proxy
-// for "server initialised and is running its acquisition loop."
+// wait_for_next_frame_pair() is intentionally not called: it uses
+// pthread_cond_wait with no timeout, and the cameras only produce frames once
+// the trigger controller enables acquisition, so it would block indefinitely
+// here. The alive-after-N-seconds check is a good proxy for "server initialised
+// and is running its acquisition loop."
 //
-// Requires the PCO panda camera to be powered and connected.
+// Requires both PCO panda cameras to be powered and connected, with their serial
+// numbers set in the recorder config.
 // Run with SPOTLIGHT_PROFILE_DIR set to a valid profile directory.
 
 #include <cerrno>
@@ -72,6 +74,8 @@ TEST(MuscleCameraHardwareTest, StandalonePcoCameraServerInitDestroy) {
         execl(
             server_path.c_str(),
             "pco-camera-server",
+            "--camera",
+            "calcium",
             "--profile-dir",
             profile_dir.c_str(),
             "--x-min",
@@ -137,7 +141,8 @@ TEST(MuscleCameraHardwareTest, MuscleCameraClassInitDestroyMuscleCamera) {
     const double readout_time_us =
         config.get_parameter<double>("muscle_camera", "sensor_readout_time_us");
 
-    // Construction spawns pco-camera-server and sets up shared memory.
+    // Construction spawns both pco-camera-server processes, sets up shared
+    // memory, and waits until both cameras are recording.
     MuscleCamera muscle_camera(
         roi_width,
         roi_height,
@@ -149,16 +154,22 @@ TEST(MuscleCameraHardwareTest, MuscleCameraClassInitDestroyMuscleCamera) {
         profile_dir,
         spdlog::level::info);
 
-    const pid_t server_pid = muscle_camera.get_camera_server_pid();
-    ASSERT_GT(server_pid, 0);
+    const std::array<pid_t, 2> server_pids =
+        muscle_camera.get_camera_server_pids();
+    for (pid_t server_pid : server_pids) {
+        ASSERT_GT(server_pid, 0);
+    }
 
-    // Let the server settle into its acquisition loop, then confirm it is
-    // still alive (has not crashed during initialization).
+    // Let the servers settle into their acquisition loops, then confirm they
+    // are still alive (have not crashed after initialization).
     std::this_thread::sleep_for(std::chrono::seconds(settle_wait_seconds));
-    EXPECT_EQ(kill(server_pid, 0), 0)
-        << "pco-camera-server (PID " << server_pid << ") crashed after init";
+    for (pid_t server_pid : server_pids) {
+        EXPECT_EQ(kill(server_pid, 0), 0)
+            << "pco-camera-server (PID " << server_pid
+            << ") crashed after init";
+    }
 
-    // stop() sends SIGTERM to the server and reaps the process.
+    // stop() sends SIGTERM to both servers and reaps the processes.
     muscle_camera.stop();
 
     // Destructor is a no-op after stop().

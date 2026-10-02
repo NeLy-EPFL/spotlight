@@ -18,11 +18,23 @@ muscle_camera:
   num_image_saving_threads: 4
   default_recording_sync_ratio: 6
   default_light_on_time_us: 1000
-  shared_frame_data_name: "/pco_camera_data"
-  shared_shutter_open_time_name: "/pco_camera_shutter_open_time"
-  shared_frame_metadata_name: "/pco_camera_frame_metadata"
-  shared_mutex_name: "/pco_camera_mutex"
-  shared_condition_variable_name: "/pco_camera_condition_variable"
+  # PCO camera serial numbers (placeholders: set to the real serial numbers)
+  serial_number_calcium: 0
+  serial_number_fiducial: 0
+  # Max time to wait for each pco-camera-server to configure its camera and
+  # start recording
+  server_ready_timeout_s: 30
+  # POSIX shared-memory region names, one set per pco-camera-server
+  shared_frame_data_name_calcium: "/pco_camera_data_calcium"
+  shared_frame_data_name_fiducial: "/pco_camera_data_fiducial"
+  shared_shutter_open_time_name_calcium: "/pco_camera_shutter_open_time_calcium"
+  shared_shutter_open_time_name_fiducial: "/pco_camera_shutter_open_time_fiducial"
+  shared_server_state_name_calcium: "/pco_camera_server_state_calcium"
+  shared_server_state_name_fiducial: "/pco_camera_server_state_fiducial"
+  shared_mutex_name_calcium: "/pco_camera_mutex_calcium"
+  shared_mutex_name_fiducial: "/pco_camera_mutex_fiducial"
+  shared_condvar_name_calcium: "/pco_camera_condvar_calcium"
+  shared_condvar_name_fiducial: "/pco_camera_condvar_fiducial"
   histogram_display_min: 0
   histogram_display_max: 1400
   default_display_vmin: 200

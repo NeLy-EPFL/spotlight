@@ -1,12 +1,24 @@
 # Ignore everything...
 *
 
-# ... except the examples
+# ... except the examples and the standalone test programs
 !examples/
 !examples/**
+!pco_camera_clock_drift_profiling/
+!pco_camera_clock_drift_profiling/**
+!pco_camera_resync_test/
+!pco_camera_resync_test/**
 
-# But ignore all build files even if they're under examples/
+# But ignore all build files even if they're under the folders above
 examples/**/build/
+pco_camera_clock_drift_profiling/**/build/
+pco_camera_clock_drift_profiling/**/.pio/
+pco_camera_resync_test/**/build/
+pco_camera_resync_test/**/.pio/
+# ... and the recordings and analysis output of the tests
+pco_camera_clock_drift_profiling/**/clock_drift_*/
+pco_camera_clock_drift_profiling/**/raw_capture_*/
+pco_camera_resync_test/**/resync_test_*/
 
 # Finally, don't ignore this .gitignore file
 !.gitignore

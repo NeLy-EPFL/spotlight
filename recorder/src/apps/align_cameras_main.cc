@@ -241,8 +241,6 @@ void align_camera(const std::filesystem::path &profile_dir) {
     spdlog::info("Behavior camera acquisition thread started");
 
     spdlog::info("Setting up muscle camera acquisition thread");
-    muscle_recording_state->latest_frame_holder =
-        std::make_shared<LatestFrame>();
     std::thread muscle_image_acquirer_thread(
         muscle_image_acquirer,
         full_muscle_image_width,
@@ -290,7 +288,7 @@ void align_camera(const std::filesystem::path &profile_dir) {
                              ->get_latest_frame_data()
                              .image;
         muscle_image =
-            muscle_recording_state->latest_frame_holder->get_latest_frame_data()
+            muscle_recording_state->latest_calcium_frame_holder->get_latest_frame_data()
                 .image;
 
         // Skip display if images are empty

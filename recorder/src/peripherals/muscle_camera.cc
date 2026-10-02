@@ -2,7 +2,9 @@
 
 #include <cerrno> // errno, ECHILD
 #include <chrono>
+#include <cstdlib> // std::abs
 #include <filesystem>
+#include <sys/mman.h>  // shm_unlink
 #include <sys/prctl.h> // prctl, PR_SET_PDEATHSIG
 #include <thread>
 
@@ -30,32 +32,53 @@ std::string log_level_to_str(spdlog::level::level_enum log_level) {
 }
 } // namespace
 
-MuscleCamera::MuscleCamera(
-    int image_width,
-    int image_height,
-    int x_offset,
-    int y_offset,
-    double rolling_shutter_line_time_us,
-    double sensor_readout_time_us,
+// ---------------------------------------------------------------------------
+// PcoCameraClient
+// ---------------------------------------------------------------------------
+
+PcoCameraClient::PcoCameraClient(
+    pco_shared_memory::MuscleCameraRole role,
+    unsigned int x0,
+    unsigned int x1,
+    unsigned int y0,
+    unsigned int y1,
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level)
-    // Member initializers are in declaration order (avoids -Wreorder).
-    : x0_(x_offset + 1), x1_(x_offset + image_width), y0_(y_offset + 1),
-      y1_(y_offset + image_height), image_width_(image_width),
-      image_height_(image_height),
-      rolling_shutter_line_time_us_(rolling_shutter_line_time_us),
-      sensor_readout_time_us_(sensor_readout_time_us),
-      pco_camera_server_pid_(-1), frame_data_ptr_(nullptr),
-      shutter_open_time_ptr_(nullptr), frame_metadata_ptr_(nullptr),
-      mutex_ptr_(nullptr), cond_var_ptr_(nullptr),
-      recorder_config_(recorder_config),
-      // -1 = "no frame returned yet"; the server numbers real frames from 0.
-      last_frame_count_(-1) {
-    if (!is_roi_valid()) {
-        throw std::runtime_error("Invalid ROI for muscle camera");
+    : role_name_(pco_shared_memory::role_to_string(role)),
+      shm_names_(
+          pco_shared_memory::get_shared_memory_names(recorder_config, role)),
+      frame_buffer_size_((x1 - x0 + 1) * (y1 - y0 + 1) * 2), // CV_16UC1
+      image_width_(x1 - x0 + 1), image_height_(y1 - y0 + 1) {
+    // Remove regions left behind by a previous (possibly crashed) server, so
+    // that we cannot attach to them and mistake their stale state (e.g.
+    // is_ready) for the new server's. The new server recreates them.
+    for (const std::string &name :
+         {shm_names_.frame_data,
+          shm_names_.shutter_open_time,
+          shm_names_.server_state,
+          shm_names_.mutex,
+          shm_names_.condvar}) {
+        shm_unlink(name.c_str()); // ENOENT (nothing left behind) is fine
     }
 
+    start_server(x0, x1, y0, y1, profile_dir, log_level);
+    wait_until_ready(recorder_config.get_parameter<int>(
+        "muscle_camera", "server_ready_timeout_s"));
+    spdlog::info("PCO camera server for the {} camera is ready", role_name_);
+}
+
+PcoCameraClient::~PcoCameraClient() {
+    stop();
+}
+
+void PcoCameraClient::start_server(
+    unsigned int x0,
+    unsigned int x1,
+    unsigned int y0,
+    unsigned int y1,
+    const std::string &profile_dir,
+    spdlog::level::level_enum log_level) {
     // Capture our PID before forking so the child can detect (after arming its
     // parent-death signal below) whether we already died in the race window
     // between fork() and prctl().
@@ -74,9 +97,9 @@ MuscleCamera::MuscleCamera(
         //
         // Ask the kernel to send us SIGTERM if our parent (the recorder) dies.
         // Without this, a recorder that is SIGKILLed or crashes never runs
-        // ~MuscleCamera(), so the camera server is orphaned and keeps the PCO
-        // camera open indefinitely. The next run then fails to open the camera
-        // (it is already "attached") and the SDK reports the cryptic
+        // ~PcoCameraClient(), so the camera server is orphaned and keeps the
+        // PCO camera open indefinitely. The next run then fails to open the
+        // camera (it is already "attached") and the SDK reports the cryptic
         // "Handle is invalid" (0xa00a3002). The server installs a SIGTERM
         // handler that stops and closes the camera cleanly. PR_SET_PDEATHSIG
         // survives the execl() below because pco-camera-server is not set-uid.
@@ -97,16 +120,18 @@ MuscleCamera::MuscleCamera(
         execl(
             server_path.c_str(),
             "pco-camera-server",
+            "--camera",
+            role_name_.c_str(),
             "--profile-dir",
             profile_dir.c_str(),
             "--x-min",
-            std::to_string(x0_).c_str(),
+            std::to_string(x0).c_str(),
             "--x-max",
-            std::to_string(x1_).c_str(),
+            std::to_string(x1).c_str(),
             "--y-min",
-            std::to_string(y0_).c_str(),
+            std::to_string(y0).c_str(),
             "--y-max",
-            std::to_string(y1_).c_str(),
+            std::to_string(y1).c_str(),
             "--delay",
             "0", // sync delay is implemented in Arduino code, not here!
             "--verbosity",
@@ -119,80 +144,98 @@ MuscleCamera::MuscleCamera(
                                     std::string(strerror(errno));
         spdlog::critical(error_message);
         exit(EXIT_FAILURE); // Exit child process
-    } else {
-        // Parent process
-        pco_camera_server_pid_ = pid;
-        spdlog::info(
-            "PCO camera server started with process ID (PID): {}",
-            pco_camera_server_pid_);
+    }
 
-        // Wait for the camera server to initialize
-        sleep(1); // sleep for 1 second
+    // Parent process
+    pid_ = pid;
+    spdlog::info(
+        "PCO camera server for the {} camera started with PID {}",
+        role_name_,
+        pid_);
+}
 
-        // Setup shared memory buffers
-        spdlog::info("Muscle camera API: Setting up shared memory buffer...");
+void PcoCameraClient::wait_until_ready(int timeout_s) {
+    // The server creates its shared memory right away but only reports ready
+    // after the (slow) camera setup, once the camera is recording. Until then
+    // the mutex and condvar may not be initialized, so nothing but is_ready
+    // may be touched.
+    constexpr auto poll_interval = std::chrono::milliseconds(50);
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(timeout_s);
+    while (true) {
+        if (waitpid(pid_, nullptr, WNOHANG) == pid_) {
+            pid_ = -1; // already reaped
+            throw std::runtime_error(
+                "PCO camera server for the " + role_name_ +
+                " camera exited during startup (see its log above)");
+        }
 
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for frame data");
-        bool create_new = false;
+        if (server_state_ptr_ == nullptr) {
+            try {
+                attach_shared_memory();
+            } catch (const std::runtime_error &e) {
+                // Not (fully) created yet; retry below
+                spdlog::debug("Shared memory not ready yet: {}", e.what());
+            }
+        }
+        if (server_state_ptr_ != nullptr && server_state_ptr_->is_ready.load()) {
+            return;
+        }
 
-        size_t frame_buffer_size = image_width * image_height * 2; // CV_16UC1
-        std::string shm_frame_data_name =
-            recorder_config.get_parameter<std::string>(
-                "muscle_camera", "shared_frame_data_name");
-        pco_shared_memory::setup_frame_data(
-            shm_frame_data_name,
-            frame_buffer_size,
-            frame_data_ptr_,
-            create_new);
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for shutter-open "
-            "time");
-        std::string shm_shutter_open_time_name =
-            recorder_config.get_parameter<std::string>(
-                "muscle_camera", "shared_shutter_open_time_name");
-        pco_shared_memory::setup_shutter_open_time(
-            shm_shutter_open_time_name, shutter_open_time_ptr_, create_new);
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for frame metadata");
-        std::string shm_frame_metadata_name =
-            recorder_config.get_parameter<std::string>(
-                "muscle_camera", "shared_frame_metadata_name");
-        pco_shared_memory::setup_frame_metadata(
-            shm_frame_metadata_name, frame_metadata_ptr_, create_new);
-
-        spdlog::info("Muscle camera API: Setting up shared memory for mutex");
-        std::string shm_mutex_name = recorder_config.get_parameter<std::string>(
-            "muscle_camera", "shared_mutex_name");
-        pco_shared_memory::setup_mutex(shm_mutex_name, mutex_ptr_, create_new);
-
-        spdlog::info(
-            "Muscle camera API: Setting up shared memory for cond var");
-        std::string shm_cond_var_name =
-            recorder_config.get_parameter<std::string>(
-                "muscle_camera", "shared_condition_variable_name");
-        pco_shared_memory::setup_condition_variable(
-            shm_cond_var_name, cond_var_ptr_, create_new);
-        spdlog::info("Shared memory setup complete for PCO camera");
+        if (std::chrono::steady_clock::now() > deadline) {
+            stop();
+            throw std::runtime_error(fmt::format(
+                "PCO camera server for the {} camera was not ready within {} s",
+                role_name_,
+                timeout_s));
+        }
+        std::this_thread::sleep_for(poll_interval);
     }
 }
 
-void MuscleCamera::stop() {
+void PcoCameraClient::attach_shared_memory() {
+    // Map into locals and publish only once every region is mapped, so that a
+    // partial failure leaves the client detached (server_state_ptr_ == nullptr)
+    // and the caller can simply retry.
+    bool create_new = false;
+    uint8_t *frame_data_ptr;
+    pco_shared_memory::ShutterOpenTime *shutter_open_time_ptr;
+    pco_shared_memory::ServerState *server_state_ptr;
+    pthread_mutex_t *mutex_ptr;
+    pthread_cond_t *condvar_ptr;
+    pco_shared_memory::setup_frame_data(
+        shm_names_.frame_data, frame_buffer_size_, frame_data_ptr, create_new);
+    pco_shared_memory::setup_shutter_open_time(
+        shm_names_.shutter_open_time, shutter_open_time_ptr, create_new);
+    pco_shared_memory::setup_mutex(shm_names_.mutex, mutex_ptr, create_new);
+    pco_shared_memory::setup_condition_variable(
+        shm_names_.condvar, condvar_ptr, create_new);
+    // Last: its non-null pointer marks the client as attached.
+    pco_shared_memory::setup_server_state(
+        shm_names_.server_state, server_state_ptr, create_new);
+
+    frame_data_ptr_ = frame_data_ptr;
+    shutter_open_time_ptr_ = shutter_open_time_ptr;
+    mutex_ptr_ = mutex_ptr;
+    condvar_ptr_ = condvar_ptr;
+    server_state_ptr_ = server_state_ptr;
+    spdlog::info("Attached to shared memory of the {} camera", role_name_);
+}
+
+void PcoCameraClient::stop() {
     // Terminate the PCO camera server process. This is bounded: an unresponsive
     // server can never block shutdown indefinitely, because we escalate to
     // SIGKILL if it does not exit within the grace period. The process is
     // reaped in both paths so it does not linger as a zombie.
     //
-    // Idempotent: pcoCameraServerPID_ is cleared once reaped, so a later call
-    // (e.g. an explicit stop() followed by the destructor) is a no-op.
-    if (pco_camera_server_pid_ <= 0) {
+    // Idempotent: pid_ is cleared once reaped, so a later call (e.g. an
+    // explicit stop() followed by the destructor) is a no-op.
+    if (pid_ <= 0) {
         return;
     }
 
-    pid_t pid = pco_camera_server_pid_;
-    pco_camera_server_pid_ = -1;
+    pid_t pid = pid_;
+    pid_ = -1;
 
     kill(pid, SIGTERM);
 
@@ -215,8 +258,9 @@ void MuscleCamera::stop() {
 
     if (!reaped) {
         spdlog::warn(
-            "PCO camera server (PID {}) did not exit within {} ms of SIGTERM; "
-            "escalating to SIGKILL.",
+            "PCO camera server for the {} camera (PID {}) did not exit within "
+            "{} ms of SIGTERM; escalating to SIGKILL.",
+            role_name_,
             pid,
             grace_period_ms);
         kill(pid, SIGKILL);
@@ -225,14 +269,11 @@ void MuscleCamera::stop() {
         waitpid(pid, nullptr, 0);
     }
 
-    spdlog::info("PCO camera server process terminated.");
+    spdlog::info(
+        "PCO camera server for the {} camera terminated.", role_name_);
 }
 
-MuscleCamera::~MuscleCamera() {
-    stop();
-}
-
-FrameData MuscleCamera::wait_for_one_frame() {
+FrameData PcoCameraClient::wait_for_next_frame() {
     pthread_mutex_lock(mutex_ptr_);
 
     // Wait until a frame newer than the last one we returned is published.
@@ -248,28 +289,11 @@ FrameData MuscleCamera::wait_for_one_frame() {
     // real frames from 0 (see serve_frames), and last_frame_count_ starts at
     // -1, so this loop blocks until the first real frame instead of returning
     // the uninitialized buffer as a frame.
-    while (frame_metadata_ptr_->frame_count == last_frame_count_) {
-        pthread_cond_wait(cond_var_ptr_, mutex_ptr_);
+    while (server_state_ptr_->latest_frame.frame_count == last_frame_count_) {
+        pthread_cond_wait(condvar_ptr_, mutex_ptr_);
     }
 
-    long frame_count = frame_metadata_ptr_->frame_count;
-    uint64_t acquisition_time = frame_metadata_ptr_->acquisition_time;
-
-    // Detect frames that were overwritten before we could read them. This is a
-    // single-slot handoff: the server memcpy's every frame into the same
-    // buffer, so if we fell behind, frame_count has advanced by more than one
-    // and the intervening frames are gone. Warn rather than fail -- the
-    // acquirer renumbers frames contiguously, so silent drops would otherwise
-    // misalign the muscle and behavior frame streams in a recording. (last ==
-    // -1 is the initial state, before any frame has been returned.)
-    if (last_frame_count_ != -1 && frame_count != last_frame_count_ + 1) {
-        spdlog::warn(
-            "Muscle camera consumer fell behind: frame_count jumped from {} to "
-            "{} ({} frame(s) dropped before they could be read).",
-            last_frame_count_,
-            frame_count,
-            frame_count - last_frame_count_ - 1);
-    }
+    pco_shared_memory::FrameMetadata metadata = server_state_ptr_->latest_frame;
 
     // Copy the frame out of shared memory while still holding the lock. The
     // cv::Mat below only wraps frame_data_ptr_, which the camera server
@@ -280,16 +304,199 @@ FrameData MuscleCamera::wait_for_one_frame() {
         cv::Mat(image_height_, image_width_, CV_16UC1, frame_data_ptr_).clone();
     pthread_mutex_unlock(mutex_ptr_);
 
-    if (image.empty()) {
-        spdlog::error("muscle_camera API got an empty image");
+    // Detect lost frames. (last_frame_count_ == -1 is the initial state, before
+    // any frame has been returned.)
+    if (last_frame_count_ != -1) {
+        // This is a single-slot handoff: the server memcpy's every frame into
+        // the same buffer, so if we fell behind, frame_count has advanced by
+        // more than one and the intervening frames are gone.
+        if (metadata.frame_count != last_frame_count_ + 1) {
+            spdlog::warn(
+                "{} camera consumer fell behind: frame_count jumped from {} "
+                "to {} ({} frame(s) dropped before they could be read).",
+                role_name_,
+                last_frame_count_,
+                metadata.frame_count,
+                metadata.frame_count - last_frame_count_ - 1);
+        }
+        // The server always fetches the latest image from the PCO recorder, so
+        // if it fell behind the camera, the recorder image number skips.
+        if (metadata.recorder_image_number != last_recorder_image_number_ + 1) {
+            spdlog::warn(
+                "{} camera server skipped camera images: recorder image number "
+                "jumped from {} to {}.",
+                role_name_,
+                last_recorder_image_number_,
+                metadata.recorder_image_number);
+        }
     }
 
-    last_frame_count_ = frame_count;
+    if (image.empty()) {
+        spdlog::error("{} camera client got an empty image", role_name_);
+    }
+
+    last_frame_count_ = metadata.frame_count;
+    last_recorder_image_number_ = metadata.recorder_image_number;
     FrameData frame_data;
-    frame_data.acquisition_time = acquisition_time;
+    frame_data.acquisition_time = metadata.acquisition_time;
     frame_data.received_time = get_current_time_microseconds();
     frame_data.image = image;
+    frame_data.server_frame_count = metadata.frame_count;
+    frame_data.recorder_image_number = metadata.recorder_image_number;
     return frame_data;
+}
+
+void PcoCameraClient::set_nominal_exposure_us(unsigned int exposure_us) {
+    // The PCO camera server polls the requested value once per acquisition
+    // loop iteration (at least every WAIT_TIMEOUT_SECS), applies it to the
+    // camera, and echoes it back (see serve_frames() in
+    // pco_camera_server_main.cc). Waiting for the echo lets callers order
+    // later actions (e.g. re-syncing the trigger controller) after the change.
+    constexpr auto timeout = std::chrono::seconds(2);
+    constexpr auto poll_interval = std::chrono::milliseconds(5);
+    shutter_open_time_ptr_->requested_us.store(exposure_us);
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (shutter_open_time_ptr_->applied_us.load() != exposure_us) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            spdlog::error(
+                "PCO camera server for the {} camera did not apply exposure "
+                "time {} us within {} s",
+                role_name_,
+                exposure_us,
+                timeout.count());
+            return;
+        }
+        std::this_thread::sleep_for(poll_interval);
+    }
+}
+
+unsigned int PcoCameraClient::get_applied_exposure_us() const {
+    return shutter_open_time_ptr_->applied_us.load();
+}
+
+pid_t PcoCameraClient::get_pid() const {
+    return pid_;
+}
+
+// ---------------------------------------------------------------------------
+// MuscleCamera
+// ---------------------------------------------------------------------------
+
+MuscleCamera::MuscleCamera(
+    int image_width,
+    int image_height,
+    int x_offset,
+    int y_offset,
+    double rolling_shutter_line_time_us,
+    double sensor_readout_time_us,
+    const RecorderConfig &recorder_config,
+    const std::string &profile_dir,
+    spdlog::level::level_enum log_level)
+    // Member initializers are in declaration order (avoids -Wreorder).
+    : x0_(x_offset + 1), x1_(x_offset + image_width), y0_(y_offset + 1),
+      y1_(y_offset + image_height), image_width_(image_width),
+      image_height_(image_height),
+      rolling_shutter_line_time_us_(rolling_shutter_line_time_us),
+      sensor_readout_time_us_(sensor_readout_time_us),
+      recorder_config_(recorder_config) {
+    if (!is_roi_valid()) {
+        throw std::runtime_error("Invalid ROI for muscle camera");
+    }
+
+    // Start the servers one after the other: opening two cameras concurrently
+    // from two processes is not known to be safe in the PCO SDK. Both are
+    // recording (waiting for acquire enable) once this returns, so the trigger
+    // firmware's next STREAM starts them in sync. If the fiducial server fails,
+    // the already-constructed calcium client stops its server on unwinding.
+    calcium_ = std::make_unique<PcoCameraClient>(
+        pco_shared_memory::MuscleCameraRole::calcium,
+        x0_,
+        x1_,
+        y0_,
+        y1_,
+        recorder_config,
+        profile_dir,
+        log_level);
+    fiducial_ = std::make_unique<PcoCameraClient>(
+        pco_shared_memory::MuscleCameraRole::fiducial,
+        x0_,
+        x1_,
+        y0_,
+        y1_,
+        recorder_config,
+        profile_dir,
+        log_level);
+}
+
+void MuscleCamera::stop() {
+    calcium_->stop();
+    fiducial_->stop();
+}
+
+FramePair MuscleCamera::wait_for_next_frame_pair() {
+    FrameData calcium = calcium_->wait_for_next_frame();
+    FrameData fiducial = fiducial_->wait_for_next_frame();
+
+    // Both servers stamp frames with the same host clock, so matching frames
+    // were acquired within a fraction of a frame interval of each other. (The
+    // cameras' own timestamps come from independent clocks and cannot be
+    // compared.) Drop the older frame until the two match.
+    const int64_t frame_interval_us =
+        calcium_->get_applied_exposure_us() +
+        static_cast<int64_t>(sensor_readout_time_us_);
+    const int64_t tolerance_us = frame_interval_us / 2;
+    while (true) {
+        int64_t dt_us = static_cast<int64_t>(calcium.acquisition_time) -
+                        static_cast<int64_t>(fiducial.acquisition_time);
+        if (std::abs(dt_us) <= tolerance_us) {
+            break;
+        }
+        if (dt_us > 0) {
+            spdlog::warn(
+                "Dropping unpaired fiducial camera frame (acquired {} us "
+                "before the calcium frame)",
+                dt_us);
+            fiducial = fiducial_->wait_for_next_frame();
+        } else {
+            spdlog::warn(
+                "Dropping unpaired calcium camera frame (acquired {} us before "
+                "the fiducial frame)",
+                -dt_us);
+            calcium = calcium_->wait_for_next_frame();
+        }
+    }
+
+    // Both cameras restart together on every sync, so between syncs the
+    // difference of their recorder image numbers is constant. A change without
+    // a preceding pause in acquisition (i.e. without a sync) means one camera
+    // produced a frame the other did not: a drop or clock drift.
+    long offset = static_cast<long>(fiducial.recorder_image_number) -
+                  static_cast<long>(calcium.recorder_image_number);
+    if (has_last_pair_ && offset != last_image_number_offset_) {
+        bool after_pause = calcium.acquisition_time - last_pair_time_us_ >
+                           static_cast<uint64_t>(frame_interval_us * 3 / 2);
+        if (after_pause) {
+            spdlog::info(
+                "Muscle camera image number offset changed from {} to {} "
+                "after a pause in acquisition (re-sync)",
+                last_image_number_offset_,
+                offset);
+        } else {
+            spdlog::warn(
+                "Muscle camera image number offset changed from {} to {} "
+                "without a re-sync (dropped frame or clock drift)",
+                last_image_number_offset_,
+                offset);
+        }
+    }
+    has_last_pair_ = true;
+    last_image_number_offset_ = offset;
+    last_pair_time_us_ = calcium.acquisition_time;
+
+    FramePair frame_pair;
+    frame_pair.calcium = std::move(calcium);
+    frame_pair.fiducial = std::move(fiducial);
+    return frame_pair;
 }
 
 bool MuscleCamera::is_roi_valid() const {
@@ -306,8 +513,8 @@ bool MuscleCamera::is_roi_valid() const {
             "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
             "minimum size of the ROI is 64x16 pixels. The width must be a "
             "multiple of 32 and the height must be a multiple of 8.",
-            image_width_,
-            image_height_);
+            full_frame_width,
+            full_frame_height);
         return false;
     }
 
@@ -315,20 +522,12 @@ bool MuscleCamera::is_roi_valid() const {
 }
 
 void MuscleCamera::set_nominal_exposure_us(unsigned int exposure_us) {
-    if (shutter_open_time_ptr_ != nullptr) {
-        // The PCO camera server polls this shared value in its acquisition loop
-        // and applies it as the camera's nominal per-line exposure (see
-        // serve_frames() in pco_camera_server_main.cc). In continuous mode this
-        // also sets the free-run frame rate.
-        *shutter_open_time_ptr_ = exposure_us;
-    } else {
-        spdlog::error(
-            "Cannot set exposure time. Shared memory pointer is null.");
-    }
+    calcium_->set_nominal_exposure_us(exposure_us);
+    fiducial_->set_nominal_exposure_us(exposure_us);
 }
 
-pid_t MuscleCamera::get_camera_server_pid() const {
-    return pco_camera_server_pid_;
+std::array<pid_t, 2> MuscleCamera::get_camera_server_pids() const {
+    return {calcium_->get_pid(), fiducial_->get_pid()};
 }
 
 int MuscleCamera::get_num_lines_scanned() const {

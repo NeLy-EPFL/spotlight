@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <ctime> // timegm, std::tm
 #include <stdio.h>
 #include <string.h>
 
@@ -37,6 +38,7 @@
 
 namespace pco_camera_server {
 struct CLIOptions {
+    std::string camera_role; // "calcium" or "fiducial" (required)
     std::string profile_dir = "~/Spotlight/default/";
     unsigned int x0 = 1;
     unsigned int x1 = 2048;
@@ -65,13 +67,12 @@ void setup_pco_camera(
     unsigned int full_frame_width,
     unsigned int full_frame_height);
 
+// Create the shared-memory regions named in `shm_names`, open the PCO camera
+// with `serial_number`, and publish its frames until shutdown is requested.
 void serve_frames(
-    const std::string &shm_frame_data_name,
+    const pco_shared_memory::SharedMemoryNames &shm_names,
+    const DWORD serial_number,
     const size_t frame_buffer_size,
-    const std::string &shm_shutter_open_time_name,
-    const std::string &shm_frame_metadata_name,
-    const std::string &shm_mutex_name,
-    const std::string &shm_cond_var_name,
     const unsigned int default_shutter_open_time_us,
     const unsigned int x0,
     const unsigned int x1,

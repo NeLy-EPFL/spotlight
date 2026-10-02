@@ -8,6 +8,29 @@
 
 #include "trigger_firmware/config.h"
 
+namespace {
+// Muscle frame period as used by the controller: sync_ratio behavior periods.
+unsigned long get_musc_period_us(const TriggerParams &params) {
+    return (1000000UL / params.beh_frame_rate) * params.beh_musc_sync_ratio;
+}
+
+// Delay of the blue LED (and the first behavior frame of each sync group)
+// after the calcium common-time onset: half of the buffer time (common time -
+// light-on time), so that the light-on window is centered in the common time
+// and the margin for the fiducial camera's offset is the same on both sides.
+// The common time is the shutter-open time (muscle period - readout) minus the
+// rolling time. Zero if the light-on time does not fit in the common time.
+unsigned long get_musc_led_delay_us(const TriggerParams &params) {
+    const long common_time_us =
+        static_cast<long>(get_musc_period_us(params)) -
+        static_cast<long>(params.pco_cam_readout_time) -
+        static_cast<long>(params.pco_cam_rolling_time);
+    const long buffer_time_us =
+        common_time_us - static_cast<long>(params.musc_eff_exp_time);
+    return buffer_time_us > 0 ? buffer_time_us / 2 : 0;
+}
+} // namespace
+
 TriggerController::TriggerController() : device_(DeviceIO::get_instance()) {}
 
 void TriggerController::begin() {
@@ -90,8 +113,8 @@ void TriggerController::handle_command(const Command &cmd) {
 
 void TriggerController::handle_stream(const Command &cmd) {
     if (!check_params_timing(cmd.params)) {
-        enter_error("STREAM rejected: camera exposure not shorter than frame "
-                    "period");
+        enter_error("STREAM rejected: camera exposure or light-on delay not "
+                    "shorter than frame period");
         return;
     }
     start_streaming(cmd.params);
@@ -114,8 +137,8 @@ void TriggerController::handle_start_recording(const Command &cmd) {
     if (!check_params_timing(cmd.rec_params) ||
         !check_params_timing(cmd.revert_to_params)) {
         enter_error(
-            "START_RECORDING rejected: camera exposure not shorter than "
-            "frame period");
+            "START_RECORDING rejected: camera exposure or light-on delay not "
+            "shorter than frame period");
         return;
     }
     error_ = false;
@@ -126,7 +149,11 @@ void TriggerController::handle_start_recording(const Command &cmd) {
 
     // Let frames acquired with the previous parameters drain out of the camera
     // buffers before the recorded session begins (see cam_flush_time_us).
+    // Muscle acquire is dropped for the whole flush, so a muscle frame in
+    // progress completes (and is ignored by the recorder) during the flush;
+    // reset_timing() below then restarts both muscle cameras on one edge.
     device_.reset();
+    device_.disable_musc_acquire();
     delayMicroseconds(cam_flush_time_us);
 
     mode_ =
@@ -192,7 +219,7 @@ void TriggerController::run_triggers(unsigned long now_us) {
 void TriggerController::run_muscle_synced_triggers(unsigned long now_us) {
     // Detect the onset of the muscle camera's common time (signal HIGH). Each
     // onset starts a new sync group whose first behavior frame is locked to it.
-    bool common = device_.is_musc_common_time();
+    bool common = device_.is_calcium_common_time();
     bool onset = common && !prev_common_time_;
     prev_common_time_ = common;
 
@@ -207,18 +234,42 @@ void TriggerController::run_muscle_synced_triggers(unsigned long now_us) {
     }
 
     if (awaiting_musc_edge_ && onset) {
-        group_start_us_ = now_us;
+        // The group (and the blue LED) starts musc_led_delay_us_ after the
+        // onset, centering the light-on window in the common time.
+        group_start_us_ = now_us + musc_led_delay_us_;
         frame_in_group_ = 0;
         awaiting_musc_edge_ = false;
+
+        // Periodic re-sync of the two muscle cameras, which otherwise drift
+        // apart: every musc_resync_interval_ muscle frames, drop acquire
+        // enable at the onset. The current frame completes (with its
+        // behavior frames and blue LED, as usual), the next one is suppressed,
+        // and both cameras restart on the same edge when acquire enable is
+        // released below (see docs/data_acquisition.md).
+        ++musc_frames_since_sync_;
+        if (musc_frames_since_sync_ == musc_resync_interval_) {
+            device_.disable_musc_acquire();
+            is_resyncing_ = true;
+            resync_start_us_ = now_us;
+            musc_frames_since_sync_ = 0;
+        }
+    }
+
+    // Release acquire enable once both cameras have finished the frame in
+    // progress.
+    if (is_resyncing_ &&
+        (now_us - resync_start_us_) >= get_musc_acquire_low_us()) {
+        device_.enable_musc_acquire();
+        is_resyncing_ = false;
     }
 
     // Start the next behavior frame of the group once it is due. Frame i of a
     // group is scheduled at group_start + i * beh_period on the controller
-    // clock.
+    // clock. The signed difference is negative until the delayed group start.
     if (!awaiting_musc_edge_ && !beh_frame_active_ &&
         frame_in_group_ < sync_ratio_ &&
-        (now_us - group_start_us_) >=
-            static_cast<unsigned long>(frame_in_group_) * beh_period_us_) {
+        static_cast<long>(now_us - group_start_us_) >=
+            static_cast<long>(frame_in_group_ * beh_period_us_)) {
         device_.start_beh_cam_trigger();
         device_.turn_on_beh_led();
         beh_frame_active_ = true;
@@ -320,10 +371,30 @@ void TriggerController::revert_to_streaming() {
 }
 
 void TriggerController::reset_timing() {
+    // Drop any output left mid-pulse to a known state.
+    device_.stop_beh_cam_trigger();
+    device_.turn_off_beh_led();
+    device_.turn_off_musc_led();
+    device_.stop_musc_cam_trigger();
+
+    // Synchronize the two free-running muscle cameras: stop both via acquire
+    // enable, then restart them on the same rising edge. The low time exceeds
+    // one muscle frame so that a frame in progress on either camera has
+    // finished and both are idle at release. The hold is skipped (it is not
+    // needed, and potentially long at low frame rates) when the muscle cameras
+    // are unused, but acquire is always left enabled.
+    if (muscle_enabled_) {
+        device_.disable_musc_acquire();
+        delayMicroseconds(get_musc_acquire_low_us());
+    }
+    device_.enable_musc_acquire();
+    is_resyncing_ = false;
+    musc_frames_since_sync_ = 0;
+
     awaiting_musc_edge_ = true;
     // Seed the edge detector with the current level so a common time already in
-    // progress does not count as a fresh onset.
-    prev_common_time_ = device_.is_musc_common_time();
+    // progress does not count as a fresh onset. Read after the restart above.
+    prev_common_time_ = device_.is_calcium_common_time();
     frame_in_group_ = 0;
     group_start_us_ = micros();
     // Free-running mode: schedule the first behavior frame immediately.
@@ -331,11 +402,6 @@ void TriggerController::reset_timing() {
     beh_frame_active_ = false;
     musc_led_active_ = false;
     beh_frame_count_ = 0;
-
-    // Drop any output left mid-pulse to a known state.
-    device_.stop_beh_cam_trigger();
-    device_.turn_off_beh_led();
-    device_.turn_off_musc_led();
 }
 
 void TriggerController::apply_params(const TriggerParams &params) {
@@ -345,6 +411,13 @@ void TriggerController::apply_params(const TriggerParams &params) {
     sync_ratio_ = params_.beh_musc_sync_ratio;           // >= 1
     beh_exp_us_ = params_.beh_exp_time;
     musc_exp_us_ = params_.musc_eff_exp_time;
+    musc_led_delay_us_ = get_musc_led_delay_us(params_);
+    musc_resync_interval_ = params_.musc_resync_interval; // >= 1
+}
+
+unsigned long TriggerController::get_musc_acquire_low_us() const {
+    return beh_period_us_ * sync_ratio_ +
+           config::musc_acquire_restart_margin_us;
 }
 
 bool TriggerController::check_params_timing(const TriggerParams &params) const {
@@ -359,10 +432,12 @@ bool TriggerController::check_params_timing(const TriggerParams &params) const {
     if (!params.enable_muscle) {
         return true;
     }
-    // One muscle frame spans a whole sync group of behavior frames.
-    unsigned long musc_period_us =
-        beh_period_us * static_cast<unsigned long>(params.beh_musc_sync_ratio);
-    return params.musc_eff_exp_time < musc_period_us;
+    // One muscle frame spans a whole sync group of behavior frames. The
+    // group starts get_musc_led_delay_us() after the common-time onset, so the
+    // delay must be shorter than one behavior period for the group to finish
+    // before the next onset.
+    return params.musc_eff_exp_time < get_musc_period_us(params) &&
+           get_musc_led_delay_us(params) < beh_period_us;
 }
 
 // ---------------------------------------------------------------------------

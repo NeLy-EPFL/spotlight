@@ -179,8 +179,6 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
         programmed_stop);
 
     muscle_recording_state = std::make_shared<MuscleRecordingState>();
-    muscle_recording_state->latest_frame_holder =
-        std::make_shared<LatestFrame>();
 
     spdlog::info("Starting muscle camera acquisition thread");
     std::thread muscle_thread(
@@ -308,13 +306,13 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
             uint64_t beh_time = behavior_recording_state->latest_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
-            uint64_t mus_time = muscle_recording_state->latest_frame_holder
+            uint64_t mus_time = muscle_recording_state->latest_calcium_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
             wait_for_next_frame(
                 behavior_recording_state->latest_frame_holder, beh_time);
             wait_for_next_frame(
-                muscle_recording_state->latest_frame_holder, mus_time);
+                muscle_recording_state->latest_calcium_frame_holder, mus_time);
         }
         spdlog::debug(
             "Position ({:.2f}, {:.2f}): dropped {} settling frames",
@@ -325,14 +323,14 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
             uint64_t beh_time = behavior_recording_state->latest_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
-            uint64_t mus_time = muscle_recording_state->latest_frame_holder
+            uint64_t mus_time = muscle_recording_state->latest_calcium_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
 
             FrameData beh_frame = wait_for_next_frame(
                 behavior_recording_state->latest_frame_holder, beh_time);
             FrameData mus_frame = wait_for_next_frame(
-                muscle_recording_state->latest_frame_holder, mus_time);
+                muscle_recording_state->latest_calcium_frame_holder, mus_time);
 
             cv::Mat beh_img, mus_img;
             reorient_behavior_image(beh_frame.image, beh_img);

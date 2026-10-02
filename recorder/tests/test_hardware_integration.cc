@@ -98,7 +98,9 @@ TEST(HardwareIntegrationTest, AllHardwareInitAndShutoff) {
         config,
         profile_dir,
         spdlog::level::info);
-    EXPECT_GT(muscle_camera.get_camera_server_pid(), 0);
+    for (pid_t server_pid : muscle_camera.get_camera_server_pids()) {
+        EXPECT_GT(server_pid, 0);
+    }
 
     // -------------------------------------------------------------------------
     // Motion-control request handler thread: creates MotionControl internally

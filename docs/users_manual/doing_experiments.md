@@ -52,7 +52,7 @@ Then, click **Start recording**. Click **Stop** when done (or let the protocol s
 ```
 <save_dir>/
 ├── behavior_images/         # behavior_frame_*.jpg  (pseudo-BGR JPEGs)
-├── muscle_images/           # muscle_frame_*.tif    (16-bit TIFF; muscle imaging only)
+├── muscle_images/           # muscle_frame_*_{calcium,fiducial}.tif, muscle_frame_*.csv (muscle imaging only)
 ├── stage_position/
 │   └── stage_position.csv
 └── metadata/
@@ -62,6 +62,8 @@ Then, click **Start recording**. Click **Stop** when done (or let the protocol s
 ```
 
 Behavior frames are stored as *pseudo-BGR* JPEGs (three consecutive monochrome frames packed into the three color channels). `postprocess-recording` unpacks them.
+
+Each muscle frame is a pair of 16-bit TIFFs, one per muscle camera (`_calcium` and `_fiducial`), plus a CSV with one row of timing metadata per camera (see [Data acquisition](../developers_manual/data_acquisition.md#two-muscle-cameras)).
 
 
 ## Step 4: Postprocessing

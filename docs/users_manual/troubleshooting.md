@@ -91,6 +91,17 @@ needed. If the camera is detected by the OS but the SDK still can't open it,
 try [`reset-camera muscle`](recorder/reset_camera.md) (USB link reset, not a
 true power cycle).
 
+### Muscle frames arrive at about 19 Hz — USB 2.0 link
+
+**Cause:** the camera is plugged into a USB 3 port, but its USB 3.0 link did not
+come up and it fell back to USB 2.0 (480 Mbit/s), which is too slow for
+1120×1120 16-bit frames at 66 Hz. The camera still exposes every frame, but
+most never reach the computer. `lsusb -t` shows the camera at `480M` instead
+of `5000M`. **Fix:** run [`reset-camera muscle`](recorder/reset_camera.md),
+which cycles both halves (USB 2.0 and 3.0) of the cameras' ports and prints
+the link speeds afterwards. If the camera still connects at 480 Mbit/s, replug
+it or try another cable.
+
 ### `Value is out of range` — ROI is 1-indexed
 
 ```
