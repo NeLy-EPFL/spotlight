@@ -56,10 +56,6 @@ CLIOptions parse_cli(int argc, char **argv);
 
 void signal_handler(int signal);
 
-// Convert a PCO binary timestamp (camera clock) to microseconds since the Unix
-// epoch, interpreting the camera's date and time as UTC.
-uint64_t pco_timestamp_to_epoch_us(const PCO_TIMESTAMP_STRUCT &timestamp);
-
 void setup_pco_camera(
     pco::Camera &camera,
     unsigned int default_shutter_open_time_us,

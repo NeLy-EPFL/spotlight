@@ -266,16 +266,13 @@ void muscle_image_saver(
                 "Failed to open metadata file: {}", metadata_path.c_str());
         } else {
             metadata_file << "frame_id,camera,acquired_time_us,received_time_us,"
-                             "server_frame_count,recorder_image_number,"
-                             "camera_image_counter,camera_timestamp_us\n";
+                             "server_frame_count,recorder_image_number\n";
             for (const auto &[camera_name, frame_data] : camera_frames) {
                 metadata_file << frame_pair.frame_id << "," << camera_name
                               << "," << frame_data.acquisition_time << ","
                               << frame_data.received_time << ","
                               << frame_data.server_frame_count << ","
-                              << frame_data.recorder_image_number << ","
-                              << frame_data.camera_image_counter << ","
-                              << frame_data.camera_timestamp_us << "\n";
+                              << frame_data.recorder_image_number << "\n";
             }
             metadata_file.close();
         }

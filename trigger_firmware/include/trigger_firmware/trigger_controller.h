@@ -28,11 +28,14 @@
 // cameras are started together by the shared acquire-enable line, which
 // reset_timing() pulses LOW whenever the timing restarts. The controller waits
 // for the onset of each calcium-camera common time
-// (DeviceIO::is_calcium_common_time() becoming true) and, on that edge, fires
+// (DeviceIO::is_calcium_common_time() becoming true) and, half the buffer time
+// after that edge (centering the light-on window in the common time), fires
 // the first behavior frame of a sync group together with the blue excitation
 // LED. It then fires the remaining beh_musc_sync_ratio - 1 behavior frames on
 // its own clock at beh_frame_rate before waiting for the next common-time
-// onset. The fiducial camera's status is not used for triggering. The muscle
+// onset. Every musc_resync_interval muscle frames, it also re-syncs the two
+// muscle cameras without blocking: it drops acquire enable at the onset and
+// releases it once both cameras have finished the current frame. The fiducial camera's status is not used for triggering. The muscle
 // cameras are never triggered over TTL (they are open-loop), so the muscle
 // trigger pin stays idle.
 //
@@ -40,7 +43,8 @@
 // ignored entirely (acquire enable simply stays HIGH): the controller triggers the behavior camera on its own clock at
 // beh_frame_rate, never reads the muscle common-time signal, and never pulses
 // the blue excitation LED. The muscle-only parameters (musc_eff_exp_time,
-// beh_musc_sync_ratio, pco_cam_rolling_time, pco_cam_readout_time) are unused.
+// beh_musc_sync_ratio, pco_cam_rolling_time, pco_cam_readout_time,
+// musc_resync_interval) are unused.
 // This is the mode for behavior-only acquisition.
 //
 // Commands (see docs/comm_protocol.md): STREAM and START_RECORDING reconfigure
@@ -112,10 +116,15 @@ class TriggerController {
     // frame), and wait for the next calcium common-time onset.
     void reset_timing();
     void apply_params(const TriggerParams &params);
+    // Time acquire enable is held LOW to re-sync the muscle cameras: one muscle
+    // frame plus config::musc_acquire_restart_margin_us, so that a frame in
+    // progress on either camera has finished and both are idle at release.
+    unsigned long get_musc_acquire_low_us() const;
     // True when both cameras' exposure times are strictly shorter than their
     // respective frame periods (the muscle frame period is sync_ratio behavior
-    // periods). Parameters that fail this check are rejected into the error
-    // state.
+    // periods), and the blue LED delay after the common-time onset is shorter
+    // than the behavior frame period. Parameters that fail this check are
+    // rejected into the error state.
     bool check_params_timing(const TriggerParams &params) const;
 
     // --- Pause switch and status output ----------------------------------
@@ -151,6 +160,10 @@ class TriggerController {
     unsigned int sync_ratio_ = 1;           // behavior frames per muscle frame
     unsigned int beh_exp_us_ = 0;           // behavior exposure (us)
     unsigned int musc_exp_us_ = 0;          // blue LED on-time (us)
+    // Blue LED (and sync group) delay after the common-time onset (us)
+    unsigned long musc_led_delay_us_ = 0;
+    // Muscle frames between periodic re-syncs of the muscle cameras
+    unsigned int musc_resync_interval_ = 1;
 
     // Scheduled-recording operation sequence (empty => open recording).
     std::deque<OperationStep> op_sequence_;
@@ -167,4 +180,10 @@ class TriggerController {
     bool musc_led_active_ = false; // blue excitation LED currently on
     unsigned long musc_led_start_us_ = 0;
     unsigned long beh_frame_count_ = 0; // behavior frames since recording start
+    // Periodic re-sync state: muscle frames (calcium common-time onsets) since
+    // the last sync, and whether acquire enable is currently held LOW for a
+    // re-sync (since resync_start_us_).
+    unsigned int musc_frames_since_sync_ = 0;
+    bool is_resyncing_ = false;
+    unsigned long resync_start_us_ = 0;
 };

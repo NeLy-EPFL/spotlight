@@ -81,7 +81,9 @@ where (see also [Data acquisition](data_acquisition.md)):
       to extend or reduce the common time. Therefore, to decouple frame-rate control
       from light-on time control, we can add a buffer time $t_{\rm b}$ during which
       all lines are exposed, but the light is off.
-- $t_{\rm b}$ is the buffer time as described above.
+- $t_{\rm b}$ is the buffer time as described above. The light is switched on in the
+  middle of the common time, i.e. $t_{\rm b}/2$ after its start, leaving a margin of
+  $t_{\rm b}/2$ on both sides for the offset between the two muscle cameras.
 - $T$ is the recording interval (i.e., 1 / frame rate).
 
 From the manual:

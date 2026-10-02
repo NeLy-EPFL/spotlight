@@ -15,8 +15,6 @@ struct FrameData {
     // pco_shared_memory::FrameMetadata.
     long server_frame_count = 0;
     uint32_t recorder_image_number = 0;
-    uint32_t camera_image_counter = 0;
-    uint64_t camera_timestamp_us = 0;
 };
 
 // One frame from each of the two synchronized PCO muscle cameras.

@@ -957,17 +957,24 @@ void MainGUIWindow::start_recording() {
     // Initialize save directory
     save_directory_->initialize();
 
+    // Number of muscle frames between periodic re-syncs of the muscle cameras,
+    // computed once for the whole recording.
+    const unsigned int musc_resync_interval = get_musc_resync_interval(
+        behavior_fps_spin_box_->value(), sync_ratio_spin_box_->value());
+
     // Save the recording metadata into the freshly created save directory.
     // These read the recording parameters directly off the widgets.
     write_experiment_parameters(
-        muscle_nominal_exposure_us, muscle_buffer_time_us);
+        muscle_nominal_exposure_us,
+        muscle_buffer_time_us,
+        musc_resync_interval);
     write_recorder_config();
     write_behavior_calibration_parameters();
     copy_homography_parameters_if_present();
 
     // Send triggering parameters and start recording. The controller reverts to
     // the streaming (revert-to) params when the recording ends.
-    TriggerParams rec_params = build_recording_params();
+    TriggerParams rec_params = build_recording_params(musc_resync_interval);
     TriggerParams revert_to_params = build_streaming_params();
     arduino_communication_->start_recording(
         rec_params, revert_to_params, op_sequence);
@@ -1035,7 +1042,9 @@ bool MainGUIWindow::confirm_or_resolve_save_directory() {
 }
 
 void MainGUIWindow::write_experiment_parameters(
-    int muscle_nominal_exposure_us, int muscle_buffer_time_us) {
+    int muscle_nominal_exposure_us,
+    int muscle_buffer_time_us,
+    unsigned int musc_resync_interval) {
     std::filesystem::path output_path = save_directory_->get_directory() /
                                         "metadata/experiment_parameters.yaml";
     bool muscle_imaging_enabled = muscle_imaging_check_box_->isChecked();
@@ -1062,6 +1071,10 @@ void MainGUIWindow::write_experiment_parameters(
             << muscle_nominal_exposure_us;
         out << YAML::Key << "muscle_buffer_time_us" << YAML::Value
             << muscle_buffer_time_us;
+        // The muscle cameras are re-synced every this many muscle frames,
+        // which costs one muscle frame interval each (no frames are lost).
+        out << YAML::Key << "muscle_resync_interval_frames" << YAML::Value
+            << musc_resync_interval;
     }
     out << YAML::Key << "experiment_protocol" << YAML::Value
         << experiment_protocol_->toPlainText().toStdString();
@@ -1219,10 +1232,13 @@ TriggerParams MainGUIWindow::build_streaming_params() const {
         static_cast<unsigned int>(default_musc_light_on_time_us_);
     params.pco_cam_rolling_time = pco_cam_rolling_time_us_;
     params.pco_cam_readout_time = pco_cam_readout_time_us_;
+    params.musc_resync_interval = get_musc_resync_interval(
+        streaming_behavior_fps_, streaming_sync_ratio_);
     return params;
 }
 
-TriggerParams MainGUIWindow::build_recording_params() const {
+TriggerParams MainGUIWindow::build_recording_params(
+    unsigned int musc_resync_interval) const {
     TriggerParams params;
     // The muscle camera is recorded (and the blue excitation light pulsed) only
     // when muscle imaging is enabled; otherwise the controller free-runs the
@@ -1236,6 +1252,7 @@ TriggerParams MainGUIWindow::build_recording_params() const {
         muscle_light_on_time_spin_box_->value() * 1000);
     params.pco_cam_rolling_time = pco_cam_rolling_time_us_;
     params.pco_cam_readout_time = pco_cam_readout_time_us_;
+    params.musc_resync_interval = musc_resync_interval;
     return params;
 }
 

@@ -46,11 +46,6 @@ struct FrameMetadata {
     // PCO recorder's count of images received since record() started. A jump
     // of more than one between published frames means the server missed some.
     uint32_t recorder_image_number = 0;
-    // Image counter from the camera's binary timestamp.
-    uint32_t camera_image_counter = 0;
-    // Camera's binary timestamp (us since epoch, on the camera's own clock,
-    // which is synchronized neither with the host nor with the other camera).
-    uint64_t camera_timestamp_us = 0;
 };
 
 // State published by the camera server.

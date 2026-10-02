@@ -132,21 +132,6 @@ uint64_t get_current_time_microseconds() {
         .count();
 }
 
-uint64_t pco_timestamp_to_epoch_us(const PCO_TIMESTAMP_STRUCT &timestamp) {
-    std::tm time = {};
-    time.tm_year = timestamp.wYear - 1900;
-    time.tm_mon = timestamp.wMonth - 1;
-    time.tm_mday = timestamp.wDay;
-    time.tm_hour = timestamp.wHour;
-    time.tm_min = timestamp.wMinute;
-    time.tm_sec = timestamp.wSecond;
-    // The camera clock has no time zone; interpret it as UTC so the result is
-    // independent of the host's time zone. Only differences between frames of
-    // the same camera are meaningful anyway.
-    return static_cast<uint64_t>(timegm(&time)) * 1000000 +
-           timestamp.dwMicroSeconds;
-}
-
 void setup_pco_camera(
     pco::Camera &camera,
     unsigned int default_shutter_open_time_us,
@@ -191,15 +176,9 @@ void setup_pco_camera(
     // time). Any sync delay is implemented in the trigger firmware, not here.
     config.delay_time_s = delay_us / 1000000.0; // Convert to seconds
     config.noise_filter_mode = NOISE_FILTER_MODE_ON;
-    // Binary timestamps give each frame the camera's image counter and time
-    // (read back per frame in serve_frames()). Note that the camera writes them
-    // into the first pixels of the image's top row, overwriting pixel data.
-    if (!description.has_timestamp_mode ||
-        description.has_timestamp_mode_ascii_only) {
-        throw std::runtime_error(
-            "PCO camera does not support binary timestamps");
-    }
-    config.timestamp_mode = TIMESTAMP_MODE_BINARY;
+    // No timestamps: the pco.panda only supports ASCII timestamps, which would
+    // overwrite pixel data.
+    config.timestamp_mode = TIMESTAMP_MODE_OFF;
     spdlog::info("Setting PCO camera configuration");
     camera.setConfiguration(config);
     spdlog::info("PCO camera configuration set");
@@ -452,12 +431,6 @@ void serve_frames(
             pco_camera_server::get_current_time_microseconds();
         frame_metadata.recorder_image_number =
             pco_image.getRecorderImageNumber();
-        if (pco_image.timestamp) {
-            frame_metadata.camera_image_counter =
-                pco_image.timestamp->dwImgCounter;
-            frame_metadata.camera_timestamp_us =
-                pco_timestamp_to_epoch_us(*pco_image.timestamp);
-        }
 
         // Mutex-protected zone! Update image buffer and frame metadata
         pthread_mutex_lock(mutex_ptr);

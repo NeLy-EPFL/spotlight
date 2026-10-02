@@ -343,8 +343,6 @@ FrameData PcoCameraClient::wait_for_next_frame() {
     frame_data.image = image;
     frame_data.server_frame_count = metadata.frame_count;
     frame_data.recorder_image_number = metadata.recorder_image_number;
-    frame_data.camera_image_counter = metadata.camera_image_counter;
-    frame_data.camera_timestamp_us = metadata.camera_timestamp_us;
     return frame_data;
 }
 
