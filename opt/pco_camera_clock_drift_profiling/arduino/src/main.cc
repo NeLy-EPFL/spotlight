@@ -1,9 +1,10 @@
-// Measures the status (SMA #4, common time) edges of both PCO muscle cameras
-// after releasing their shared acquire-enable line, and sends the edge times
-// to the host. See ../README.md.
+// Samples the status (SMA #4, common time) lines of both PCO muscle cameras at
+// a fixed rate after releasing their shared acquire-enable line, and sends the
+// whole sampled sequence to the host. Like trigger_firmware, it uses a plain
+// loop with micros() and digitalRead(). See ../README.md.
 //
-// Serial protocol: the host sends "<shutter_open_time_us> <n_frames>\n" (e.g.
-// "15147 5000\n"), and the firmware answers with a binary response (see
+// Serial protocol: the host sends "<duration_us> <sample_period_us>\n" (e.g.
+// "15166666 1\n"), and the firmware answers with a binary response (see
 // config::response_magic).
 
 #include <Arduino.h>
@@ -12,33 +13,19 @@
 #include <Wire.h>
 
 #include <cstdio>
-#include <vector>
 
 #include "pco_clock_drift/config.h"
-
-// The edge times are sent as raw 4-byte values.
-static_assert(sizeof(unsigned long) == sizeof(uint32_t));
 
 namespace {
 enum class Status : uint32_t {
     ok = 0,
     bad_command = 1,
-    calcium_timeout = 2,
-    fiducial_timeout = 3,
+    buffer_too_small = 2,
 };
 
-struct Camera {
-    int status_pin;
-    Status timeout_status;
-    std::vector<unsigned long> on_edge_times_us;
-    std::vector<unsigned long> off_edge_times_us;
-};
-
-Camera cameras[] = {
-    {config::calcium_cam_status_pin, Status::calcium_timeout, {}, {}},
-    {config::fiducial_cam_status_pin, Status::fiducial_timeout, {}, {}},
-};
-constexpr size_t n_cameras = sizeof(cameras) / sizeof(cameras[0]);
+// Packed samples (see config::response_magic), allocated in PSRAM in setup().
+uint8_t *sample_bytes = nullptr;
+size_t max_n_sample_bytes = 0;
 
 Adafruit_SSD1306 display(
     config::screen_width, config::screen_height, &Wire, /*rst_pin=*/-1);
@@ -60,111 +47,77 @@ void show_title() {
     display.display();
 }
 
-// Releases acquire enable and records the time of each camera's first
-// n_frames rising and falling status edges. Busy-polls both pins, so each edge
-// is timestamped to within one loop iteration (about a microsecond).
-Status measure(unsigned long shutter_open_time_us, size_t n_frames) {
-    for (Camera &camera : cameras) {
-        camera.on_edge_times_us.assign(n_frames, 0);
-        camera.off_edge_times_us.assign(n_frames, 0);
-    }
-    const unsigned long edge_timeout_us =
-        config::edge_timeout_factor * shutter_open_time_us;
-
+// Releases acquire enable and samples both status lines n_samples times, every
+// sample_period_us.
+void sample(uint32_t n_samples, unsigned long sample_period_us) {
     digitalWrite(config::musc_cam_acquire_enable_pin, LOW);
     delay(config::acquire_disable_time_ms);
-
-    bool was_high[n_cameras];
-    size_t n_on[n_cameras] = {};
-    size_t n_off[n_cameras] = {};
-    unsigned long last_edge_us[n_cameras];
-    for (size_t i = 0; i < n_cameras; ++i) {
-        was_high[i] = digitalRead(cameras[i].status_pin) == HIGH;
-    }
-
     digitalWrite(config::musc_cam_acquire_enable_pin, HIGH);
-    const unsigned long start_us = micros();
-    for (unsigned long &t : last_edge_us) {
-        t = start_us;
-    }
 
-    bool is_done = false;
-    while (!is_done) {
-        const unsigned long now_us = micros();
-        is_done = true;
-        for (size_t i = 0; i < n_cameras; ++i) {
-            if (n_off[i] == n_frames) {
-                continue;
-            }
-            is_done = false;
-            const bool is_high = digitalRead(cameras[i].status_pin) == HIGH;
-            if (is_high != was_high[i]) {
-                const unsigned long t_us = now_us - start_us;
-                if (is_high) {
-                    cameras[i].on_edge_times_us[n_on[i]++] = t_us;
-                } else if (n_off[i] < n_on[i]) {
-                    // Falling edges before the first rising edge are ignored.
-                    cameras[i].off_edge_times_us[n_off[i]++] = t_us;
-                }
-                was_high[i] = is_high;
-                last_edge_us[i] = now_us;
-            } else if (now_us - last_edge_us[i] > edge_timeout_us) {
-                digitalWrite(config::musc_cam_acquire_enable_pin, LOW);
-                return cameras[i].timeout_status;
-            }
+    unsigned long next_sample_us = micros();
+    uint8_t byte = 0;
+    for (uint32_t i = 0; i < n_samples; ++i) {
+        while (static_cast<long>(micros() - next_sample_us) < 0) {
+        }
+        next_sample_us += sample_period_us;
+        const uint8_t levels =
+            digitalRead(config::calcium_cam_status_pin) |
+            (digitalRead(config::fiducial_cam_status_pin) << 1);
+        const uint32_t slot = i % config::samples_per_byte;
+        byte |= levels << (2 * slot);
+        if (slot == config::samples_per_byte - 1 || i == n_samples - 1) {
+            sample_bytes[i / config::samples_per_byte] = byte;
+            byte = 0;
         }
     }
 
     digitalWrite(config::musc_cam_acquire_enable_pin, LOW);
-    return Status::ok;
 }
 
-void send_response(Status status, size_t n_frames) {
+void send_response(Status status, uint32_t n_samples, size_t n_bytes) {
     const uint32_t header[] = {
         config::response_magic,
         static_cast<uint32_t>(status),
-        static_cast<uint32_t>(n_frames),
+        n_samples,
     };
     Serial.write(reinterpret_cast<const uint8_t *>(header), sizeof(header));
-    if (status == Status::ok) {
-        for (const Camera &camera : cameras) {
-            for (const auto *times :
-                 {&camera.on_edge_times_us, &camera.off_edge_times_us}) {
-                Serial.write(
-                    reinterpret_cast<const uint8_t *>(times->data()),
-                    times->size() * sizeof(unsigned long));
-            }
-        }
-    }
+    Serial.write(sample_bytes, n_bytes);
     Serial.flush();
 }
 
 void handle_command() {
-    unsigned long shutter_open_time_us = 0;
-    unsigned long n_frames = 0;
+    unsigned long duration_us = 0;
+    unsigned long sample_period_us = 0;
     const bool is_valid =
-        std::sscanf(command, "%lu %lu", &shutter_open_time_us, &n_frames) ==
+        std::sscanf(command, "%lu %lu", &duration_us, &sample_period_us) ==
             2 &&
-        shutter_open_time_us > 0 && n_frames >= 2 &&
-        n_frames <= config::max_n_frames;
+        duration_us > 0 && sample_period_us > 0;
     if (!is_valid) {
-        send_response(Status::bad_command, 0);
+        send_response(Status::bad_command, 0, 0);
         return;
     }
-    send_response(measure(shutter_open_time_us, n_frames), n_frames);
-    for (Camera &camera : cameras) {
-        // Free the buffers between measurements.
-        std::vector<unsigned long>().swap(camera.on_edge_times_us);
-        std::vector<unsigned long>().swap(camera.off_edge_times_us);
+    const uint32_t n_samples = duration_us / sample_period_us;
+    const size_t n_bytes =
+        (n_samples + config::samples_per_byte - 1) / config::samples_per_byte;
+    if (n_bytes > max_n_sample_bytes) {
+        send_response(Status::buffer_too_small, 0, 0);
+        return;
     }
+    sample(n_samples, sample_period_us);
+    send_response(Status::ok, n_samples, n_bytes);
 }
 } // namespace
 
 void setup() {
     pinMode(config::musc_cam_acquire_enable_pin, OUTPUT);
     digitalWrite(config::musc_cam_acquire_enable_pin, LOW);
-    for (const Camera &camera : cameras) {
-        pinMode(camera.status_pin, INPUT_PULLDOWN);
+    pinMode(config::calcium_cam_status_pin, INPUT_PULLDOWN);
+    pinMode(config::fiducial_cam_status_pin, INPUT_PULLDOWN);
+    // Use the largest PSRAM block available for the samples.
+    max_n_sample_bytes = ESP.getMaxAllocPsram();
+    sample_bytes = static_cast<uint8_t *>(ps_malloc(max_n_sample_bytes));
+    if (sample_bytes == nullptr) {
+        max_n_sample_bytes = 0;
     }
     Serial.begin(config::serial_baud_rate);
     show_title();

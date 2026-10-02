@@ -11,6 +11,9 @@
 examples/**/build/
 pco_camera_clock_drift_profiling/**/build/
 pco_camera_clock_drift_profiling/**/.pio/
+# ... and the recordings and analysis output of the drift test
+pco_camera_clock_drift_profiling/**/clock_drift_*/
+pco_camera_clock_drift_profiling/**/raw_capture_*/
 
 # Finally, don't ignore this .gitignore file
 !.gitignore

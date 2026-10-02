@@ -1,12 +1,14 @@
-// Profiles how far the two free-running PCO muscle cameras drift apart after
-// being started on the same acquire-enable edge. See ../README.md.
+// Records the status (SMA #4, common time) lines of the two free-running PCO
+// muscle cameras after they are started on the same acquire-enable edge, to
+// profile how far they drift apart. The Arduino samples both lines; this
+// program only runs the cameras and saves the samples. The analysis is done in
+// ../python/. See ../README.md.
 
 #include <fcntl.h>
 #include <poll.h>
 #include <termios.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cmath>
@@ -15,25 +17,34 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <print>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+// clang-format off
+// stdafx.h must come first: it includes pco_linux_defs.h (WORD/BYTE/DWORD) and
+// <climits>, which camera.h and cameraexception.h depend on.
+#include "stdafx.h"
 #include "camera.h"
 #include "cameraexception.h"
-#include "stdafx.h"
+// clang-format on
 
 namespace {
 namespace config {
-// Camera serial numbers (placeholders: set to the real serial numbers)
-constexpr DWORD calcium_serial_number = 0;
-constexpr DWORD fiducial_serial_number = 0;
+constexpr DWORD calcium_serial_number = 14400755;
+constexpr DWORD fiducial_serial_number = 14400057;
 
-constexpr const char *serial_port = "/dev/ttyACM0";
+// Stable path: /dev/ttyACM* numbering depends on enumeration order (the Zaber
+// stage controller is also a ttyACM device).
+constexpr const char *serial_port =
+    "/dev/serial/by-id/usb-Arduino_NanoESP32_48CA432E0DB4-if01";
 
-constexpr int n_repeats = 5;
-constexpr uint32_t n_frames = 5000;
+// The Arduino's sampling loop (micros() and two digitalRead()s) takes about
+// 1.45 us per sample, so the sample period must be at least 2 us. The PSRAM
+// holds about 33M samples (8 MB, 4 samples per byte), i.e. about 4400 frames.
+constexpr uint32_t n_frames = 1000;
+constexpr uint32_t sample_period_us = 2;
 
 // Operating point from docs/users_manual/frame_rate_limits.md
 constexpr double frame_rate_hz = 66;
@@ -46,27 +57,29 @@ constexpr unsigned int roi_size = 1120;        // px, centered square ROI
 // read, so a small ring buffer suffices.
 constexpr DWORD recorder_buffer_size = 10;
 
-// Extra time allowed for the firmware's response beyond the measurement itself
+// Extra time allowed for the Arduino's response header beyond the sampling
 constexpr std::chrono::seconds response_timeout_margin{10};
-// Time acquire enable is held LOW before a measurement (mirrors the firmware)
+// Lower bound on the USB transfer rate of the samples, for the read timeout
+constexpr double min_transfer_rate_bytes_per_s = 100e3;
+// Time acquire enable is held LOW before sampling (mirrors the firmware)
 constexpr std::chrono::seconds acquire_disable_time{1};
-// Response header magic number (mirrors the firmware)
+// Response protocol (mirrors arduino/include/pco_clock_drift/config.h)
 constexpr uint32_t response_magic = 0x54465244;
+constexpr uint32_t samples_per_byte = 4;
 } // namespace config
 
-// Timing derived from the operating point (see frame_rate_limits.md)
 constexpr double frame_interval_us = 1e6 / config::frame_rate_hz;
-constexpr double rolling_time_us = config::roi_size * config::line_time_us;
 constexpr double shutter_open_time_us =
     frame_interval_us - config::readout_time_us;
-constexpr double common_time_us = shutter_open_time_us - rolling_time_us;
+// One extra frame, since the first status pulse starts about one frame after
+// acquire enable goes HIGH.
+constexpr double sampling_duration_us = (config::n_frames + 1) * frame_interval_us;
 
 // Response status codes (mirrors the firmware)
 enum class ResponseStatus : uint32_t {
     ok = 0,
     bad_command = 1,
-    calcium_timeout = 2,
-    fiducial_timeout = 3,
+    buffer_too_small = 2,
 };
 
 std::string to_string(ResponseStatus status) {
@@ -75,10 +88,8 @@ std::string to_string(ResponseStatus status) {
         return "ok";
     case ResponseStatus::bad_command:
         return "bad command";
-    case ResponseStatus::calcium_timeout:
-        return "calcium camera status timeout";
-    case ResponseStatus::fiducial_timeout:
-        return "fiducial camera status timeout";
+    case ResponseStatus::buffer_too_small:
+        return "sample buffer too small (reduce n_frames)";
     }
     return std::format("unknown status {}", static_cast<uint32_t>(status));
 }
@@ -150,17 +161,6 @@ class SerialPort {
     int fd_;
 };
 
-// Status edge times of one camera, in us since acquire enable went HIGH.
-struct CameraEdges {
-    std::vector<uint32_t> on_us;
-    std::vector<uint32_t> off_us;
-};
-
-struct Measurement {
-    CameraEdges calcium;
-    CameraEdges fiducial;
-};
-
 void configure_camera(pco::Camera &camera) {
     camera.defaultConfiguration();
     pco::Configuration config = camera.getConfiguration();
@@ -204,21 +204,22 @@ void check_serial_number(pco::Camera &camera, DWORD expected) {
     }
 }
 
-// Asks the Arduino to release acquire enable and record the status edges of
-// both cameras, then reads its binary response. Both sides are little-endian.
-Measurement measure(SerialPort &port) {
+// Asks the Arduino to release acquire enable and sample both status lines, and
+// returns the packed samples (see the protocol in config.h) and their number.
+// Both sides are little-endian.
+std::vector<uint8_t> sample(SerialPort &port, uint32_t &n_samples) {
     port.write_all(std::format(
-        "{} {}\n", std::lround(shutter_open_time_us), config::n_frames));
+        "{} {}\n",
+        std::lround(sampling_duration_us),
+        config::sample_period_us));
 
-    const auto measurement_duration = std::chrono::microseconds(
-        std::lround(config::n_frames * frame_interval_us));
-    const auto deadline = std::chrono::steady_clock::now() +
-                          config::acquire_disable_time + measurement_duration +
-                          config::response_timeout_margin;
-
+    const auto header_deadline =
+        std::chrono::steady_clock::now() + config::acquire_disable_time +
+        std::chrono::microseconds(std::lround(sampling_duration_us)) +
+        config::response_timeout_margin;
     uint32_t header[3];
-    port.read_exact(header, sizeof(header), deadline);
-    const auto [magic, status, n_frames] = header;
+    port.read_exact(header, sizeof(header), header_deadline);
+    const auto [magic, status, n] = header;
     if (magic != config::response_magic) {
         throw std::runtime_error(
             std::format("Unexpected response magic 0x{:08x}", magic));
@@ -228,152 +229,61 @@ Measurement measure(SerialPort &port) {
             "Arduino reported an error: {}",
             to_string(static_cast<ResponseStatus>(status))));
     }
-    if (n_frames != config::n_frames) {
-        throw std::runtime_error(std::format(
-            "Arduino measured {} frames, expected {}",
-            n_frames,
-            config::n_frames));
-    }
 
-    Measurement measurement;
-    for (std::vector<uint32_t> *times :
-         {&measurement.calcium.on_us,
-          &measurement.calcium.off_us,
-          &measurement.fiducial.on_us,
-          &measurement.fiducial.off_us}) {
-        times->resize(n_frames);
-        port.read_exact(times->data(), n_frames * sizeof(uint32_t), deadline);
-    }
-    return measurement;
+    n_samples = n;
+    std::vector<uint8_t> bytes(
+        (n_samples + config::samples_per_byte - 1) / config::samples_per_byte);
+    const auto data_deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::seconds(std::lround(
+            bytes.size() / config::min_transfer_rate_bytes_per_s));
+    port.read_exact(bytes.data(), bytes.size(), data_deadline);
+    return bytes;
 }
 
-// Duration between consecutive rising edges (one fewer than the frames).
-std::vector<double> intervals_us(const CameraEdges &edges) {
-    std::vector<double> intervals;
-    for (size_t i = 0; i + 1 < edges.on_us.size(); ++i) {
-        intervals.push_back(
-            static_cast<double>(edges.on_us[i + 1]) - edges.on_us[i]);
-    }
-    return intervals;
-}
-
-std::vector<double> common_times_us(const CameraEdges &edges) {
-    std::vector<double> durations;
-    for (size_t i = 0; i < edges.on_us.size(); ++i) {
-        durations.push_back(
-            static_cast<double>(edges.off_us[i]) - edges.on_us[i]);
-    }
-    return durations;
-}
-
-struct DeviationStats {
-    double mean_us;    // signed
-    double max_abs_us; // largest deviation in either direction
-};
-
-DeviationStats
-deviation_stats(const std::vector<double> &values_us, double expected_us) {
-    double sum_us = 0;
-    double max_abs_us = 0;
-    for (const double value_us : values_us) {
-        const double deviation_us = value_us - expected_us;
-        sum_us += deviation_us;
-        max_abs_us = std::max(max_abs_us, std::abs(deviation_us));
-    }
-    return {sum_us / values_us.size(), max_abs_us};
-}
-
-void print_camera_summary(const std::string &name, const CameraEdges &edges) {
-    const DeviationStats interval =
-        deviation_stats(intervals_us(edges), frame_interval_us);
-    const DeviationStats common_time =
-        deviation_stats(common_times_us(edges), common_time_us);
-    std::println(
-        "  {:<8} interval:    mean dev {:+8.3f} us ({:+.1f} ppm), "
-        "max |dev| {:.3f} us",
-        name,
-        interval.mean_us,
-        interval.mean_us / frame_interval_us * 1e6,
-        interval.max_abs_us);
-    std::println(
-        "  {:<8} common time: mean dev {:+8.3f} us, max |dev| {:.3f} us",
-        name,
-        common_time.mean_us,
-        common_time.max_abs_us);
-}
-
-void print_summary(const Measurement &measurement) {
-    print_camera_summary("calcium", measurement.calcium);
-    print_camera_summary("fiducial", measurement.fiducial);
-
-    const auto &calcium_on_us = measurement.calcium.on_us;
-    const auto &fiducial_on_us = measurement.fiducial.on_us;
-    const double first_offset_us =
-        static_cast<double>(fiducial_on_us.front()) - calcium_on_us.front();
-    const double last_offset_us =
-        static_cast<double>(fiducial_on_us.back()) - calcium_on_us.back();
-    const double drift_us = last_offset_us - first_offset_us;
-    const double elapsed_us =
-        static_cast<double>(calcium_on_us.back()) - calcium_on_us.front();
-    std::println(
-        "  fiducial - calcium onset: first {:+.0f} us, last {:+.0f} us, "
-        "drift {:+.0f} us over {:.1f} s ({:+.2f} ppm)",
-        first_offset_us,
-        last_offset_us,
-        drift_us,
-        elapsed_us / 1e6,
-        drift_us / elapsed_us * 1e6);
-}
-
-// One row per frame: raw edge times plus the derived durations. A frame's
-// interval is the time to the next frame's onset (empty for the last frame).
-void write_csv(
-    const Measurement &measurement,
-    const std::filesystem::path &path) {
-    std::ofstream file(path);
-    if (!file) {
+// Saves the packed samples as received (samples.bin) and the metadata needed
+// to interpret them (metadata.json) in output_dir.
+void save(
+    const std::vector<uint8_t> &bytes,
+    uint32_t n_samples,
+    double calcium_shutter_open_time_us,
+    double fiducial_shutter_open_time_us,
+    const std::filesystem::path &output_dir) {
+    std::ofstream bin_file(output_dir / "samples.bin", std::ios::binary);
+    std::ofstream json_file(output_dir / "metadata.json");
+    if (!bin_file || !json_file) {
         throw std::runtime_error(
-            std::format("Cannot open {} for writing", path.string()));
+            std::format("Cannot write to {}", output_dir.string()));
     }
-    const CameraEdges &calcium = measurement.calcium;
-    const CameraEdges &fiducial = measurement.fiducial;
-    const std::vector<double> calcium_intervals = intervals_us(calcium);
-    const std::vector<double> fiducial_intervals = intervals_us(fiducial);
-    const std::vector<double> calcium_common_times = common_times_us(calcium);
-    const std::vector<double> fiducial_common_times = common_times_us(fiducial);
-
-    std::println(
-        file,
-        "frame,calcium_on_us,calcium_off_us,fiducial_on_us,fiducial_off_us,"
-        "calcium_interval_us,fiducial_interval_us,calcium_common_time_us,"
-        "fiducial_common_time_us,fiducial_minus_calcium_on_us");
-    for (size_t i = 0; i < calcium.on_us.size(); ++i) {
-        const bool has_interval = i < calcium_intervals.size();
-        std::println(
-            file,
-            "{},{},{},{},{},{},{},{},{},{}",
-            i,
-            calcium.on_us[i],
-            calcium.off_us[i],
-            fiducial.on_us[i],
-            fiducial.off_us[i],
-            has_interval ? std::format("{}", calcium_intervals[i]) : "",
-            has_interval ? std::format("{}", fiducial_intervals[i]) : "",
-            calcium_common_times[i],
-            fiducial_common_times[i],
-            static_cast<double>(fiducial.on_us[i]) - calcium.on_us[i]);
-    }
+    bin_file.write(
+        reinterpret_cast<const char *>(bytes.data()),
+        static_cast<std::streamsize>(bytes.size()));
+    json_file << std::format(
+        R"({{
+  "n_samples": {},
+  "sample_period_us": {},
+  "n_frames": {},
+  "frame_rate_hz": {},
+  "line_time_us": {},
+  "readout_time_us": {},
+  "roi_size": {},
+  "calcium_shutter_open_time_us": {},
+  "fiducial_shutter_open_time_us": {}
+}}
+)",
+        n_samples,
+        config::sample_period_us,
+        config::n_frames,
+        config::frame_rate_hz,
+        config::line_time_us,
+        config::readout_time_us,
+        config::roi_size,
+        calcium_shutter_open_time_us,
+        fiducial_shutter_open_time_us);
 }
 
 void run() {
-    std::println(
-        "Expected timing: frame interval {:.3f} us, shutter-open time {:.3f} "
-        "us, common time {:.3f} us",
-        frame_interval_us,
-        shutter_open_time_us,
-        common_time_us);
-
-    std::println("Opening PCO cameras");
+    std::cout << "Opening PCO cameras\n";
     pco::Camera calcium(
         pco::CameraInterface::Any, config::calcium_serial_number);
     check_serial_number(calcium, config::calcium_serial_number);
@@ -383,60 +293,63 @@ void run() {
 
     SerialPort port(config::serial_port);
 
+    for (pco::Camera *camera : {&calcium, &fiducial}) {
+        configure_camera(*camera);
+        camera->record(
+            config::recorder_buffer_size, pco::RecordMode::ring_buffer);
+    }
+    // Applied shutter-open times (the cameras round the requested value)
+    const double calcium_shutter_open_time_us = calcium.getExposureTime() * 1e6;
+    const double fiducial_shutter_open_time_us =
+        fiducial.getExposureTime() * 1e6;
+
+    std::cout << std::format(
+                     "Sampling {} frames every {} us",
+                     config::n_frames,
+                     config::sample_period_us)
+              << '\n';
+    uint32_t n_samples = 0;
+    const std::vector<uint8_t> bytes = sample(port, n_samples);
+    calcium.stop();
+    fiducial.stop();
+
     const auto now = std::chrono::floor<std::chrono::seconds>(
         std::chrono::system_clock::now());
     const std::filesystem::path output_dir = std::format(
         "clock_drift_{:%Y%m%d_%H%M%S}",
         std::chrono::zoned_time(std::chrono::current_zone(), now));
     std::filesystem::create_directories(output_dir);
-
-    for (int repeat = 1; repeat <= config::n_repeats; ++repeat) {
-        std::println("Repeat {}/{}", repeat, config::n_repeats);
-        for (pco::Camera *camera : {&calcium, &fiducial}) {
-            configure_camera(*camera);
-            std::println(
-                "  camera {}: applied shutter-open time {:.3f} us",
-                camera->getDescription().serial,
-                camera->getExposureTime() * 1e6);
-            camera->record(
-                config::recorder_buffer_size, pco::RecordMode::ring_buffer);
-        }
-
-        std::println("  measuring {} frames", config::n_frames);
-        const Measurement measurement = measure(port);
-        calcium.stop();
-        fiducial.stop();
-
-        const std::filesystem::path csv_path =
-            output_dir / std::format("repeat_{}.csv", repeat);
-        write_csv(measurement, csv_path);
-        print_summary(measurement);
-        std::println("  saved {}", csv_path.string());
-    }
+    save(
+        bytes,
+        n_samples,
+        calcium_shutter_open_time_us,
+        fiducial_shutter_open_time_us,
+        output_dir);
+    std::cout << std::format("Saved {}", output_dir.string()) << '\n';
 }
 } // namespace
 
 int main() {
     // The PCO SDK must be initialized before any pco::Camera is constructed.
     if (const int err = PCO_InitializeLib(); err != PCO_NOERROR) {
-        std::println(
-            stderr,
-            "Failed to initialize PCO SDK (error 0x{:08x})",
-            static_cast<uint32_t>(err));
+        std::cerr << std::format(
+                         "Failed to initialize PCO SDK (error 0x{:08x})",
+                         static_cast<uint32_t>(err))
+                  << '\n';
         return 1;
     }
     int exit_code = 0;
     try {
         run();
     } catch (pco::CameraException &e) {
-        std::println(
-            stderr,
-            "PCO camera error (0x{:08x}): {}",
-            static_cast<uint32_t>(e.error_code()),
-            e.what());
+        std::cerr << std::format(
+                         "PCO camera error (0x{:08x}): {}",
+                         static_cast<uint32_t>(e.error_code()),
+                         e.what())
+                  << '\n';
         exit_code = 1;
     } catch (const std::exception &e) {
-        std::println(stderr, "Error: {}", e.what());
+        std::cerr << std::format("Error: {}", e.what()) << '\n';
         exit_code = 1;
     }
     PCO_CleanupLib();
