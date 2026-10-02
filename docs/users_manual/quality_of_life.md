@@ -35,8 +35,10 @@ In case something goes wrong and the cameras get stuck after an unclean exit, a 
 
 ```bash
 reset-camera behavior   # PCI reset of the Euresys frame grabber
-reset-camera muscle     # disable + re-enable the PCO camera's USB link
+reset-camera muscle     # disable + re-enable both PCO cameras' USB links
 ```
+
+`reset-camera muscle` also prints each muscle camera's serial number and USB link speed, and warns if a camera fell back to USB 2.0 (see [Troubleshooting](troubleshooting.md#muscle-frames-arrive-at-about-19-hz--usb-20-link)).
 
 Note, however, that **this does not replace hardware power cycling**.
 

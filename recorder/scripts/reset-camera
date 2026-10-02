@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 #
 # Utility to reset the cameras without physically power cycling them.
+# "muscle" resets both muscle cameras (calcium and fiducial) and reports their
+# USB link speeds.
 # Usage: reset-camera <behavior|muscle>
 
 set -euo pipefail
 
-CYCLE_DELAY=5  # seconds the USB port stays disabled before re-enabling
+CYCLE_DELAY=5  # seconds the USB ports stay disabled before re-enabling
+ENUMERATION_DELAY=5  # seconds allowed for the muscle cameras to reconnect
 BEHAVIOR_CAM_SUBSTR="Euresys S.A. Device"
-MUSCLE_CAM_SUBSTR="PCO AG pco.panda 4.2"
+MUSCLE_CAM_PRODUCT="pco.panda 4.2"  # USB product string in sysfs
+MUSCLE_CAM_MIN_SPEED=5000  # Mbit/s (USB 3.0)
 
 die() {
     echo "Error: $*" >&2
@@ -60,75 +64,110 @@ reset_behavior_cam() {
     echo "Done."
 }
 
-reset_muscle_cam() {
-    # It's better to power cycle the muscle USB camera using uhubctl, but the
-    # camera is directly plugged into the motherboard's native USB ports, which
-    # do not support per-port power switching. Instead, we are disabling and
-    # re-enabling the link via sysfs, which is not really a *power* cycle.
-    #
-    # If a real power cycle is needed, just unplug and replug the USB cable.
-    # It's way easier than the behavior camera through the frame brabber.
-    require lsusb
+# Prints the sysfs names (e.g. "2-6") of the connected muscle cameras.
+find_muscle_cams() {
+    local dev
+    for dev in /sys/bus/usb/devices/*; do
+        if [[ "$(cat "${dev}/product" 2>/dev/null)" == "$MUSCLE_CAM_PRODUCT" ]]; then
+            basename "$dev"
+        fi
+    done
+}
 
-    mapfile -t matches < <(lsusb | grep -F "$MUSCLE_CAM_SUBSTR" || true)
-    assert_one_match matches
-
-    bus=$(echo "${matches[0]}"    | awk '{print $2}' | sed 's/^0*//')
-    devnum=$(echo "${matches[0]}" | awk '{print $4}' | tr -d ':' | sed 's/^0*//')
-
-    sysfs_name=$(find /sys/bus/usb/devices/ -maxdepth 1 -name "${bus}-*" ! -name "*:*" \
-        -exec sh -c '
-            val=$(cat "$1/devnum" 2>/dev/null | sed "s/^0*//")
-            [ "$val" = "$2" ] && basename "$1"
-        ' _ {} "$devnum" \; 2>/dev/null | head -1)
-
-    if [[ -z "$sysfs_name" ]]; then
-        die "Could not find sysfs entry for Bus ${bus} Device ${devnum}."
-    fi
-
-    # Resolve the port object's 'disable' file from the device's sysfs name.
-    #   root-hub port (e.g. "2-6")  → iface "2-0:1.0", port object "usb2-port6"
-    #   chained hub   (e.g. "2-1.3")→ iface "2-1:1.0", port object "2-1-port3"
-    if [[ "$sysfs_name" =~ \. ]]; then
-        hub_dev="${sysfs_name%.*}"
-        port="${sysfs_name##*.}"
-        hub_iface="${hub_dev}:1.0"
-        port_obj="${hub_dev}-port${port}"
+# Prints the sysfs directory of the hub port that the USB device with the given
+# sysfs name is connected to:
+#   root-hub port (e.g. "2-6")  -> "2-0:1.0/usb2-port6"
+#   chained hub   (e.g. "2-1.3")-> "2-1:1.0/2-1-port3"
+port_dir() {
+    local name="$1"
+    if [[ "$name" =~ \. ]]; then
+        local hub_dev="${name%.*}"
+        echo "/sys/bus/usb/devices/${hub_dev}:1.0/${hub_dev}-port${name##*.}"
     else
-        port="${sysfs_name##*-}"
-        hub_iface="${bus}-0:1.0"
-        port_obj="usb${bus}-port${port}"
+        local bus="${name%%-*}"
+        echo "/sys/bus/usb/devices/${bus}-0:1.0/usb${bus}-port${name##*-}"
     fi
-    disable_file="/sys/bus/usb/devices/${hub_iface}/${port_obj}/disable"
+}
 
-    if [[ ! -f "$disable_file" ]]; then
-        die "Port disable control not found at ${disable_file}."
+print_muscle_cams() {
+    local cam
+    for cam in $(find_muscle_cams); do
+        local dev="/sys/bus/usb/devices/${cam}"
+        local speed
+        speed=$(cat "${dev}/speed")
+        echo "  ${cam}: serial $(cat "${dev}/serial"), ${speed} Mbit/s"
+        if (( speed < MUSCLE_CAM_MIN_SPEED )); then
+            echo "  WARNING: slower than USB 3.0 (${MUSCLE_CAM_MIN_SPEED} Mbit/s)"
+        fi
+    done
+}
+
+reset_muscle_cams() {
+    # It's better to power cycle the muscle USB cameras using uhubctl, but the
+    # cameras are directly plugged into the motherboard's native USB ports,
+    # which do not support per-port power switching. Instead, we are disabling
+    # and re-enabling the links via sysfs, which is not really a *power* cycle.
+    #
+    # Every physical USB 3 port has a USB 2.0 and a USB 3.0 half on separate
+    # buses (linked as each other's "peer" in sysfs). A camera whose USB 3.0
+    # link failed to come up falls back to the USB 2.0 half, which is too slow
+    # for the muscle frame rate. Both halves are therefore cycled, so that the
+    # camera renegotiates its link speed.
+    #
+    # If a real power cycle is needed, just unplug and replug the USB cables.
+    # It's way easier than the behavior camera through the frame brabber.
+    mapfile -t cams < <(find_muscle_cams)
+    if [[ ${#cams[@]} -eq 0 ]]; then
+        die "No muscle camera found."
     fi
+    echo "Found ${#cams[@]} muscle camera(s):"
+    print_muscle_cams
 
-    confirm "Ready to disable/re-enable USB port (bus=${bus}, device=${devnum}, port=${port}) via ${disable_file}."
+    disable_files=()
+    for cam in "${cams[@]}"; do
+        port=$(port_dir "$cam")
+        if [[ ! -f "${port}/disable" ]]; then
+            die "Port disable control not found at ${port}/disable."
+        fi
+        disable_files+=("${port}/disable")
+        if [[ -f "${port}/peer/disable" ]]; then
+            disable_files+=("$(readlink -f "${port}/peer")/disable")
+        fi
+    done
 
-    # Safety net: if interrupted before re-enable, restore the port on exit.
-    # Installed *before* the disabling write so that an interrupt (or a partial
-    # write) in between cannot leave the port stuck disabled; re-enabling a port
-    # that was never disabled is a harmless no-op.
-    trap 'echo "Restoring port..."; echo 0 | sudo tee "$disable_file" >/dev/null 2>&1 || true' EXIT
+    confirm "Ready to disable/re-enable USB ports via:$(printf '\n  %s' "${disable_files[@]}")"
 
-    echo "Disabling port..."
-    echo 1 | sudo tee "$disable_file" > /dev/null || die "Failed to disable port."
+    # Safety net: if interrupted before re-enable, restore the ports on exit.
+    # Installed *before* the disabling writes so that an interrupt (or a
+    # partial write) in between cannot leave a port stuck disabled; re-enabling
+    # a port that was never disabled is a harmless no-op.
+    trap 'echo "Restoring ports..."; for f in "${disable_files[@]}"; do echo 0 | sudo tee "$f" >/dev/null 2>&1 || true; done' EXIT
+
+    echo "Disabling ports..."
+    for f in "${disable_files[@]}"; do
+        echo 1 | sudo tee "$f" > /dev/null || die "Failed to disable ${f}."
+    done
 
     echo "Waiting ${CYCLE_DELAY}s..."
     sleep "$CYCLE_DELAY"
 
-    echo "Re-enabling port..."
-    echo 0 | sudo tee "$disable_file" > /dev/null || die "Failed to re-enable port."
+    echo "Re-enabling ports..."
+    for f in "${disable_files[@]}"; do
+        echo 0 | sudo tee "$f" > /dev/null || die "Failed to re-enable ${f}."
+    done
     trap - EXIT
+
+    echo "Waiting ${ENUMERATION_DELAY}s for the cameras to reconnect..."
+    sleep "$ENUMERATION_DELAY"
+    echo "Muscle cameras:"
+    print_muscle_cams
     echo "Done."
 }
 
 if [[ "${1:-}" == "behavior" ]]; then
     reset_behavior_cam
 elif [[ "${1:-}" == "muscle" ]]; then
-    reset_muscle_cam
+    reset_muscle_cams
 else
     die "Invalid argument. Usage: reset-camera <behavior|muscle>"
 fi
