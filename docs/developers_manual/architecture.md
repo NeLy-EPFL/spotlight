@@ -54,7 +54,8 @@ of them).
 
 - `pco-camera-server` (`src/apps/pco_camera_server_main.cc`) opens both
   pco.panda 4.2 cameras one after the other, by the serial numbers configured
-  in `muscle_camera/serial_number_<camera>`, sets ROI/trigger/acquire/exposure,
+  in `muscle_camera/serial_number_<camera>`, sets ROI (per camera, from
+  `--calcium-roi` and `--fiducial-roi`)/trigger/acquire/exposure,
   starts them, and then publishes each camera's frames from its own thread over
   five shared-memory regions per camera (frame data, shutter-open time, server
   state, mutex, condvar), whose names are configured per camera in

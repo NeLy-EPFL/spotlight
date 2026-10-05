@@ -32,10 +32,11 @@ MuscleHistogramWidget::MuscleHistogramWidget(
     int histogram_max,
     int default_vmin,
     int default_vmax,
+    QColor bin_color,
     QWidget *parent)
     : QWidget(parent), histogram_min_(histogram_min),
       histogram_max_(histogram_max), vmin_(default_vmin), vmax_(default_vmax),
-      histogram_(histogram_num_bins, 0.0f) {
+      bin_color_(bin_color), histogram_(histogram_num_bins, 0.0f) {
     setMinimumHeight(histogram_widget_height);
 }
 
@@ -102,7 +103,7 @@ void MuscleHistogramWidget::paintEvent(QPaintEvent *event) {
     // Histogram bars.
     int num_bins = static_cast<int>(histogram_.size());
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(180, 180, 180));
+    painter.setBrush(bin_color_);
     for (int i = 0; i < num_bins; ++i) {
         int x0 = width() * i / num_bins;
         int x1 = width() * (i + 1) / num_bins;

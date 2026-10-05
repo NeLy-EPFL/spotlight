@@ -149,16 +149,10 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
         x_center, y_center, range, stride, grid.size());
 
     // ------------------------------------------------------------------
-    // Load muscle camera ROI
+    // Load muscle camera ROIs
     // ------------------------------------------------------------------
     std::filesystem::path roi_path = profile_dir / "muscle_camera_roi.yaml";
-    MuscleCameraROI muscle_roi = get_muscle_camera_roi(roi_path);
-    spdlog::info(
-        "Muscle camera ROI: x0={}, x1={}, y0={}, y1={} "
-        "(width={}, height={}, xOffset={}, yOffset={})",
-        muscle_roi.x0, muscle_roi.x1, muscle_roi.y0, muscle_roi.y1,
-        muscle_roi.image_width, muscle_roi.image_height,
-        muscle_roi.x_offset, muscle_roi.y_offset);
+    MuscleCameraROIs muscle_rois = get_muscle_camera_rois(roi_path);
 
     // ------------------------------------------------------------------
     // Start camera acquisition threads
@@ -183,10 +177,7 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
     spdlog::info("Starting muscle camera acquisition thread");
     std::thread muscle_thread(
         muscle_image_acquirer,
-        static_cast<unsigned int>(muscle_roi.image_width),
-        static_cast<unsigned int>(muscle_roi.image_height),
-        static_cast<unsigned int>(muscle_roi.x_offset),
-        static_cast<unsigned int>(muscle_roi.y_offset),
+        muscle_rois,
         recorder_config,
         profile_dir.string(),
         spdlog::get_level(),

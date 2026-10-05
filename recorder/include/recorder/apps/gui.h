@@ -168,6 +168,8 @@ class MainGUIWindow : public QWidget {
         unsigned int musc_resync_interval);
     void write_recorder_config();
     void write_behavior_calibration_parameters();
+    // Only if the muscle cameras are running (not --no-muscle)
+    void write_muscle_camera_rois();
     void copy_homography_parameters_if_present();
 
     std::shared_ptr<ProgramState> program_state_;
@@ -184,12 +186,22 @@ class MainGUIWindow : public QWidget {
     QPushButton *stop_button_;
     QLabel *behavior_image_display_label_;
     QLabel *muscle_image_display_label_;
-    MuscleHistogramWidget *muscle_histogram_widget_;
+    // Channels of the muscle preview: calcium (green), fiducials (red), and
+    // behavior (blue). Only the calcium and fiducial channels have a histogram
+    // (the behavior channel is displayed like the behavior preview).
+    QCheckBox *calcium_channel_check_box_;
+    QCheckBox *fiducial_channel_check_box_;
+    QCheckBox *behavior_channel_check_box_;
+    MuscleHistogramWidget *calcium_histogram_widget_;
+    MuscleHistogramWidget *fiducial_histogram_widget_;
     QTimer *image_display_timer_;
     RecorderConfig recorder_config_;
     std::filesystem::path profile_dir_;
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state_;
     std::shared_ptr<MuscleRecordingState> muscle_recording_state_;
+    // Null if run-spotlight was started without the muscle cameras
+    // (--no-muscle), in which case muscle imaging cannot be enabled.
+    std::shared_ptr<MuscleCamera> muscle_camera_;
     std::shared_ptr<TrackingControlState> tracking_control_state_;
     CalibrationParams &behavior_cam_calibration_params_;
     ActiveAreaMask &active_area_mask_;
@@ -234,6 +246,13 @@ cv::Mat add_corner_marker(
     double arena_size_y_mm,
     MotionStagePosition stage_position,
     const CalibrationParams &behavior_cam_calibration_params);
+
+// Map a displayed (reoriented) camera image into the displayed calcium camera
+// view, of size `calcium_view_size`. Placeholder for the live registration:
+// for now the image centers are aligned without scaling (i.e. the image is
+// cropped or zero-padded).
+cv::Mat
+warp_to_calcium_view(const cv::Mat &image, const cv::Size &calcium_view_size);
 
 int parse_protocol_string(
     const std::string &protocol_text_field_string,

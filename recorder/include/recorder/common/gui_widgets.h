@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include <QColor>
 #include <QImage>
 #include <QMouseEvent>
 #include <QPainter>
@@ -23,7 +24,8 @@ inline constexpr int histogram_widget_height = 65;
 // normalize the displayed muscle image (pixels <= vmin are black, >= vmax are
 // white). The min handle can never cross past the max handle. Both the
 // histogram x-axis and the slider span the fixed [histogram_min, histogram_max]
-// intensity range read from the recorder config.
+// intensity range read from the recorder config. The histogram bars are drawn
+// in `bin_color`.
 class MuscleHistogramWidget : public QWidget {
   public:
     MuscleHistogramWidget(
@@ -31,6 +33,7 @@ class MuscleHistogramWidget : public QWidget {
         int histogram_max,
         int default_vmin,
         int default_vmax,
+        QColor bin_color = QColor(180, 180, 180),
         QWidget *parent = nullptr);
 
     // Recompute the histogram from a 16-bit (CV_16UC1) muscle frame and
@@ -62,6 +65,7 @@ class MuscleHistogramWidget : public QWidget {
     int histogram_max_;
     int vmin_;
     int vmax_;
+    QColor bin_color_;
     std::vector<float> histogram_; // bin heights normalized to [0, 1]
     DraggedHandle dragged_handle_ = DraggedHandle::none;
 };

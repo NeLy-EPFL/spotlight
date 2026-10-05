@@ -2,100 +2,8 @@
 
 #include "recorder/common/loop_monitors.h"
 
-MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
-    : x0(x0), x1(x1), y0(y0), y1(y1), x_offset(x0 - 1), y_offset(y0 - 1),
-      image_width(x1 - x0 + 1), image_height(y1 - y0 + 1) {}
-
-bool MuscleCameraROI::is_within_bound(int full_width, int full_height) const {
-    return (
-        x0 > 0 && x1 <= full_width && y0 > 0 && y1 <= full_height && x0 < x1 &&
-        y0 < y1);
-}
-
-YAML::Node MuscleCameraROI::to_yaml() const {
-    YAML::Node node;
-    node["x0"] = x0;
-    node["x1"] = x1;
-    node["y0"] = y0;
-    node["y1"] = y1;
-    node["x_offset"] = x_offset;
-    node["y_offset"] = y_offset;
-    node["image_width"] = image_width;
-    node["image_height"] = image_height;
-    return node;
-}
-
-int MuscleCameraROI::to_file(const std::filesystem::path &path) const {
-    std::ofstream fout(path);
-    if (!fout) {
-        spdlog::error("Failed to open file: {}", path.string());
-        return 1;
-    }
-
-    fout << to_yaml();
-    fout.close();
-    return 0;
-}
-
-std::tuple<int, int> MuscleCameraROI::get_center_xy() const {
-    return std::make_tuple((x0 + x1) / 2, (y0 + y1) / 2);
-}
-
-MuscleCameraROI
-get_muscle_camera_roi(const std::filesystem::path &roi_file_path) {
-    YAML::Node node;
-    try {
-        node = YAML::LoadFile(roi_file_path.string());
-    } catch (const YAML::Exception &e) {
-        throw std::runtime_error(fmt::format(
-            "Failed to load muscle camera ROI from {}: {}",
-            roi_file_path.string(),
-            e.what()));
-    }
-
-    auto read_int = [&](const char *key) {
-        if (!node[key]) {
-            throw std::runtime_error(fmt::format(
-                "Muscle camera ROI file {} is missing key '{}'",
-                roi_file_path.string(),
-                key));
-        }
-        try {
-            return node[key].as<int>();
-        } catch (const YAML::Exception &e) {
-            throw std::runtime_error(fmt::format(
-                "Muscle camera ROI key '{}' in {} is not an int: {}",
-                key,
-                roi_file_path.string(),
-                e.what()));
-        }
-    };
-
-    int x0 = read_int("x0");
-    int x1 = read_int("x1");
-    int y0 = read_int("y0");
-    int y1 = read_int("y1");
-    int image_width = read_int("image_width");
-    int image_height = read_int("image_height");
-    MuscleCameraROI roi(x0, x1, y0, y1);
-
-    spdlog::info(
-        "Muscle camera ROI loaded from file: x0={}, x1={}, y0={}, y1={}; "
-        "image_width={}, image_height={}",
-        x0,
-        x1,
-        y0,
-        y1,
-        image_width,
-        image_height);
-    return roi;
-}
-
 void muscle_image_acquirer(
-    unsigned int image_width,
-    unsigned int image_height,
-    unsigned int x_offset,
-    unsigned int y_offset,
+    const MuscleCameraROIs &rois,
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level,
@@ -110,10 +18,7 @@ void muscle_image_acquirer(
     double sensor_readout_time_us = recorder_config.get_parameter<double>(
         "muscle_camera", "sensor_readout_time_us");
     auto muscle_camera = std::make_shared<MuscleCamera>(
-        image_width,
-        image_height,
-        x_offset,
-        y_offset,
+        rois,
         rolling_shutter_line_time_us,
         sensor_readout_time_us,
         recorder_config,

@@ -41,12 +41,9 @@ std::filesystem::path pco_camera_server_path() {
            / "pco-camera-server";
 }
 
-// Smallest PCO ROI: width must be a multiple of 32 (>= 64), height a
-// multiple of 8 (>= 16).
-constexpr unsigned int min_roi_x0 = 1;
-constexpr unsigned int min_roi_x1 = 64;
-constexpr unsigned int min_roi_y0 = 1;
-constexpr unsigned int min_roi_y1 = 16;
+// Smallest PCO ROI ("X0,X1,Y0,Y1"): width must be a multiple of 32 (>= 64),
+// height a multiple of 8 (>= 16).
+constexpr const char *min_roi = "1,64,1,16";
 
 // Grace period before SIGKILL after SIGTERM, and the startup wait.
 constexpr int grace_period_ms = 5000;
@@ -76,14 +73,10 @@ TEST(MuscleCameraHardwareTest, StandalonePcoCameraServerInitDestroy) {
             "pco-camera-server",
             "--profile-dir",
             profile_dir.c_str(),
-            "--x-min",
-            std::to_string(min_roi_x0).c_str(),
-            "--x-max",
-            std::to_string(min_roi_x1).c_str(),
-            "--y-min",
-            std::to_string(min_roi_y0).c_str(),
-            "--y-max",
-            std::to_string(min_roi_y1).c_str(),
+            "--calcium-roi",
+            min_roi,
+            "--fiducial-roi",
+            min_roi,
             static_cast<char *>(nullptr));
         _exit(EXIT_FAILURE); // execl returned → failure
     }
@@ -131,9 +124,11 @@ TEST(MuscleCameraHardwareTest, MuscleCameraClassInitDestroyMuscleCamera) {
         config.get_parameter<int>("muscle_camera", "roi_width"));
     const int roi_height = round_to_nearest_valid_muscle_cam_vertical(
         config.get_parameter<int>("muscle_camera", "roi_height"));
-    // Center the ROI on the sensor.
-    const int x_offset = (full_frame_width - roi_width) / 2;
-    const int y_offset = (full_frame_height - roi_height) / 2;
+    // Center the ROI on the sensor, for both cameras.
+    const int x0 = (full_frame_width - roi_width) / 2 + 1;
+    const int y0 = (full_frame_height - roi_height) / 2 + 1;
+    const MuscleCameraROI roi(
+        x0, x0 + roi_width - 1, y0, y0 + roi_height - 1);
     const double line_time_us = config.get_parameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
     const double readout_time_us =
@@ -142,10 +137,7 @@ TEST(MuscleCameraHardwareTest, MuscleCameraClassInitDestroyMuscleCamera) {
     // Construction spawns pco-camera-server, sets up shared memory, and waits
     // until both cameras are recording.
     MuscleCamera muscle_camera(
-        roi_width,
-        roi_height,
-        x_offset,
-        y_offset,
+        MuscleCameraROIs{roi, roi},
         line_time_us,
         readout_time_us,
         config,

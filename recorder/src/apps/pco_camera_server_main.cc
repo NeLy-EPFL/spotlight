@@ -8,10 +8,8 @@ void print_help(const char *program_name) {
         << "Options:\n"
         << "  -h,  --help              Display this help message\n"
         << "  -p,  --profile-dir PATH  Path to profile directory (default: ~/Spotlight/default/)\n"
-        << "  -x0, --x-min X_MIN       x_min coordinate of the region of interest (default: 1)\n"
-        << "  -x1, --x-max X_MAX       x_max coordinate of the region of interest (default: 1)\n"
-        << "  -y0, --y-min Y_MIN       y_min coordinate of the region of interest (default: 2048)\n"
-        << "  -y1, --y-max Y_MAX       y_max coordinate of the region of interest (default: 2048)\n"
+        << "  --calcium-roi X0,X1,Y0,Y1   ROI of the calcium camera, 1-indexed and inclusive (default: 1,2048,1,2048)\n"
+        << "  --fiducial-roi X0,X1,Y0,Y1  ROI of the fiducial camera (same size as the calcium ROI; default: 1,2048,1,2048)\n"
         << "  -d,  --delay DELAY       Delay of shutter-open after trigger in microseconds (default: 0)\n"
         << "  -v,  --verbose           Enable verbose output (debug level)\n"
         << "  --verbosity LEVEL        Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
@@ -39,6 +37,23 @@ spdlog::level::level_enum parse_log_level(const std::string &level) {
     return spdlog::level::info;
 }
 
+SensorROI parse_roi(const std::string &text) {
+    SensorROI roi;
+    char trailing;
+    if (std::sscanf(
+            text.c_str(),
+            "%u,%u,%u,%u%c",
+            &roi.x0,
+            &roi.x1,
+            &roi.y0,
+            &roi.y1,
+            &trailing) != 4) {
+        spdlog::critical("Malformed ROI '{}', expected X0,X1,Y0,Y1", text);
+        std::exit(1);
+    }
+    return roi;
+}
+
 CLIOptions parse_cli(int argc, char **argv) {
     CLIOptions options;
 
@@ -54,14 +69,10 @@ CLIOptions parse_cli(int argc, char **argv) {
             options.log_level = parse_log_level(argv[++i]);
         } else if ((arg == "-p" || arg == "--profile-dir") && i + 1 < argc) {
             options.profile_dir = argv[++i];
-        } else if ((arg == "-x0" || arg == "--x-min") && i + 1 < argc) {
-            options.x0 = std::stoi(argv[++i]);
-        } else if ((arg == "-x1" || arg == "--x-max") && i + 1 < argc) {
-            options.x1 = std::stoi(argv[++i]);
-        } else if ((arg == "-y0" || arg == "--y-min") && i + 1 < argc) {
-            options.y0 = std::stoi(argv[++i]);
-        } else if ((arg == "-y1" || arg == "--y-max") && i + 1 < argc) {
-            options.y1 = std::stoi(argv[++i]);
+        } else if (arg == "--calcium-roi" && i + 1 < argc) {
+            options.rois[0] = parse_roi(argv[++i]);
+        } else if (arg == "--fiducial-roi" && i + 1 < argc) {
+            options.rois[1] = parse_roi(argv[++i]);
         } else if ((arg == "-d" || arg == "--delay") && i + 1 < argc) {
             options.delay_us = std::stoi(argv[++i]);
         } else if (arg[0] == '-') {
@@ -126,21 +137,16 @@ uint64_t get_current_time_microseconds() {
 void setup_pco_camera(
     pco::Camera &camera,
     unsigned int default_shutter_open_time_us,
-    unsigned int x0,
-    unsigned int x1,
-    unsigned int y0,
-    unsigned int y1,
-    unsigned int delay_us,
-    unsigned int full_frame_width,
-    unsigned int full_frame_height) {
+    const SensorROI &roi,
+    unsigned int delay_us) {
     // Set configuration
     spdlog::info("Getting default PCO camera configuration");
     camera.defaultConfiguration();
     pco::Configuration config = camera.getConfiguration();
-    config.roi.x0 = x0;
-    config.roi.x1 = x1;
-    config.roi.y0 = y0;
-    config.roi.y1 = y1;
+    config.roi.x0 = roi.x0;
+    config.roi.x1 = roi.x1;
+    config.roi.y0 = roi.y0;
+    config.roi.y1 = roi.y1;
     // Auto-sequence ("auto trigger") = continuous rolling shutter: the camera
     // free-runs, exposing each line back-to-back with no idle line-reset time,
     // instead of waiting for an external TTL trigger per frame. This is
@@ -348,13 +354,8 @@ void serve_cameras(
     const RecorderConfig &recorder_config,
     const size_t frame_buffer_size,
     const unsigned int default_shutter_open_time_us,
-    const unsigned int x0,
-    const unsigned int x1,
-    const unsigned int y0,
-    const unsigned int y1,
-    const unsigned int delay_us,
-    const unsigned int full_frame_width,
-    const unsigned int full_frame_height) {
+    const std::array<SensorROI, 2> &rois,
+    const unsigned int delay_us) {
     // Create both cameras' shared memory first, so that the clients can
     // attach and wait for is_ready while the cameras are being set up
     std::array<SharedMemory, 2> shms;
@@ -388,13 +389,8 @@ void serve_cameras(
         pco_camera_server::setup_pco_camera(
             *cameras[i],
             default_shutter_open_time_us,
-            x0,
-            x1,
-            y0,
-            y1,
-            delay_us,
-            full_frame_width,
-            full_frame_height);
+            rois[i],
+            delay_us);
         spdlog::info("{} camera setup complete", role_name);
     }
 
@@ -466,8 +462,6 @@ int main(int argc, char *argv[]) {
         recorder_config.get_parameter<int>("muscle_camera", "full_frame_width");
     const unsigned int full_frame_height = recorder_config.get_parameter<int>(
         "muscle_camera", "full_frame_height");
-    unsigned int roi_width = options.x1 - options.x0 + 1;
-    unsigned int roi_height = options.y1 - options.y0 + 1;
 
     // Initial nominal per-line exposure for the free-running (auto-sequence)
     // camera. In continuous mode the exposure sets the frame rate
@@ -488,18 +482,28 @@ int main(int argc, char *argv[]) {
         default_muscle_interval_us -
         static_cast<unsigned int>(sensor_readout_time_us);
 
-    // Validate image dimensions
-    if (options.x0 == 0 || options.y0 == 0 || options.x1 > full_frame_width ||
-        options.y1 > full_frame_height || options.x0 >= options.x1 ||
-        options.y0 >= options.y1) {
-        spdlog::critical(
-            "Invalid image dimensions. The following is required: "
-            "0 < x0 < x1 <= {}; 0 < y0 < y1 <= {}.",
-            full_frame_width,
-            full_frame_height);
+    // Validate the ROIs
+    for (const pco_camera_server::SensorROI &roi : options.rois) {
+        if (roi.x0 == 0 || roi.y0 == 0 || roi.x1 > full_frame_width ||
+            roi.y1 > full_frame_height || roi.x0 >= roi.x1 ||
+            roi.y0 >= roi.y1) {
+            spdlog::critical(
+                "Invalid image dimensions. The following is required: "
+                "0 < x0 < x1 <= {}; 0 < y0 < y1 <= {}.",
+                full_frame_width,
+                full_frame_height);
+            return 1;
+        }
+    }
+    const pco_camera_server::SensorROI &calcium_roi = options.rois[0];
+    const pco_camera_server::SensorROI &fiducial_roi = options.rois[1];
+    unsigned int roi_width = calcium_roi.x1 - calcium_roi.x0 + 1;
+    unsigned int roi_height = calcium_roi.y1 - calcium_roi.y0 + 1;
+    if (fiducial_roi.x1 - fiducial_roi.x0 + 1 != roi_width ||
+        fiducial_roi.y1 - fiducial_roi.y0 + 1 != roi_height) {
+        spdlog::critical("The calcium and fiducial ROIs must have the same size");
         return 1;
     }
-
     if (roi_width % 32 != 0 || roi_height % 8 != 0 || roi_width < 64 ||
         roi_height < 16) {
         spdlog::critical(
@@ -532,13 +536,8 @@ int main(int argc, char *argv[]) {
             recorder_config,
             frame_buffer_size,
             default_shutter_open_time_us,
-            options.x0,
-            options.x1,
-            options.y0,
-            options.y1,
-            options.delay_us,
-            full_frame_width,
-            full_frame_height);
+            options.rois,
+            options.delay_us);
     } catch (pco::CameraException &e) {
         spdlog::critical(
             "PCO camera server aborting due to camera error (0x{:08x}): {}",

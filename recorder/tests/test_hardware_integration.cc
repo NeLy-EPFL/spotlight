@@ -81,18 +81,17 @@ TEST(HardwareIntegrationTest, AllHardwareInitAndShutoff) {
         config.get_parameter<int>("muscle_camera", "roi_width"));
     const int mus_roi_h = round_to_nearest_valid_muscle_cam_vertical(
         config.get_parameter<int>("muscle_camera", "roi_height"));
-    const int mus_x_offset = (mus_full_w - mus_roi_w) / 2;
-    const int mus_y_offset = (mus_full_h - mus_roi_h) / 2;
+    const int mus_x0 = (mus_full_w - mus_roi_w) / 2 + 1;
+    const int mus_y0 = (mus_full_h - mus_roi_h) / 2 + 1;
+    const MuscleCameraROI mus_roi(
+        mus_x0, mus_x0 + mus_roi_w - 1, mus_y0, mus_y0 + mus_roi_h - 1);
     const double line_time_us = config.get_parameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
     const double readout_time_us =
         config.get_parameter<double>("muscle_camera", "sensor_readout_time_us");
 
     MuscleCamera muscle_camera(
-        mus_roi_w,
-        mus_roi_h,
-        mus_x_offset,
-        mus_y_offset,
+        MuscleCameraROIs{mus_roi, mus_roi},
         line_time_us,
         readout_time_us,
         config,

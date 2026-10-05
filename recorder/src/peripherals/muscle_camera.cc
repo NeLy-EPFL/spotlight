@@ -33,21 +33,125 @@ std::string log_level_to_str(spdlog::level::level_enum log_level) {
 } // namespace
 
 // ---------------------------------------------------------------------------
+// MuscleCameraROI
+// ---------------------------------------------------------------------------
+
+MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
+    : x0(x0), x1(x1), y0(y0), y1(y1), x_offset(x0 - 1), y_offset(y0 - 1),
+      image_width(x1 - x0 + 1), image_height(y1 - y0 + 1) {}
+
+bool MuscleCameraROI::is_within_bound(int full_width, int full_height) const {
+    return (
+        x0 > 0 && x1 <= full_width && y0 > 0 && y1 <= full_height && x0 < x1 &&
+        y0 < y1);
+}
+
+YAML::Node MuscleCameraROI::to_yaml() const {
+    YAML::Node node;
+    node["x0"] = x0;
+    node["x1"] = x1;
+    node["y0"] = y0;
+    node["y1"] = y1;
+    node["x_offset"] = x_offset;
+    node["y_offset"] = y_offset;
+    node["image_width"] = image_width;
+    node["image_height"] = image_height;
+    return node;
+}
+
+std::tuple<int, int> MuscleCameraROI::get_center_xy() const {
+    return std::make_tuple((x0 + x1) / 2, (y0 + y1) / 2);
+}
+
+std::string MuscleCameraROI::to_cli_string() const {
+    return fmt::format("{},{},{},{}", x0, x1, y0, y1);
+}
+
+int MuscleCameraROIs::to_file(const std::filesystem::path &path) const {
+    std::ofstream fout(path);
+    if (!fout) {
+        spdlog::error("Failed to open file: {}", path.string());
+        return 1;
+    }
+    YAML::Node node;
+    node["calcium"] = calcium.to_yaml();
+    node["fiducial"] = fiducial.to_yaml();
+    fout << node;
+    return 0;
+}
+
+MuscleCameraROIs
+get_muscle_camera_rois(const std::filesystem::path &roi_file_path) {
+    YAML::Node file_node;
+    try {
+        file_node = YAML::LoadFile(roi_file_path.string());
+    } catch (const YAML::Exception &e) {
+        throw std::runtime_error(fmt::format(
+            "Failed to load muscle camera ROIs from {}: {}",
+            roi_file_path.string(),
+            e.what()));
+    }
+
+    auto read_roi = [&](const std::string &role_name) {
+        YAML::Node node = file_node[role_name];
+        auto read_int = [&](const char *key) {
+            if (!node[key]) {
+                throw std::runtime_error(fmt::format(
+                    "Muscle camera ROI file {} is missing key '{}.{}' (rerun "
+                    "align-cameras to recreate it)",
+                    roi_file_path.string(),
+                    role_name,
+                    key));
+            }
+            try {
+                return node[key].as<int>();
+            } catch (const YAML::Exception &e) {
+                throw std::runtime_error(fmt::format(
+                    "Muscle camera ROI key '{}.{}' in {} is not an int: {}",
+                    role_name,
+                    key,
+                    roi_file_path.string(),
+                    e.what()));
+            }
+        };
+        MuscleCameraROI roi(
+            read_int("x0"), read_int("x1"), read_int("y0"), read_int("y1"));
+        spdlog::info(
+            "{} camera ROI loaded from file: x0={}, x1={}, y0={}, y1={}; "
+            "image_width={}, image_height={}",
+            role_name,
+            roi.x0,
+            roi.x1,
+            roi.y0,
+            roi.y1,
+            roi.image_width,
+            roi.image_height);
+        return roi;
+    };
+
+    MuscleCameraROIs rois{read_roi("calcium"), read_roi("fiducial")};
+    if (rois.calcium.image_width != rois.fiducial.image_width ||
+        rois.calcium.image_height != rois.fiducial.image_height) {
+        throw std::runtime_error(fmt::format(
+            "The calcium and fiducial camera ROIs in {} differ in size",
+            roi_file_path.string()));
+    }
+    return rois;
+}
+
+// ---------------------------------------------------------------------------
 // PcoCameraClient
 // ---------------------------------------------------------------------------
 
 PcoCameraClient::PcoCameraClient(
     pco_shared_memory::MuscleCameraRole role,
-    unsigned int x0,
-    unsigned int x1,
-    unsigned int y0,
-    unsigned int y1,
+    const MuscleCameraROI &roi,
     const RecorderConfig &recorder_config)
     : role_name_(pco_shared_memory::role_to_string(role)),
       shm_names_(
           pco_shared_memory::get_shared_memory_names(recorder_config, role)),
-      frame_buffer_size_((x1 - x0 + 1) * (y1 - y0 + 1) * 2), // CV_16UC1
-      image_width_(x1 - x0 + 1), image_height_(y1 - y0 + 1) {
+      frame_buffer_size_(roi.image_width * roi.image_height * 2), // CV_16UC1
+      image_width_(roi.image_width), image_height_(roi.image_height) {
     // Remove regions left behind by a previous (possibly crashed) server, so
     // that we cannot attach to them and mistake their stale state (e.g.
     // is_ready) for the new server's. The new server recreates them.
@@ -258,14 +362,10 @@ void MuscleCamera::start_server(
             "pco-camera-server",
             "--profile-dir",
             profile_dir.c_str(),
-            "--x-min",
-            std::to_string(x0_).c_str(),
-            "--x-max",
-            std::to_string(x1_).c_str(),
-            "--y-min",
-            std::to_string(y0_).c_str(),
-            "--y-max",
-            std::to_string(y1_).c_str(),
+            "--calcium-roi",
+            rois_.calcium.to_cli_string().c_str(),
+            "--fiducial-roi",
+            rois_.fiducial.to_cli_string().c_str(),
             "--delay",
             "0", // sync delay is implemented in Arduino code, not here!
             "--verbosity",
@@ -306,23 +406,17 @@ void MuscleCamera::wait_until_ready(int timeout_s) {
 }
 
 MuscleCamera::MuscleCamera(
-    int image_width,
-    int image_height,
-    int x_offset,
-    int y_offset,
+    const MuscleCameraROIs &rois,
     double rolling_shutter_line_time_us,
     double sensor_readout_time_us,
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level)
     // Member initializers are in declaration order (avoids -Wreorder).
-    : x0_(x_offset + 1), x1_(x_offset + image_width), y0_(y_offset + 1),
-      y1_(y_offset + image_height), image_width_(image_width),
-      image_height_(image_height),
-      rolling_shutter_line_time_us_(rolling_shutter_line_time_us),
+    : rois_(rois), rolling_shutter_line_time_us_(rolling_shutter_line_time_us),
       sensor_readout_time_us_(sensor_readout_time_us),
       recorder_config_(recorder_config) {
-    if (!is_roi_valid()) {
+    if (!are_rois_valid()) {
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
 
@@ -331,17 +425,11 @@ MuscleCamera::MuscleCamera(
     // this returns, so the trigger firmware's next STREAM starts them in sync.
     calcium_ = std::make_unique<PcoCameraClient>(
         pco_shared_memory::MuscleCameraRole::calcium,
-        x0_,
-        x1_,
-        y0_,
-        y1_,
+        rois_.calcium,
         recorder_config);
     fiducial_ = std::make_unique<PcoCameraClient>(
         pco_shared_memory::MuscleCameraRole::fiducial,
-        x0_,
-        x1_,
-        y0_,
-        y1_,
+        rois_.fiducial,
         recorder_config);
     start_server(profile_dir, log_level);
     wait_until_ready(recorder_config.get_parameter<int>(
@@ -468,25 +556,31 @@ FramePair MuscleCamera::wait_for_next_frame_pair() {
     return frame_pair;
 }
 
-bool MuscleCamera::is_roi_valid() const {
+bool MuscleCamera::are_rois_valid() const {
     int full_frame_width = recorder_config_.get_parameter<int>(
         "muscle_camera", "full_frame_width");
     int full_frame_height = recorder_config_.get_parameter<int>(
         "muscle_camera", "full_frame_height");
-    if (x0_ < 1 || x1_ > full_frame_width || y0_ < 1 ||
-        y1_ > full_frame_height || x0_ >= x1_ || y0_ >= y1_ ||
-        image_width_ % 32 != 0 || image_height_ % 8 != 0 || image_width_ < 64 ||
-        image_height_ < 16) {
+    for (const MuscleCameraROI &roi : {rois_.calcium, rois_.fiducial}) {
+        if (!roi.is_within_bound(full_frame_width, full_frame_height) ||
+            roi.image_width % 32 != 0 || roi.image_height % 8 != 0 ||
+            roi.image_width < 64 || roi.image_height < 16) {
+            spdlog::critical(
+                "Invalid ROI for muscle camera. The following conditions must "
+                "be met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, "
+                "the minimum size of the ROI is 64x16 pixels. The width must "
+                "be a multiple of 32 and the height must be a multiple of 8.",
+                full_frame_width,
+                full_frame_height);
+            return false;
+        }
+    }
+    if (rois_.calcium.image_width != rois_.fiducial.image_width ||
+        rois_.calcium.image_height != rois_.fiducial.image_height) {
         spdlog::critical(
-            "Invalid ROI for muscle camera. The following conditions must be "
-            "met: 1 <= x0 < x1 <= {}; 1 <= y0 < y1 <= {}. Furthermore, the "
-            "minimum size of the ROI is 64x16 pixels. The width must be a "
-            "multiple of 32 and the height must be a multiple of 8.",
-            full_frame_width,
-            full_frame_height);
+            "The calcium and fiducial camera ROIs must have the same size");
         return false;
     }
-
     return true;
 }
 
@@ -495,12 +589,16 @@ void MuscleCamera::set_nominal_exposure_us(unsigned int exposure_us) {
     fiducial_->set_nominal_exposure_us(exposure_us);
 }
 
+const MuscleCameraROIs &MuscleCamera::get_rois() const {
+    return rois_;
+}
+
 pid_t MuscleCamera::get_camera_server_pid() const {
     return pid_;
 }
 
 int MuscleCamera::get_num_lines_scanned() const {
-    return image_height_;
+    return rois_.calcium.image_height;
 }
 
 int round_to_nearest_valid_muscle_cam_horizontal(int value) {

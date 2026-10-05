@@ -2,11 +2,13 @@
 
 #include <array>
 #include <cstdlib> // exit
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <signal.h> // kill, SIGINT
 #include <string>
 #include <sys/types.h> // pid_t
+#include <tuple>
 #include <sys/wait.h>  // waitpid
 #include <unistd.h>    // fork, exec
 
@@ -16,6 +18,42 @@
 #include "recorder/common/data_types.h"
 #include "recorder/common/recorder_config.h"
 #include "recorder/common/utils.h"
+
+// Sensor ROI of one muscle camera. x0..x1 and y0..y1 are 1-indexed and
+// inclusive; x_offset and y_offset are 0-indexed.
+class MuscleCameraROI {
+  public:
+    int x0;
+    int x1;
+    int y0;
+    int y1;
+    int x_offset;
+    int y_offset;
+    int image_width;
+    int image_height;
+
+    MuscleCameraROI(int x0, int x1, int y0, int y1);
+    bool is_within_bound(int full_width, int full_height) const;
+    YAML::Node to_yaml() const;
+    std::tuple<int, int> get_center_xy() const;
+    // "X0,X1,Y0,Y1", as taken by pco-camera-server
+    std::string to_cli_string() const;
+};
+
+// The ROIs of the two muscle cameras. They have the same size.
+struct MuscleCameraROIs {
+    MuscleCameraROI calcium;
+    MuscleCameraROI fiducial;
+
+    // Write both ROIs to `path`, one section per camera (the format of
+    // <profile_dir>/muscle_camera_roi.yaml). Returns 0 on success.
+    int to_file(const std::filesystem::path &path) const;
+};
+
+// Load the ROIs saved by MuscleCameraROIs::to_file(). Throws if the file is
+// missing or malformed, or if the two ROIs differ in size.
+MuscleCameraROIs
+get_muscle_camera_rois(const std::filesystem::path &roi_file_path);
 
 // Derives the muscle camera's continuous-mode (auto-sequence) exposure from the
 // recording parameters and validates that the requested muscle frame interval
@@ -76,13 +114,10 @@ class MuscleTriggerTiming {
 class PcoCameraClient {
   public:
     // Remove the camera's shared memory left behind by a previous server (call
-    // before starting the server). The ROI is 1-indexed and inclusive.
+    // before starting the server).
     PcoCameraClient(
         pco_shared_memory::MuscleCameraRole role,
-        unsigned int x0,
-        unsigned int x1,
-        unsigned int y0,
-        unsigned int y1,
+        const MuscleCameraROI &roi,
         const RecorderConfig &recorder_config);
     PcoCameraClient(const PcoCameraClient &) = delete;
     PcoCameraClient &operator=(const PcoCameraClient &) = delete;
@@ -120,8 +155,8 @@ class PcoCameraClient {
     uint32_t last_recorder_image_number_ = 0;
 };
 
-// The two PCO muscle cameras (calcium and fiducial), with the same ROI, served
-// by one pco-camera-server process (the PCO SDK does not support opening them
+// The two PCO muscle cameras (calcium and fiducial), with ROIs of the same
+// size, served by one pco-camera-server process (the PCO SDK does not support opening them
 // from separate processes). The trigger firmware starts
 // them together via their shared acquire-enable line; after that each runs on
 // its own internal clock. Frames are paired by host acquisition time.
@@ -129,13 +164,9 @@ class MuscleCamera {
   public:
     // Start the camera server and block until both cameras are recording.
     // Throws if the server exits or is not ready within
-    // muscle_camera/server_ready_timeout_s. The ROI is given as size and
-    // 0-indexed offset.
+    // muscle_camera/server_ready_timeout_s.
     MuscleCamera(
-        int image_width,
-        int image_height,
-        int x_offset,
-        int y_offset,
+        const MuscleCameraROIs &rois,
         double rolling_shutter_line_time_us,
         double sensor_readout_time_us,
         const RecorderConfig &recorder_config,
@@ -160,17 +191,13 @@ class MuscleCamera {
     // slightly different times, so re-sync them afterwards (the trigger
     // firmware does so on every STREAM and START_RECORDING).
     void set_nominal_exposure_us(unsigned int exposure_us);
+    const MuscleCameraROIs &get_rois() const;
     // PID of the camera server (-1 once stopped).
     pid_t get_camera_server_pid() const;
     int get_num_lines_scanned() const;
 
   private:
-    unsigned int x0_;
-    unsigned int x1_;
-    unsigned int y0_;
-    unsigned int y1_;
-    unsigned int image_width_;
-    unsigned int image_height_;
+    MuscleCameraROIs rois_;
     double rolling_shutter_line_time_us_;
     double sensor_readout_time_us_;
     const RecorderConfig &recorder_config_;
@@ -184,7 +211,7 @@ class MuscleCamera {
     long last_image_number_offset_ = 0;
     uint64_t last_pair_time_us_ = 0;
 
-    bool is_roi_valid() const;
+    bool are_rois_valid() const;
     // Fork and exec pco-camera-server.
     void start_server(
         const std::string &profile_dir, spdlog::level::level_enum log_level);

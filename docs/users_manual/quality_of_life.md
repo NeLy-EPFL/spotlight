@@ -4,7 +4,7 @@ This page documents conveniences added in the current refactor branch that are e
 
 ## Adjust dynamic range of muscle image during live preview
 
-In the `run-spotlight` GUI, a histogram is now displayed under the muscle live preview widget when muscle imaging is enabled. The user can move the two sliders on the histogram to adjust the minimum and maximum pixel values that map to full-black and full-white in the live preview.
+In the `run-spotlight` GUI, two histograms are now displayed under the muscle live preview widget when muscle imaging is enabled, one for the calcium camera (green channel) and one for the fiducial camera (red channel). The user can move the two sliders on each histogram to adjust the minimum and maximum pixel values that map to zero and full intensity in that channel of the live preview. Each camera's histogram range and initial display range are set in the recorder config (`muscle_camera/histogram_display_{min,max}_<camera>` and `muscle_camera/default_display_{vmin,vmax}_<camera>`).
 
 
 ## Status display on the trigger controller

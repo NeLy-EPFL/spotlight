@@ -183,26 +183,20 @@ std::string try_save_selected_rois() {
         rois.push_back(roi);
     }
 
-    YAML::Node node;
     for (size_t i = 0; i < muscle_camera_roles.size(); ++i) {
         const MuscleCameraROI &roi = rois[i];
-        std::string role_name =
-            pco_shared_memory::role_to_string(muscle_camera_roles[i]);
         spdlog::info(
             "{} camera ROI: x0={}, x1={}, y0={}, y1={}",
-            role_name,
+            pco_shared_memory::role_to_string(muscle_camera_roles[i]),
             roi.x0,
             roi.x1,
             roi.y0,
             roi.y1);
-        node[role_name] = roi.to_yaml();
     }
     std::filesystem::path roi_file_path = get_roi_file_path();
-    std::ofstream fout(roi_file_path);
-    if (!fout) {
+    if (MuscleCameraROIs{rois[0], rois[1]}.to_file(roi_file_path) != 0) {
         return fmt::format("Failed to open {}", roi_file_path.string());
     }
-    fout << node;
     spdlog::info("Saved the muscle camera ROIs to {}", roi_file_path.string());
     return "";
 }
@@ -424,12 +418,15 @@ void align_camera(const std::filesystem::path &profile_dir) {
     spdlog::info("Behavior camera acquisition thread started");
 
     spdlog::info("Setting up muscle camera acquisition thread");
+    // Image the full sensor of both cameras
+    MuscleCameraROI full_frame_roi(
+        /*x0=*/1,
+        /*x1=*/full_muscle_image_width,
+        /*y0=*/1,
+        /*y1=*/full_muscle_image_height);
     std::thread muscle_image_acquirer_thread(
         muscle_image_acquirer,
-        full_muscle_image_width,
-        full_muscle_image_height,
-        /*x_offset=*/0,
-        /*y_offset=*/0,
+        MuscleCameraROIs{full_frame_roi, full_frame_roi},
         recorder_config,
         profile_dir,
         spdlog::get_level(),

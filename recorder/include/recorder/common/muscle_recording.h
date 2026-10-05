@@ -29,30 +29,9 @@ struct MuscleRecordingState {
         std::make_shared<LatestFrame>();
 };
 
-class MuscleCameraROI {
-  public:
-    int x0;
-    int x1;
-    int y0;
-    int y1;
-    int x_offset;
-    int y_offset;
-    int image_width;
-    int image_height;
-
-    MuscleCameraROI(int x0, int x1, int y0, int y1);
-    bool is_within_bound(int full_width, int full_height) const;
-    YAML::Node to_yaml() const;
-    int to_file(const std::filesystem::path &path) const;
-    std::tuple<int, int> get_center_xy() const;
-};
-
 // Function declarations
 void muscle_image_acquirer(
-    unsigned int image_width,
-    unsigned int image_height,
-    unsigned int x_offset,
-    unsigned int y_offset,
+    const MuscleCameraROIs &rois,
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level,
@@ -76,6 +55,3 @@ void muscle_image_saver(
 void stop_muscle_image_saver(
     const std::shared_ptr<MuscleRecordingState> &muscle_recording_state,
     const std::shared_ptr<ProgramState> &program_state);
-
-MuscleCameraROI
-get_muscle_camera_roi(const std::filesystem::path &roi_file_path);

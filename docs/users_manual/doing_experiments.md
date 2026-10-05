@@ -38,10 +38,10 @@ Calibrates the mapping between camera pixels, stage positions, and physical aren
 
 ## Step 3: Collect experimental recordings
 
-Run `run-spotlight`. In the GUI, configure:
+Run `run-spotlight`. Add `--no-muscle` to run without the muscle cameras (e.g. when they are not connected); muscle imaging is then unavailable. In the GUI, configure:
 
 - **Recording parameters** (top): behavior FPS, exposure time, and (if muscle imaging) sync ratio and muscle exposure. These take effect at the start of the next recording.
-- **Muscle preview**: enable with the **Enable** checkbox. When enabled, both cameras record.
+- **Muscle preview**: enable with the **Enable** checkbox. When enabled, both cameras record. The preview overlays the calcium camera (green), the fiducial camera (red), and the behavior camera (blue), each toggled with its checkbox (calcium and fiducials on by default). The images are not registered yet: the fiducial and behavior images are only centered on the calcium image. The two histograms under the preview set the display intensity range of the green and red channels.
 - **Save directory**: set before starting. If the directory exists and is non-empty, you will be prompted to overwrite, auto-increment, or cancel.
 - **Experiment protocol** (optional): a `;`-separated string of `<frameIdx>/<channel>/<op>` steps for scheduled optogenetic channel switching and automatic stop. "Channel" can be `ch2` or `ch3` reflecting to channels 2 and 3 on the CCS light controller (channel 1 is already occupied by the IR illumination LED). "Op" can be `on` (switching light on), `off` (switching light off), or `stop` (stopping recording). For `stop`, set the channel to `x` as the operation is global. Leave the textbox blank for an open recording, where the user clicks "Stop" manually to stop recording. Valid examples of the experiment protocol string are:
   - `900/x/stop` — record 900 behavior frames, then stop.
@@ -60,7 +60,8 @@ Then, click **Start recording**. Click **Stop** when done (or let the protocol s
 └── metadata/
     ├── experiment_parameters.yaml
     ├── recorder_config.yaml
-    └── calibration_parameters_behavior.yaml
+    ├── calibration_parameters_behavior.yaml
+    └── muscle_camera_roi.yaml   # both muscle cameras' ROIs (unless --no-muscle)
 ```
 
 Behavior frames are stored as *pseudo-BGR* JPEGs (three consecutive monochrome frames packed into the three color channels). `postprocess-recording` unpacks them.
