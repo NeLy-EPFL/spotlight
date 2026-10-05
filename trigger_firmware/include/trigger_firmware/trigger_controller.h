@@ -44,7 +44,7 @@
 // beh_frame_rate, never reads the muscle common-time signal, and never pulses
 // the blue excitation LED. The muscle-only parameters (musc_eff_exp_time,
 // beh_musc_sync_ratio, pco_cam_rolling_time, pco_cam_readout_time,
-// musc_resync_interval) are unused.
+// musc_resync_interval, musc_acquire_restart_margin) are unused.
 // This is the mode for behavior-only acquisition.
 //
 // Commands (see docs/comm_protocol.md): STREAM and START_RECORDING reconfigure
@@ -117,7 +117,7 @@ class TriggerController {
     void reset_timing();
     void apply_params(const TriggerParams &params);
     // Time acquire enable is held LOW to re-sync the muscle cameras: one muscle
-    // frame plus config::musc_acquire_restart_margin_us, so that a frame in
+    // frame plus the muscAcquireRestartMargin parameter, so that a frame in
     // progress on either camera has finished and both are idle at release.
     unsigned long get_musc_acquire_low_us() const;
     // True when both cameras' exposure times are strictly shorter than their

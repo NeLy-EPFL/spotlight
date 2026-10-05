@@ -15,7 +15,8 @@ There are five types of commands: `STREAM`, `START_RECORDING`, `STOP_RECORDING`,
         "behMuscSyncRatio": ...,  // positive integer (ignored when enableMuscle is false)
         "pcoCamRollingTime": ...,  // non-negative integer (ignored when enableMuscle is false)
         "pcoCamReadoutTime": ...,  // non-negative integer (ignored when enableMuscle is false)
-        "muscResyncInterval": ...  // positive integer (ignored when enableMuscle is false)
+        "muscResyncInterval": ...,  // positive integer (ignored when enableMuscle is false)
+        "muscAcquireRestartMargin": ...  // non-negative integer (ignored when enableMuscle is false)
     }
 }
 ```
@@ -24,8 +25,8 @@ Upon a `STREAM` command, the triggering controller changes its state based on in
 
 The `enableMuscle` flag selects the controller's acquisition mode (see [data acquisition](data_acquisition.md)):
 
-- When **`true`** (muscle-synced mode), the controller synchronizes behavior acquisition to the free-running muscle (PCO) cameras: it first restarts both muscle cameras in sync by pulsing their shared acquire-enable line LOW for about one muscle frame, then locks each group of `behMuscSyncRatio` behavior frames to the calcium camera's common-time signal and pulses the blue excitation LED for `muscEffExpTime`. The group and the LED start half the buffer time after the common-time onset, which the controller computes from `muscEffExpTime`, `pcoCamRollingTime`, and `pcoCamReadoutTime`, so that the light-on window is centered in the common time. The same restart happens on `START_RECORDING` and when a recording reverts to streaming, and the controller additionally re-syncs the muscle cameras every `muscResyncInterval` muscle frames (see [two muscle cameras](data_acquisition.md#two-muscle-cameras)).
-- When **`false`** (free-running mode), the muscle cameras are ignored entirely (their acquire-enable line stays HIGH). The controller triggers the behavior camera on its own clock at `behFrameRate`, never pulses the blue excitation LED, and ignores the muscle-only fields (`muscEffExpTime`, `behMuscSyncRatio`, `pcoCamRollingTime`, `pcoCamReadoutTime`, `muscResyncInterval`). This is the mode for behavior-only acquisition. It replaces the former convention of disabling muscle imaging by setting `muscEffExpTime` to 0, which kept the behavior camera locked to the (still free-running) muscle camera.
+- When **`true`** (muscle-synced mode), the controller synchronizes behavior acquisition to the free-running muscle (PCO) cameras: it first restarts both muscle cameras in sync by pulsing their shared acquire-enable line LOW for one muscle frame period plus `muscAcquireRestartMargin` (µs), then locks each group of `behMuscSyncRatio` behavior frames to the calcium camera's common-time signal and pulses the blue excitation LED for `muscEffExpTime`. The group and the LED start half the buffer time after the common-time onset, which the controller computes from `muscEffExpTime`, `pcoCamRollingTime`, and `pcoCamReadoutTime`, so that the light-on window is centered in the common time. The same restart happens on `START_RECORDING` and when a recording reverts to streaming, and the controller additionally re-syncs the muscle cameras every `muscResyncInterval` muscle frames (see [two muscle cameras](data_acquisition.md#two-muscle-cameras)).
+- When **`false`** (free-running mode), the muscle cameras are ignored entirely (their acquire-enable line stays HIGH). The controller triggers the behavior camera on its own clock at `behFrameRate`, never pulses the blue excitation LED, and ignores the muscle-only fields (`muscEffExpTime`, `behMuscSyncRatio`, `pcoCamRollingTime`, `pcoCamReadoutTime`, `muscResyncInterval`, `muscAcquireRestartMargin`). This is the mode for behavior-only acquisition. It replaces the former convention of disabling muscle imaging by setting `muscEffExpTime` to 0, which kept the behavior camera locked to the (still free-running) muscle camera.
 
 The muscle-only fields must still be present and well-formed even when `enableMuscle` is `false`; they are simply unused.
 

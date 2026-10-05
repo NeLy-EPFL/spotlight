@@ -71,15 +71,13 @@ class ArduinoCommunication {
     TriggerParams last_stream_params_;
 };
 
-// Approximate interval between periodic re-syncs of the two muscle cameras,
-// which drift apart by a few ppm (see docs/data_acquisition.md).
-inline constexpr unsigned int muscle_resync_interval_s = 10;
-
-// Number of muscle frames between periodic re-syncs (TriggerParams::
-// musc_resync_interval) at the given behavior frame rate and sync ratio:
-// muscle_resync_interval_s at the muscle frame rate, in integer arithmetic so
-// that the value is exact and reproducible. At least 1.
-unsigned int get_musc_resync_interval(int beh_frame_rate, int sync_ratio);
+// Number of muscle frames between periodic re-syncs of the two muscle cameras
+// (TriggerParams::musc_resync_interval), which drift apart by a few ppm (see
+// docs/data_acquisition.md): resync_interval_s at the muscle frame rate given
+// by the behavior frame rate and sync ratio, in integer arithmetic so that the
+// value is exact and reproducible. At least 1.
+unsigned int get_musc_resync_interval(
+    unsigned int resync_interval_s, int beh_frame_rate, int sync_ratio);
 
 // Build a default streaming params struct from the recorder config. The PCO
 // rolling time is derived from the muscle ROI height (number of scanned lines).

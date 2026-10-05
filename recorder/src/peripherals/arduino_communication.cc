@@ -250,8 +250,9 @@ void ArduinoCommunication::stop_communication() {
     cv_.notify_one();
 }
 
-unsigned int get_musc_resync_interval(int beh_frame_rate, int sync_ratio) {
-    const unsigned int n_frames = muscle_resync_interval_s *
+unsigned int get_musc_resync_interval(
+    unsigned int resync_interval_s, int beh_frame_rate, int sync_ratio) {
+    const unsigned int n_frames = resync_interval_s *
                                   static_cast<unsigned int>(beh_frame_rate) /
                                   static_cast<unsigned int>(sync_ratio);
     return n_frames >= 1 ? n_frames : 1;
@@ -283,8 +284,13 @@ TriggerParams make_default_stream_params(
     params.pco_cam_readout_time =
         static_cast<unsigned int>(sensor_readout_time_us);
     params.musc_resync_interval = get_musc_resync_interval(
+        recorder_config.get_parameter<unsigned int>(
+            "muscle_camera", "resync_interval_s"),
         static_cast<int>(params.beh_frame_rate),
         static_cast<int>(params.beh_musc_sync_ratio));
+    params.musc_acquire_restart_margin =
+        recorder_config.get_parameter<unsigned int>(
+            "muscle_camera", "acquire_restart_margin_us");
     return params;
 }
 

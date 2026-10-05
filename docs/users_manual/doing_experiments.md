@@ -11,16 +11,18 @@ Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spot
 > [!IMPORTANT]
 > Muscle imaging only. Skip this step if you are recording behavior only.
 
-Aligns the behavior camera, muscle camera FOVs, and the blue excitation light spot. Redo this step if cameras or the LED are physically moved.
+Aligns the behavior camera, the two muscle camera (calcium and fiducial) FOVs, and the blue excitation light spot. Redo this step if cameras or the LED are physically moved.
+
+`align-cameras` opens one window with the behavior camera (left) and the calcium and fiducial cameras' full frames (middle and right), each titled above the image. Under each muscle image, a histogram with a range slider sets its display intensity range: drag the blue (min) and orange (max) handles until the image is visible. The initial range comes from `align_cameras_display_vmin`/`align_cameras_display_vmax` in the recorder config.
 
 1. Place the bullseye target on the arena (corner arrow aligned with the arrow on the arena holder) and put the acrylic plate on top.
 2. Move the stages (Zaber knobs) so the bullseye is centered in the behavior camera view.
-3. Physically adjust the blue LED (position, distance, lenses) so it is centered on the bullseye at an appropriate spot size (use the radius markers in the muscle window).
-4. Physically adjust the muscle camera to roughly align to the bullseye.
+3. Physically adjust the blue LED (position, distance, lenses) so it is centered on the bullseye at an appropriate spot size (use the radius markers in the muscle images).
+4. Physically adjust both muscle cameras to roughly align to the bullseye.
 5. If the stage moved during steps 3–4, re-center the behavior camera on the bullseye.
-6. Click the center of the bullseye in the muscle window. A red dot marks the click; a blue rectangle shows the nearest feasible FOV (PCO camera requires boundaries at multiples of 32 px × 8 px).
-7. Verify the blue rectangle is fully within the displayed image; physically adjust the muscle camera if not.
-8. Press **RETURN** to save. Confirm `muscle_camera_roi.yaml` was written to the profile directory.
+6. Click the center of the bullseye in each muscle camera's image. A red dot marks the click; a blue rectangle shows the nearest feasible FOV (PCO camera requires boundaries at multiples of 32 px × 8 px).
+7. Verify both blue rectangles are fully within the displayed images; physically adjust the muscle cameras if not.
+8. Click **Save ROIs**. A dialog confirms where the ROIs were saved: `muscle_camera_roi.yaml` in the profile directory, with one section per camera (`calcium`, `fiducial`). **Cancel** closes the program without changing the ROI files.
 
 
 ## Step 2: Run arena registration scan and fit arena registration model

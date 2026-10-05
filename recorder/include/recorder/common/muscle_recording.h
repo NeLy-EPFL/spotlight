@@ -42,6 +42,7 @@ class MuscleCameraROI {
 
     MuscleCameraROI(int x0, int x1, int y0, int y1);
     bool is_within_bound(int full_width, int full_height) const;
+    YAML::Node to_yaml() const;
     int to_file(const std::filesystem::path &path) const;
     std::tuple<int, int> get_center_xy() const;
 };

@@ -29,6 +29,7 @@
 
 #include "recorder/common/behavior_recording.h"
 #include "recorder/common/calibration.h"
+#include "recorder/common/gui_widgets.h"
 #include "recorder/common/muscle_recording.h"
 #include "recorder/common/recorder_config.h"
 #include "recorder/common/tracking_control.h"
@@ -69,51 +70,6 @@ class MotionControlWidget : public QWidget {
     float max_y_absolute_mm_;
 
     std::shared_ptr<TrackingControlState> tracking_control_state_;
-};
-
-// Live histogram of the muscle camera image with a two-handle range slider
-// underneath. The two handles select the [vmin, vmax] intensity window used to
-// normalize the displayed muscle image (pixels <= vmin are black, >= vmax are
-// white). The min handle can never cross past the max handle. Both the
-// histogram x-axis and the slider span the fixed [histogram_min, histogram_max]
-// intensity range read from the recorder config.
-class MuscleHistogramWidget : public QWidget {
-  public:
-    MuscleHistogramWidget(
-        int histogram_min,
-        int histogram_max,
-        int default_vmin,
-        int default_vmax,
-        QWidget *parent = nullptr);
-
-    // Recompute the histogram from a 16-bit (CV_16UC1) muscle frame and
-    // repaint.
-    void set_image(const cv::Mat &image16_bit);
-
-    int vmin() const {
-        return vmin_;
-    }
-    int vmax() const {
-        return vmax_;
-    }
-
-  protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseMoveEvent(QMouseEvent *event) override;
-
-  private:
-    int value_to_x(int value) const;
-    int x_to_value(int x) const;
-
-    enum class DraggedHandle { none, min, max };
-
-    int histogram_min_;
-    int histogram_max_;
-    int vmin_;
-    int vmax_;
-    std::vector<float> histogram_; // bin heights normalized to [0, 1]
-    DraggedHandle dragged_handle_ = DraggedHandle::none;
 };
 
 class MainGUIWindow : public QWidget {
@@ -259,6 +215,10 @@ class MainGUIWindow : public QWidget {
     // trigger delay (rolling time = scanned lines * line time).
     unsigned int pco_cam_rolling_time_us_ = 0;
     unsigned int pco_cam_readout_time_us_ = 0;
+    // Muscle camera re-sync settings from the recorder config (see
+    // get_musc_resync_interval() and TriggerParams::musc_acquire_restart_margin)
+    unsigned int musc_resync_interval_s_ = 0;
+    unsigned int musc_acquire_restart_margin_us_ = 0;
     // True while the in-progress recording is a scheduled one (non-empty
     // op_sequence). Controls how the recording is ended (see end_recording()).
     bool current_recording_is_scheduled_ = false;

@@ -154,6 +154,7 @@ add_executable(run-spotlight
     # header lives under include/, not next to gui.cc, so AUTOMOC's
     # same-directory header discovery misses it.
     include/recorder/apps/gui.h
+    src/common/gui_widgets.cc
     src/apps/run_spotlight_main.cc)
 target_include_directories(run-spotlight PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(run-spotlight pthread rt dl)
@@ -169,6 +170,7 @@ set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
 # Camera and excitation-beam alignment tool.
 add_executable(align-cameras
     src/apps/align_cameras_main.cc
+    src/common/gui_widgets.cc
     src/apps/shared_memory_utils.cc
     src/peripherals/behavior_camera.cc
     src/peripherals/muscle_camera.cc

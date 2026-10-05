@@ -90,7 +90,7 @@ struct TriggerParams {
     // free-runs the behavior camera on its own clock at behFrameRate, never
     // pulses the blue LED, and the muscle-only fields below (muscEffExpTime,
     // behMuscSyncRatio, pcoCamRollingTime, pcoCamReadoutTime,
-    // muscResyncInterval) are unused.
+    // muscResyncInterval, muscAcquireRestartMargin) are unused.
     bool enable_muscle = true;
     unsigned int beh_exp_time = 0;         // behavior cam exposure time (us)
     unsigned int musc_eff_exp_time = 0;    // muscle cam effective exposure (us)
@@ -100,6 +100,9 @@ struct TriggerParams {
     unsigned int pco_cam_readout_time = 0; // PCO total readout time (us)
     // Muscle frames between periodic re-syncs of the two muscle cameras, > 0
     unsigned int musc_resync_interval = 1;
+    // Time beyond one muscle frame period that acquire enable is held LOW when
+    // restarting the muscle cameras in sync (us)
+    unsigned int musc_acquire_restart_margin = 0;
 };
 
 // A full protocol message.

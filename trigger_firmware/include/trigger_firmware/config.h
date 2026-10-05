@@ -14,10 +14,6 @@ inline constexpr bool default_enable_muscle = false;
 inline constexpr unsigned int default_beh_frame_rate = 25; // fps
 inline constexpr unsigned int default_beh_exp_time = 1000; // us
 
-// Extra time (beyond one muscle frame period) that the muscle acquire-enable
-// line is held LOW when restarting both PCO cameras in sync (us).
-inline constexpr unsigned long musc_acquire_restart_margin_us = 2000;
-
 // Pin assignments. D10, D11, D12, and D13 (LED_BUILTIN/SCK) are unused; A4/A5
 // are the OLED's I2C bus (see status_display.h). All A pins are used as digital
 // GPIOs.

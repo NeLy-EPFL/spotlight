@@ -13,12 +13,16 @@
 #define WAIT_TIMEOUT_SECS 0.1
 #define TIMEOUT_ERROR_CODE 0x80004001 // see PCO manual
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <ctime> // timegm, std::tm
+#include <memory>
 #include <stdio.h>
 #include <string.h>
+#include <thread>
+#include <vector>
 
 #include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
@@ -38,7 +42,6 @@
 
 namespace pco_camera_server {
 struct CLIOptions {
-    std::string camera_role; // "calcium" or "fiducial" (required)
     std::string profile_dir = "~/Spotlight/default/";
     unsigned int x0 = 1;
     unsigned int x1 = 2048;
@@ -67,11 +70,44 @@ void setup_pco_camera(
     unsigned int full_frame_width,
     unsigned int full_frame_height);
 
-// Create the shared-memory regions named in `shm_names`, open the PCO camera
-// with `serial_number`, and publish its frames until shutdown is requested.
-void serve_frames(
+// The two muscle cameras served by this process
+const std::array<pco_shared_memory::MuscleCameraRole, 2> muscle_camera_roles = {
+    pco_shared_memory::MuscleCameraRole::calcium,
+    pco_shared_memory::MuscleCameraRole::fiducial};
+
+// One camera's shared-memory regions, as mapped by the server
+struct SharedMemory {
+    uint8_t *frame_data = nullptr;
+    pco_shared_memory::ShutterOpenTime *shutter_open_time = nullptr;
+    pco_shared_memory::ServerState *server_state = nullptr;
+    pthread_mutex_t *mutex = nullptr;
+    pthread_cond_t *condvar = nullptr;
+};
+
+// Create the shared-memory regions named in `shm_names`, and mark the camera
+// as not ready with no frame published yet.
+SharedMemory create_shared_memory(
     const pco_shared_memory::SharedMemoryNames &shm_names,
-    const DWORD serial_number,
+    const size_t frame_buffer_size,
+    const unsigned int default_shutter_open_time_us);
+
+// Publish the frames of a recording `camera` into `shm` until shutdown is
+// requested.
+void serve_frames(
+    pco::Camera &camera,
+    const std::string &role_name,
+    const SharedMemory &shm,
+    const size_t frame_buffer_size,
+    const unsigned int default_shutter_open_time_us);
+
+// Serve both muscle cameras (with the serial numbers in the recorder config
+// and the same ROI) until shutdown is requested: create their shared memory,
+// open, configure, and start them one after the other, then publish each
+// camera's frames from its own thread. The PCO SDK does not support opening
+// the two cameras from separate processes: the first process to open a camera
+// claims all of them.
+void serve_cameras(
+    const RecorderConfig &recorder_config,
     const size_t frame_buffer_size,
     const unsigned int default_shutter_open_time_us,
     const unsigned int x0,

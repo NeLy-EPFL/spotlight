@@ -416,8 +416,7 @@ void TriggerController::apply_params(const TriggerParams &params) {
 }
 
 unsigned long TriggerController::get_musc_acquire_low_us() const {
-    return beh_period_us_ * sync_ratio_ +
-           config::musc_acquire_restart_margin_us;
+    return beh_period_us_ * sync_ratio_ + params_.musc_acquire_restart_margin;
 }
 
 bool TriggerController::check_params_timing(const TriggerParams &params) const {

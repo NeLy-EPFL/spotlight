@@ -12,7 +12,7 @@ bool MuscleCameraROI::is_within_bound(int full_width, int full_height) const {
         y0 < y1);
 }
 
-int MuscleCameraROI::to_file(const std::filesystem::path &path) const {
+YAML::Node MuscleCameraROI::to_yaml() const {
     YAML::Node node;
     node["x0"] = x0;
     node["x1"] = x1;
@@ -22,14 +22,17 @@ int MuscleCameraROI::to_file(const std::filesystem::path &path) const {
     node["y_offset"] = y_offset;
     node["image_width"] = image_width;
     node["image_height"] = image_height;
+    return node;
+}
 
+int MuscleCameraROI::to_file(const std::filesystem::path &path) const {
     std::ofstream fout(path);
     if (!fout) {
         spdlog::error("Failed to open file: {}", path.string());
         return 1;
     }
 
-    fout << node;
+    fout << to_yaml();
     fout.close();
     return 0;
 }

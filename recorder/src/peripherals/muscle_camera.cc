@@ -42,9 +42,7 @@ PcoCameraClient::PcoCameraClient(
     unsigned int x1,
     unsigned int y0,
     unsigned int y1,
-    const RecorderConfig &recorder_config,
-    const std::string &profile_dir,
-    spdlog::level::level_enum log_level)
+    const RecorderConfig &recorder_config)
     : role_name_(pco_shared_memory::role_to_string(role)),
       shm_names_(
           pco_shared_memory::get_shared_memory_names(recorder_config, role)),
@@ -61,136 +59,23 @@ PcoCameraClient::PcoCameraClient(
           shm_names_.condvar}) {
         shm_unlink(name.c_str()); // ENOENT (nothing left behind) is fine
     }
-
-    start_server(x0, x1, y0, y1, profile_dir, log_level);
-    wait_until_ready(recorder_config.get_parameter<int>(
-        "muscle_camera", "server_ready_timeout_s"));
-    spdlog::info("PCO camera server for the {} camera is ready", role_name_);
 }
 
-PcoCameraClient::~PcoCameraClient() {
-    stop();
-}
-
-void PcoCameraClient::start_server(
-    unsigned int x0,
-    unsigned int x1,
-    unsigned int y0,
-    unsigned int y1,
-    const std::string &profile_dir,
-    spdlog::level::level_enum log_level) {
-    // Capture our PID before forking so the child can detect (after arming its
-    // parent-death signal below) whether we already died in the race window
-    // between fork() and prctl().
-    pid_t parent_pid_before_fork = getpid();
-
-    pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
-
-    if (pid < 0) {
-        std::string error_message =
-            "Failed to fork process in order to start PCO camera server: " +
-            std::string(strerror(errno));
-        spdlog::critical(error_message);
-        throw std::runtime_error(error_message);
-    } else if (pid == 0) {
-        // Child process.
-        //
-        // Ask the kernel to send us SIGTERM if our parent (the recorder) dies.
-        // Without this, a recorder that is SIGKILLed or crashes never runs
-        // ~PcoCameraClient(), so the camera server is orphaned and keeps the
-        // PCO camera open indefinitely. The next run then fails to open the
-        // camera (it is already "attached") and the SDK reports the cryptic
-        // "Handle is invalid" (0xa00a3002). The server installs a SIGTERM
-        // handler that stops and closes the camera cleanly. PR_SET_PDEATHSIG
-        // survives the execl() below because pco-camera-server is not set-uid.
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-        // Close the race where the parent already died before the prctl() above
-        // took effect: in that case exit now rather than becoming an orphan.
-        if (getppid() != parent_pid_before_fork) {
-            _exit(EXIT_FAILURE);
-        }
-
-        // Resolve pco-camera-server alongside the running recorder binary so we
-        // always launch the matching build, rather than whatever happens to be
-        // on $PATH.
-        std::filesystem::path server_path =
-            std::filesystem::canonical("/proc/self/exe").parent_path() /
-            "pco-camera-server";
-
-        execl(
-            server_path.c_str(),
-            "pco-camera-server",
-            "--camera",
-            role_name_.c_str(),
-            "--profile-dir",
-            profile_dir.c_str(),
-            "--x-min",
-            std::to_string(x0).c_str(),
-            "--x-max",
-            std::to_string(x1).c_str(),
-            "--y-min",
-            std::to_string(y0).c_str(),
-            "--y-max",
-            std::to_string(y1).c_str(),
-            "--delay",
-            "0", // sync delay is implemented in Arduino code, not here!
-            "--verbosity",
-            log_level_to_str(log_level).c_str(),
-            (char *)nullptr);
-
-        // If execl returns, it must have failed
-        std::string error_message = "Failed to execute PCO camera server at " +
-                                    server_path.string() + ": " +
-                                    std::string(strerror(errno));
-        spdlog::critical(error_message);
-        exit(EXIT_FAILURE); // Exit child process
-    }
-
-    // Parent process
-    pid_ = pid;
-    spdlog::info(
-        "PCO camera server for the {} camera started with PID {}",
-        role_name_,
-        pid_);
-}
-
-void PcoCameraClient::wait_until_ready(int timeout_s) {
+bool PcoCameraClient::is_ready() {
     // The server creates its shared memory right away but only reports ready
     // after the (slow) camera setup, once the camera is recording. Until then
     // the mutex and condvar may not be initialized, so nothing but is_ready
     // may be touched.
-    constexpr auto poll_interval = std::chrono::milliseconds(50);
-    auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(timeout_s);
-    while (true) {
-        if (waitpid(pid_, nullptr, WNOHANG) == pid_) {
-            pid_ = -1; // already reaped
-            throw std::runtime_error(
-                "PCO camera server for the " + role_name_ +
-                " camera exited during startup (see its log above)");
+    if (server_state_ptr_ == nullptr) {
+        try {
+            attach_shared_memory();
+        } catch (const std::runtime_error &e) {
+            // Not (fully) created yet
+            spdlog::debug("Shared memory not ready yet: {}", e.what());
+            return false;
         }
-
-        if (server_state_ptr_ == nullptr) {
-            try {
-                attach_shared_memory();
-            } catch (const std::runtime_error &e) {
-                // Not (fully) created yet; retry below
-                spdlog::debug("Shared memory not ready yet: {}", e.what());
-            }
-        }
-        if (server_state_ptr_ != nullptr && server_state_ptr_->is_ready.load()) {
-            return;
-        }
-
-        if (std::chrono::steady_clock::now() > deadline) {
-            stop();
-            throw std::runtime_error(fmt::format(
-                "PCO camera server for the {} camera was not ready within {} s",
-                role_name_,
-                timeout_s));
-        }
-        std::this_thread::sleep_for(poll_interval);
     }
+    return server_state_ptr_->is_ready.load();
 }
 
 void PcoCameraClient::attach_shared_memory() {
@@ -220,57 +105,6 @@ void PcoCameraClient::attach_shared_memory() {
     condvar_ptr_ = condvar_ptr;
     server_state_ptr_ = server_state_ptr;
     spdlog::info("Attached to shared memory of the {} camera", role_name_);
-}
-
-void PcoCameraClient::stop() {
-    // Terminate the PCO camera server process. This is bounded: an unresponsive
-    // server can never block shutdown indefinitely, because we escalate to
-    // SIGKILL if it does not exit within the grace period. The process is
-    // reaped in both paths so it does not linger as a zombie.
-    //
-    // Idempotent: pid_ is cleared once reaped, so a later call (e.g. an
-    // explicit stop() followed by the destructor) is a no-op.
-    if (pid_ <= 0) {
-        return;
-    }
-
-    pid_t pid = pid_;
-    pid_ = -1;
-
-    kill(pid, SIGTERM);
-
-    // Poll for graceful exit up to a bounded deadline before escalating. The
-    // server checks its shutdown flag once per frame-wait timeout (0.1 s), so
-    // it normally exits well within this window.
-    constexpr int grace_period_ms = 3000;
-    constexpr int poll_interval_ms = 20;
-    bool reaped = false;
-    for (int elapsed_ms = 0; elapsed_ms < grace_period_ms;
-         elapsed_ms += poll_interval_ms) {
-        pid_t result = waitpid(pid, nullptr, WNOHANG);
-        if (result == pid || (result == -1 && errno == ECHILD)) {
-            reaped = true;
-            break;
-        }
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(poll_interval_ms));
-    }
-
-    if (!reaped) {
-        spdlog::warn(
-            "PCO camera server for the {} camera (PID {}) did not exit within "
-            "{} ms of SIGTERM; escalating to SIGKILL.",
-            role_name_,
-            pid,
-            grace_period_ms);
-        kill(pid, SIGKILL);
-        // SIGKILL cannot be caught or ignored, so this blocking reap is
-        // bounded.
-        waitpid(pid, nullptr, 0);
-    }
-
-    spdlog::info(
-        "PCO camera server for the {} camera terminated.", role_name_);
 }
 
 FrameData PcoCameraClient::wait_for_next_frame() {
@@ -374,13 +208,102 @@ unsigned int PcoCameraClient::get_applied_exposure_us() const {
     return shutter_open_time_ptr_->applied_us.load();
 }
 
-pid_t PcoCameraClient::get_pid() const {
-    return pid_;
-}
 
 // ---------------------------------------------------------------------------
 // MuscleCamera
 // ---------------------------------------------------------------------------
+
+void MuscleCamera::start_server(
+    const std::string &profile_dir, spdlog::level::level_enum log_level) {
+    // Capture our PID before forking so the child can detect (after arming its
+    // parent-death signal below) whether we already died in the race window
+    // between fork() and prctl().
+    pid_t parent_pid_before_fork = getpid();
+
+    pid_t pid = fork(); // DANGEROUS! Pay special attention to avoid fork bomb
+
+    if (pid < 0) {
+        std::string error_message =
+            "Failed to fork process in order to start PCO camera server: " +
+            std::string(strerror(errno));
+        spdlog::critical(error_message);
+        throw std::runtime_error(error_message);
+    } else if (pid == 0) {
+        // Child process.
+        //
+        // Ask the kernel to send us SIGTERM if our parent (the recorder) dies.
+        // Without this, a recorder that is SIGKILLed or crashes never runs
+        // ~MuscleCamera(), so the camera server is orphaned and keeps the
+        // PCO camera open indefinitely. The next run then fails to open the
+        // camera (it is already "attached") and the SDK reports the cryptic
+        // "Handle is invalid" (0xa00a3002). The server installs a SIGTERM
+        // handler that stops and closes the camera cleanly. PR_SET_PDEATHSIG
+        // survives the execl() below because pco-camera-server is not set-uid.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        // Close the race where the parent already died before the prctl() above
+        // took effect: in that case exit now rather than becoming an orphan.
+        if (getppid() != parent_pid_before_fork) {
+            _exit(EXIT_FAILURE);
+        }
+
+        // Resolve pco-camera-server alongside the running recorder binary so we
+        // always launch the matching build, rather than whatever happens to be
+        // on $PATH.
+        std::filesystem::path server_path =
+            std::filesystem::canonical("/proc/self/exe").parent_path() /
+            "pco-camera-server";
+
+        execl(
+            server_path.c_str(),
+            "pco-camera-server",
+            "--profile-dir",
+            profile_dir.c_str(),
+            "--x-min",
+            std::to_string(x0_).c_str(),
+            "--x-max",
+            std::to_string(x1_).c_str(),
+            "--y-min",
+            std::to_string(y0_).c_str(),
+            "--y-max",
+            std::to_string(y1_).c_str(),
+            "--delay",
+            "0", // sync delay is implemented in Arduino code, not here!
+            "--verbosity",
+            log_level_to_str(log_level).c_str(),
+            (char *)nullptr);
+
+        // If execl returns, it must have failed
+        std::string error_message = "Failed to execute PCO camera server at " +
+                                    server_path.string() + ": " +
+                                    std::string(strerror(errno));
+        spdlog::critical(error_message);
+        exit(EXIT_FAILURE); // Exit child process
+    }
+
+    // Parent process
+    pid_ = pid;
+    spdlog::info("PCO camera server started with PID {}", pid_);
+}
+
+void MuscleCamera::wait_until_ready(int timeout_s) {
+    constexpr auto poll_interval = std::chrono::milliseconds(50);
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(timeout_s);
+    while (!calcium_->is_ready() || !fiducial_->is_ready()) {
+        if (waitpid(pid_, nullptr, WNOHANG) == pid_) {
+            pid_ = -1; // already reaped
+            throw std::runtime_error(
+                "PCO camera server exited during startup (see its log above)");
+        }
+        if (std::chrono::steady_clock::now() > deadline) {
+            stop();
+            throw std::runtime_error(fmt::format(
+                "PCO camera server was not ready within {} s", timeout_s));
+        }
+        std::this_thread::sleep_for(poll_interval);
+    }
+    spdlog::info("PCO camera server is ready");
+}
 
 MuscleCamera::MuscleCamera(
     int image_width,
@@ -403,35 +326,81 @@ MuscleCamera::MuscleCamera(
         throw std::runtime_error("Invalid ROI for muscle camera");
     }
 
-    // Start the servers one after the other: opening two cameras concurrently
-    // from two processes is not known to be safe in the PCO SDK. Both are
-    // recording (waiting for acquire enable) once this returns, so the trigger
-    // firmware's next STREAM starts them in sync. If the fiducial server fails,
-    // the already-constructed calcium client stops its server on unwinding.
+    // The clients remove stale shared memory, so create them before starting
+    // the server. Both cameras are recording (waiting for acquire enable) once
+    // this returns, so the trigger firmware's next STREAM starts them in sync.
     calcium_ = std::make_unique<PcoCameraClient>(
         pco_shared_memory::MuscleCameraRole::calcium,
         x0_,
         x1_,
         y0_,
         y1_,
-        recorder_config,
-        profile_dir,
-        log_level);
+        recorder_config);
     fiducial_ = std::make_unique<PcoCameraClient>(
         pco_shared_memory::MuscleCameraRole::fiducial,
         x0_,
         x1_,
         y0_,
         y1_,
-        recorder_config,
-        profile_dir,
-        log_level);
+        recorder_config);
+    start_server(profile_dir, log_level);
+    wait_until_ready(recorder_config.get_parameter<int>(
+        "muscle_camera", "server_ready_timeout_s"));
+}
+
+MuscleCamera::~MuscleCamera() {
+    stop();
 }
 
 void MuscleCamera::stop() {
-    calcium_->stop();
-    fiducial_->stop();
+    // Terminate the PCO camera server process. This is bounded: an unresponsive
+    // server can never block shutdown indefinitely, because we escalate to
+    // SIGKILL if it does not exit within the grace period. The process is
+    // reaped in both paths so it does not linger as a zombie.
+    //
+    // Idempotent: pid_ is cleared once reaped, so a later call (e.g. an
+    // explicit stop() followed by the destructor) is a no-op.
+    if (pid_ <= 0) {
+        return;
+    }
+
+    pid_t pid = pid_;
+    pid_ = -1;
+
+    kill(pid, SIGTERM);
+
+    // Poll for graceful exit up to a bounded deadline before escalating. The
+    // server checks its shutdown flag once per frame-wait timeout (0.1 s), so
+    // it normally exits well within this window.
+    constexpr int grace_period_ms = 3000;
+    constexpr int poll_interval_ms = 20;
+    bool reaped = false;
+    for (int elapsed_ms = 0; elapsed_ms < grace_period_ms;
+         elapsed_ms += poll_interval_ms) {
+        pid_t result = waitpid(pid, nullptr, WNOHANG);
+        if (result == pid || (result == -1 && errno == ECHILD)) {
+            reaped = true;
+            break;
+        }
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(poll_interval_ms));
+    }
+
+    if (!reaped) {
+        spdlog::warn(
+            "PCO camera server (PID {}) did not exit within {} ms of SIGTERM; "
+            "escalating to SIGKILL.",
+            pid,
+            grace_period_ms);
+        kill(pid, SIGKILL);
+        // SIGKILL cannot be caught or ignored, so this blocking reap is
+        // bounded.
+        waitpid(pid, nullptr, 0);
+    }
+
+    spdlog::info("PCO camera server terminated.");
 }
+
 
 FramePair MuscleCamera::wait_for_next_frame_pair() {
     FrameData calcium = calcium_->wait_for_next_frame();
@@ -526,8 +495,8 @@ void MuscleCamera::set_nominal_exposure_us(unsigned int exposure_us) {
     fiducial_->set_nominal_exposure_us(exposure_us);
 }
 
-std::array<pid_t, 2> MuscleCamera::get_camera_server_pids() const {
-    return {calcium_->get_pid(), fiducial_->get_pid()};
+pid_t MuscleCamera::get_camera_server_pid() const {
+    return pid_;
 }
 
 int MuscleCamera::get_num_lines_scanned() const {
