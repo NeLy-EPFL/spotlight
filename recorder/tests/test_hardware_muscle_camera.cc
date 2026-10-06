@@ -1,19 +1,21 @@
 // Hardware tests: PCO muscle camera init-configure-destroy cycles.
 //
 // Two tests:
-//   1. Standalone pco-camera-server: spawns the binary directly, verifies it
-//      stays alive through its startup sequence, then stops it with SIGTERM
-//      and checks for a clean exit.
+//   1. Standalone pco-camera-server: spawns the binary directly (it serves both
+//      cameras), verifies it stays alive through its startup sequence, then stops
+//      it with SIGTERM and checks for a clean exit.
 //   2. MuscleCamera class: constructs the in-process API object (which spawns
-//      the server internally), verifies the server is alive after settling,
-//      then calls stop().
+//      the camera server internally and waits until both cameras are ready),
+//      verifies the server is alive after settling, then calls stop().
 //
-// wait_for_one_frame() is intentionally not called: it uses pthread_cond_wait
-// with no timeout, so it would block indefinitely if the server crashed or
-// never produced a frame.  The alive-after-N-seconds check is a good proxy
-// for "server initialised and is running its acquisition loop."
+// wait_for_next_frame_pair() is intentionally not called: it uses
+// pthread_cond_wait with no timeout, and the cameras only produce frames once
+// the trigger controller enables acquisition, so it would block indefinitely
+// here. The alive-after-N-seconds check is a good proxy for "server initialised
+// and is running its acquisition loop."
 //
-// Requires the PCO panda camera to be powered and connected.
+// Requires both PCO panda cameras to be powered and connected, with their serial
+// numbers set in the recorder config.
 // Run with SPOTLIGHT_PROFILE_DIR set to a valid profile directory.
 
 #include <cerrno>
@@ -39,12 +41,9 @@ std::filesystem::path pco_camera_server_path() {
            / "pco-camera-server";
 }
 
-// Smallest PCO ROI: width must be a multiple of 32 (>= 64), height a
-// multiple of 8 (>= 16).
-constexpr unsigned int min_roi_x0 = 1;
-constexpr unsigned int min_roi_x1 = 64;
-constexpr unsigned int min_roi_y0 = 1;
-constexpr unsigned int min_roi_y1 = 16;
+// Smallest PCO ROI ("X0,X1,Y0,Y1"): width must be a multiple of 32 (>= 64),
+// height a multiple of 8 (>= 16).
+constexpr const char *min_roi = "1,64,1,16";
 
 // Grace period before SIGKILL after SIGTERM, and the startup wait.
 constexpr int grace_period_ms = 5000;
@@ -74,14 +73,10 @@ TEST(MuscleCameraHardwareTest, StandalonePcoCameraServerInitDestroy) {
             "pco-camera-server",
             "--profile-dir",
             profile_dir.c_str(),
-            "--x-min",
-            std::to_string(min_roi_x0).c_str(),
-            "--x-max",
-            std::to_string(min_roi_x1).c_str(),
-            "--y-min",
-            std::to_string(min_roi_y0).c_str(),
-            "--y-max",
-            std::to_string(min_roi_y1).c_str(),
+            "--calcium-roi",
+            min_roi,
+            "--fiducial-roi",
+            min_roi,
             static_cast<char *>(nullptr));
         _exit(EXIT_FAILURE); // execl returned → failure
     }
@@ -129,20 +124,20 @@ TEST(MuscleCameraHardwareTest, MuscleCameraClassInitDestroyMuscleCamera) {
         config.get_parameter<int>("muscle_camera", "roi_width"));
     const int roi_height = round_to_nearest_valid_muscle_cam_vertical(
         config.get_parameter<int>("muscle_camera", "roi_height"));
-    // Center the ROI on the sensor.
-    const int x_offset = (full_frame_width - roi_width) / 2;
-    const int y_offset = (full_frame_height - roi_height) / 2;
+    // Center the ROI on the sensor, for both cameras.
+    const int x0 = (full_frame_width - roi_width) / 2 + 1;
+    const int y0 = (full_frame_height - roi_height) / 2 + 1;
+    const MuscleCameraROI roi(
+        x0, x0 + roi_width - 1, y0, y0 + roi_height - 1);
     const double line_time_us = config.get_parameter<double>(
         "muscle_camera", "rolling_shutter_line_time_us");
     const double readout_time_us =
         config.get_parameter<double>("muscle_camera", "sensor_readout_time_us");
 
-    // Construction spawns pco-camera-server and sets up shared memory.
+    // Construction spawns pco-camera-server, sets up shared memory, and waits
+    // until both cameras are recording.
     MuscleCamera muscle_camera(
-        roi_width,
-        roi_height,
-        x_offset,
-        y_offset,
+        MuscleCameraROIs{roi, roi},
         line_time_us,
         readout_time_us,
         config,
@@ -152,8 +147,8 @@ TEST(MuscleCameraHardwareTest, MuscleCameraClassInitDestroyMuscleCamera) {
     const pid_t server_pid = muscle_camera.get_camera_server_pid();
     ASSERT_GT(server_pid, 0);
 
-    // Let the server settle into its acquisition loop, then confirm it is
-    // still alive (has not crashed during initialization).
+    // Let the server settle into its acquisition loops, then confirm it is
+    // still alive (has not crashed after initialization).
     std::this_thread::sleep_for(std::chrono::seconds(settle_wait_seconds));
     EXPECT_EQ(kill(server_pid, 0), 0)
         << "pco-camera-server (PID " << server_pid << ") crashed after init";

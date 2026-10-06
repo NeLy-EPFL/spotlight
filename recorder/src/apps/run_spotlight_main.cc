@@ -2,8 +2,9 @@
  * run-spotlight -- main recording application.
  *
  * Loads the recorder config from <profile_dir>/recorder_config.yaml, the
- * muscle-camera ROI from <profile_dir>/muscle_camera_roi.yaml, and the
- * arena registration model from <arena_dir>/model/calibration_result.yaml.
+ * muscle-camera ROIs from <profile_dir>/muscle_camera_roi.yaml (unless started
+ * with --no-muscle, in which case muscle imaging is unavailable), and the arena
+ * registration model from <arena_dir>/model/calibration_result.yaml.
  * Reads arena dimensions from <arena_dir>/metadata.yaml to derive the stage
  * range used by the motion-stage preview widget.
  *
@@ -154,11 +155,11 @@ bool quit_program() {
         behavior_camera->stop();
     }
 
-    // Terminate PCO camera server. stop() is bounded (SIGTERM, then SIGKILL
-    // after a grace period), so an unresponsive server can never block the
-    // shutdown indefinitely. Once the server is gone the muscle acquirer blocks
-    // forever in wait_for_one_frame()'s pthread_cond_wait; that thread is
-    // abandoned at std::exit() below.
+    // Terminate both PCO camera servers. stop() is bounded (SIGTERM, then
+    // SIGKILL after a grace period), so an unresponsive server can never block
+    // the shutdown indefinitely. Once the servers are gone the muscle acquirer
+    // blocks forever in wait_for_next_frame_pair()'s pthread_cond_wait; that
+    // thread is abandoned at std::exit() below.
     if (std::shared_ptr<MuscleCamera> muscle_camera =
             muscle_recording_state->muscle_camera.load()) {
         spdlog::info("Stopping acquisition on muscle camera");
@@ -224,11 +225,6 @@ int run_spotlight_main(int argc, char **argv) {
         throw std::runtime_error(error_message);
     }
 
-    // Load muscle ROI
-    std::filesystem::path roi_file_path =
-        profile_dir / "muscle_camera_roi.yaml";
-    MuscleCameraROI muscle_roi = get_muscle_camera_roi(roi_file_path);
-
     // Make atomic variable that holds the save directory
     std::string default_save_directory =
         recorder_config.get_parameter<std::string>("gui", "default_save_dir");
@@ -273,8 +269,6 @@ int run_spotlight_main(int argc, char **argv) {
     behavior_recording_state->latest_frame_holder =
         std::make_shared<LatestFrame>();
     muscle_recording_state = std::make_shared<MuscleRecordingState>();
-    muscle_recording_state->latest_frame_holder =
-        std::make_shared<LatestFrame>();
 
     // Start tracking & motion control threads
     std::shared_ptr<TrackingControlState> tracking_control_state =
@@ -325,59 +319,53 @@ int run_spotlight_main(int argc, char **argv) {
     }
     spdlog::info("Behavior camera saver threads started");
 
-    // Start muscle image acquirer
-    spdlog::info(
-        "Loaded muscle camera ROI from {}: x0={}, x1={}, y0={}, y1={} "
-        "(x_offset={}, y_offset={}, image_width={}, image_height={})",
-        roi_file_path.string(),
-        muscle_roi.x0,
-        muscle_roi.x1,
-        muscle_roi.y0,
-        muscle_roi.y1,
-        muscle_roi.x_offset,
-        muscle_roi.y_offset,
-        muscle_roi.image_width,
-        muscle_roi.image_height);
-    std::thread muscle_image_acquirer_thread(
-        muscle_image_acquirer,
-        muscle_roi.image_width,
-        muscle_roi.image_height,
-        muscle_roi.x_offset,
-        muscle_roi.y_offset,
-        recorder_config,
-        profile_dir,
-        spdlog::get_level(),
-        muscle_recording_state,
-        program_state,
-        programmed_recording_stop);
-    spdlog::info("Muscle camera acquisition thread started");
-    size_t retry_count = 0;
-    while (!muscle_recording_state->muscle_camera.load()) {
-        // Wait for the muscle camera to be initialized
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        spdlog::warn("Waiting for muscle camera to be initialized...");
-        retry_count++;
-        if (retry_count % 10 == 0) {
-            spdlog::warn("Muscle camera is not initialized.");
-        }
-    }
-    // The muscle camera's shutter-open window is configured from the main GUI
-    // window (initialized to, and tracking, the muscle light-on time spin box).
-
-    // Start muscle image savers
+    // Start the muscle image acquirer and savers, unless running without the
+    // muscle cameras. muscle_recording_state->muscle_camera then stays null,
+    // which tells the GUI that muscle imaging is unavailable.
+    std::thread muscle_image_acquirer_thread;
     std::vector<std::thread> muscle_image_saver_threads;
-    int num_muscle_image_saver_threads = recorder_config.get_parameter<int>(
-        "muscle_camera", "num_image_saving_threads");
-    for (int i = 0; i < num_muscle_image_saver_threads; i++) {
-        muscle_image_saver_threads.push_back(std::thread(
-            muscle_image_saver,
+    if (options.no_muscle) {
+        spdlog::info("Running without the muscle cameras (--no-muscle)");
+    } else {
+        MuscleCameraROIs muscle_rois =
+            get_muscle_camera_rois(profile_dir / "muscle_camera_roi.yaml");
+        muscle_image_acquirer_thread = std::thread(
+            muscle_image_acquirer,
+            muscle_rois,
             recorder_config,
+            profile_dir,
+            spdlog::get_level(),
             muscle_recording_state,
-            save_directory,
             program_state,
-            5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
+            programmed_recording_stop);
+        spdlog::info("Muscle camera acquisition thread started");
+        size_t retry_count = 0;
+        while (!muscle_recording_state->muscle_camera.load()) {
+            // Wait for the muscle camera to be initialized
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            spdlog::debug("Waiting for muscle camera to be initialized...");
+            retry_count++;
+            if (retry_count % 10 == 0) {
+                spdlog::warn("Muscle camera is not initialized.");
+            }
+        }
+        // The muscle camera's shutter-open window is configured from the main
+        // GUI window (initialized to, and tracking, the muscle light-on time
+        // spin box).
+
+        int num_muscle_image_saver_threads = recorder_config.get_parameter<int>(
+            "muscle_camera", "num_image_saving_threads");
+        for (int i = 0; i < num_muscle_image_saver_threads; i++) {
+            muscle_image_saver_threads.push_back(std::thread(
+                muscle_image_saver,
+                recorder_config,
+                muscle_recording_state,
+                save_directory,
+                program_state,
+                5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
+        }
+        spdlog::info("Muscle camera saver threads started");
     }
-    spdlog::info("Muscle camera saver threads started");
 
     // Start Arduino triggering interface
     std::string arduino_port_name = find_arduino_port_name(recorder_config);

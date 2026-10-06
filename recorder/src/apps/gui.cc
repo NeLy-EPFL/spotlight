@@ -10,29 +10,6 @@
 
 #include <yaml-cpp/yaml.h>
 
-namespace {
-// Layout constants for the muscle histogram + range slider widget.
-constexpr int histogram_num_bins = 256;
-constexpr int histogram_widget_height = 65;
-constexpr int slider_area_height = 12;
-constexpr int handle_half_width = 5;
-
-QImage cv_mat_to_q_image(const cv::Mat &mat) {
-    if (mat.empty()) {
-        return QImage();
-    }
-    if (mat.channels() == 1) {
-        return QImage(
-            mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8);
-    }
-    // 3-channel BGR -> RGB for Qt
-    cv::Mat rgb;
-    cv::cvtColor(mat, rgb, cv::COLOR_BGR2RGB);
-    return QImage(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888)
-        .copy();
-}
-} // namespace
-
 std::string increment_directory_name(const std::string &path) {
     size_t end = path.size();
     while (end > 0 && path[end - 1] == '/') {
@@ -55,157 +32,6 @@ std::string increment_directory_name(const std::string &path) {
     oss << path.substr(0, start) << std::setfill('0') << std::setw(width) << num
         << "/";
     return oss.str();
-}
-
-MuscleHistogramWidget::MuscleHistogramWidget(
-    int histogram_min,
-    int histogram_max,
-    int default_vmin,
-    int default_vmax,
-    QWidget *parent)
-    : QWidget(parent), histogram_min_(histogram_min),
-      histogram_max_(histogram_max), vmin_(default_vmin), vmax_(default_vmax),
-      histogram_(histogram_num_bins, 0.0f) {
-    setMinimumHeight(histogram_widget_height);
-}
-
-void MuscleHistogramWidget::set_image(const cv::Mat &image16_bit) {
-    if (image16_bit.empty()) {
-        return;
-    }
-    int num_bins = static_cast<int>(histogram_.size());
-    int channels[] = {0};
-    int hist_size[] = {num_bins};
-    // calcHist's upper bound is exclusive, so add 1 to include histogram_max_.
-    float value_range[] = {
-        static_cast<float>(histogram_min_),
-        static_cast<float>(histogram_max_ + 1)};
-    const float *ranges[] = {value_range};
-    cv::Mat hist;
-    cv::calcHist(
-        &image16_bit, 1, channels, cv::Mat(), hist, 1, hist_size, ranges);
-    // Normalize bin heights to the tallest bin so the histogram fills the
-    // available height regardless of frame size / brightness.
-    double max_bin = 0.0;
-    cv::minMaxLoc(hist, nullptr, &max_bin);
-    for (int i = 0; i < num_bins; ++i) {
-        histogram_[i] = max_bin > 0.0
-                            ? hist.at<float>(i) / static_cast<float>(max_bin)
-                            : 0.0f;
-    }
-    update();
-}
-
-int MuscleHistogramWidget::value_to_x(int value) const {
-    int usable_width = std::max(1, width() - 2 * handle_half_width);
-    return handle_half_width + (value - histogram_min_) * usable_width /
-                                   std::max(1, histogram_max_ - histogram_min_);
-}
-
-int MuscleHistogramWidget::x_to_value(int x) const {
-    int usable_width = std::max(1, width() - 2 * handle_half_width);
-    int value = histogram_min_ + (x - handle_half_width) *
-                                     (histogram_max_ - histogram_min_) /
-                                     usable_width;
-    return std::clamp(value, histogram_min_, histogram_max_);
-}
-
-void MuscleHistogramWidget::paintEvent(QPaintEvent *event) {
-    Q_UNUSED(event);
-    QPainter painter(this);
-
-    int slider_top = height() - slider_area_height;
-    int histogram_height = slider_top;
-
-    painter.fillRect(rect(), QColor(30, 30, 30));
-
-    // Histogram bars.
-    int num_bins = static_cast<int>(histogram_.size());
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(180, 180, 180));
-    for (int i = 0; i < num_bins; ++i) {
-        int x0 = width() * i / num_bins;
-        int x1 = width() * (i + 1) / num_bins;
-        int bar_height = static_cast<int>(histogram_[i] * histogram_height);
-        painter.drawRect(
-            x0,
-            histogram_height - bar_height,
-            std::max(1, x1 - x0),
-            bar_height);
-    }
-
-    int x_min = value_to_x(vmin_);
-    int x_max = value_to_x(vmax_);
-
-    // Dim the regions outside the selected [vmin, vmax] window.
-    painter.setBrush(QColor(0, 0, 0, 130));
-    painter.drawRect(0, 0, x_min, histogram_height);
-    painter.drawRect(x_max, 0, width() - x_max, histogram_height);
-
-    // Slider groove and selected span.
-    int groove_y = slider_top + slider_area_height / 2;
-    painter.setPen(QPen(QColor(120, 120, 120), 2));
-    painter.drawLine(
-        handle_half_width, groove_y, width() - handle_half_width, groove_y);
-    painter.setPen(QPen(QColor(80, 160, 240), 3));
-    painter.drawLine(x_min, groove_y, x_max, groove_y);
-
-    // Min handle (blue) with a guide line over the histogram.
-    painter.setPen(QPen(QColor(80, 160, 240), 1));
-    painter.drawLine(x_min, 0, x_min, histogram_height);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(80, 160, 240));
-    painter.drawRect(
-        x_min - handle_half_width,
-        slider_top,
-        2 * handle_half_width,
-        slider_area_height);
-
-    // Max handle (orange) with a guide line over the histogram.
-    painter.setPen(QPen(QColor(240, 160, 60), 1));
-    painter.drawLine(x_max, 0, x_max, histogram_height);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(240, 160, 60));
-    painter.drawRect(
-        x_max - handle_half_width,
-        slider_top,
-        2 * handle_half_width,
-        slider_area_height);
-
-    // Value labels.
-    painter.setPen(Qt::white);
-    painter.drawText(
-        QRect(2, 0, width() - 4, 14),
-        Qt::AlignLeft,
-        QString("min %1").arg(vmin_));
-    painter.drawText(
-        QRect(2, 0, width() - 4, 14),
-        Qt::AlignRight,
-        QString("max %1").arg(vmax_));
-}
-
-void MuscleHistogramWidget::mousePressEvent(QMouseEvent *event) {
-    int x = static_cast<int>(event->position().x());
-    // Grab whichever handle is closer to the click.
-    dragged_handle_ =
-        std::abs(x - value_to_x(vmin_)) <= std::abs(x - value_to_x(vmax_))
-            ? DraggedHandle::min
-            : DraggedHandle::max;
-    mouseMoveEvent(event);
-}
-
-void MuscleHistogramWidget::mouseMoveEvent(QMouseEvent *event) {
-    if (dragged_handle_ == DraggedHandle::none) {
-        return;
-    }
-    int value = x_to_value(static_cast<int>(event->position().x()));
-    if (dragged_handle_ == DraggedHandle::min) {
-        // The min handle can never move past the max handle.
-        vmin_ = std::min(value, vmax_);
-    } else {
-        vmax_ = std::max(value, vmin_);
-    }
-    update();
 }
 
 MotionControlWidget::MotionControlWidget(
@@ -430,7 +256,7 @@ MainGUIWindow::MainGUIWindow(
     // command.
     record_button_->setEnabled(true);
     stop_button_->setEnabled(false);
-    muscle_imaging_check_box_->setEnabled(true);
+    muscle_imaging_check_box_->setEnabled(muscle_camera_ != nullptr);
     program_state_->is_recording.store(false);
     arduino_communication_->stream(build_streaming_params());
 }
@@ -451,16 +277,27 @@ void MainGUIWindow::load_recording_parameters() {
         "muscle_camera", "streaming_sync_ratio");
 
     // The muscle camera is started (and waited for) in run_spotlight_main
-    // before this window is constructed, so it is ready by now.
+    // before this window is constructed, so it is ready by now (unless
+    // run-spotlight was started with --no-muscle).
+    muscle_camera_ = muscle_recording_state_->muscle_camera.load();
 
     // Cache the PCO sensor timing sent in every STREAM / START_RECORDING. The
     // controller derives the muscle trigger delay from these (the rolling time
-    // is the time to scan all lines of the muscle ROI).
-    pco_cam_rolling_time_us_ = static_cast<unsigned int>(
-        muscle_recording_state_->muscle_camera.load()->get_num_lines_scanned() *
-        rolling_shutter_line_time_us);
+    // is the time to scan all lines of the muscle ROI). Without the muscle
+    // cameras, muscle imaging stays disabled and the rolling time is unused.
+    pco_cam_rolling_time_us_ =
+        muscle_camera_ ? static_cast<unsigned int>(
+                             muscle_camera_->get_num_lines_scanned() *
+                             rolling_shutter_line_time_us)
+                       : 0;
     pco_cam_readout_time_us_ =
         static_cast<unsigned int>(muscle_cam_readout_time_us);
+
+    musc_resync_interval_s_ = recorder_config_.get_parameter<unsigned int>(
+        "muscle_camera", "resync_interval_s");
+    musc_acquire_restart_margin_us_ =
+        recorder_config_.get_parameter<unsigned int>(
+            "muscle_camera", "acquire_restart_margin_us");
 }
 
 QLayout *MainGUIWindow::create_behavior_fps_row() {
@@ -624,34 +461,68 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
     muscle_image_display_label_ = new QLabel(this);
     muscle_image_display_label_->setFixedSize(preview_width, preview_height);
 
-    // Histogram + normalization-range slider for the muscle preview, shown only
-    // while muscle imaging is enabled (toggled by the checkbox above).
-    int histogram_display_min = recorder_config_.get_parameter<int>(
-        "muscle_camera", "histogram_display_min");
-    int histogram_display_max = recorder_config_.get_parameter<int>(
-        "muscle_camera", "histogram_display_max");
-    int default_display_vmin = recorder_config_.get_parameter<int>(
-        "muscle_camera", "default_display_vmin");
-    int default_display_vmax = recorder_config_.get_parameter<int>(
-        "muscle_camera", "default_display_vmax");
-    muscle_histogram_widget_ = new MuscleHistogramWidget(
-        histogram_display_min,
-        histogram_display_max,
-        default_display_vmin,
-        default_display_vmax,
-        this);
-    muscle_histogram_widget_->setFixedWidth(preview_width);
-    muscle_histogram_widget_->setVisible(false);
+    // Histograms + normalization-range sliders of the calcium (green) and
+    // fiducial (red) channels, shown only while muscle imaging is enabled
+    // (toggled by the Enable checkbox below). Each camera has its own pixel
+    // value range in the recorder config.
+    auto make_histogram_widget = [this](
+                                     const std::string &role_name,
+                                     const QColor &bin_color) {
+        auto get_parameter = [this, &role_name](const std::string &key) {
+            return recorder_config_.get_parameter<int>(
+                "muscle_camera", key + "_" + role_name);
+        };
+        return new MuscleHistogramWidget(
+            get_parameter("histogram_display_min"),
+            get_parameter("histogram_display_max"),
+            get_parameter("default_display_vmin"),
+            get_parameter("default_display_vmax"),
+            bin_color,
+            this);
+    };
+    calcium_histogram_widget_ =
+        make_histogram_widget("calcium", QColor(80, 200, 80));
+    fiducial_histogram_widget_ =
+        make_histogram_widget("fiducial", QColor(220, 70, 70));
+
+    // Channel on/off checkboxes. Display only, so they stay usable during
+    // recordings.
+    calcium_channel_check_box_ = new QCheckBox("Calcium", this);
+    calcium_channel_check_box_->setChecked(true);
+    fiducial_channel_check_box_ = new QCheckBox("Fiducials", this);
+    fiducial_channel_check_box_->setChecked(true);
+    behavior_channel_check_box_ = new QCheckBox("Behavior", this);
+    behavior_channel_check_box_->setChecked(false);
+    // The muscle-imaging widgets, shown only while muscle imaging is enabled
+    std::vector<QWidget *> muscle_imaging_widgets = {
+        calcium_histogram_widget_,
+        fiducial_histogram_widget_,
+        calcium_channel_check_box_,
+        fiducial_channel_check_box_,
+        behavior_channel_check_box_};
+    for (QWidget *widget : muscle_imaging_widgets) {
+        widget->setVisible(false);
+    }
+    calcium_histogram_widget_->setFixedWidth(preview_width);
+    fiducial_histogram_widget_->setFixedWidth(preview_width);
+    calcium_channel_check_box_->setStyleSheet("color: rgb(0, 140, 0)");
+    fiducial_channel_check_box_->setStyleSheet("color: rgb(200, 0, 0)");
+    behavior_channel_check_box_->setStyleSheet("color: rgb(0, 0, 220)");
 
     // Muscle-imaging on/off checkbox, right-aligned in the column title so it
     // sits at the right edge of the muscle preview.
     muscle_imaging_check_box_ = new QCheckBox("Enable", this);
     muscle_imaging_check_box_->setChecked(false);
+    if (!muscle_camera_) {
+        muscle_imaging_check_box_->setToolTip(
+            "run-spotlight was started without the muscle cameras "
+            "(--no-muscle)");
+    }
     connect(
         muscle_imaging_check_box_,
         &QCheckBox::checkStateChanged,
         this,
-        [this](int state) {
+        [this, muscle_imaging_widgets](int state) {
             // Muscle imaging on/off is expressed by enable_muscle: when off the
             // controller free-runs the behavior camera with the blue excitation
             // LED disabled (build_streaming_params() reads
@@ -664,9 +535,11 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
             // The muscle-only parameters are editable only when imaging muscle.
             sync_ratio_spin_box_->setEnabled(enabled);
             muscle_light_on_time_spin_box_->setEnabled(enabled);
-            // The histogram/range slider is only meaningful with a live muscle
-            // preview.
-            muscle_histogram_widget_->setVisible(enabled);
+            // The histograms and channel checkboxes are only meaningful with
+            // a live muscle preview.
+            for (QWidget *widget : muscle_imaging_widgets) {
+                widget->setVisible(enabled);
+            }
             // Re-stream so the controller switches modes immediately (sending a
             // STREAM mid-recording would revert the controller and abort it).
             if (!program_state_->is_recording.load()) {
@@ -674,18 +547,24 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
             }
         });
 
-    // Stack the muscle preview directly on top of its histogram (no gap between
-    // the two), then place that stack under the column title (title text on the
-    // left, the Enable checkbox right-aligned to the preview's right edge).
+    // Stack the muscle preview directly on top of its histograms (no gap
+    // between them), then place that stack under the column title (title text
+    // on the left; the channel checkboxes and, separated from them, the Enable
+    // checkbox right-aligned to the preview's right edge).
     QVBoxLayout *muscle_preview_stack = new QVBoxLayout();
     muscle_preview_stack->setSpacing(0);
     muscle_preview_stack->setContentsMargins(0, 0, 0, 0);
     muscle_preview_stack->addWidget(muscle_image_display_label_);
-    muscle_preview_stack->addWidget(muscle_histogram_widget_);
+    muscle_preview_stack->addWidget(calcium_histogram_widget_);
+    muscle_preview_stack->addWidget(fiducial_histogram_widget_);
     QHBoxLayout *muscle_title_layout = new QHBoxLayout();
     muscle_title_layout->setContentsMargins(0, 0, 0, 0);
     muscle_title_layout->addWidget(new QLabel("Muscle preview", this));
     muscle_title_layout->addStretch();
+    muscle_title_layout->addWidget(calcium_channel_check_box_);
+    muscle_title_layout->addWidget(fiducial_channel_check_box_);
+    muscle_title_layout->addWidget(behavior_channel_check_box_);
+    muscle_title_layout->addSpacing(20);
     muscle_title_layout->addWidget(muscle_imaging_check_box_);
     QVBoxLayout *muscle_column_layout = new QVBoxLayout();
     muscle_column_layout->addLayout(muscle_title_layout);
@@ -752,11 +631,11 @@ QLayout *MainGUIWindow::create_live_image_displays() {
         "gui", "muscle_camera_preview_width");
     int muscle_camera_preview_height = recorder_config_.get_parameter<int>(
         "gui", "muscle_camera_preview_height");
-    // The muscle column is the muscle preview stacked on top of its histogram /
-    // slider; size the behavior preview to that combined height so the two
-    // columns line up.
+    // The muscle column is the muscle preview stacked on top of its two
+    // histograms / sliders; size the behavior preview to that combined height
+    // so the two columns line up.
     int muscle_column_height =
-        muscle_camera_preview_height + histogram_widget_height;
+        muscle_camera_preview_height + 2 * histogram_widget_height;
 
     // Derive the behavior preview width from the displayed behavior frame's
     // aspect ratio, so the image fills the label exactly with no left/right
@@ -883,8 +762,7 @@ bool MainGUIWindow::validate_and_prepare_recording(
         int muscle_cam_readout_time_us = recorder_config_.get_parameter<double>(
             "muscle_camera", "sensor_readout_time_us");
         if (!muscle_trigger_timing.compute_parameters(
-                muscle_recording_state_->muscle_camera.load()
-                    ->get_num_lines_scanned(),
+                muscle_camera_->get_num_lines_scanned(),
                 rolling_shutter_line_time_us,
                 muscle_cam_readout_time_us)) {
             QMessageBox::critical(
@@ -942,10 +820,10 @@ void MainGUIWindow::start_recording() {
     // Switch the free-running camera to the recording muscle frame rate before
     // START_RECORDING, so it is already emitting common-time onsets at the
     // recording cadence when the firmware begins locking the behavior frames to
-    // them. The controller's cam_flush_time_us delay covers the transient while
-    // the new exposure takes effect.
+    // them. This blocks until the camera server has applied the new exposure,
+    // so START_RECORDING below is only sent afterwards.
     if (muscle_imaging_check_box_->isChecked()) {
-        muscle_recording_state_->muscle_camera.load()->set_nominal_exposure_us(
+        muscle_camera_->set_nominal_exposure_us(
             static_cast<unsigned int>(muscle_nominal_exposure_us));
     }
 
@@ -957,17 +835,27 @@ void MainGUIWindow::start_recording() {
     // Initialize save directory
     save_directory_->initialize();
 
+    // Number of muscle frames between periodic re-syncs of the muscle cameras,
+    // computed once for the whole recording.
+    const unsigned int musc_resync_interval = get_musc_resync_interval(
+        musc_resync_interval_s_,
+        behavior_fps_spin_box_->value(),
+        sync_ratio_spin_box_->value());
+
     // Save the recording metadata into the freshly created save directory.
     // These read the recording parameters directly off the widgets.
     write_experiment_parameters(
-        muscle_nominal_exposure_us, muscle_buffer_time_us);
+        muscle_nominal_exposure_us,
+        muscle_buffer_time_us,
+        musc_resync_interval);
     write_recorder_config();
     write_behavior_calibration_parameters();
+    write_muscle_camera_rois();
     copy_homography_parameters_if_present();
 
     // Send triggering parameters and start recording. The controller reverts to
     // the streaming (revert-to) params when the recording ends.
-    TriggerParams rec_params = build_recording_params();
+    TriggerParams rec_params = build_recording_params(musc_resync_interval);
     TriggerParams revert_to_params = build_streaming_params();
     arduino_communication_->start_recording(
         rec_params, revert_to_params, op_sequence);
@@ -1035,7 +923,9 @@ bool MainGUIWindow::confirm_or_resolve_save_directory() {
 }
 
 void MainGUIWindow::write_experiment_parameters(
-    int muscle_nominal_exposure_us, int muscle_buffer_time_us) {
+    int muscle_nominal_exposure_us,
+    int muscle_buffer_time_us,
+    unsigned int musc_resync_interval) {
     std::filesystem::path output_path = save_directory_->get_directory() /
                                         "metadata/experiment_parameters.yaml";
     bool muscle_imaging_enabled = muscle_imaging_check_box_->isChecked();
@@ -1062,6 +952,10 @@ void MainGUIWindow::write_experiment_parameters(
             << muscle_nominal_exposure_us;
         out << YAML::Key << "muscle_buffer_time_us" << YAML::Value
             << muscle_buffer_time_us;
+        // The muscle cameras are re-synced every this many muscle frames,
+        // which costs one muscle frame interval each (no frames are lost).
+        out << YAML::Key << "muscle_resync_interval_frames" << YAML::Value
+            << musc_resync_interval;
     }
     out << YAML::Key << "experiment_protocol" << YAML::Value
         << experiment_protocol_->toPlainText().toStdString();
@@ -1095,6 +989,17 @@ void MainGUIWindow::write_behavior_calibration_parameters() {
     behavior_cam_calibration_params_.save_to_file(output_path);
     spdlog::info(
         "Saved behavior calibration parameters to '{}'", output_path.string());
+}
+
+void MainGUIWindow::write_muscle_camera_rois() {
+    if (!muscle_camera_) {
+        return;
+    }
+    std::filesystem::path output_path =
+        save_directory_->get_directory() / "metadata/muscle_camera_roi.yaml";
+    if (muscle_camera_->get_rois().to_file(output_path) == 0) {
+        spdlog::info("Saved muscle camera ROIs to '{}'", output_path.string());
+    }
 }
 
 void MainGUIWindow::copy_homography_parameters_if_present() {
@@ -1132,7 +1037,7 @@ void MainGUIWindow::stop_recording() {
 void MainGUIWindow::end_recording(bool reached_programmed_end) {
     record_button_->setEnabled(true);
     stop_button_->setEnabled(false);
-    muscle_imaging_check_box_->setEnabled(true);
+    muscle_imaging_check_box_->setEnabled(muscle_camera_ != nullptr);
 
     if (reached_programmed_end) {
         // A scheduled recording reached its end: the controller already
@@ -1149,13 +1054,21 @@ void MainGUIWindow::end_recording(bool reached_programmed_end) {
         arduino_communication_->stop_recording();
     }
 
-    // Revert the free-running muscle camera to the streaming muscle frame rate,
-    // matching the streaming params the controller was just reverted to.
-    push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
-
     // Stop queuing frames. The acquirer threads flush any partial behavior
     // group and discard subsequent frames (see behavior_image_acquirer).
     program_state_->is_recording.store(false);
+
+    // Revert the free-running muscle camera to the streaming muscle frame rate,
+    // matching the streaming params the controller was just reverted to. This
+    // blocks until the camera server has applied it.
+    push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
+
+    // Re-stream now that the camera runs at the streaming rate. Until the new
+    // exposure took effect, the camera still ran at the (possibly faster)
+    // recording rate while the controller already expected streaming timing,
+    // which can latch a muscle-frame overrun error. A STREAM clears that error
+    // and restarts the controller's timing on the camera's new cadence.
+    arduino_communication_->stream(build_streaming_params());
 
     spdlog::info(
         "Recording STOPPED ({}): {} recording, muscle imaging {}",
@@ -1169,6 +1082,9 @@ void MainGUIWindow::end_recording(bool reached_programmed_end) {
 
 void MainGUIWindow::push_muscle_camera_exposure(
     int beh_frame_rate, int sync_ratio) {
+    if (!muscle_camera_) {
+        return; // started with --no-muscle
+    }
     // In continuous (auto-sequence) mode the camera free-runs at
     // 1/(nominalExposure + readout), so the nominal per-line exposure sets the
     // frame rate. Pick it so the camera produces muscle frames at
@@ -1186,7 +1102,7 @@ void MainGUIWindow::push_muscle_camera_exposure(
             pco_cam_readout_time_us_);
         return;
     }
-    muscle_recording_state_->muscle_camera.load()->set_nominal_exposure_us(
+    muscle_camera_->set_nominal_exposure_us(
         static_cast<unsigned int>(exposure_us));
 }
 
@@ -1211,10 +1127,14 @@ TriggerParams MainGUIWindow::build_streaming_params() const {
         static_cast<unsigned int>(default_musc_light_on_time_us_);
     params.pco_cam_rolling_time = pco_cam_rolling_time_us_;
     params.pco_cam_readout_time = pco_cam_readout_time_us_;
+    params.musc_resync_interval = get_musc_resync_interval(
+        musc_resync_interval_s_, streaming_behavior_fps_, streaming_sync_ratio_);
+    params.musc_acquire_restart_margin = musc_acquire_restart_margin_us_;
     return params;
 }
 
-TriggerParams MainGUIWindow::build_recording_params() const {
+TriggerParams MainGUIWindow::build_recording_params(
+    unsigned int musc_resync_interval) const {
     TriggerParams params;
     // The muscle camera is recorded (and the blue excitation light pulsed) only
     // when muscle imaging is enabled; otherwise the controller free-runs the
@@ -1228,6 +1148,8 @@ TriggerParams MainGUIWindow::build_recording_params() const {
         muscle_light_on_time_spin_box_->value() * 1000);
     params.pco_cam_rolling_time = pco_cam_rolling_time_us_;
     params.pco_cam_readout_time = pco_cam_readout_time_us_;
+    params.musc_resync_interval = musc_resync_interval;
+    params.musc_acquire_restart_margin = musc_acquire_restart_margin_us_;
     return params;
 }
 
@@ -1330,25 +1252,31 @@ void MainGUIWindow::update_behavior_image_display() {
             tracking_control_state_->latest_motion_stage_position;
     }
 
-    // Warp the active-area mask into camera-image space and convert the
-    // grayscale frame to BGR and tint out-of-arena pixels red at 50% opacity
-    // for visualization.
-    cv::Mat active_mask_curr_view = active_area_mask_.warp_to_current_view(
-        corrected_frame, my_stage_position);
+    // Convert the grayscale frame to BGR. While tracking, warp the
+    // active-area mask into camera-image space and tint out-of-arena pixels
+    // red at 50% opacity for visualization.
     cv::Mat bgr_image;
     cv::cvtColor(corrected_frame, bgr_image, cv::COLOR_GRAY2BGR);
-    cv::Mat outside_arena;
-    cv::threshold(
-        active_mask_curr_view, outside_arena, 0, 255, cv::THRESH_BINARY_INV);
-    std::vector<cv::Mat> channels(3);
-    cv::split(bgr_image, channels);
-    // Red tint at 50% opacity: new_red = curr + (255 - curr) / 2
-    cv::Mat inv, half_inv, tinted_red;
-    cv::subtract(cv::Scalar(255), channels[2], inv);
-    cv::divide(inv, 2, half_inv);
-    cv::add(channels[2], half_inv, tinted_red);
-    tinted_red.copyTo(channels[2], outside_arena); // red channel (BGR)
-    cv::merge(channels, bgr_image);
+    if (tracking_enabled_check_box_->isChecked()) {
+        cv::Mat active_mask_curr_view = active_area_mask_.warp_to_current_view(
+            corrected_frame, my_stage_position);
+        cv::Mat outside_arena;
+        cv::threshold(
+            active_mask_curr_view,
+            outside_arena,
+            0,
+            255,
+            cv::THRESH_BINARY_INV);
+        std::vector<cv::Mat> channels(3);
+        cv::split(bgr_image, channels);
+        // Red tint at 50% opacity: new_red = curr + (255 - curr) / 2
+        cv::Mat inv, half_inv, tinted_red;
+        cv::subtract(cv::Scalar(255), channels[2], inv);
+        cv::divide(inv, 2, half_inv);
+        cv::add(channels[2], half_inv, tinted_red);
+        tinted_red.copyTo(channels[2], outside_arena); // red channel (BGR)
+        cv::merge(channels, bgr_image);
+    }
 
     cv::Mat image_for_display = add_corner_marker(
         bgr_image,
@@ -1371,28 +1299,72 @@ void MainGUIWindow::update_muscle_image_display() {
         return;
     }
 
-    cv::Mat latest_frame =
-        muscle_recording_state_->latest_frame_holder->get_latest_frame_data()
+    cv::Mat calcium_frame =
+        muscle_recording_state_->latest_calcium_frame_holder->get_latest_frame_data()
             .image;
-    if (latest_frame.empty()) {
+    cv::Mat fiducial_frame =
+        muscle_recording_state_->latest_fiducial_frame_holder
+            ->get_latest_frame_data()
+            .image;
+    if (calcium_frame.empty() || fiducial_frame.empty()) {
         return;
     }
-    // Update the live histogram from the raw 16-bit frame, then normalize the
-    // preview using the [vmin, vmax] window selected on the slider.
-    muscle_histogram_widget_->set_image(latest_frame);
-    cv::Mat processed_frame;
-    convert16_bit_to8_bit(
-        latest_frame,
-        processed_frame,
-        muscle_histogram_widget_->vmin(),
-        muscle_histogram_widget_->vmax());
-    reorient_muscle_image(processed_frame, processed_frame);
-    QImage q_image = cv_mat_to_q_image(processed_frame);
+    // Update the live histograms from the raw 16-bit frames, then normalize
+    // each channel using the [vmin, vmax] window selected on its slider.
+    cv::Mat calcium_channel =
+        calcium_histogram_widget_->update_and_normalize(calcium_frame);
+    cv::Mat fiducial_channel =
+        fiducial_histogram_widget_->update_and_normalize(fiducial_frame);
+    reorient_muscle_image(calcium_channel, calcium_channel);
+    reorient_muscle_image(fiducial_channel, fiducial_channel);
+    // Everything is displayed in the calcium camera's view
+    const cv::Size view_size = calcium_channel.size();
+    fiducial_channel = warp_to_calcium_view(fiducial_channel, view_size);
+    cv::Mat behavior_channel = cv::Mat::zeros(view_size, CV_8UC1);
+    if (behavior_channel_check_box_->isChecked()) {
+        cv::Mat behavior_frame =
+            behavior_recording_state_->latest_frame_holder
+                ->get_latest_frame_data()
+                .image;
+        if (!behavior_frame.empty()) {
+            cv::Mat reoriented_behavior_frame;
+            reorient_behavior_image(behavior_frame, reoriented_behavior_frame);
+            behavior_channel =
+                warp_to_calcium_view(reoriented_behavior_frame, view_size);
+        }
+    }
+    if (!calcium_channel_check_box_->isChecked()) {
+        calcium_channel.setTo(0);
+    }
+    if (!fiducial_channel_check_box_->isChecked()) {
+        fiducial_channel.setTo(0);
+    }
+
+    cv::Mat bgr_image;
+    cv::merge(
+        std::vector<cv::Mat>{behavior_channel, calcium_channel, fiducial_channel},
+        bgr_image);
+    QImage q_image = cv_mat_to_q_image(bgr_image);
     QPixmap pixmap = QPixmap::fromImage(q_image).scaled(
         muscle_image_display_label_->size(),
         Qt::KeepAspectRatio,
         Qt::SmoothTransformation);
     muscle_image_display_label_->setPixmap(pixmap);
+}
+
+cv::Mat
+warp_to_calcium_view(const cv::Mat &image, const cv::Size &calcium_view_size) {
+    // Translation that aligns the image centers
+    cv::Mat transform =
+        (cv::Mat_<double>(2, 3) << 1,
+         0,
+         (calcium_view_size.width - image.cols) / 2.0,
+         0,
+         1,
+         (calcium_view_size.height - image.rows) / 2.0);
+    cv::Mat warped_image;
+    cv::warpAffine(image, warped_image, transform, calcium_view_size);
+    return warped_image;
 }
 
 // Parse the experiment-protocol text field into an opSequence. The text is a

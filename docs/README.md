@@ -12,7 +12,7 @@
 ## Developer's manual
 
 - [Installation & compilation](developers_manual/installation_compilation.md)
-    - [Dependencies](developers_manual/dependencies.md))
+    - [Dependencies](developers_manual/dependencies.md)
 - [Unit testing](developers_manual/unit_testing.md)
 - [Data acquisition workflows](developers_manual/data_acquisition.md)
 - [Code architecture](developers_manual/architecture.md)

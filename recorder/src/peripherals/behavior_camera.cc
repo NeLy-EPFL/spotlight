@@ -59,6 +59,11 @@ void BehaviorCamera::configure() {
     // Negotiate Power-over-CoaXPress so the camera is powered over the link.
     frame_grabber_ptr_->execute<InterfaceModule>("CxpPoCxpAuto");
 
+    // Stop an acquisition left running by a program that exited without
+    // stopping the camera (e.g., a crash): the camera keeps its trigger and
+    // exposure features locked (read-only) until then.
+    frame_grabber_ptr_->execute<RemoteModule>("AcquisitionStop");
+
     // Camera trigger + exposure. ExposureMode has to leave TriggerWidth before
     // the FrameStart trigger can be (re)configured and then be restored to
     // TriggerWidth; the guard is what makes a repeat call idempotent.

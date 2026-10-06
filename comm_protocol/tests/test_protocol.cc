@@ -24,6 +24,8 @@ TriggerParams validParams() {
     p.beh_musc_sync_ratio = 3; // must be >= 1
     p.pco_cam_rolling_time = 50;
     p.pco_cam_readout_time = 80;
+    p.musc_resync_interval = 660; // must be >= 1
+    p.musc_acquire_restart_margin = 2000;
     return p;
 }
 
@@ -37,6 +39,8 @@ void expectParamsEqual(const TriggerParams &a, const TriggerParams &b) {
     EXPECT_EQ(a.beh_musc_sync_ratio, b.beh_musc_sync_ratio);
     EXPECT_EQ(a.pco_cam_rolling_time, b.pco_cam_rolling_time);
     EXPECT_EQ(a.pco_cam_readout_time, b.pco_cam_readout_time);
+    EXPECT_EQ(a.musc_resync_interval, b.musc_resync_interval);
+    EXPECT_EQ(a.musc_acquire_restart_margin, b.musc_acquire_restart_margin);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -275,7 +279,17 @@ TEST(Parse, StreamRejectsZeroFrameRate) {
     std::string json =
         R"({"cmdType":"STREAM","params":{"enableMuscle":true,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":0,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000}})";
+    Command cmd = Command::parse(json);
+    EXPECT_FALSE(cmd.is_valid);
+}
+
+TEST(Parse, StreamRejectsZeroResyncInterval) {
+    // muscResyncInterval must be strictly positive.
+    std::string json =
+        R"({"cmdType":"STREAM","params":{"enableMuscle":true,"behExpTime":0,)"
+        R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0,"muscResyncInterval":0,"muscAcquireRestartMargin":2000}})";
     Command cmd = Command::parse(json);
     EXPECT_FALSE(cmd.is_valid);
 }
@@ -295,7 +309,7 @@ TEST(Parse, StreamRejectsMissingEnableMuscle) {
     std::string json =
         R"({"cmdType":"STREAM","params":{"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000}})";
     Command cmd = Command::parse(json);
     EXPECT_FALSE(cmd.is_valid);
 }
@@ -305,7 +319,7 @@ TEST(Parse, StreamRejectsNonBoolEnableMuscle) {
     std::string json =
         R"({"cmdType":"STREAM","params":{"enableMuscle":"yes","behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000}})";
     Command cmd = Command::parse(json);
     EXPECT_FALSE(cmd.is_valid);
 }
@@ -316,7 +330,7 @@ TEST(Parse, StreamAcceptsMuscleDisabled) {
     std::string json =
         R"({"cmdType":"STREAM","params":{"enableMuscle":false,"behExpTime":0,)"
         R"("muscEffExpTime":0,"behFrameRate":100,"behMuscSyncRatio":3,)"
-        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0}})";
+        R"("pcoCamRollingTime":0,"pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000}})";
     Command cmd = Command::parse(json);
     ASSERT_TRUE(cmd.is_valid);
     EXPECT_EQ(cmd.cmd_type, CmdType::stream);
@@ -328,7 +342,7 @@ TEST(Parse, StartRecordingMissingRevertParams) {
         R"({"cmdType":"START_RECORDING","recParams":{"enableMuscle":true,)"
         R"("behExpTime":0,"muscEffExpTime":0,"behFrameRate":100,)"
         R"("behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
-        R"("pcoCamReadoutTime":0},"opSequence":[]})";
+        R"("pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000},"opSequence":[]})";
     Command cmd = Command::parse(json);
     EXPECT_FALSE(cmd.is_valid);
 }
@@ -338,7 +352,7 @@ TEST(Parse, StartRecordingMissingOpSequence) {
     std::string params =
         R"({"enableMuscle":true,"behExpTime":0,"muscEffExpTime":0,)"
         R"("behFrameRate":100,"behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
-        R"("pcoCamReadoutTime":0})";
+        R"("pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000})";
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params + "}";
     Command cmd = Command::parse(json);
@@ -350,7 +364,7 @@ TEST(Parse, StartRecordingRejectsBadStep) {
     std::string params =
         R"({"enableMuscle":true,"behExpTime":0,"muscEffExpTime":0,)"
         R"("behFrameRate":100,"behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
-        R"("pcoCamReadoutTime":0})";
+        R"("pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000})";
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params +
                        R"(,"opSequence":[{"frameIdx":90,"channel":2,)"
@@ -363,7 +377,7 @@ TEST(Parse, StartRecordingAcceptsEmptyOpSequence) {
     std::string params =
         R"({"enableMuscle":true,"behExpTime":0,"muscEffExpTime":0,)"
         R"("behFrameRate":100,"behMuscSyncRatio":3,"pcoCamRollingTime":0,)"
-        R"("pcoCamReadoutTime":0})";
+        R"("pcoCamReadoutTime":0,"muscResyncInterval":660,"muscAcquireRestartMargin":2000})";
     std::string json = R"({"cmdType":"START_RECORDING","recParams":)" + params +
                        R"(,"revertToParams":)" + params +
                        R"(,"opSequence":[]})";

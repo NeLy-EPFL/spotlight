@@ -29,6 +29,7 @@
 
 #include "recorder/common/behavior_recording.h"
 #include "recorder/common/calibration.h"
+#include "recorder/common/gui_widgets.h"
 #include "recorder/common/muscle_recording.h"
 #include "recorder/common/recorder_config.h"
 #include "recorder/common/tracking_control.h"
@@ -71,51 +72,6 @@ class MotionControlWidget : public QWidget {
     std::shared_ptr<TrackingControlState> tracking_control_state_;
 };
 
-// Live histogram of the muscle camera image with a two-handle range slider
-// underneath. The two handles select the [vmin, vmax] intensity window used to
-// normalize the displayed muscle image (pixels <= vmin are black, >= vmax are
-// white). The min handle can never cross past the max handle. Both the
-// histogram x-axis and the slider span the fixed [histogram_min, histogram_max]
-// intensity range read from the recorder config.
-class MuscleHistogramWidget : public QWidget {
-  public:
-    MuscleHistogramWidget(
-        int histogram_min,
-        int histogram_max,
-        int default_vmin,
-        int default_vmax,
-        QWidget *parent = nullptr);
-
-    // Recompute the histogram from a 16-bit (CV_16UC1) muscle frame and
-    // repaint.
-    void set_image(const cv::Mat &image16_bit);
-
-    int vmin() const {
-        return vmin_;
-    }
-    int vmax() const {
-        return vmax_;
-    }
-
-  protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseMoveEvent(QMouseEvent *event) override;
-
-  private:
-    int value_to_x(int value) const;
-    int x_to_value(int x) const;
-
-    enum class DraggedHandle { none, min, max };
-
-    int histogram_min_;
-    int histogram_max_;
-    int vmin_;
-    int vmax_;
-    std::vector<float> histogram_; // bin heights normalized to [0, 1]
-    DraggedHandle dragged_handle_ = DraggedHandle::none;
-};
-
 class MainGUIWindow : public QWidget {
     Q_OBJECT
 
@@ -150,7 +106,10 @@ class MainGUIWindow : public QWidget {
     // Assemble the STREAM / START_RECORDING params from the current widget
     // values and the cached PCO timing.
     TriggerParams build_streaming_params() const;
-    TriggerParams build_recording_params() const;
+    // musc_resync_interval: see get_musc_resync_interval(), computed once per
+    // recording in start_recording().
+    TriggerParams build_recording_params(
+        unsigned int musc_resync_interval) const;
     // Program the free-running (auto-sequence) muscle camera's nominal exposure
     // so it produces muscle frames at beh_frame_rate / sync_ratio. Called at
     // startup, when a recording starts (recording rate), and when it ends
@@ -201,11 +160,16 @@ class MainGUIWindow : public QWidget {
     // Write the recording metadata files into the (already created) save
     // directory, reading the recording parameters directly from the widgets.
     // The muscle timing passed to write_experiment_parameters is the derived
-    // continuous-mode timing from validate_and_prepare_recording().
+    // continuous-mode timing from validate_and_prepare_recording() and the
+    // number of muscle frames between periodic re-syncs.
     void write_experiment_parameters(
-        int muscle_nominal_exposure_us, int muscle_buffer_time_us);
+        int muscle_nominal_exposure_us,
+        int muscle_buffer_time_us,
+        unsigned int musc_resync_interval);
     void write_recorder_config();
     void write_behavior_calibration_parameters();
+    // Only if the muscle cameras are running (not --no-muscle)
+    void write_muscle_camera_rois();
     void copy_homography_parameters_if_present();
 
     std::shared_ptr<ProgramState> program_state_;
@@ -222,12 +186,22 @@ class MainGUIWindow : public QWidget {
     QPushButton *stop_button_;
     QLabel *behavior_image_display_label_;
     QLabel *muscle_image_display_label_;
-    MuscleHistogramWidget *muscle_histogram_widget_;
+    // Channels of the muscle preview: calcium (green), fiducials (red), and
+    // behavior (blue). Only the calcium and fiducial channels have a histogram
+    // (the behavior channel is displayed like the behavior preview).
+    QCheckBox *calcium_channel_check_box_;
+    QCheckBox *fiducial_channel_check_box_;
+    QCheckBox *behavior_channel_check_box_;
+    MuscleHistogramWidget *calcium_histogram_widget_;
+    MuscleHistogramWidget *fiducial_histogram_widget_;
     QTimer *image_display_timer_;
     RecorderConfig recorder_config_;
     std::filesystem::path profile_dir_;
     std::shared_ptr<BehaviorRecordingState> behavior_recording_state_;
     std::shared_ptr<MuscleRecordingState> muscle_recording_state_;
+    // Null if run-spotlight was started without the muscle cameras
+    // (--no-muscle), in which case muscle imaging cannot be enabled.
+    std::shared_ptr<MuscleCamera> muscle_camera_;
     std::shared_ptr<TrackingControlState> tracking_control_state_;
     CalibrationParams &behavior_cam_calibration_params_;
     ActiveAreaMask &active_area_mask_;
@@ -253,6 +227,10 @@ class MainGUIWindow : public QWidget {
     // trigger delay (rolling time = scanned lines * line time).
     unsigned int pco_cam_rolling_time_us_ = 0;
     unsigned int pco_cam_readout_time_us_ = 0;
+    // Muscle camera re-sync settings from the recorder config (see
+    // get_musc_resync_interval() and TriggerParams::musc_acquire_restart_margin)
+    unsigned int musc_resync_interval_s_ = 0;
+    unsigned int musc_acquire_restart_margin_us_ = 0;
     // True while the in-progress recording is a scheduled one (non-empty
     // op_sequence). Controls how the recording is ended (see end_recording()).
     bool current_recording_is_scheduled_ = false;
@@ -268,6 +246,13 @@ cv::Mat add_corner_marker(
     double arena_size_y_mm,
     MotionStagePosition stage_position,
     const CalibrationParams &behavior_cam_calibration_params);
+
+// Map a displayed (reoriented) camera image into the displayed calcium camera
+// view, of size `calcium_view_size`. Placeholder for the live registration:
+// for now the image centers are aligned without scaling (i.e. the image is
+// cropped or zero-padded).
+cv::Mat
+warp_to_calcium_view(const cv::Mat &image, const cv::Size &calcium_view_size);
 
 int parse_protocol_string(
     const std::string &protocol_text_field_string,

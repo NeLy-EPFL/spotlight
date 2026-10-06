@@ -98,7 +98,13 @@ bool parse_params(JsonObjectConst obj, TriggerParams &out) {
            get_positive_uint(
                obj, "behMuscSyncRatio", out.beh_musc_sync_ratio) &&
            get_uint(obj, "pcoCamRollingTime", out.pco_cam_rolling_time) &&
-           get_uint(obj, "pcoCamReadoutTime", out.pco_cam_readout_time);
+           get_uint(obj, "pcoCamReadoutTime", out.pco_cam_readout_time) &&
+           get_positive_uint(
+               obj, "muscResyncInterval", out.musc_resync_interval) &&
+           get_uint(
+               obj,
+               "muscAcquireRestartMargin",
+               out.musc_acquire_restart_margin);
 }
 
 /** Write a "params"-shaped object from `params` into `obj`. */
@@ -110,6 +116,8 @@ void write_params(JsonObject obj, const TriggerParams &params) {
     obj["behMuscSyncRatio"] = params.beh_musc_sync_ratio;
     obj["pcoCamRollingTime"] = params.pco_cam_rolling_time;
     obj["pcoCamReadoutTime"] = params.pco_cam_readout_time;
+    obj["muscResyncInterval"] = params.musc_resync_interval;
+    obj["muscAcquireRestartMargin"] = params.musc_acquire_restart_margin;
 }
 
 } // namespace

@@ -1,8 +1,9 @@
-// Unit tests for MuscleCameraROI (recorder/src/common/muscle_recording.cc): the
-// derived offsets/dimensions, bounds checking against the sensor, the centre
-// helper, and the YAML persistence round-trip through getMuscleCameraROI.
+// Unit tests for MuscleCameraROI (recorder/src/peripherals/muscle_camera.cc):
+// the derived offsets/dimensions, bounds checking against the sensor, the
+// centre helper, and the YAML persistence round-trip of both cameras' ROIs
+// through get_muscle_camera_rois.
 
-#include "recorder/common/muscle_recording.h"
+#include "recorder/peripherals/muscle_camera.h"
 
 #include <stdexcept>
 #include <tuple>
@@ -45,23 +46,36 @@ TEST(MuscleCameraROI, FileRoundTrip) {
     TempDir dir;
     fs::path f = dir.file("muscle_camera_roi.yaml");
 
-    MuscleCameraROI roi(11, 110, 21, 220);
-    ASSERT_EQ(roi.to_file(f), 0);
+    MuscleCameraROIs rois{
+        MuscleCameraROI(11, 110, 21, 220), MuscleCameraROI(31, 130, 1, 200)};
+    ASSERT_EQ(rois.to_file(f), 0);
 
-    MuscleCameraROI loaded = get_muscle_camera_roi(f);
-    EXPECT_EQ(loaded.x0, 11);
-    EXPECT_EQ(loaded.x1, 110);
-    EXPECT_EQ(loaded.y0, 21);
-    EXPECT_EQ(loaded.y1, 220);
-    EXPECT_EQ(loaded.image_width, 100);
-    EXPECT_EQ(loaded.image_height, 200);
+    MuscleCameraROIs loaded = get_muscle_camera_rois(f);
+    EXPECT_EQ(loaded.calcium.x0, 11);
+    EXPECT_EQ(loaded.calcium.x1, 110);
+    EXPECT_EQ(loaded.calcium.y0, 21);
+    EXPECT_EQ(loaded.calcium.y1, 220);
+    EXPECT_EQ(loaded.calcium.image_width, 100);
+    EXPECT_EQ(loaded.calcium.image_height, 200);
+    EXPECT_EQ(loaded.fiducial.x0, 31);
+    EXPECT_EQ(loaded.fiducial.y0, 1);
+}
+
+TEST(MuscleCameraROI, LoadingRejectsDifferentSizes) {
+    TempDir dir;
+    fs::path f = dir.file("muscle_camera_roi.yaml");
+    MuscleCameraROIs rois{
+        MuscleCameraROI(1, 100, 1, 100), MuscleCameraROI(1, 100, 1, 200)};
+    ASSERT_EQ(rois.to_file(f), 0);
+    EXPECT_THROW(get_muscle_camera_rois(f), std::runtime_error);
 }
 
 TEST(MuscleCameraROI, LoadingRejectsMissingKey) {
     TempDir dir;
     fs::path f = dir.file("incomplete.yaml");
-    std::ofstream(f) << "x0: 1\nx1: 10\ny0: 1\n"; // y1 and the dims are missing
-    EXPECT_THROW(get_muscle_camera_roi(f), std::runtime_error);
+    // The fiducial section and the calcium y1 are missing
+    std::ofstream(f) << "calcium:\n  x0: 1\n  x1: 10\n  y0: 1\n";
+    EXPECT_THROW(get_muscle_camera_rois(f), std::runtime_error);
 }
 
 } // namespace

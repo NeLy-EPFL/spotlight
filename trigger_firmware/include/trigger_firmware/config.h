@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h> // for the A0 pin constant
+#include <Arduino.h> // for the D and A pin constants
 
 namespace config {
 // Serial IO
@@ -14,17 +14,21 @@ inline constexpr bool default_enable_muscle = false;
 inline constexpr unsigned int default_beh_frame_rate = 25; // fps
 inline constexpr unsigned int default_beh_exp_time = 1000; // us
 
-// Pin assignments
+// Pin assignments. D10, D11, D12, and D13 (LED_BUILTIN/SCK) are unused; A4/A5
+// are the OLED's I2C bus (see status_display.h). All A pins are used as digital
+// GPIOs.
 inline constexpr int on_off_switch_pin = D8;
 
-inline constexpr int beh_cam_pin = D10;
+inline constexpr int beh_cam_pin = A7;
 inline constexpr int ir_led_pin = D5;
 
-inline constexpr int musc_cam_trigger_pin = D12;
-// Use A0 instead of D13 for muscle camera status because D13 is shared with
-// LED_BUILTIN/SCK. A0 is a digital-capable pin.
-inline constexpr int musc_cam_status_pin = A0;
-inline constexpr int blue_led_pin = D11;
+// The muscle camera trigger and acquire-enable lines each drive both PCO
+// cameras (calcium and fiducial) in parallel.
+inline constexpr int musc_cam_trigger_pin = A3;
+inline constexpr int musc_cam_acquire_enable_pin = A2;
+inline constexpr int calcium_cam_status_pin = A1;
+inline constexpr int fiducial_cam_status_pin = A0;
+inline constexpr int blue_led_pin = A6;
 
 inline constexpr int opto_ch2_pin = D6;
 inline constexpr int opto_ch3_pin = D7;

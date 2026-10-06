@@ -81,7 +81,9 @@ where (see also [Data acquisition](data_acquisition.md)):
       to extend or reduce the common time. Therefore, to decouple frame-rate control
       from light-on time control, we can add a buffer time $t_{\rm b}$ during which
       all lines are exposed, but the light is off.
-- $t_{\rm b}$ is the buffer time as described above.
+- $t_{\rm b}$ is the buffer time as described above. The light is switched on in the
+  middle of the common time, i.e. $t_{\rm b}/2$ after its start, leaving a margin of
+  $t_{\rm b}/2$ on both sides for the offset between the two muscle cameras.
 - $T$ is the recording interval (i.e., 1 / frame rate).
 
 From the manual:
@@ -113,6 +115,7 @@ At 1 ms effective exposure, $f_{\rm max} = 68.5\ {\rm Hz}$.
 
 - Behavior: 1500×1984 px at 396 Hz.
 - Muscle: 1120×1120 px at 66 Hz.
+- Exposure time (effective, i.e. $t_{\rm lo}$: 1000 us.
 - Behavior/muscle synchronization ratio: 6.
 - This requires $t_{\rm b} = 10^6/66 - 13592.32 - 1000 - 4.5 = 554.695\ {\rm \mu s}$.
 - Empirically ~15 GiB of data per minute (~11.3 GiB behavior + ~3.6 GiB muscle).

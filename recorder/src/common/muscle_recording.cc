@@ -2,97 +2,8 @@
 
 #include "recorder/common/loop_monitors.h"
 
-MuscleCameraROI::MuscleCameraROI(int x0, int x1, int y0, int y1)
-    : x0(x0), x1(x1), y0(y0), y1(y1), x_offset(x0 - 1), y_offset(y0 - 1),
-      image_width(x1 - x0 + 1), image_height(y1 - y0 + 1) {}
-
-bool MuscleCameraROI::is_within_bound(int full_width, int full_height) const {
-    return (
-        x0 > 0 && x1 <= full_width && y0 > 0 && y1 <= full_height && x0 < x1 &&
-        y0 < y1);
-}
-
-int MuscleCameraROI::to_file(const std::filesystem::path &path) const {
-    YAML::Node node;
-    node["x0"] = x0;
-    node["x1"] = x1;
-    node["y0"] = y0;
-    node["y1"] = y1;
-    node["x_offset"] = x_offset;
-    node["y_offset"] = y_offset;
-    node["image_width"] = image_width;
-    node["image_height"] = image_height;
-
-    std::ofstream fout(path);
-    if (!fout) {
-        spdlog::error("Failed to open file: {}", path.string());
-        return 1;
-    }
-
-    fout << node;
-    fout.close();
-    return 0;
-}
-
-std::tuple<int, int> MuscleCameraROI::get_center_xy() const {
-    return std::make_tuple((x0 + x1) / 2, (y0 + y1) / 2);
-}
-
-MuscleCameraROI
-get_muscle_camera_roi(const std::filesystem::path &roi_file_path) {
-    YAML::Node node;
-    try {
-        node = YAML::LoadFile(roi_file_path.string());
-    } catch (const YAML::Exception &e) {
-        throw std::runtime_error(fmt::format(
-            "Failed to load muscle camera ROI from {}: {}",
-            roi_file_path.string(),
-            e.what()));
-    }
-
-    auto read_int = [&](const char *key) {
-        if (!node[key]) {
-            throw std::runtime_error(fmt::format(
-                "Muscle camera ROI file {} is missing key '{}'",
-                roi_file_path.string(),
-                key));
-        }
-        try {
-            return node[key].as<int>();
-        } catch (const YAML::Exception &e) {
-            throw std::runtime_error(fmt::format(
-                "Muscle camera ROI key '{}' in {} is not an int: {}",
-                key,
-                roi_file_path.string(),
-                e.what()));
-        }
-    };
-
-    int x0 = read_int("x0");
-    int x1 = read_int("x1");
-    int y0 = read_int("y0");
-    int y1 = read_int("y1");
-    int image_width = read_int("image_width");
-    int image_height = read_int("image_height");
-    MuscleCameraROI roi(x0, x1, y0, y1);
-
-    spdlog::info(
-        "Muscle camera ROI loaded from file: x0={}, x1={}, y0={}, y1={}; "
-        "image_width={}, image_height={}",
-        x0,
-        x1,
-        y0,
-        y1,
-        image_width,
-        image_height);
-    return roi;
-}
-
 void muscle_image_acquirer(
-    unsigned int image_width,
-    unsigned int image_height,
-    unsigned int x_offset,
-    unsigned int y_offset,
+    const MuscleCameraROIs &rois,
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level,
@@ -107,10 +18,7 @@ void muscle_image_acquirer(
     double sensor_readout_time_us = recorder_config.get_parameter<double>(
         "muscle_camera", "sensor_readout_time_us");
     auto muscle_camera = std::make_shared<MuscleCamera>(
-        image_width,
-        image_height,
-        x_offset,
-        y_offset,
+        rois,
         rolling_shutter_line_time_us,
         sensor_readout_time_us,
         recorder_config,
@@ -128,17 +36,20 @@ void muscle_image_acquirer(
     bool reached_programmed_stop = false;
 
     while (!program_state->to_quit.load()) {
-        FrameData frame_data = muscle_camera->wait_for_one_frame();
-        if (frame_data.image.empty()) {
+        FramePair frame_pair = muscle_camera->wait_for_next_frame_pair();
+        if (frame_pair.calcium.image.empty() ||
+            frame_pair.fiducial.image.empty()) {
             spdlog::error("muscle_image_acquirer thread got an empty image");
         }
-        muscle_recording_state->latest_frame_holder->set_latest_frame_data(
-            frame_data);
+        muscle_recording_state->latest_calcium_frame_holder
+            ->set_latest_frame_data(frame_pair.calcium);
+        muscle_recording_state->latest_fiducial_frame_holder
+            ->set_latest_frame_data(frame_pair.fiducial);
 
         // Only save muscle frames when the current recording images the
-        // muscle camera. The camera always free-runs (it is never
+        // muscle cameras. The cameras always free-run (they are never
         // TTL-triggered), so without this gate a behavior-only recording would
-        // save its un-excited, un-synced continuous-mode frames.
+        // save their un-excited, un-synced continuous-mode frames.
         bool is_recording = program_state->is_recording.load() &&
                             program_state->muscle_imaging_enabled.load();
         int num_frames_expected =
@@ -148,20 +59,23 @@ void muscle_image_acquirer(
             if (current_frame_id == 0) {
                 spdlog::info("First muscle frame of the recording received");
             }
-            frame_data.frame_id = current_frame_id++;
+            frame_pair.frame_id = current_frame_id++;
+            frame_pair.calcium.frame_id = frame_pair.frame_id;
+            frame_pair.fiducial.frame_id = frame_pair.frame_id;
             {
                 std::lock_guard<std::mutex> lock(
                     muscle_recording_state->muscle_image_queue_mutex);
-                muscle_recording_state->muscle_image_queue.push(frame_data);
+                muscle_recording_state->muscle_image_queue.push(
+                    std::move(frame_pair));
             }
             muscle_recording_state->muscle_image_queue_cond_var.notify_one();
 
             // Stop exactly on the programmed frame count: once the last
             // expected frame has been enqueued, stop recording on our own so no
             // extra frames are saved. Nothing else to do here -- the behavior
-            // acquirer notifies the GUI to finalize. The muscle camera keeps
-            // free-running (it is never TTL-triggered); we simply stop
-            // enqueueing its frames.
+            // acquirer notifies the GUI to finalize. The muscle cameras keep
+            // free-running (they are never TTL-triggered); we simply stop
+            // enqueueing their frames.
             if (num_frames_expected >= 0 &&
                 current_frame_id == num_frames_expected) {
                 reached_programmed_stop = true;
@@ -197,7 +111,7 @@ void muscle_image_saver(
 
     int queue_length = -1;
     uint64_t start_time = 0;
-    FrameData frame_data;
+    FramePair frame_pair;
 
     SaverPerfTracker perf_tracker(
         "Muscle image saver thread", "frame", thread_id_string);
@@ -220,7 +134,8 @@ void muscle_image_saver(
             }
 
             queue_length = muscle_recording_state->muscle_image_queue.size();
-            frame_data = muscle_recording_state->muscle_image_queue.front();
+            frame_pair = std::move(
+                muscle_recording_state->muscle_image_queue.front());
             muscle_recording_state->muscle_image_queue.pop();
         }
 
@@ -228,34 +143,45 @@ void muscle_image_saver(
 
         start_time = get_current_time_microseconds();
         std::string filename_stem =
-            "muscle_frame_" + fmt::format("{:09}", frame_data.frame_id);
+            "muscle_frame_" + fmt::format("{:09}", frame_pair.frame_id);
         std::filesystem::path muscle_save_dir =
             std::filesystem::path(save_directory->get_directory()) /
             "muscle_images";
 
-        // Reorient image (rotate it so it's consistent with behavior image)
-        cv::Mat reoriented_image;
-        reorient_muscle_image(frame_data.image, reoriented_image);
+        const std::pair<const char *, const FrameData &> camera_frames[] = {
+            {"calcium", frame_pair.calcium}, {"fiducial", frame_pair.fiducial}};
 
-        // Save image
-        std::string image_path = muscle_save_dir / (filename_stem + ".tif");
-        try {
-            cv::imwrite(image_path, reoriented_image, compression_params);
-        } catch (const cv::Exception &ex) {
-            spdlog::error("Exception saving image: {}", ex.what());
+        // Save one TIFF per camera
+        for (const auto &[camera_name, frame_data] : camera_frames) {
+            // Reorient image (rotate it so it's consistent with behavior image)
+            cv::Mat reoriented_image;
+            reorient_muscle_image(frame_data.image, reoriented_image);
+
+            std::string image_path =
+                muscle_save_dir / (filename_stem + "_" + camera_name + ".tif");
+            try {
+                cv::imwrite(image_path, reoriented_image, compression_params);
+            } catch (const cv::Exception &ex) {
+                spdlog::error("Exception saving image: {}", ex.what());
+            }
         }
 
-        // Save metadata
+        // Save metadata of both cameras (one row per camera)
         std::string metadata_path = muscle_save_dir / (filename_stem + ".csv");
         std::ofstream metadata_file(metadata_path);
         if (!metadata_file.is_open()) {
             spdlog::error(
                 "Failed to open metadata file: {}", metadata_path.c_str());
         } else {
-            metadata_file << "frame_id,acquired_time_us,received_time_us\n";
-            metadata_file << frame_data.frame_id << ","
-                          << frame_data.acquisition_time << ","
-                          << frame_data.received_time << "\n";
+            metadata_file << "frame_id,camera,acquired_time_us,received_time_us,"
+                             "server_frame_count,recorder_image_number\n";
+            for (const auto &[camera_name, frame_data] : camera_frames) {
+                metadata_file << frame_pair.frame_id << "," << camera_name
+                              << "," << frame_data.acquisition_time << ","
+                              << frame_data.received_time << ","
+                              << frame_data.server_frame_count << ","
+                              << frame_data.recorder_image_number << "\n";
+            }
             metadata_file.close();
         }
 

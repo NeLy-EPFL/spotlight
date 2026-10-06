@@ -11,16 +11,18 @@ Alternatively, run `align-cameras`, `run-arena-registration-scan`, and `run-spot
 > [!IMPORTANT]
 > Muscle imaging only. Skip this step if you are recording behavior only.
 
-Aligns the behavior camera, muscle camera FOVs, and the blue excitation light spot. Redo this step if cameras or the LED are physically moved.
+Aligns the behavior camera, the two muscle camera (calcium and fiducial) FOVs, and the blue excitation light spot. Redo this step if cameras or the LED are physically moved.
+
+`align-cameras` opens one window with the behavior camera (left) and the calcium and fiducial cameras' full frames (middle and right), each titled above the image. Under each muscle image, a histogram with a range slider sets its display intensity range: drag the blue (min) and orange (max) handles until the image is visible. The initial range comes from `align_cameras_display_vmin`/`align_cameras_display_vmax` in the recorder config.
 
 1. Place the bullseye target on the arena (corner arrow aligned with the arrow on the arena holder) and put the acrylic plate on top.
 2. Move the stages (Zaber knobs) so the bullseye is centered in the behavior camera view.
-3. Physically adjust the blue LED (position, distance, lenses) so it is centered on the bullseye at an appropriate spot size (use the radius markers in the muscle window).
-4. Physically adjust the muscle camera to roughly align to the bullseye.
+3. Physically adjust the blue LED (position, distance, lenses) so it is centered on the bullseye at an appropriate spot size (use the radius markers in the muscle images).
+4. Physically adjust both muscle cameras to roughly align to the bullseye.
 5. If the stage moved during steps 3–4, re-center the behavior camera on the bullseye.
-6. Click the center of the bullseye in the muscle window. A red dot marks the click; a blue rectangle shows the nearest feasible FOV (PCO camera requires boundaries at multiples of 32 px × 8 px).
-7. Verify the blue rectangle is fully within the displayed image; physically adjust the muscle camera if not.
-8. Press **RETURN** to save. Confirm `muscle_camera_roi.yaml` was written to the profile directory.
+6. Click the center of the bullseye in each muscle camera's image. A red dot marks the click; a blue rectangle shows the nearest feasible FOV (PCO camera requires boundaries at multiples of 32 px × 8 px).
+7. Verify both blue rectangles are fully within the displayed images; physically adjust the muscle cameras if not.
+8. Click **Save ROIs**. A dialog confirms where the ROIs were saved: `muscle_camera_roi.yaml` in the profile directory, with one section per camera (`calcium`, `fiducial`). **Cancel** closes the program without changing the ROI files.
 
 
 ## Step 2: Run arena registration scan and fit arena registration model
@@ -36,10 +38,10 @@ Calibrates the mapping between camera pixels, stage positions, and physical aren
 
 ## Step 3: Collect experimental recordings
 
-Run `run-spotlight`. In the GUI, configure:
+Run `run-spotlight`. Add `--no-muscle` to run without the muscle cameras (e.g. when they are not connected); muscle imaging is then unavailable. In the GUI, configure:
 
 - **Recording parameters** (top): behavior FPS, exposure time, and (if muscle imaging) sync ratio and muscle exposure. These take effect at the start of the next recording.
-- **Muscle preview**: enable with the **Enable** checkbox. When enabled, both cameras record.
+- **Muscle preview**: enable with the **Enable** checkbox. When enabled, both cameras record. The preview overlays the calcium camera (green), the fiducial camera (red), and the behavior camera (blue), each toggled with its checkbox (calcium and fiducials on by default). The images are not registered yet: the fiducial and behavior images are only centered on the calcium image. The two histograms under the preview set the display intensity range of the green and red channels.
 - **Save directory**: set before starting. If the directory exists and is non-empty, you will be prompted to overwrite, auto-increment, or cancel.
 - **Experiment protocol** (optional): a `;`-separated string of `<frameIdx>/<channel>/<op>` steps for scheduled optogenetic channel switching and automatic stop. "Channel" can be `ch2` or `ch3` reflecting to channels 2 and 3 on the CCS light controller (channel 1 is already occupied by the IR illumination LED). "Op" can be `on` (switching light on), `off` (switching light off), or `stop` (stopping recording). For `stop`, set the channel to `x` as the operation is global. Leave the textbox blank for an open recording, where the user clicks "Stop" manually to stop recording. Valid examples of the experiment protocol string are:
   - `900/x/stop` — record 900 behavior frames, then stop.
@@ -52,16 +54,19 @@ Then, click **Start recording**. Click **Stop** when done (or let the protocol s
 ```
 <save_dir>/
 ├── behavior_images/         # behavior_frame_*.jpg  (pseudo-BGR JPEGs)
-├── muscle_images/           # muscle_frame_*.tif    (16-bit TIFF; muscle imaging only)
+├── muscle_images/           # muscle_frame_*_{calcium,fiducial}.tif, muscle_frame_*.csv (muscle imaging only)
 ├── stage_position/
 │   └── stage_position.csv
 └── metadata/
     ├── experiment_parameters.yaml
     ├── recorder_config.yaml
-    └── calibration_parameters_behavior.yaml
+    ├── calibration_parameters_behavior.yaml
+    └── muscle_camera_roi.yaml   # both muscle cameras' ROIs (unless --no-muscle)
 ```
 
 Behavior frames are stored as *pseudo-BGR* JPEGs (three consecutive monochrome frames packed into the three color channels). `postprocess-recording` unpacks them.
+
+Each muscle frame is a pair of 16-bit TIFFs, one per muscle camera (`_calcium` and `_fiducial`), plus a CSV with one row of timing metadata per camera (see [Data acquisition](../developers_manual/data_acquisition.md#two-muscle-cameras)).
 
 
 ## Step 4: Postprocessing

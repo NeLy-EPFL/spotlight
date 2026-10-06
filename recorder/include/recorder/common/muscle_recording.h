@@ -19,35 +19,19 @@ struct MuscleRecordingState {
     // by several other threads (GUI, init wait loop, shutdown). atomic so that
     // publication and reads are not a data race; load()/store() it.
     std::atomic<std::shared_ptr<MuscleCamera>> muscle_camera;
-    std::queue<FrameData> muscle_image_queue;
+    std::queue<FramePair> muscle_image_queue;
     std::mutex muscle_image_queue_mutex;
     std::condition_variable muscle_image_queue_cond_var;
-    std::shared_ptr<LatestFrame> latest_frame_holder;
-};
-
-class MuscleCameraROI {
-  public:
-    int x0;
-    int x1;
-    int y0;
-    int y1;
-    int x_offset;
-    int y_offset;
-    int image_width;
-    int image_height;
-
-    MuscleCameraROI(int x0, int x1, int y0, int y1);
-    bool is_within_bound(int full_width, int full_height) const;
-    int to_file(const std::filesystem::path &path) const;
-    std::tuple<int, int> get_center_xy() const;
+    // Latest frame of each muscle camera, for live previews.
+    std::shared_ptr<LatestFrame> latest_calcium_frame_holder =
+        std::make_shared<LatestFrame>();
+    std::shared_ptr<LatestFrame> latest_fiducial_frame_holder =
+        std::make_shared<LatestFrame>();
 };
 
 // Function declarations
 void muscle_image_acquirer(
-    unsigned int image_width,
-    unsigned int image_height,
-    unsigned int x_offset,
-    unsigned int y_offset,
+    const MuscleCameraROIs &rois,
     const RecorderConfig &recorder_config,
     const std::string &profile_dir,
     spdlog::level::level_enum log_level,
@@ -71,6 +55,3 @@ void muscle_image_saver(
 void stop_muscle_image_saver(
     const std::shared_ptr<MuscleRecordingState> &muscle_recording_state,
     const std::shared_ptr<ProgramState> &program_state);
-
-MuscleCameraROI
-get_muscle_camera_roi(const std::filesystem::path &roi_file_path);

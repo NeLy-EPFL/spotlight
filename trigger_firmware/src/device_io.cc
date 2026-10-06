@@ -9,17 +9,19 @@ DeviceIO &DeviceIO::get_instance() {
 }
 
 DeviceIO::DeviceIO() {
-    // Configure every owned pin before reset() drives it. The muscle camera
-    // status line is the only input (its level reports the common time). It is
-    // read with an internal pull-down so that when the PCO Status Expos output
-    // is undriven (camera off/booting, output disabled, or cable unplugged) the
-    // line reads LOW ("no common time"): the controller simply waits rather
-    // than seeing spurious onsets. The PCO output is push-pull 3.3 V LVTTL when
-    // active, so the weak pull-down does not fight it.
+    // Configure every owned pin before reset() drives it. The two muscle camera
+    // status lines are the only inputs (their levels report the common time).
+    // They are read with an internal pull-down so that when a PCO Status Expos
+    // output is undriven (camera off/booting, output disabled, or cable
+    // unplugged) the line reads LOW ("no common time"): the controller simply
+    // waits rather than seeing spurious onsets. The PCO output is push-pull
+    // 3.3 V LVTTL when active, so the weak pull-down does not fight it.
     pinMode(config::beh_cam_pin, OUTPUT);
     pinMode(config::ir_led_pin, OUTPUT);
     pinMode(config::musc_cam_trigger_pin, OUTPUT);
-    pinMode(config::musc_cam_status_pin, INPUT_PULLDOWN);
+    pinMode(config::musc_cam_acquire_enable_pin, OUTPUT);
+    pinMode(config::calcium_cam_status_pin, INPUT_PULLDOWN);
+    pinMode(config::fiducial_cam_status_pin, INPUT_PULLDOWN);
     pinMode(config::blue_led_pin, OUTPUT);
     pinMode(config::opto_ch2_pin, OUTPUT);
     pinMode(config::opto_ch3_pin, OUTPUT);
@@ -36,6 +38,9 @@ void DeviceIO::reset() {
 
     is_musc_cam_trigger_on_ = true;
     stop_musc_cam_trigger();
+
+    is_musc_acquire_enabled_ = false;
+    enable_musc_acquire();
 
     is_musc_led_on_ = true;
     turn_off_musc_led();
@@ -87,8 +92,30 @@ void DeviceIO::stop_musc_cam_trigger() {
     }
 }
 
-bool DeviceIO::is_musc_common_time() {
-    return digitalRead(config::musc_cam_status_pin) == HIGH;
+void DeviceIO::enable_musc_acquire() {
+    if (!is_musc_acquire_enabled_) {
+        digitalWrite(config::musc_cam_acquire_enable_pin, HIGH);
+        is_musc_acquire_enabled_ = true;
+    }
+}
+
+void DeviceIO::disable_musc_acquire() {
+    if (is_musc_acquire_enabled_) {
+        digitalWrite(config::musc_cam_acquire_enable_pin, LOW);
+        is_musc_acquire_enabled_ = false;
+    }
+}
+
+bool DeviceIO::is_musc_acquire_enabled() const {
+    return is_musc_acquire_enabled_;
+}
+
+bool DeviceIO::is_calcium_common_time() {
+    return digitalRead(config::calcium_cam_status_pin) == HIGH;
+}
+
+bool DeviceIO::is_fiducial_common_time() {
+    return digitalRead(config::fiducial_cam_status_pin) == HIGH;
 }
 
 void DeviceIO::turn_on_musc_led() {

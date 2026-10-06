@@ -18,21 +18,45 @@ muscle_camera:
   num_image_saving_threads: 4
   default_recording_sync_ratio: 6
   default_light_on_time_us: 1000
-  shared_frame_data_name: "/pco_camera_data"
-  shared_shutter_open_time_name: "/pco_camera_shutter_open_time"
-  shared_frame_metadata_name: "/pco_camera_frame_metadata"
-  shared_mutex_name: "/pco_camera_mutex"
-  shared_condition_variable_name: "/pco_camera_condition_variable"
-  histogram_display_min: 0
-  histogram_display_max: 1400
-  default_display_vmin: 200
-  default_display_vmax: 800
+  # PCO camera serial numbers
+  serial_number_calcium: 14400755
+  serial_number_fiducial: 14400057
+  # Max time to wait for each pco-camera-server to configure its camera and
+  # start recording
+  server_ready_timeout_s: 30
+  # POSIX shared-memory region names, one set per pco-camera-server
+  shared_frame_data_name_calcium: "/pco_camera_data_calcium"
+  shared_frame_data_name_fiducial: "/pco_camera_data_fiducial"
+  shared_shutter_open_time_name_calcium: "/pco_camera_shutter_open_time_calcium"
+  shared_shutter_open_time_name_fiducial: "/pco_camera_shutter_open_time_fiducial"
+  shared_server_state_name_calcium: "/pco_camera_server_state_calcium"
+  shared_server_state_name_fiducial: "/pco_camera_server_state_fiducial"
+  shared_mutex_name_calcium: "/pco_camera_mutex_calcium"
+  shared_mutex_name_fiducial: "/pco_camera_mutex_fiducial"
+  shared_condvar_name_calcium: "/pco_camera_condvar_calcium"
+  shared_condvar_name_fiducial: "/pco_camera_condvar_fiducial"
+  # Live-preview pixel value range of each muscle camera in run-spotlight: the
+  # histogram spans [histogram_display_min, histogram_display_max], and the
+  # display range initially is [default_display_vmin, default_display_vmax].
+  histogram_display_min_calcium: 0
+  histogram_display_max_calcium: 65535
+  default_display_vmin_calcium: 200
+  default_display_vmax_calcium: 800
+  histogram_display_min_fiducial: 0
+  histogram_display_max_fiducial: 65535
+  default_display_vmin_fiducial: 2000
+  default_display_vmax_fiducial: 40000
   align_cameras_display_vmin: 0
   align_cameras_display_vmax: 400
   # Amount of time taken to scan a single line: see "User Manual pco.panda 4.2 /
   # pco.panda 4.2 bi / pco.panda 4.2 bi UV" section 6
   rolling_shutter_line_time_us: 12.136
   sensor_readout_time_us: 10  # actually 4.5, but 10 just to be safe
+  # The two muscle cameras drift apart by a few ppm; the trigger controller
+  # re-syncs them about every resync_interval_s by holding their acquire-enable
+  # line LOW for one muscle frame period + acquire_restart_margin_us
+  resync_interval_s: 10
+  acquire_restart_margin_us: 2000
 
 motion_control:
   motion_stage_device_manufacturer: "Zaber Technologies Inc."
@@ -42,8 +66,6 @@ motion_control:
   length_unit: "mm"
   velocity_unit: "mm/s"
   default_velocity_mm_per_s: 40
-  calibration_scan_stride_mm: 2
-  calibration_scan_exposure_time_us: 1000
   position_logging_frequency_hz: 75
   apriltag_mapping_settling_frames: 5
   physical_range_limit_mm: 151.5
@@ -74,9 +96,6 @@ tracking:
   image_binarize_threshold: 75
 
 triggering:
-  image_buffer_flushing_wait_time_ms: 100
-  arduino_comm_timeout_ms: 1000
-  arduino_comm_retries: 3
   arduino_device_manufacturer: "Arduino"
   arduino_device_description: "Nano ESP32"
 

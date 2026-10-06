@@ -149,16 +149,10 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
         x_center, y_center, range, stride, grid.size());
 
     // ------------------------------------------------------------------
-    // Load muscle camera ROI
+    // Load muscle camera ROIs
     // ------------------------------------------------------------------
     std::filesystem::path roi_path = profile_dir / "muscle_camera_roi.yaml";
-    MuscleCameraROI muscle_roi = get_muscle_camera_roi(roi_path);
-    spdlog::info(
-        "Muscle camera ROI: x0={}, x1={}, y0={}, y1={} "
-        "(width={}, height={}, xOffset={}, yOffset={})",
-        muscle_roi.x0, muscle_roi.x1, muscle_roi.y0, muscle_roi.y1,
-        muscle_roi.image_width, muscle_roi.image_height,
-        muscle_roi.x_offset, muscle_roi.y_offset);
+    MuscleCameraROIs muscle_rois = get_muscle_camera_rois(roi_path);
 
     // ------------------------------------------------------------------
     // Start camera acquisition threads
@@ -179,16 +173,11 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
         programmed_stop);
 
     muscle_recording_state = std::make_shared<MuscleRecordingState>();
-    muscle_recording_state->latest_frame_holder =
-        std::make_shared<LatestFrame>();
 
     spdlog::info("Starting muscle camera acquisition thread");
     std::thread muscle_thread(
         muscle_image_acquirer,
-        static_cast<unsigned int>(muscle_roi.image_width),
-        static_cast<unsigned int>(muscle_roi.image_height),
-        static_cast<unsigned int>(muscle_roi.x_offset),
-        static_cast<unsigned int>(muscle_roi.y_offset),
+        muscle_rois,
         recorder_config,
         profile_dir.string(),
         spdlog::get_level(),
@@ -308,13 +297,13 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
             uint64_t beh_time = behavior_recording_state->latest_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
-            uint64_t mus_time = muscle_recording_state->latest_frame_holder
+            uint64_t mus_time = muscle_recording_state->latest_calcium_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
             wait_for_next_frame(
                 behavior_recording_state->latest_frame_holder, beh_time);
             wait_for_next_frame(
-                muscle_recording_state->latest_frame_holder, mus_time);
+                muscle_recording_state->latest_calcium_frame_holder, mus_time);
         }
         spdlog::debug(
             "Position ({:.2f}, {:.2f}): dropped {} settling frames",
@@ -325,14 +314,14 @@ void run_charuco_homography_scan(const std::filesystem::path &profile_dir) {
             uint64_t beh_time = behavior_recording_state->latest_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
-            uint64_t mus_time = muscle_recording_state->latest_frame_holder
+            uint64_t mus_time = muscle_recording_state->latest_calcium_frame_holder
                                     ->get_latest_frame_data()
                                     .received_time;
 
             FrameData beh_frame = wait_for_next_frame(
                 behavior_recording_state->latest_frame_holder, beh_time);
             FrameData mus_frame = wait_for_next_frame(
-                muscle_recording_state->latest_frame_holder, mus_time);
+                muscle_recording_state->latest_calcium_frame_holder, mus_time);
 
             cv::Mat beh_img, mus_img;
             reorient_behavior_image(beh_frame.image, beh_img);
