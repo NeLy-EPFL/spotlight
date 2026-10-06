@@ -19,16 +19,16 @@ inline constexpr unsigned int default_beh_exp_time = 1000; // us
 // GPIOs.
 inline constexpr int on_off_switch_pin = D8;
 
-inline constexpr int beh_cam_pin = A6;
+inline constexpr int beh_cam_pin = A7;
 inline constexpr int ir_led_pin = D5;
 
 // The muscle camera trigger and acquire-enable lines each drive both PCO
 // cameras (calcium and fiducial) in parallel.
-inline constexpr int musc_cam_trigger_pin = A0;
-inline constexpr int musc_cam_acquire_enable_pin = A1;
-inline constexpr int calcium_cam_status_pin = A2;
-inline constexpr int fiducial_cam_status_pin = A3;
-inline constexpr int blue_led_pin = A7;
+inline constexpr int musc_cam_trigger_pin = A3;
+inline constexpr int musc_cam_acquire_enable_pin = A2;
+inline constexpr int calcium_cam_status_pin = A1;
+inline constexpr int fiducial_cam_status_pin = A0;
+inline constexpr int blue_led_pin = A6;
 
 inline constexpr int opto_ch2_pin = D6;
 inline constexpr int opto_ch3_pin = D7;
