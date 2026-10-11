@@ -23,7 +23,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     # Default to a Debug build when the user does not pass
     # -DCMAKE_BUILD_TYPE=... (only meaningful for single-config generators
-    # like Makefiles/Ninja).
+    # like Makefiles/Ninja). Debug is also used for experiments: profiling
+    # showed no speedup from Release, since the hot paths (image encoding,
+    # previews) run in the prebuilt OpenCV/libjpeg/libtiff/Qt libraries.
     if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
         set(CMAKE_BUILD_TYPE Debug CACHE STRING
             "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
