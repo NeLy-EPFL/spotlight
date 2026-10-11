@@ -138,6 +138,11 @@ Recorder::Recorder(
       muscle_recording_state_(std::make_shared<MuscleRecordingState>()),
       tracking_control_state_(std::make_shared<TrackingControlState>()),
       programmed_recording_stop_(std::make_shared<ProgrammedStop>()) {
+    // Run each OpenCV call on its calling thread. The recorder already spreads
+    // work over many threads; OpenCV's own worker pool spins between the many
+    // small calls (previews, tracking) and cost ~2 cores while streaming.
+    cv::setNumThreads(1);
+
     // Atomic holder of the save directory
     save_directory_ = std::make_shared<SaveDirectory>(
         recorder_config_.get_parameter<std::string>("gui", "default_save_dir"));
