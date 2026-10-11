@@ -99,8 +99,7 @@ set(PCO_CAMERA_SOURCES
     ${PCO_CAMERA_DIR}/cameraexception.cpp
     ${PCO_CAMERA_DIR}/image.cpp
     ${PCO_CAMERA_DIR}/camera.cpp
-    ${PCO_CAMERA_DIR}/xcite.cpp
-    ${PCO_CAMERA_DIR}/stdafx.cpp)
+    ${PCO_CAMERA_DIR}/xcite.cpp)
 
 # --- Shared source groups ----------------------------------------------------
 set(COMMON_SOURCES

@@ -27,15 +27,9 @@
 #include <opencv2/opencv.hpp>
 #include <spdlog/spdlog.h>
 
-// clang-format off
-// stdafx.h must come first: it includes pco_linux_defs.h (WORD/BYTE/DWORD) and
-// <variant>, which camera.h, cameraexception.h, and sc2_defs.h all depend on.
-// Disable clang-format, which sorts includes alphabetically 
-#include "stdafx.h"
 #include "camera.h"
 #include "cameraexception.h"
 #include "sc2_defs.h"
-// clang-format on
 
 #include "recorder/apps/shared_memory_utils.h"
 #include "recorder/common/recorder_config.h"

@@ -26,7 +26,8 @@ std::string log_level_to_str(spdlog::level::level_enum log_level) {
     case spdlog::level::off:
         return "off";
     default:
-        spdlog::error("Unknown log level: {}. Using 'info'.", log_level);
+        spdlog::error("Unknown log level: {}. Using 'info'.",
+                      static_cast<int>(log_level));
         return "info";
     }
 }
