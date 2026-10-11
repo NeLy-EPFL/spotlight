@@ -3,6 +3,18 @@
 import logging
 from pathlib import Path
 
+import numpy as np
+import tifffile
+
+
+def read_muscle_image(path: Path | str) -> np.ndarray:
+    """
+    Read a raw muscle frame (16-bit, single-channel TIFF) as written by the
+    recorder. Uses tifffile because recent recordings are ZSTD-compressed, which
+    cv2.imread cannot decode; older LZW-compressed frames are read as well.
+    """
+    return tifffile.imread(path)
+
 
 def find_files_per_frame_by_suffix(
     frames_dir: Path, suffix: str, stride: int = 1

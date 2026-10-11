@@ -96,18 +96,13 @@ void muscle_image_saver(
     const RecorderConfig &recorder_config,
     std::shared_ptr<MuscleRecordingState> muscle_recording_state,
     const std::shared_ptr<SaveDirectory> &save_directory,
-    const std::shared_ptr<ProgramState> &program_state,
-    int tiff_compression_method) {
+    const std::shared_ptr<ProgramState> &program_state) {
     std::thread::id my_thread_id = std::this_thread::get_id();
     std::stringstream ss;
     ss << my_thread_id;
     std::string thread_id_string = ss.str();
     spdlog::info(
         "Muscle image saver thread started (thread ID {})", thread_id_string);
-
-    std::vector<int> compression_params;
-    compression_params.push_back(cv::IMWRITE_TIFF_COMPRESSION);
-    compression_params.push_back(tiff_compression_method);
 
     int queue_length = -1;
     uint64_t start_time = 0;
@@ -151,7 +146,7 @@ void muscle_image_saver(
         const std::pair<const char *, const FrameData &> camera_frames[] = {
             {"calcium", frame_pair.calcium}, {"fiducial", frame_pair.fiducial}};
 
-        // Save one TIFF per camera
+        // Save one TIFF per camera (ZSTD, see write_zstd_tiff)
         for (const auto &[camera_name, frame_data] : camera_frames) {
             // Reorient image (rotate it so it's consistent with behavior image)
             cv::Mat reoriented_image;
@@ -159,11 +154,7 @@ void muscle_image_saver(
 
             std::string image_path =
                 muscle_save_dir / (filename_stem + "_" + camera_name + ".tif");
-            try {
-                cv::imwrite(image_path, reoriented_image, compression_params);
-            } catch (const cv::Exception &ex) {
-                spdlog::error("Exception saving image: {}", ex.what());
-            }
+            write_zstd_tiff(image_path, reoriented_image);
         }
 
         // Save metadata of both cameras (one row per camera)
