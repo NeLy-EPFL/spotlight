@@ -1,4 +1,5 @@
 #include "recorder/common/loop_monitors.h"
+#include "recorder/common/stage_timing.h"
 
 #include <chrono>
 #include <thread>
@@ -63,6 +64,7 @@ void LoopRateLimiter::start_cycle() {
 
 void LoopRateLimiter::sleep_until_next_cycle() {
     uint64_t elapsed_us = get_current_time_microseconds() - cycle_start_time_;
+    stage_timing_record(loop_description_.c_str(), elapsed_us);
     long int time_to_sleep_us = interval_us_ - elapsed_us;
     if (time_to_sleep_us > 0) {
         std::this_thread::sleep_for(

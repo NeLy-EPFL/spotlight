@@ -1,6 +1,9 @@
 #include "recorder/common/behavior_recording.h"
 
 #include "recorder/common/loop_monitors.h"
+#include "recorder/common/stage_timing.h"
+
+#include <fstream>
 
 void behavior_image_acquirer(
     const RecorderConfig &recorder_config,
@@ -93,6 +96,9 @@ void behavior_image_acquirer(
             programmed_recording_stop->num_behavior_frames_expected;
 
         if (is_recording && !reached_programmed_stop) {
+            stage_timing_record(
+                "beh acq: copy out of grabber buffer",
+                get_current_time_microseconds() - frame_data.received_time);
             frame_data.frame_id = current_frame_id;
 
             frame_data_buffer[frame_data_buffer_index++] = frame_data;
@@ -229,6 +235,13 @@ void behavior_image_saver(
         perf_tracker.update_recording_state(program_state->is_recording.load());
 
         uint64_t start_time = get_current_time_microseconds();
+        const FrameData &last_frame =
+            frame_group.num_valid_frames == 3   ? frame_group.frame2
+            : frame_group.num_valid_frames == 2 ? frame_group.frame1
+                                                : frame_group.frame0;
+        stage_timing_record(
+            "beh save: wait in queue (group complete -> saver)",
+            start_time - last_frame.received_time);
 
         std::string filename_stem =
             "behavior_frame_" +
@@ -239,15 +252,44 @@ void behavior_image_saver(
 
         // Save three frames as a single pseudo-BGR image
         std::string filename = behavior_save_dir / (filename_stem + ".jpg");
-        cv::Mat image = make_pseudo_bgr_image_from_three_frames(frame_group);
-        cv::imwrite(filename, image, compression_params);
+        cv::Mat image;
+        {
+            ScopedStageTimer timer{"beh save: pack 3 frames into pseudo-BGR"};
+            image = make_pseudo_bgr_image_from_three_frames(frame_group);
+        }
+        // imwrite split into encode + write to time them separately
+        std::vector<uchar> jpeg_bytes;
+        {
+            ScopedStageTimer timer{"beh save: JPEG encode (3 frames)"};
+            cv::imencode(".jpg", image, jpeg_bytes, compression_params);
+        }
+        {
+            ScopedStageTimer timer{"beh save: write JPEG file"};
+            std::ofstream jpeg_file(filename, std::ios::binary);
+            jpeg_file.write(
+                reinterpret_cast<const char *>(jpeg_bytes.data()),
+                jpeg_bytes.size());
+        }
 
         // Save metadata
-        std::string metadata_filename =
-            behavior_save_dir / (filename_stem + ".csv");
-        std::ofstream metadata_file(metadata_filename);
-        metadata_file << make_metadata_string_from_three_frames(frame_group);
-        metadata_file.close();
+        {
+            ScopedStageTimer timer{"beh save: write CSV"};
+            std::string metadata_filename =
+                behavior_save_dir / (filename_stem + ".csv");
+            std::ofstream metadata_file(metadata_filename);
+            metadata_file
+                << make_metadata_string_from_three_frames(frame_group);
+            metadata_file.close();
+        }
+        uint64_t end_time = get_current_time_microseconds();
+        stage_timing_record(
+            "beh save: total per group", end_time - start_time);
+        stage_timing_record(
+            "beh e2e: oldest frame host-received -> on disk",
+            end_time - frame_group.frame0.received_time);
+        stage_timing_record(
+            "beh e2e: newest frame host-received -> on disk",
+            end_time - last_frame.received_time);
 
         perf_tracker.record_save(
             get_current_time_microseconds() - start_time, queue_length);

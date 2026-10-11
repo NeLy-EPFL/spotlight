@@ -1,4 +1,5 @@
 #include "recorder/peripherals/behavior_camera.h"
+#include "recorder/common/stage_timing.h"
 
 BehaviorCamera::BehaviorCamera(
     unsigned int image_width,
@@ -185,6 +186,12 @@ FrameData BehaviorCamera::wait_for_one_frame() {
     uint64_t grabber_timestamp =
         buffer.getInfo<uint64_t>(Euresys::gc::BUFFER_INFO_TIMESTAMP_NS);
     uint64_t acquisition_time = grabber_timestamp / 1000;
+    // PROFILING ONLY: time from the grabber's buffer timestamp to now, both
+    // in the grabber's time base
+    stage_timing_record(
+        "beh acq: grabber buffer timestamp -> dequeued by recorder",
+        static_cast<int64_t>(gen_tl_.getTimestampUs()) -
+            static_cast<int64_t>(acquisition_time));
 
     // Make FrameData object
     FrameData frame_data;

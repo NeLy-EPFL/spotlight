@@ -59,6 +59,7 @@ if(RECORDER_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/recorder_config.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/muscle_recording.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/loop_monitors.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/common/stage_timing.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/peripherals/muscle_camera.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/apps/shared_memory_utils.cc)
 

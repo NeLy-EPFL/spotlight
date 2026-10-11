@@ -8,6 +8,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include "recorder/common/stage_timing.h"
+
 namespace {
 
 RecorderConfig load_recorder_config(const std::filesystem::path &profile_dir) {
@@ -486,6 +488,7 @@ Recorder::start_recording(const RecordingParams &params) {
     // acquirer sees a consistent state: when muscle imaging is off the camera
     // still free-runs but its frames are not saved (behavior-only recording).
     program_state_->muscle_imaging_enabled.store(muscle_imaging_enabled_);
+    stage_timing_start();
     program_state_->is_recording.store(true);
 
     spdlog::info(
@@ -684,6 +687,7 @@ void Recorder::wait_until_queues_drained() const {
 // Euresys grabber and the PCO server -- is already released above, so the
 // remaining threads are safely reaped by process exit.
 void Recorder::quit(int exit_code) {
+    stage_timing_log();
     spdlog::info("Initiating shutdown");
 
     program_state_->to_quit.store(true);

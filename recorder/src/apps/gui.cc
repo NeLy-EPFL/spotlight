@@ -10,6 +10,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include "recorder/common/stage_timing.h"
+
 std::string increment_directory_name(const std::string &path) {
     size_t end = path.size();
     while (end > 0 && path[end - 1] == '/') {
@@ -657,6 +659,22 @@ void MainGUIWindow::start_recording() {
     update_controls(/*recording=*/true);
 }
 
+void MainGUIWindow::profiling_step(int step) {
+    spdlog::info("Profiling step {}", step);
+    // Save what the previews show, for a visual check
+    behavior_image_display_label_->pixmap().save(
+        QString("preview_behavior_step%1.png").arg(step));
+    muscle_image_display_label_->pixmap().save(
+        QString("preview_muscle_step%1.png").arg(step));
+    if (step == 1) {
+        muscle_imaging_check_box_->setChecked(true);
+    } else if (step == 2) {
+        start_recording();
+    } else if (step == 3) {
+        stop_recording();
+    }
+}
+
 void MainGUIWindow::update_controls(bool recording) {
     record_button_->setEnabled(!recording);
     stop_button_->setEnabled(recording);
@@ -795,9 +813,16 @@ cv::Mat add_corner_marker(
 }
 
 void MainGUIWindow::update_behavior_image_display() {
-    cv::Mat latest_frame =
-        recorder_.behavior_recording_state()->latest_frame_holder->get_latest_frame_data()
-            .image;
+    // Only profile ticks during a recording
+    auto record = [this](const char *stage, int64_t us) {
+        if (recorder_.is_recording()) {
+            stage_timing_record(stage, us);
+        }
+    };
+    uint64_t t0 = get_current_time_microseconds();
+    FrameData latest_frame_data =
+        recorder_.behavior_recording_state()->latest_frame_holder->get_latest_frame_data();
+    cv::Mat latest_frame = latest_frame_data.image;
     if (latest_frame.empty()) {
         return;
     }
@@ -822,6 +847,7 @@ void MainGUIWindow::update_behavior_image_display() {
             cv::INTER_AREA);
     }
     cv::resize(small_frame, small_frame, preview_size, 0, 0, cv::INTER_AREA);
+    uint64_t t_resize = get_current_time_microseconds();
     cv::Mat corrected_frame;
     reorient_behavior_image(small_frame, corrected_frame);
 
@@ -868,8 +894,22 @@ void MainGUIWindow::update_behavior_image_display() {
         recorder_.behavior_cam_calibration_params(),
         view_scale);
 
-    behavior_image_display_label_->setPixmap(
-        QPixmap::fromImage(cv_mat_to_q_image(image_for_display)));
+    uint64_t t1 = get_current_time_microseconds();
+    QImage q_image = cv_mat_to_q_image(image_for_display);
+    uint64_t t2 = get_current_time_microseconds();
+    QPixmap pixmap = QPixmap::fromImage(q_image);
+    uint64_t t3 = get_current_time_microseconds();
+    behavior_image_display_label_->setPixmap(pixmap);
+    uint64_t t4 = get_current_time_microseconds();
+    record("gui beh: downscale to label size (INTER_AREA)", t_resize - t0);
+    record("gui beh: OpenCV processing (rotate, color, tint, marker)", t1 - t_resize);
+    record("gui beh: cv::Mat -> QImage (BGR->RGB + copy)", t2 - t1);
+    record("gui beh: QPixmap::fromImage", t3 - t2);
+    record("gui beh: QLabel::setPixmap", t4 - t3);
+    record("gui beh: total per tick", t4 - t0);
+    record(
+        "gui beh: frame age when handed to Qt (host-received -> setPixmap)",
+        t4 - latest_frame_data.received_time);
 }
 
 void MainGUIWindow::update_muscle_image_display() {
@@ -878,9 +918,15 @@ void MainGUIWindow::update_muscle_image_display() {
         return;
     }
 
-    cv::Mat calcium_frame =
-        recorder_.muscle_recording_state()->latest_calcium_frame_holder->get_latest_frame_data()
-            .image;
+    auto record = [this](const char *stage, int64_t us) {
+        if (recorder_.is_recording()) {
+            stage_timing_record(stage, us);
+        }
+    };
+    uint64_t t0 = get_current_time_microseconds();
+    FrameData calcium_frame_data =
+        recorder_.muscle_recording_state()->latest_calcium_frame_holder->get_latest_frame_data();
+    cv::Mat calcium_frame = calcium_frame_data.image;
     cv::Mat fiducial_frame =
         recorder_.muscle_recording_state()->latest_fiducial_frame_holder
             ->get_latest_frame_data()
@@ -894,6 +940,8 @@ void MainGUIWindow::update_muscle_image_display() {
         calcium_histogram_widget_->update_and_normalize(calcium_frame);
     cv::Mat fiducial_channel =
         fiducial_histogram_widget_->update_and_normalize(fiducial_frame);
+    uint64_t t_hist = get_current_time_microseconds();
+    record("gui mus: 2x histogram + 16->8 bit normalize", t_hist - t0);
     reorient_muscle_image(calcium_channel, calcium_channel);
     reorient_muscle_image(fiducial_channel, fiducial_channel);
     // Everything is displayed in the calcium camera's view
@@ -923,12 +971,22 @@ void MainGUIWindow::update_muscle_image_display() {
     cv::merge(
         std::vector<cv::Mat>{behavior_channel, calcium_channel, fiducial_channel},
         bgr_image);
+    uint64_t t1 = get_current_time_microseconds();
     QImage q_image = cv_mat_to_q_image(bgr_image);
     QPixmap pixmap = QPixmap::fromImage(q_image).scaled(
         muscle_image_display_label_->size(),
         Qt::KeepAspectRatio,
         Qt::SmoothTransformation);
+    uint64_t t2 = get_current_time_microseconds();
     muscle_image_display_label_->setPixmap(pixmap);
+    uint64_t t3 = get_current_time_microseconds();
+    record("gui mus: rotate, warp, merge channels", t1 - t_hist);
+    record("gui mus: QImage + QPixmap + scaled", t2 - t1);
+    record("gui mus: QLabel::setPixmap", t3 - t2);
+    record("gui mus: total per tick", t3 - t0);
+    record(
+        "gui mus: frame age when handed to Qt (recorder-received -> setPixmap)",
+        t3 - calcium_frame_data.received_time);
 }
 
 cv::Mat
