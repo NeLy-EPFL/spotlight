@@ -43,14 +43,7 @@ void muscle_image_saver(
     const RecorderConfig &recorder_config,
     std::shared_ptr<MuscleRecordingState> muscle_recording_state,
     const std::shared_ptr<SaveDirectory> &save_directory,
-    const std::shared_ptr<ProgramState> &program_state,
-    int tiff_compression_method = 5); // see below
-// TIFF compression methods:
-//   cv::IMWRITE_TIFF_COMPRESSION_NONE = 1 ,
-//   cv::IMWRITE_TIFF_COMPRESSION_LZW = 5 ,
-//   cv::IMWRITE_TIFF_COMPRESSION_JPEG = 7 ,
-//   cv::IMWRITE_TIFF_COMPRESSION_PACKBITS = 32773 ,
-//   ... see https://docs.opencv.org/4.x/d8/d6a/group__imgcodecs__flags.html
+    const std::shared_ptr<ProgramState> &program_state);
 
 void stop_muscle_image_saver(
     const std::shared_ptr<MuscleRecordingState> &muscle_recording_state,

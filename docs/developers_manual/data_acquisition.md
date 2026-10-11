@@ -49,6 +49,6 @@ This mode is also what the recorder uses whenever it needs the behavior camera r
 
 ## Controller reset at startup
 
-Every recorder program that talks to the trigger controller — `run-spotlight`, `align-cameras`, and `run-arena-registration-scan` — resets the controller once at startup by sending a `RESET` command (see the [communication protocol](comm_protocol.md)). The firmware reboots the microcontroller with `esp_restart()`, equivalent to pressing its physical reset button.
+Every recorder program that talks to the trigger controller — `run-spotlight` (and `run-spotlight-headless`), `align-cameras`, and `run-arena-registration-scan` — resets the controller once at startup by sending a `RESET` command (see the [communication protocol](comm_protocol.md)). The firmware reboots the microcontroller with `esp_restart()`, equivalent to pressing its physical reset button.
 
 This guarantees the controller always begins from a clean, known state — clearing any latched error or leftover configuration from a previous run — instead of inheriting whatever state it happened to be left in. Because the reboot drops the controller's USB CDC serial link, the recorder waits for the controller to reboot and re-enumerate before sending the first `STREAM`; during this brief window the controller streams with its built-in default parameters.

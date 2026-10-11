@@ -23,6 +23,10 @@ cmake --build recorder/build -j 16
 cmake --install recorder/build
 ```
 
+The recorder requires OpenCV 4.10 or newer; use Ubuntu's package (`sudo apt install libopencv-dev`). If an older OpenCV is also installed (e.g. a self-built one in `/usr/local`), CMake skips it, but an existing build directory remembers the old one: reconfigure it with `cmake -S recorder -B recorder/build -U OpenCV_DIR` (or delete `recorder/build`).
+
+The build type defaults to Debug, which is also what experiments use: a Release build was profiled and is no faster, because the time-critical work (JPEG/TIFF encoding, live previews) runs in the prebuilt OpenCV, libjpeg-turbo, libtiff, and Qt libraries rather than in the recorder's own code.
+
 This installs the executables to `recorder/bin/`. When running the programs, either use paths to these executables explicitly (e.g., `/path/to/spotlight-control/recorder/bin/run-spotlight -p ... -a ...`), or add `recorder/build` to the front of the `$PATH` environment variables (add the line `export PATH="/path/to/spotlight-control/recorder/bin:$PATH"`. Note that this changes the default version of the programs when you launch them from the terminal).
 
 ### Known issue: PCO SDK's DICOM plug-in crashes the camera server

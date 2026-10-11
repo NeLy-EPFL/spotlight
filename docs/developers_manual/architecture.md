@@ -74,9 +74,24 @@ The separate process keeps the PCO SDK (and the `PCO_LINUX` Windows-compat shims
 it injects into the global namespace) completely isolated from the Qt/Euresys
 stack, and means a crash in the PCO SDK cannot destabilize the GUI process.
 
-On shutdown, `quit_program()` calls `stop()` on the behavior and muscle cameras
+On shutdown, `Recorder::quit()` calls `stop()` on the behavior and muscle cameras
 (releasing the Euresys grabber and terminating the PCO server) before calling
 `std::exit()`.
+
+## Recording logic and front ends
+
+The recording logic of `run-spotlight` lives in `Recorder`
+(`src/common/recorder.cc`), which has no GUI dependency. Its constructor starts
+all the threads above and begins streaming; `start_recording()`,
+`end_recording()`, and `quit()` drive the recording. Two thin front ends use it:
+
+- `run-spotlight` (`MainGUIWindow`, `src/apps/gui.cc`) reads the recording
+  parameters off its widgets and shows the live previews.
+- `run-spotlight-headless` records once with parameters from a file (in the
+  format of a recording's `metadata/experiment_parameters.yaml`) and quits, for
+  automated testing and performance analysis. Run it with `--help` for its
+  options. It does not render the live previews, so it does not account for
+  their CPU cost.
 
 ## Trigger microcontroller
 
@@ -90,9 +105,10 @@ recorder and the firmware. See [comm_protocol.md](comm_protocol.md) and
 
 ## Components in this repository
 
-- `recorder/` — the C++ recorder and its three programs ([`align-cameras`](recorder/align_cameras.md),
+- `recorder/` — the C++ recorder and its programs ([`align-cameras`](recorder/align_cameras.md),
   [`run-arena-registration-scan`](recorder/run_arena_registration_scan.md),
-  [`run-spotlight`](recorder/run_spotlight.md)).
+  [`run-spotlight`](recorder/run_spotlight.md), and `run-spotlight-headless`; see
+  [above](#recording-logic-and-front-ends)).
 - `trigger_firmware/` — the microcontroller firmware (PlatformIO).
 - `comm_protocol/` — the shared JSON protocol library (CMake; included by both of
   the above).

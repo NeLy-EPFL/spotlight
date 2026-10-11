@@ -23,7 +23,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     # Default to a Debug build when the user does not pass
     # -DCMAKE_BUILD_TYPE=... (only meaningful for single-config generators
-    # like Makefiles/Ninja).
+    # like Makefiles/Ninja). Debug is also used for experiments: profiling
+    # showed no speedup from Release, since the hot paths (image encoding,
+    # previews) run in the prebuilt OpenCV/libjpeg/libtiff/Qt libraries.
     if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
         set(CMAKE_BUILD_TYPE Debug CACHE STRING
             "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
@@ -56,7 +58,12 @@ set(RECORDER_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # --- External dependencies ---------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort)
-find_package(OpenCV REQUIRED)
+# OpenCV >= 4.10, i.e. Ubuntu's libopencv-dev (maintained with the system's
+# libjpeg-turbo / libtiff). Older installs (e.g. a self-built 4.8 in
+# /usr/local) are skipped in favor of a compatible one.
+find_package(OpenCV 4.10 REQUIRED)
+# libtiff, for writing ZSTD-compressed muscle TIFFs (see write_zstd_tiff)
+find_package(TIFF REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp QUIET)
 
@@ -107,6 +114,7 @@ set(COMMON_SOURCES
     src/common/calibration.cc
     src/common/cli.cc
     src/common/muscle_recording.cc
+    src/common/recorder.cc
     src/common/recorder_config.cc
     src/common/loop_monitors.cc
     src/common/tracking_control.cc
@@ -158,12 +166,29 @@ add_executable(run-spotlight
 target_include_directories(run-spotlight PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(run-spotlight pthread rt dl)
 target_link_libraries(run-spotlight Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(run-spotlight ${OpenCV_LIBS})
+target_link_libraries(run-spotlight ${OpenCV_LIBS} TIFF::TIFF)
 target_link_libraries(run-spotlight ${ZABER_MOTION_LIB})
 target_link_libraries(run-spotlight spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-spotlight yaml-cpp)
 target_link_libraries(run-spotlight comm_protocol)
 set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
+
+# --- run-spotlight-headless --------------------------------------------------
+# run-spotlight without the GUI (same Recorder), for automated testing and
+# performance analysis.
+add_executable(run-spotlight-headless
+    ${PERIPHERAL_SOURCES}
+    ${COMMON_SOURCES}
+    src/apps/shared_memory_utils.cc
+    src/apps/run_spotlight_headless_main.cc)
+target_include_directories(run-spotlight-headless PRIVATE ${RECORDER_INCLUDE_DIR})
+target_link_libraries(run-spotlight-headless pthread rt dl)
+target_link_libraries(run-spotlight-headless Qt6::SerialPort)
+target_link_libraries(run-spotlight-headless ${OpenCV_LIBS} TIFF::TIFF)
+target_link_libraries(run-spotlight-headless ${ZABER_MOTION_LIB})
+target_link_libraries(run-spotlight-headless spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-spotlight-headless yaml-cpp)
+target_link_libraries(run-spotlight-headless comm_protocol)
 
 # --- align-cameras -----------------------------------------------------------
 # Camera and excitation-beam alignment tool.
@@ -183,7 +208,7 @@ add_executable(align-cameras
 target_include_directories(align-cameras PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(align-cameras PRIVATE pthread rt dl)
 target_link_libraries(align-cameras PRIVATE Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(align-cameras PRIVATE ${OpenCV_LIBS})
+target_link_libraries(align-cameras PRIVATE ${OpenCV_LIBS} TIFF::TIFF)
 target_link_libraries(align-cameras PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(align-cameras PRIVATE yaml-cpp)
 target_link_libraries(align-cameras PRIVATE comm_protocol)
@@ -205,7 +230,7 @@ add_executable(run-arena-registration-scan
     src/common/utils.cc)
 target_include_directories(run-arena-registration-scan PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(run-arena-registration-scan Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(run-arena-registration-scan ${OpenCV_LIBS})
+target_link_libraries(run-arena-registration-scan ${OpenCV_LIBS} TIFF::TIFF)
 target_link_libraries(run-arena-registration-scan ${ZABER_MOTION_LIB})
 target_link_libraries(run-arena-registration-scan spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-arena-registration-scan yaml-cpp)
@@ -230,7 +255,7 @@ add_executable(run-charuco-homography-scan
 target_include_directories(run-charuco-homography-scan PRIVATE ${RECORDER_INCLUDE_DIR})
 target_link_libraries(run-charuco-homography-scan PRIVATE pthread rt dl)
 target_link_libraries(run-charuco-homography-scan PRIVATE Qt6::Widgets Qt6::SerialPort)
-target_link_libraries(run-charuco-homography-scan PRIVATE ${OpenCV_LIBS})
+target_link_libraries(run-charuco-homography-scan PRIVATE ${OpenCV_LIBS} TIFF::TIFF)
 target_link_libraries(run-charuco-homography-scan PRIVATE ${ZABER_MOTION_LIB})
 target_link_libraries(run-charuco-homography-scan PRIVATE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-charuco-homography-scan PRIVATE yaml-cpp)
@@ -268,6 +293,7 @@ install(
     TARGETS
         pco-camera-server
         run-spotlight
+        run-spotlight-headless
         align-cameras
         run-arena-registration-scan
         run-charuco-homography-scan

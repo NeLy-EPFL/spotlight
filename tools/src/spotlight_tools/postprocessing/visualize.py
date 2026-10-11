@@ -29,7 +29,10 @@ from pathlib import Path
 from joblib import Parallel, delayed
 
 from spotlight_tools.common.video import get_video_info, get_video_writer
-from spotlight_tools.postprocessing.io import find_files_per_frame_by_suffix
+from spotlight_tools.postprocessing.io import (
+    find_files_per_frame_by_suffix,
+    read_muscle_image,
+)
 from spotlight_tools.postprocessing.muscle import (
     get_behavior_muscle_sync_ratio,
 )
@@ -210,9 +213,7 @@ def generate_summary_video(
 
     # Check if nominal width of image is incorrect
     if with_muscle:
-        _muscle_img_sample = cv2.imread(
-            str(list(muscle_id_to_path.values())[0]), cv2.IMREAD_UNCHANGED
-        )
+        _muscle_img_sample = read_muscle_image(list(muscle_id_to_path.values())[0])
         assert len(_muscle_img_sample.shape) == 2, "Muscle image is not single channel"
         muscle_width = _muscle_img_sample.shape[1]
         if muscle_width != behavior_width:
@@ -392,9 +393,7 @@ def _draw_summary_video_frames(
                     _current_muscle_image = np.zeros(behavior_shape, dtype=np.uint8)
                 else:
                     muscle_image_path = muscle_id_to_path[muscle_frameid]
-                    muscle_image = cv2.imread(
-                        str(muscle_image_path), cv2.IMREAD_UNCHANGED
-                    )
+                    muscle_image = read_muscle_image(muscle_image_path)
                     muscle_image_norm = (
                         muscle_image.astype(np.float32) - muscle_vrange[0]
                     ) / (muscle_vrange[1] - muscle_vrange[0])
@@ -509,7 +508,7 @@ def _determine_adaptive_muscle_vrange(
     quantiles = np.full((len(paths_to_check), 2), np.nan)
     logger.info("Detecting muscle vrange adaptively...")
     for i, path in enumerate(paths_to_check):
-        image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        image = read_muscle_image(path)
         if (image == 0).all():
             logger.warning(f"Muscle image {path} is all zeros, skipping.")
             continue
@@ -575,7 +574,7 @@ def generate_overlay_samples(
         assert metadata_entry["muscle_frame_id"] == muscle_frameid
         behavior_frameid = int(metadata_entry["corresponding_behavior_frame_id"])
         muscle_path = muscle_images_dir / f"muscle_frame_{muscle_frameid:09d}.tif"
-        muscle_image = cv2.imread(str(muscle_path), cv2.IMREAD_UNCHANGED)
+        muscle_image = read_muscle_image(muscle_path)
         # The muscle camera captures first frame only in the second cycle due to its
         # rolling shutter
         behavior_video_reader.set(cv2.CAP_PROP_POS_FRAMES, behavior_frameid)
