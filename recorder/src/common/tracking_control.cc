@@ -441,7 +441,9 @@ ActiveAreaMask::ActiveAreaMask(
 }
 
 cv::Mat ActiveAreaMask::warp_to_current_view(
-    const cv::Mat &current_image, MotionStagePosition stage_pos) const {
+    const cv::Mat &current_image,
+    MotionStagePosition stage_pos,
+    double view_scale) const {
     // Add contribution of non-zero stage position to the transformation matrix
     double x_offset =
         (stage_and_pixel_to_physical.w_x1_to_x * stage_pos.x_pos_mm +
@@ -452,6 +454,9 @@ cv::Mat ActiveAreaMask::warp_to_current_view(
     cv::Mat transform_matrix = transform_matrix_at_zero_stage_pos_.clone();
     transform_matrix.at<double>(0, 2) += x_offset / resolution_mm_per_pixel;
     transform_matrix.at<double>(1, 2) += y_offset / resolution_mm_per_pixel;
+    // The matrix maps output pixels to mask pixels (WARP_INVERSE_MAP); an output
+    // pixel of a downscaled view corresponds to camera pixel / view_scale.
+    transform_matrix.colRange(0, 2) /= view_scale;
 
     // Apply affine transform
     cv::Mat warped_mask;

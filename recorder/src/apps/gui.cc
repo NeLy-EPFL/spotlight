@@ -753,8 +753,13 @@ cv::Mat add_corner_marker(
     double arena_size_x_mm,
     double arena_size_y_mm,
     MotionStagePosition stage_position,
-    const CalibrationParams &behavior_cam_calibration_params) {
+    const CalibrationParams &behavior_cam_calibration_params,
+    double view_scale) {
     cv::Mat image_for_display = image.clone();
+    // Marker sizes at full resolution, scaled with the image (at least 1 px)
+    const int dot_radius = std::max(1, static_cast<int>(std::lround(5 * view_scale)));
+    const int line_thickness =
+        std::max(1, static_cast<int>(std::lround(2 * view_scale)));
     assert(image_for_display.size() == image.size());
 
     std::vector<std::tuple<double, double>> corner_positions = {
@@ -770,13 +775,12 @@ cv::Mat add_corner_marker(
             behavior_cam_calibration_params
                 .stage_pos_and_physical_pos_to_pixel_pos(
                     stage_position.x_pos_mm, stage_position.y_pos_mm, x, y);
-        pixel_points.emplace_back(pixel_col, pixel_row);
+        cv::Point point(
+            static_cast<int>(std::lround(pixel_col * view_scale)),
+            static_cast<int>(std::lround(pixel_row * view_scale)));
+        pixel_points.push_back(point);
         cv::circle(
-            image_for_display,
-            cv::Point(pixel_col, pixel_row),
-            5,
-            cv::Scalar(255, 255, 255),
-            -1);
+            image_for_display, point, dot_radius, cv::Scalar(255, 255, 255), -1);
     }
     for (size_t i = 0; i < pixel_points.size(); ++i) {
         cv::line(
@@ -784,7 +788,7 @@ cv::Mat add_corner_marker(
             pixel_points[i],
             pixel_points[(i + 1) % pixel_points.size()],
             cv::Scalar(255, 0, 0),
-            2);
+            line_thickness);
     }
 
     return image_for_display;
@@ -797,8 +801,20 @@ void MainGUIWindow::update_behavior_image_display() {
     if (latest_frame.empty()) {
         return;
     }
+    // Downscale to the preview size first so that everything below works on a
+    // small image (several times cheaper than processing the full frame and
+    // scaling at the end). The frame is rotated by 90 degrees for display, so
+    // its displayed width is its row count.
+    QSize label_size = behavior_image_display_label_->size();
+    double view_scale = std::min(
+        static_cast<double>(label_size.width()) / latest_frame.rows,
+        static_cast<double>(label_size.height()) / latest_frame.cols);
+    cv::Mat small_frame;
+    cv::resize(
+        latest_frame, small_frame, cv::Size(), view_scale, view_scale,
+        cv::INTER_AREA);
     cv::Mat corrected_frame;
-    reorient_behavior_image(latest_frame, corrected_frame);
+    reorient_behavior_image(small_frame, corrected_frame);
 
     MotionStagePosition my_stage_position;
     {
@@ -814,8 +830,9 @@ void MainGUIWindow::update_behavior_image_display() {
     cv::Mat bgr_image;
     cv::cvtColor(corrected_frame, bgr_image, cv::COLOR_GRAY2BGR);
     if (tracking_enabled_check_box_->isChecked()) {
-        cv::Mat active_mask_curr_view = recorder_.active_area_mask().warp_to_current_view(
-            corrected_frame, my_stage_position);
+        cv::Mat active_mask_curr_view =
+            recorder_.active_area_mask().warp_to_current_view(
+                corrected_frame, my_stage_position, view_scale);
         cv::Mat outside_arena;
         cv::threshold(
             active_mask_curr_view,
@@ -839,14 +856,11 @@ void MainGUIWindow::update_behavior_image_display() {
         recorder_.active_area_mask().arena_width_mm,
         recorder_.active_area_mask().arena_height_mm,
         my_stage_position,
-        recorder_.behavior_cam_calibration_params());
+        recorder_.behavior_cam_calibration_params(),
+        view_scale);
 
-    QImage q_image = cv_mat_to_q_image(image_for_display);
-    QPixmap pixmap = QPixmap::fromImage(q_image).scaled(
-        behavior_image_display_label_->size(),
-        Qt::KeepAspectRatio,
-        Qt::SmoothTransformation);
-    behavior_image_display_label_->setPixmap(pixmap);
+    behavior_image_display_label_->setPixmap(
+        QPixmap::fromImage(cv_mat_to_q_image(image_for_display)));
 }
 
 void MainGUIWindow::update_muscle_image_display() {

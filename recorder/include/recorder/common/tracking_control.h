@@ -33,8 +33,13 @@ class ActiveAreaMask {
         const std::string &arena_spec_dir,
         double boundary_margin_mm,
         LinearMapper2x2to2 &stage_and_pixel_to_physical);
+    // Warp the arena mask into the view of current_image at stage_pos.
+    // view_scale: size of current_image relative to the camera image (< 1 for
+    // a downscaled preview).
     cv::Mat warp_to_current_view(
-        const cv::Mat &current_image, MotionStagePosition stage_pos) const;
+        const cv::Mat &current_image,
+        MotionStagePosition stage_pos,
+        double view_scale = 1.0) const;
 
   private:
     cv::Mat transform_matrix_at_zero_stage_pos_;

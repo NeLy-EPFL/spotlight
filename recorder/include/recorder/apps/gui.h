@@ -148,12 +148,16 @@ class MainGUIWindow : public QWidget {
 };
 
 // Helpers
+// Draw the arena outline onto a copy of a (reoriented) behavior image.
+// view_scale: size of the image relative to the camera image (< 1 for a
+// downscaled preview).
 cv::Mat add_corner_marker(
     const cv::Mat &image,
     double arena_size_x_mm,
     double arena_size_y_mm,
     MotionStagePosition stage_position,
-    const CalibrationParams &behavior_cam_calibration_params);
+    const CalibrationParams &behavior_cam_calibration_params,
+    double view_scale = 1.0);
 
 // Map a displayed (reoriented) camera image into the displayed calcium camera
 // view, of size `calcium_view_size`. Placeholder for the live registration:
