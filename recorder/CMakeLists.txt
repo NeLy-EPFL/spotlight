@@ -56,7 +56,10 @@ set(RECORDER_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # --- External dependencies ---------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Widgets SerialPort)
-find_package(OpenCV REQUIRED)
+# OpenCV >= 4.10 (Ubuntu's libopencv-dev): needed for the TIFF predictor option
+# used when saving muscle frames. Older installs (e.g. a self-built 4.8 in
+# /usr/local) are skipped in favor of a compatible one.
+find_package(OpenCV 4.10 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp QUIET)
 
