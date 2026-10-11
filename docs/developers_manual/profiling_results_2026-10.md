@@ -91,3 +91,58 @@ label size first, then doing everything on the small image: 2.6 ms (~5x faster).
 4. Downscale before drawing in the behavior preview; this also reduces the
    savers' slowdown and the tracking frame-age spikes caused by the GUI.
 5. A Release build brings no speedup.
+
+## Follow-up: OpenCV 4.10, preview downscaling, TIFF codecs, OpenCV threads
+
+All Debug, same workload, GUI open.
+
+### OpenCV 4.10 (Ubuntu) vs self-built 4.8
+
+The self-built 4.8 had Intel IPP and the pthreads backend; Ubuntu's 4.10 has no
+IPP and uses TBB. Some OpenCV calls got slower (packing 3 behavior frames 6.6 ->
+9.1 ms, muscle preview 13.5 -> 17.6 ms per tick); JPEG encoding got faster
+(16.5 -> 13.8 ms, less GUI contention). libjpeg-turbo is used by both.
+
+### Downscale-first behavior preview
+
+Behavior preview tick 32.0 -> 5.8 ms (p50); frame age when handed to Qt 33.8 ->
+7.5 ms; GUI thread 95% -> 63% while recording. Old and new pipelines produce the
+same image (mean |diff| < 1 gray level with the real arena mask/calibration).
+
+### OpenCV worker threads (`cv::setNumThreads(1)`)
+
+OpenCV's internal thread pool spins between the many small parallel calls
+(previews, tracking): ~12 pool threads at 13-20% CPU each even while only
+streaming, with both 4.8 and 4.10. `OPENCV_FOR_THREADS_NUM=1` had no effect;
+`cv::setNumThreads(1)` did:
+
+| Process CPU | 4.8, old preview | 4.10, new preview | + setNumThreads(1) |
+|---|---|---|---|
+| Streaming, muscle off | 215% | 265% | 75% |
+| Streaming, muscle on | 293% | 375% | 123% |
+| Recording | 1027% | 980% | 811% |
+
+Savers got slightly faster (muscle pair 54.3 -> 52.0 ms, behavior received ->
+on disk 24.3 -> 22.7 ms). Single calls get slower: preview downscale 3.9 -> 15
+ms under load (INTER_AREA at a non-integer factor; idle single-thread 3.6 ms,
+1.3 ms when halving first with INTER_AREA), tracking loop 8.6 -> 12.1 ms (budget
+33 ms).
+
+### TIFF compression for muscle frames (200 real frames, single thread, idle)
+
+Through `cv::imwrite` (default levels):
+
+| Option | Encode | MB / image | Ratio |
+|---|---|---|---|
+| None | 1.4 ms | 2.51 | 1.00 |
+| LZW (current) | 15.0 ms | 1.57 | 1.59 |
+| Deflate | 52.0 ms | 1.43 | 1.76 |
+| ZSTD | 29.6 ms | 1.35 | 1.85 |
+
+The horizontal predictor does not help on these frames (slightly larger files).
+With libtiff directly (levels not settable via OpenCV): Deflate level 1 25.2 ms /
+1.36 MB, **ZSTD level 1 2.6 ms / 1.53 MB**, ZSTD level 3 13.9 ms / 1.54 MB.
+
+Readers: opencv-python 4.14 (used by `tools/`) cannot read ZSTD TIFFs ("ZSTD
+compression support is not configured"); tifffile can. LZW, Deflate, and
+uncompressed TIFFs are read by both.
