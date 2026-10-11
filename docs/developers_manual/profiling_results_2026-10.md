@@ -146,3 +146,27 @@ With libtiff directly (levels not settable via OpenCV): Deflate level 1 25.2 ms 
 Readers: opencv-python 4.14 (used by `tools/`) cannot read ZSTD TIFFs ("ZSTD
 compression support is not configured"); tifffile can. LZW, Deflate, and
 uncompressed TIFFs are read by both.
+
+## Final: all changes (OpenCV 4.10, downscale-first preview, ZSTD TIFFs, single-threaded OpenCV)
+
+Debug, same workload, compared with the original Debug baseline.
+
+| | Baseline GUI | Final GUI | Baseline headless | Final headless |
+|---|---|---|---|---|
+| Process CPU, streaming (muscle off / on) | 215% / 293% | 54% / 102% | - / 114% | - / 32% |
+| Process CPU, recording | 1027% | 486% | 682% | 389% |
+| Muscle save per pair (p50) | 56.2 ms | 13.7 ms | 48.9 ms | 12.8 ms |
+| Muscle: server fetched -> on disk (p50 / p99) | 58.1 / 74.1 ms | 14.5 / 19.7 ms | 49.6 / 57.3 ms | 13.6 / 18.1 ms |
+| Behavior save per group (p50) | 24.2 ms | 19.6 ms | 19.3 ms | 18.3 ms |
+| Behavior: received -> on disk, newest (p50 / p99) | 24.8 / 34.5 ms | 20.0 / 28.5 ms | 19.7 / 28.6 ms | 18.6 / 25.9 ms |
+| Behavior preview tick (p50 / p99) | 32.0 / 42.6 ms | 7.5 / 9.5 ms | - | - |
+| Behavior preview frame age at setPixmap (p50) | 33.8 ms | 8.7 ms | - | - |
+| Preview rate (target 25 Hz) | ~19 Hz | 24.9 Hz | - | - |
+| Tracking loop (p50 / p99) | 7.4 / 15.0 ms | 10.6 / 16.2 ms | 5.9 / 9.7 ms | 10.1 / 15.0 ms |
+
+- No dropped frames; only the 6 designed re-sync pauses per 65 s.
+- ZSTD muscle TIFFs average ~1.29 MB per image on disk.
+- Still open: the tracking frame-age p99 with the GUI open (~39 ms vs ~3 ms
+  headless) did not improve; the tracking loop is ~3 ms slower single-threaded
+  (still well within its 33 ms budget); the muscle preview (histograms 8.2 ms)
+  was not optimized.
