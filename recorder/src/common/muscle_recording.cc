@@ -1,6 +1,9 @@
 #include "recorder/common/muscle_recording.h"
 
 #include "recorder/common/loop_monitors.h"
+#include "recorder/common/stage_timing.h"
+
+#include <fstream>
 
 void muscle_image_acquirer(
     const MuscleCameraROIs &rois,
@@ -59,6 +62,10 @@ void muscle_image_acquirer(
             if (current_frame_id == 0) {
                 spdlog::info("First muscle frame of the recording received");
             }
+            stage_timing_record(
+                "mus acq: server fetched -> recorder has pair",
+                static_cast<int64_t>(frame_pair.calcium.received_time) -
+                    static_cast<int64_t>(frame_pair.calcium.acquisition_time));
             frame_pair.frame_id = current_frame_id++;
             frame_pair.calcium.frame_id = frame_pair.frame_id;
             frame_pair.fiducial.frame_id = frame_pair.frame_id;
@@ -142,6 +149,9 @@ void muscle_image_saver(
         perf_tracker.update_recording_state(program_state->is_recording.load());
 
         start_time = get_current_time_microseconds();
+        stage_timing_record(
+            "mus save: wait in queue (pair received -> saver)",
+            start_time - frame_pair.calcium.received_time);
         std::string filename_stem =
             "muscle_frame_" + fmt::format("{:09}", frame_pair.frame_id);
         std::filesystem::path muscle_save_dir =
@@ -155,18 +165,30 @@ void muscle_image_saver(
         for (const auto &[camera_name, frame_data] : camera_frames) {
             // Reorient image (rotate it so it's consistent with behavior image)
             cv::Mat reoriented_image;
-            reorient_muscle_image(frame_data.image, reoriented_image);
+            {
+                ScopedStageTimer timer{"mus save: rotate (per camera)"};
+                reorient_muscle_image(frame_data.image, reoriented_image);
+            }
 
             std::string image_path =
                 muscle_save_dir / (filename_stem + "_" + camera_name + ".tif");
-            try {
-                cv::imwrite(image_path, reoriented_image, compression_params);
-            } catch (const cv::Exception &ex) {
-                spdlog::error("Exception saving image: {}", ex.what());
+            // imwrite split into encode + write to time them separately
+            std::vector<uchar> tiff_bytes;
+            {
+                ScopedStageTimer timer{"mus save: TIFF LZW encode (per camera)"};
+                cv::imencode(".tif", reoriented_image, tiff_bytes, compression_params);
+            }
+            {
+                ScopedStageTimer timer{"mus save: write TIFF file (per camera)"};
+                std::ofstream tiff_file(image_path, std::ios::binary);
+                tiff_file.write(
+                    reinterpret_cast<const char *>(tiff_bytes.data()),
+                    tiff_bytes.size());
             }
         }
 
         // Save metadata of both cameras (one row per camera)
+        uint64_t csv_start_time = get_current_time_microseconds();
         std::string metadata_path = muscle_save_dir / (filename_stem + ".csv");
         std::ofstream metadata_file(metadata_path);
         if (!metadata_file.is_open()) {
@@ -184,6 +206,13 @@ void muscle_image_saver(
             }
             metadata_file.close();
         }
+
+        uint64_t end_time = get_current_time_microseconds();
+        stage_timing_record("mus save: write CSV", end_time - csv_start_time);
+        stage_timing_record("mus save: total per pair", end_time - start_time);
+        stage_timing_record(
+            "mus e2e: server fetched -> both TIFFs on disk",
+            end_time - frame_pair.calcium.acquisition_time);
 
         perf_tracker.record_save(
             get_current_time_microseconds() - start_time, queue_length);

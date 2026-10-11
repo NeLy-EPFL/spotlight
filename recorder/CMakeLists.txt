@@ -110,6 +110,7 @@ set(COMMON_SOURCES
     src/common/recorder.cc
     src/common/recorder_config.cc
     src/common/loop_monitors.cc
+    src/common/stage_timing.cc
     src/common/tracking_control.cc
     src/common/utils.cc)
 

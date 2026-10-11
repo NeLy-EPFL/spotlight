@@ -1,4 +1,5 @@
 #include "recorder/common/tracking_control.h"
+#include "recorder/common/stage_timing.h"
 
 #include "recorder/common/loop_monitors.h"
 
@@ -205,9 +206,12 @@ void update_tracking_target(
     float accel_min,
     float accel_max,
     float max_accel_margin_px) {
-    cv::Mat my_behavior_image =
-        behavior_recording_state->latest_frame_holder->get_latest_frame_data()
-            .image;
+    FrameData latest_frame =
+        behavior_recording_state->latest_frame_holder->get_latest_frame_data();
+    stage_timing_record(
+        "tracking: frame age when processed (host-received -> now)",
+        get_current_time_microseconds() - latest_frame.received_time);
+    cv::Mat my_behavior_image = latest_frame.image;
     reorient_behavior_image(my_behavior_image, my_behavior_image);
     cv::Mat active_area_mask_curr_view = active_area_mask.warp_to_current_view(
         my_behavior_image, get_current_motion_stage_position());

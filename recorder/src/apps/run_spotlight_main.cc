@@ -25,12 +25,15 @@ namespace {
 // only flips this flag; a QTimer on the GUI thread (see run_spotlight_main)
 // polls it and performs the actual teardown via Recorder::quit().
 volatile std::sig_atomic_t sigint_received = 0;
+// PROFILING ONLY: number of SIGUSR1 received (see MainGUIWindow::profiling_step)
+volatile std::sig_atomic_t sigusr1_count = 0;
 } // namespace
 
 int run_spotlight_main(int argc, char **argv) {
     // Keep the handler async-signal-safe: only set a flag. The poll timer
     // installed below runs the real teardown on the GUI thread.
     std::signal(SIGINT, [](int) { sigint_received = 1; });
+    std::signal(SIGUSR1, [](int) { sigusr1_count = sigusr1_count + 1; });
 
     // Parse command line arguments
     CLIOptions options = parse_cli(argc, argv);
@@ -58,7 +61,14 @@ int run_spotlight_main(int argc, char **argv) {
     // Poll the SIGINT flag on the GUI thread and tear down when it is set.
     // (The handler itself only sets the flag, to stay async-signal-safe.)
     QTimer sigint_poll_timer;
-    QObject::connect(&sigint_poll_timer, &QTimer::timeout, [&recorder]() {
+    int profiling_steps_done = 0;
+    QObject::connect(
+        &sigint_poll_timer,
+        &QTimer::timeout,
+        [&recorder, &local_main_gui_window, &profiling_steps_done]() {
+        while (profiling_steps_done < sigusr1_count) {
+            local_main_gui_window.profiling_step(++profiling_steps_done);
+        }
         if (sigint_received) {
             spdlog::info("SIGINT received; shutting down.");
             recorder.quit();

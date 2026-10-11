@@ -78,6 +78,9 @@ class MainGUIWindow : public QWidget {
 
   public:
     explicit MainGUIWindow(Recorder &recorder, QWidget *parent = nullptr);
+    // PROFILING ONLY: step 1 enables muscle imaging, 2 starts recording, 3
+    // stops it (driven by SIGUSR1, see run_spotlight_main)
+    void profiling_step(int step);
 
   private slots:
     void start_recording();
