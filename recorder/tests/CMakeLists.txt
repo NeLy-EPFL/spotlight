@@ -73,7 +73,6 @@ if(RECORDER_BUILD_TESTS)
     target_link_libraries(recorder_tests_nohardware PRIVATE
         Qt6::SerialPort
         ${OpenCV_LIBS}
-        TIFF::TIFF
         spdlog::spdlog
         yaml-cpp
         GTest::gtest_main
@@ -114,7 +113,6 @@ if(RECORDER_BUILD_HARDWARE_TESTS)
     target_link_libraries(recorder_tests_hardware PRIVATE
         Qt6::SerialPort
         ${OpenCV_LIBS}
-        TIFF::TIFF
         ${ZABER_MOTION_LIB}
         spdlog::spdlog
         yaml-cpp

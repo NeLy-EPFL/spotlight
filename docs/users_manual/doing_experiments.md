@@ -66,7 +66,7 @@ Then, click **Start recording**. Click **Stop** when done (or let the protocol s
 
 Behavior frames are stored as *pseudo-BGR* JPEGs (three consecutive monochrome frames packed into the three color channels). `postprocess-recording` unpacks them.
 
-Each muscle frame is a pair of 16-bit TIFFs, one per muscle camera (`_calcium` and `_fiducial`), plus a CSV with one row of timing metadata per camera (see [Data acquisition](../developers_manual/data_acquisition.md#two-muscle-cameras)). The TIFFs are losslessly ZSTD-compressed (recordings made before October 2026 use LZW). Read them with `tifffile` (with `imagecodecs` installed), as the Python tools do; `cv2.imread` from `opencv-python` cannot decode ZSTD TIFFs.
+Each muscle frame is a pair of 16-bit TIFFs, one per muscle camera (`_calcium` and `_fiducial`), plus a CSV with one row of timing metadata per camera (see [Data acquisition](../developers_manual/data_acquisition.md#two-muscle-cameras)).
 
 
 ## Step 4: Postprocessing

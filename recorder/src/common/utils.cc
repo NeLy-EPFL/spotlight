@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include <tiffio.h>
-
 uint64_t get_current_time_microseconds() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
                std::chrono::high_resolution_clock::now().time_since_epoch())
@@ -40,34 +38,6 @@ void reorient_behavior_image(
 
 void reorient_muscle_image(const cv::Mat &source_image, cv::Mat &target_image) {
     cv::rotate(source_image, target_image, cv::ROTATE_90_COUNTERCLOCKWISE);
-}
-
-bool write_zstd_tiff(const std::filesystem::path &path, const cv::Mat &image) {
-    CV_Assert(image.type() == CV_16UC1);
-    TIFF *tiff = TIFFOpen(path.c_str(), "w");
-    if (!tiff) {
-        spdlog::error("Failed to open '{}' for writing", path.string());
-        return false;
-    }
-    TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, image.cols);
-    TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, image.rows);
-    TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, 16);
-    TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, 1);
-    TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
-    TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-    TIFFSetField(tiff, TIFFTAG_COMPRESSION, COMPRESSION_ZSTD);
-    TIFFSetField(tiff, TIFFTAG_ZSTD_LEVEL, 1);
-    TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tiff, 0));
-    bool success = true;
-    for (int row = 0; row < image.rows && success; ++row) {
-        success = TIFFWriteScanline(
-                      tiff, const_cast<uchar *>(image.ptr(row)), row) == 1;
-    }
-    TIFFClose(tiff);
-    if (!success) {
-        spdlog::error("Failed to write TIFF '{}'", path.string());
-    }
-    return success;
 }
 
 std::string make_metadata_string_from_three_frames(

@@ -23,11 +23,6 @@ uint64_t get_current_time_microseconds();
 void reorient_behavior_image(
     const cv::Mat &source_image, cv::Mat &target_image);
 void reorient_muscle_image(const cv::Mat &source_image, cv::Mat &target_image);
-// Write a single-channel 16-bit image as a ZSTD-compressed (level 1) TIFF.
-// Written with libtiff directly because cv::imwrite cannot set the ZSTD level;
-// at level 1 it is ~6x faster than LZW at the same file size. Returns false
-// (after logging) on failure.
-bool write_zstd_tiff(const std::filesystem::path &path, const cv::Mat &image);
 cv::Mat make_pseudo_bgr_image_from_three_frames(
     const GroupOfThreeFrames &group_of_three_frames);
 std::string make_metadata_string_from_three_frames(

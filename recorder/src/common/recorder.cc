@@ -258,7 +258,8 @@ Recorder::Recorder(
                 recorder_config_,
                 muscle_recording_state_,
                 save_directory_,
-                program_state_));
+                program_state_,
+                5)); // cv::IMWRITE_TIFF_COMPRESSION_LZW
         }
         spdlog::info("Muscle camera saver threads started");
     }

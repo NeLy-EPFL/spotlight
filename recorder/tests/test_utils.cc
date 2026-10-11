@@ -10,7 +10,6 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <tiffio.h>
 #include <yaml-cpp/yaml.h>
 
 #include "test_helpers.h"
@@ -76,29 +75,6 @@ TEST(Reorient, BehaviorRotatesThenMirrorsHorizontally) {
     EXPECT_EQ(c.tr, 22); // from source top-right
     EXPECT_EQ(c.bl, 33); // from source bottom-left
     EXPECT_EQ(c.br, 11); // from source top-left
-}
-
-/* -------------------------------------------------------------------------- */
-/* Muscle TIFF writing                                                        */
-/* -------------------------------------------------------------------------- */
-
-TEST(ZstdTiff, RoundTripsLosslesslyWithZstdCompression) {
-    TempDir dir;
-    cv::Mat image(37, 53, CV_16UC1);
-    cv::randu(image, 0, 65535);
-    const fs::path path = dir.file("frame.tif");
-
-    ASSERT_TRUE(write_zstd_tiff(path, image));
-
-    cv::Mat read_back = cv::imread(path.string(), cv::IMREAD_UNCHANGED);
-    ASSERT_EQ(read_back.type(), CV_16UC1);
-    EXPECT_EQ(cv::norm(read_back, image, cv::NORM_INF), 0);
-    TIFF *tiff = TIFFOpen(path.c_str(), "r");
-    ASSERT_NE(tiff, nullptr);
-    uint16_t compression = 0;
-    TIFFGetField(tiff, TIFFTAG_COMPRESSION, &compression);
-    TIFFClose(tiff);
-    EXPECT_EQ(compression, COMPRESSION_ZSTD);
 }
 
 /* -------------------------------------------------------------------------- */

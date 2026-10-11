@@ -19,10 +19,7 @@ from pathlib import Path
 
 from spotlight_tools.calibration import HomographyMapper
 from spotlight_tools.common.video import get_video_info
-from spotlight_tools.postprocessing.io import (
-    check_output_path_against_alignment_flag,
-    read_muscle_image,
-)
+from spotlight_tools.postprocessing.io import check_output_path_against_alignment_flag
 
 
 # Muscle<->behavior frame correspondence. Once the orphan muscle frames captured
@@ -480,7 +477,7 @@ def _count_leading_orphan_muscle_frames(
 
     prev = None
     for i, frame_id in enumerate(sorted_ids):
-        im = read_muscle_image(paths_by_id[frame_id]).astype(np.float32)
+        im = cv2.imread(str(paths_by_id[frame_id]), cv2.IMREAD_UNCHANGED).astype(np.float32)
         if (
             prev is not None
             and _diff_spatial_autocorrelation(prev, im) > autocorr_threshold
@@ -729,7 +726,7 @@ def warp_single_muscle_frame_to_behavior(
         np.ndarray or None (depending on return_output): Transformed muscle frame.
     """
     # Load muscle image
-    in_image = read_muscle_image(input_path)
+    in_image = cv2.imread(str(input_path), cv2.IMREAD_UNCHANGED)
 
     if use_perspective:
         # Homography case: muscle2behavior_trans_mat is 3x3
