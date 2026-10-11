@@ -107,6 +107,7 @@ set(COMMON_SOURCES
     src/common/calibration.cc
     src/common/cli.cc
     src/common/muscle_recording.cc
+    src/common/recorder.cc
     src/common/recorder_config.cc
     src/common/loop_monitors.cc
     src/common/tracking_control.cc
@@ -164,6 +165,23 @@ target_link_libraries(run-spotlight spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 target_link_libraries(run-spotlight yaml-cpp)
 target_link_libraries(run-spotlight comm_protocol)
 set_target_properties(run-spotlight PROPERTIES AUTOMOC ON)
+
+# --- run-spotlight-headless --------------------------------------------------
+# run-spotlight without the GUI (same Recorder), for automated testing and
+# performance analysis.
+add_executable(run-spotlight-headless
+    ${PERIPHERAL_SOURCES}
+    ${COMMON_SOURCES}
+    src/apps/shared_memory_utils.cc
+    src/apps/run_spotlight_headless_main.cc)
+target_include_directories(run-spotlight-headless PRIVATE ${RECORDER_INCLUDE_DIR})
+target_link_libraries(run-spotlight-headless pthread rt dl)
+target_link_libraries(run-spotlight-headless Qt6::SerialPort)
+target_link_libraries(run-spotlight-headless ${OpenCV_LIBS})
+target_link_libraries(run-spotlight-headless ${ZABER_MOTION_LIB})
+target_link_libraries(run-spotlight-headless spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+target_link_libraries(run-spotlight-headless yaml-cpp)
+target_link_libraries(run-spotlight-headless comm_protocol)
 
 # --- align-cameras -----------------------------------------------------------
 # Camera and excitation-beam alignment tool.
@@ -268,6 +286,7 @@ install(
     TARGETS
         pco-camera-server
         run-spotlight
+        run-spotlight-headless
         align-cameras
         run-arena-registration-scan
         run-charuco-homography-scan

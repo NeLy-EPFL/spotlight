@@ -7,7 +7,11 @@ void print_help(const char *program_name) {
               << "  -h, --help                 Display this help message\n"
               << "  -p, --profile-dir PATH     Path to profile directory (required)\n"
               << "  -a, --arena PATH           Path to arena directory (containing metadata.yaml and model/)\n"
-              << "  --no-muscle                Run without the muscle cameras (run-spotlight only)\n"
+              << "  --no-muscle                Run without the muscle cameras (run-spotlight[-headless] only)\n"
+              << "  --params PATH              Recording parameters file (run-spotlight-headless only)\n"
+              << "  --save-dir PATH            Save directory (run-spotlight-headless only)\n"
+              << "  --duration SECONDS         Length of an open recording (run-spotlight-headless only)\n"
+              << "  --stream SECONDS           Time to stream before recording (run-spotlight-headless only)\n"
               << "  -v, --verbose              Enable verbose output (debug level)\n"
               << "  --verbosity LEVEL          Set verbosity level (trace, debug, info, warn, error, critical, off)\n"
               << std::endl;
@@ -53,6 +57,14 @@ CLIOptions parse_cli(int argc, char **argv) {
             options.arena_dir = argv[++i];
         } else if (arg == "--no-muscle") {
             options.no_muscle = true;
+        } else if (arg == "--params" && i + 1 < argc) {
+            options.params_file = argv[++i];
+        } else if (arg == "--save-dir" && i + 1 < argc) {
+            options.save_dir = argv[++i];
+        } else if (arg == "--duration" && i + 1 < argc) {
+            options.duration_s = std::stod(argv[++i]);
+        } else if (arg == "--stream" && i + 1 < argc) {
+            options.stream_s = std::stod(argv[++i]);
         } else {
             std::cerr << "Unknown option: " << arg << std::endl;
             print_help(argv[0]);

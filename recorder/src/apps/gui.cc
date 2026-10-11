@@ -164,37 +164,9 @@ float MotionControlWidget::map_to_stage_y(int y) const {
            min_y_absolute_mm_;
 }
 
-MainGUIWindow::MainGUIWindow(
-    const RecorderConfig &recorder_config,
-    const std::filesystem::path &profile_dir,
-    std::shared_ptr<BehaviorRecordingState> behavior_recording_state,
-    std::shared_ptr<MuscleRecordingState> muscle_recording_state,
-    std::shared_ptr<TrackingControlState> tracking_control_state,
-    CalibrationParams &behavior_cam_calibration_params,
-    std::shared_ptr<SaveDirectory> save_directory,
-    std::shared_ptr<ArduinoCommunication> arduino_communication,
-    std::shared_ptr<ProgramState> program_state,
-    std::shared_ptr<ProgrammedStop> programmed_recording_stop,
-    ActiveAreaMask &active_area_mask,
-    double stage_min_x_mm,
-    double stage_max_x_mm,
-    double stage_min_y_mm,
-    double stage_max_y_mm,
-    QWidget *parent)
-    : QWidget(parent), recorder_config_(recorder_config),
-      profile_dir_(profile_dir),
-      behavior_recording_state_(std::move(behavior_recording_state)),
-      muscle_recording_state_(std::move(muscle_recording_state)),
-      tracking_control_state_(std::move(tracking_control_state)),
-      behavior_cam_calibration_params_(behavior_cam_calibration_params),
-      save_directory_(std::move(save_directory)),
-      arduino_communication_(std::move(arduino_communication)),
-      program_state_(std::move(program_state)),
-      programmed_recording_stop_(std::move(programmed_recording_stop)),
-      active_area_mask_(active_area_mask), stage_min_x_mm_(stage_min_x_mm),
-      stage_max_x_mm_(stage_max_x_mm), stage_min_y_mm_(stage_min_y_mm),
-      stage_max_y_mm_(stage_max_y_mm) {
-    load_recording_parameters();
+MainGUIWindow::MainGUIWindow(Recorder &recorder, QWidget *parent)
+    : QWidget(parent), recorder_(recorder),
+      recorder_config_(recorder.recorder_config()) {
 
     // Arrange layout. The config text boxes (and their labels) occupy a
     // fixed-width column on the left, wide enough that the labels and spin
@@ -250,64 +222,16 @@ MainGUIWindow::MainGUIWindow(
 
     setup_programmed_stop_timer();
 
-    // Start in streaming mode: live preview only, not saving. Muscle imaging is
-    // off by default (enable_muscle = false: behavior camera free-runs, blue
-    // excitation LED off). The controller is configured with a single STREAM
-    // command.
-    record_button_->setEnabled(true);
-    stop_button_->setEnabled(false);
-    muscle_imaging_check_box_->setEnabled(muscle_camera_ != nullptr);
-    program_state_->is_recording.store(false);
-    arduino_communication_->stream(build_streaming_params());
-}
-
-void MainGUIWindow::load_recording_parameters() {
-    streaming_behavior_fps_ = recorder_config_.get_parameter<int>(
-        "behavior_camera", "streaming_frame_rate");
-
-    // Load rolling shutter parameter
-    double rolling_shutter_line_time_us =
-        recorder_config_.get_parameter<double>(
-            "muscle_camera", "rolling_shutter_line_time_us");
-    int muscle_cam_readout_time_us = recorder_config_.get_parameter<double>(
-        "muscle_camera", "sensor_readout_time_us");
-
-    // Load streaming sync ratio
-    streaming_sync_ratio_ = recorder_config_.get_parameter<int>(
-        "muscle_camera", "streaming_sync_ratio");
-
-    // The muscle camera is started (and waited for) in run_spotlight_main
-    // before this window is constructed, so it is ready by now (unless
-    // run-spotlight was started with --no-muscle).
-    muscle_camera_ = muscle_recording_state_->muscle_camera.load();
-
-    // Cache the PCO sensor timing sent in every STREAM / START_RECORDING. The
-    // controller derives the muscle trigger delay from these (the rolling time
-    // is the time to scan all lines of the muscle ROI). Without the muscle
-    // cameras, muscle imaging stays disabled and the rolling time is unused.
-    pco_cam_rolling_time_us_ =
-        muscle_camera_ ? static_cast<unsigned int>(
-                             muscle_camera_->get_num_lines_scanned() *
-                             rolling_shutter_line_time_us)
-                       : 0;
-    pco_cam_readout_time_us_ =
-        static_cast<unsigned int>(muscle_cam_readout_time_us);
-
-    musc_resync_interval_s_ = recorder_config_.get_parameter<unsigned int>(
-        "muscle_camera", "resync_interval_s");
-    musc_acquire_restart_margin_us_ =
-        recorder_config_.get_parameter<unsigned int>(
-            "muscle_camera", "acquire_restart_margin_us");
+    // The Recorder starts out streaming (live preview, not saving) with muscle
+    // imaging off.
+    update_controls(/*recording=*/false);
 }
 
 QLayout *MainGUIWindow::create_behavior_fps_row() {
     behavior_fps_spin_box_ = new QSpinBox(this);
     behavior_fps_spin_box_->setRange(1, 1000);
-    int behavior_camera_default_recording_frame_rate =
-        recorder_config_.get_parameter<int>(
-            "behavior_camera", "default_recording_fps");
     behavior_fps_spin_box_->setValue(
-        behavior_camera_default_recording_frame_rate);
+        recorder_.get_default_recording_params().behavior_fps);
     // Don't connect to ArduinoCommunication! This value is only used during
     // recording. When streaming, the behavior frame rate comes from
     // behavior_camera/streaming_frame_rate and this field is ignored.
@@ -320,9 +244,8 @@ QLayout *MainGUIWindow::create_behavior_fps_row() {
 QLayout *MainGUIWindow::create_sync_ratio_row() {
     sync_ratio_spin_box_ = new QSpinBox(this);
     sync_ratio_spin_box_->setRange(1, INT_MAX);
-    int sync_ratio = recorder_config_.get_parameter<int>(
-        "muscle_camera", "default_recording_sync_ratio");
-    sync_ratio_spin_box_->setValue(sync_ratio);
+    sync_ratio_spin_box_->setValue(
+        recorder_.get_default_recording_params().sync_ratio);
     // Muscle-only parameter: disabled unless muscle imaging is enabled (the
     // checkbox below toggles it). Don't connect to ArduinoCommunication! This
     // value is only used during recording. When streaming, the sync ratio comes
@@ -337,10 +260,9 @@ QLayout *MainGUIWindow::create_sync_ratio_row() {
 QLayout *MainGUIWindow::create_behavior_exposure_row() {
     behavior_exposure_time_spin_box_ = new QDoubleSpinBox(this);
     behavior_exposure_time_spin_box_->setRange(0.001, 1000.0);
-    default_beh_exp_time_us_ = recorder_config_.get_parameter<int>(
-        "behavior_camera", "default_exposure_time_us");
     behavior_exposure_time_spin_box_->setValue(
-        default_beh_exp_time_us_ / 1000.0);
+        recorder_.get_default_recording_params().behavior_exposure_time_us /
+        1000.0);
     // Buffered recording parameter: applied only when a recording starts (see
     // build_recording_params). During streaming the controller always runs the
     // default behavior exposure (see build_streaming_params), so editing this
@@ -357,15 +279,9 @@ QLayout *MainGUIWindow::create_behavior_exposure_row() {
 QLayout *MainGUIWindow::create_muscle_exposure_row() {
     muscle_light_on_time_spin_box_ = new QDoubleSpinBox(this);
     muscle_light_on_time_spin_box_->setRange(0.001, 1000.0);
-    default_musc_light_on_time_us_ = recorder_config_.get_parameter<int>(
-        "muscle_camera", "default_light_on_time_us");
     muscle_light_on_time_spin_box_->setValue(
-        default_musc_light_on_time_us_ / 1000.0);
-    // Initialize the free-running (auto-sequence) muscle camera to the
-    // streaming muscle frame rate. In continuous mode the nominal exposure sets
-    // the frame rate; it is switched to the recording rate when a recording
-    // starts and back when it ends (see start_recording/end_recording).
-    push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
+        recorder_.get_default_recording_params().muscle_light_on_time_us /
+        1000.0);
     // Muscle-only parameter: disabled unless muscle imaging is enabled (the
     // checkbox below toggles it). Like the behavior exposure, this is a
     // buffered recording parameter -- applied only when a recording starts;
@@ -392,14 +308,15 @@ QLayout *MainGUIWindow::create_protocol_row() {
 QLayout *MainGUIWindow::create_save_directory_row(
     int config_rows_width, int buttons_gap) {
     directory_line_edit_ = new QLineEdit(this);
-    directory_line_edit_->setText(save_directory_->get_directory().c_str());
+    directory_line_edit_->setText(
+        recorder_.save_directory()->get_directory().c_str());
     connect(
         directory_line_edit_,
         &QLineEdit::textChanged,
         this,
         [this](const QString &text) {
             spdlog::debug("save_directory changed to {}", text.toStdString());
-            save_directory_->set_directory(text.toStdString());
+            recorder_.save_directory()->set_directory(text.toStdString());
         });
     QPushButton *browse_button = new QPushButton("Browse", this);
     QPushButton *increment_button = new QPushButton("Increment", this);
@@ -452,7 +369,7 @@ QLayout *MainGUIWindow::create_behavior_preview_pane(
         &QTimer::timeout,
         this,
         &MainGUIWindow::update_behavior_image_display);
-    image_display_timer_->start(1000 / streaming_behavior_fps_);
+    image_display_timer_->start(1000 / recorder_.streaming_behavior_fps());
     return behavior_column_layout;
 }
 
@@ -513,7 +430,7 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
     // sits at the right edge of the muscle preview.
     muscle_imaging_check_box_ = new QCheckBox("Enable", this);
     muscle_imaging_check_box_->setChecked(false);
-    if (!muscle_camera_) {
+    if (!recorder_.muscle_camera()) {
         muscle_imaging_check_box_->setToolTip(
             "run-spotlight was started without the muscle cameras "
             "(--no-muscle)");
@@ -523,15 +440,10 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
         &QCheckBox::checkStateChanged,
         this,
         [this, muscle_imaging_widgets](int state) {
-            // Muscle imaging on/off is expressed by enable_muscle: when off the
-            // controller free-runs the behavior camera with the blue excitation
-            // LED disabled (build_streaming_params() reads
-            // muscle_imaging_enabled_).
+            // The checkbox is disabled during recordings, when muscle imaging
+            // must not be toggled (see Recorder::set_muscle_imaging_enabled).
             bool enabled = (state == Qt::Checked);
-            muscle_imaging_enabled_ = enabled;
-            spdlog::info(
-                enabled ? "Enabling muscle imaging"
-                        : "Disabling muscle imaging");
+            recorder_.set_muscle_imaging_enabled(enabled);
             // The muscle-only parameters are editable only when imaging muscle.
             sync_ratio_spin_box_->setEnabled(enabled);
             muscle_light_on_time_spin_box_->setEnabled(enabled);
@@ -539,11 +451,6 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
             // a live muscle preview.
             for (QWidget *widget : muscle_imaging_widgets) {
                 widget->setVisible(enabled);
-            }
-            // Re-stream so the controller switches modes immediately (sending a
-            // STREAM mid-recording would revert the controller and abort it).
-            if (!program_state_->is_recording.load()) {
-                arduino_communication_->stream(build_streaming_params());
             }
         });
 
@@ -578,7 +485,8 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
         this,
         &MainGUIWindow::update_muscle_image_display);
     float muscle_streaming_fps =
-        static_cast<float>(streaming_behavior_fps_) / streaming_sync_ratio_;
+        static_cast<float>(recorder_.streaming_behavior_fps()) /
+        recorder_.streaming_sync_ratio();
     spdlog::info("Muscle streaming FPS: {}", muscle_streaming_fps);
     muscle_image_display_timer->start(1000 / muscle_streaming_fps);
     return muscle_column_layout;
@@ -587,11 +495,11 @@ QLayout *MainGUIWindow::create_muscle_preview_pane(
 QLayout *MainGUIWindow::create_stage_preview_pane() {
     motion_control_widget_ = new MotionControlWidget(
         recorder_config_,
-        tracking_control_state_,
-        stage_min_x_mm_,
-        stage_max_x_mm_,
-        stage_min_y_mm_,
-        stage_max_y_mm_,
+        recorder_.tracking_control_state(),
+        recorder_.stage_range().min_x_mm,
+        recorder_.stage_range().max_x_mm,
+        recorder_.stage_range().min_y_mm,
+        recorder_.stage_range().max_y_mm,
         this);
     // Tracking on/off checkbox, right-aligned in the column title so it sits at
     // the right edge of the stage preview.
@@ -603,9 +511,9 @@ QLayout *MainGUIWindow::create_stage_preview_pane() {
         this,
         [this](int state) {
             if (state == Qt::Checked) {
-                tracking_control_state_->tracking_on.store(true);
+                recorder_.tracking_control_state()->tracking_on.store(true);
             } else {
-                tracking_control_state_->tracking_on.store(false);
+                recorder_.tracking_control_state()->tracking_on.store(false);
             }
         });
     QHBoxLayout *stage_title_layout = new QHBoxLayout();
@@ -694,17 +602,12 @@ QLayout *MainGUIWindow::create_record_stop_buttons() {
 
 void MainGUIWindow::setup_programmed_stop_timer() {
     // The acquirer threads stop recording exactly on the programmed frame count
-    // by themselves; this only finalizes the GUI (reverts the UI and cameras to
-    // streaming) shortly after.
+    // by themselves; the Recorder then reverts the cameras to streaming, and
+    // this reverts the UI.
     QTimer *programmed_stop_check_timer = new QTimer(this);
     connect(programmed_stop_check_timer, &QTimer::timeout, this, [this]() {
-        if (programmed_recording_stop_->programmed_stop_reached.load()) {
-            spdlog::info("Protocol stop reached. Finalizing recording.");
-            end_recording(true);
-            programmed_recording_stop_->num_behavior_frames_expected = -1;
-            programmed_recording_stop_->num_muscle_frames_expected = -1;
-            programmed_recording_stop_->programmed_stop_reached.store(
-                false); // toggle off
+        if (recorder_.finalize_programmed_stop_if_reached()) {
+            update_controls(/*recording=*/false);
             QMessageBox::information(
                 this,
                 "Recording stopped",
@@ -714,82 +617,23 @@ void MainGUIWindow::setup_programmed_stop_timer() {
     programmed_stop_check_timer->start(500); // Check every 0.5 second
 }
 
-bool MainGUIWindow::validate_and_prepare_recording(
-    std::deque<OperationStep> &op_sequence,
-    int &muscle_nominal_exposure_us,
-    int &muscle_buffer_time_us) {
-    muscle_nominal_exposure_us = 0;
-    muscle_buffer_time_us = 0;
-
-    // Parse the experiment protocol into an opSequence and record the
-    // programmed-stop frame counts. A malformed string aborts the recording.
-    int num_steps_parsed = parse_protocol_string(
-        experiment_protocol_->toPlainText().toStdString(), op_sequence);
-    spdlog::info("Parsed {} protocol steps", op_sequence.size());
-    if (num_steps_parsed < 0) {
-        // parse_protocol_string has already shown a detailed error dialog.
-        return false;
-    } else if (num_steps_parsed == 0) {
-        spdlog::info("GUI starting recording without any protocol steps");
-        programmed_recording_stop_->num_behavior_frames_expected = -1;
-        programmed_recording_stop_->num_muscle_frames_expected = -1;
-    } else {
-        spdlog::info(
-            "GUI starting recording with {} protocol steps",
-            op_sequence.size());
-        programmed_recording_stop_->num_behavior_frames_expected =
-            op_sequence.back().frame_idx;
-        programmed_recording_stop_->num_muscle_frames_expected =
-            op_sequence.back().frame_idx / sync_ratio_spin_box_->value();
-        spdlog::info(
-            "Setting expected number of steps to {} (behavior) and {} (muscle)",
-            programmed_recording_stop_->num_behavior_frames_expected,
-            programmed_recording_stop_->num_muscle_frames_expected);
-    }
-    // An empty opSequence is an open recording; a non-empty one is scheduled.
-    current_recording_is_scheduled_ = num_steps_parsed > 0;
-
-    // When imaging muscle, derive and validate the continuous-mode muscle
-    // trigger timing from the current recording parameters.
-    if (muscle_imaging_check_box_->isChecked()) {
-        MuscleTriggerTiming muscle_trigger_timing(
-            behavior_fps_spin_box_->value(),
-            sync_ratio_spin_box_->value(),
-            static_cast<int>(muscle_light_on_time_spin_box_->value() * 1000));
-        double rolling_shutter_line_time_us =
-            recorder_config_.get_parameter<double>(
-                "muscle_camera", "rolling_shutter_line_time_us");
-        int muscle_cam_readout_time_us = recorder_config_.get_parameter<double>(
-            "muscle_camera", "sensor_readout_time_us");
-        if (!muscle_trigger_timing.compute_parameters(
-                muscle_camera_->get_num_lines_scanned(),
-                rolling_shutter_line_time_us,
-                muscle_cam_readout_time_us)) {
-            QMessageBox::critical(
-                this,
-                "Error",
-                "Invalid muscle recording configuration. In particular, check "
-                "that the muscle recording interval (1 / muscle FPS) is long "
-                "enough for the rolling shutter, light-on, and sensor readout "
-                "times. See "
-                "https://github.com/NeLy-EPFL/spotlight-control/issues/79.");
-            return false;
-        }
-        muscle_nominal_exposure_us =
-            muscle_trigger_timing.get_nominal_exposure_us();
-        muscle_buffer_time_us = muscle_trigger_timing.get_buffer_time_us();
-    }
-
-    return true;
+RecordingParams MainGUIWindow::get_recording_params() const {
+    RecordingParams params;
+    params.behavior_fps = behavior_fps_spin_box_->value();
+    params.sync_ratio = sync_ratio_spin_box_->value();
+    // Convert ms to us.
+    params.behavior_exposure_time_us =
+        static_cast<int>(behavior_exposure_time_spin_box_->value() * 1000);
+    params.muscle_light_on_time_us =
+        static_cast<int>(muscle_light_on_time_spin_box_->value() * 1000);
+    params.experiment_protocol =
+        experiment_protocol_->toPlainText().toStdString();
+    return params;
 }
 
 void MainGUIWindow::start_recording() {
-    // Check if behavior camera has been initialized
-    std::shared_ptr<BehaviorCamera> behavior_camera =
-        behavior_recording_state_->behavior_camera.load();
-    if (!behavior_camera || !behavior_camera->is_ready()) {
-        spdlog::error("Behavior camera not ready. Cannot start recording.");
-        // Make a pop-up error window
+    // Checked before resolving the save directory, which may delete files
+    if (!recorder_.is_behavior_camera_ready()) {
         QMessageBox::critical(
             this,
             "Error",
@@ -804,84 +648,24 @@ void MainGUIWindow::start_recording() {
         return;
     }
 
-    // Validate the experiment protocol and (when imaging muscle) the muscle
-    // trigger timing before any side effects -- camera exposure change, button
-    // toggles, directory creation, metadata writes -- so an invalid
-    // configuration aborts cleanly and leaves nothing behind. The derived
-    // muscle timing is returned for the metadata and the exposure update below.
-    std::deque<OperationStep> op_sequence;
-    int muscle_nominal_exposure_us = 0;
-    int muscle_buffer_time_us = 0;
-    if (!validate_and_prepare_recording(
-            op_sequence, muscle_nominal_exposure_us, muscle_buffer_time_us)) {
+    if (std::optional<std::string> error =
+            recorder_.start_recording(get_recording_params())) {
+        QMessageBox::critical(this, "Error", QString::fromStdString(*error));
         return;
     }
 
-    // Switch the free-running camera to the recording muscle frame rate before
-    // START_RECORDING, so it is already emitting common-time onsets at the
-    // recording cadence when the firmware begins locking the behavior frames to
-    // them. This blocks until the camera server has applied the new exposure,
-    // so START_RECORDING below is only sent afterwards.
-    if (muscle_imaging_check_box_->isChecked()) {
-        muscle_camera_->set_nominal_exposure_us(
-            static_cast<unsigned int>(muscle_nominal_exposure_us));
-    }
+    update_controls(/*recording=*/true);
+}
 
-    // Toggle GUI buttons
-    record_button_->setEnabled(false);
-    stop_button_->setEnabled(true);
-    muscle_imaging_check_box_->setEnabled(false);
-
-    // Initialize save directory
-    save_directory_->initialize();
-
-    // Number of muscle frames between periodic re-syncs of the muscle cameras,
-    // computed once for the whole recording.
-    const unsigned int musc_resync_interval = get_musc_resync_interval(
-        musc_resync_interval_s_,
-        behavior_fps_spin_box_->value(),
-        sync_ratio_spin_box_->value());
-
-    // Save the recording metadata into the freshly created save directory.
-    // These read the recording parameters directly off the widgets.
-    write_experiment_parameters(
-        muscle_nominal_exposure_us,
-        muscle_buffer_time_us,
-        musc_resync_interval);
-    write_recorder_config();
-    write_behavior_calibration_parameters();
-    write_muscle_camera_rois();
-    copy_homography_parameters_if_present();
-
-    // Send triggering parameters and start recording. The controller reverts to
-    // the streaming (revert-to) params when the recording ends.
-    TriggerParams rec_params = build_recording_params(musc_resync_interval);
-    TriggerParams revert_to_params = build_streaming_params();
-    arduino_communication_->start_recording(
-        rec_params, revert_to_params, op_sequence);
-
-    // The controller waits cam_flush_time_us after START_RECORDING before it
-    // starts triggering, so that frames acquired with the previous (streaming)
-    // params drain out of the camera buffers. Ignore frames for a fraction of
-    // that window on this side too, so the recording does not begin with stale
-    // frames (see cam_flush_time_us in comm_protocol/protocol.h).
-    std::this_thread::sleep_for(
-        std::chrono::microseconds(cam_flush_time_us * 8 / 10));
-    // Set the muscle-imaging flag before raising is_recording so the muscle
-    // acquirer sees a consistent state: when muscle imaging is off the camera
-    // still free-runs but its frames are not saved (behavior-only recording).
-    program_state_->muscle_imaging_enabled.store(muscle_imaging_enabled_);
-    program_state_->is_recording.store(true);
-
-    spdlog::info(
-        "Recording STARTED: {} recording, muscle imaging {}. Saving to '{}'",
-        current_recording_is_scheduled_ ? "scheduled" : "open",
-        muscle_imaging_check_box_->isChecked() ? "enabled" : "disabled",
-        save_directory_->get_directory().string());
+void MainGUIWindow::update_controls(bool recording) {
+    record_button_->setEnabled(!recording);
+    stop_button_->setEnabled(recording);
+    muscle_imaging_check_box_->setEnabled(
+        !recording && recorder_.muscle_camera() != nullptr);
 }
 
 bool MainGUIWindow::confirm_or_resolve_save_directory() {
-    std::filesystem::path save_dir = save_directory_->get_directory();
+    std::filesystem::path save_dir = recorder_.save_directory()->get_directory();
     while (std::filesystem::is_directory(save_dir) &&
            !std::filesystem::is_empty(save_dir)) {
         QMessageBox msg_box(this);
@@ -914,7 +698,7 @@ bool MainGUIWindow::confirm_or_resolve_save_directory() {
             }
             directory_line_edit_->setText(
                 QString::fromStdString(save_dir.string()));
-            save_dir = save_directory_->get_directory();
+            save_dir = recorder_.save_directory()->get_directory();
         } else {
             return false;
         }
@@ -922,248 +706,19 @@ bool MainGUIWindow::confirm_or_resolve_save_directory() {
     return true;
 }
 
-void MainGUIWindow::write_experiment_parameters(
-    int muscle_nominal_exposure_us,
-    int muscle_buffer_time_us,
-    unsigned int musc_resync_interval) {
-    std::filesystem::path output_path = save_directory_->get_directory() /
-                                        "metadata/experiment_parameters.yaml";
-    bool muscle_imaging_enabled = muscle_imaging_check_box_->isChecked();
-
-    YAML::Emitter out;
-    out << YAML::BeginMap;
-    out << YAML::Key << "behavior_fps" << YAML::Value
-        << behavior_fps_spin_box_->value();
-    out << YAML::Key << "muscle_imaging_enabled" << YAML::Value
-        << muscle_imaging_enabled;
-    out << YAML::Key << "muscle_sync_ratio" << YAML::Value
-        << sync_ratio_spin_box_->value();
-    // Convert ms to us.
-    out << YAML::Key << "behavior_exposure_time_us" << YAML::Value
-        << static_cast<int>(behavior_exposure_time_spin_box_->value() * 1000);
-    out << YAML::Key << "muscle_light_on_time_us" << YAML::Value
-        << static_cast<int>(muscle_light_on_time_spin_box_->value() * 1000);
-    // The derived continuous-mode (auto-sequence) timing -- the nominal
-    // per-line exposure programmed into the camera and the slack in the
-    // common-time window beyond the light-on time -- is only meaningful when
-    // imaging muscle.
-    if (muscle_imaging_enabled) {
-        out << YAML::Key << "muscle_nominal_exposure_us" << YAML::Value
-            << muscle_nominal_exposure_us;
-        out << YAML::Key << "muscle_buffer_time_us" << YAML::Value
-            << muscle_buffer_time_us;
-        // The muscle cameras are re-synced every this many muscle frames,
-        // which costs one muscle frame interval each (no frames are lost).
-        out << YAML::Key << "muscle_resync_interval_frames" << YAML::Value
-            << musc_resync_interval;
-    }
-    out << YAML::Key << "experiment_protocol" << YAML::Value
-        << experiment_protocol_->toPlainText().toStdString();
-    out << YAML::EndMap;
-
-    std::ofstream fout(output_path);
-    if (!fout.is_open()) {
-        std::string error_message =
-            "Failed to open file for writing experiment parameters: " +
-            output_path.string();
-        spdlog::critical(error_message);
-        throw std::runtime_error(error_message);
-    }
-    fout << out.c_str();
-    fout.close();
-
-    spdlog::info("Saved experiment parameters to '{}'", output_path.string());
-}
-
-void MainGUIWindow::write_recorder_config() {
-    std::filesystem::path output_path =
-        save_directory_->get_directory() / "metadata/recorder_config.yaml";
-    recorder_config_.save_to_file(output_path);
-    spdlog::info("Saved recorder config to '{}'", output_path.string());
-}
-
-void MainGUIWindow::write_behavior_calibration_parameters() {
-    std::filesystem::path output_path =
-        save_directory_->get_directory() /
-        "metadata/calibration_parameters_behavior.yaml";
-    behavior_cam_calibration_params_.save_to_file(output_path);
-    spdlog::info(
-        "Saved behavior calibration parameters to '{}'", output_path.string());
-}
-
-void MainGUIWindow::write_muscle_camera_rois() {
-    if (!muscle_camera_) {
-        return;
-    }
-    std::filesystem::path output_path =
-        save_directory_->get_directory() / "metadata/muscle_camera_roi.yaml";
-    if (muscle_camera_->get_rois().to_file(output_path) == 0) {
-        spdlog::info("Saved muscle camera ROIs to '{}'", output_path.string());
-    }
-}
-
-void MainGUIWindow::copy_homography_parameters_if_present() {
-    std::filesystem::path src =
-        profile_dir_ /
-        "calibration/model/homography_consensus/homography_result.yaml";
-    if (!std::filesystem::exists(src)) {
-        spdlog::warn(
-            "No homography calibration found at '{}'. Muscle-to-behavior "
-            "alignment will not be available for this recording unless "
-            "homography_parameters.yaml is provided manually.",
-            src.string());
-        return;
-    }
-
-    std::filesystem::path dst =
-        save_directory_->get_directory() / "metadata/homography_parameters.yaml";
-    if (std::filesystem::exists(dst)) {
-        spdlog::warn(
-            "Overwriting existing '{}'. If that file was from a different "
-            "calibration run, muscle alignment for this recording may use "
-            "incorrect parameters.",
-            dst.string());
-    }
-    std::filesystem::copy_file(
-        src, dst, std::filesystem::copy_options::overwrite_existing);
-    spdlog::info("Snapshotted homography parameters to '{}'", dst.string());
-}
-
 void MainGUIWindow::stop_recording() {
     // Slot for the Stop button: a user-initiated stop.
-    end_recording(false);
+    recorder_.end_recording(/*reached_programmed_end=*/false);
+    update_controls(/*recording=*/false);
 }
 
-void MainGUIWindow::end_recording(bool reached_programmed_end) {
-    record_button_->setEnabled(true);
-    stop_button_->setEnabled(false);
-    muscle_imaging_check_box_->setEnabled(muscle_camera_ != nullptr);
-
-    if (reached_programmed_end) {
-        // A scheduled recording reached its end: the controller already
-        // reverted to the streaming params via its opSequence STOP step, so
-        // there is nothing to send (a STOP_RECORDING here would fault the
-        // controller).
-    } else if (current_recording_is_scheduled_) {
-        // Manual early abort of a scheduled recording. STOP_RECORDING is only
-        // valid for an open recording, so revert by re-streaming instead.
-        arduino_communication_->stream(build_streaming_params());
-    } else {
-        // Open recording: STOP_RECORDING reverts the controller to streaming
-        // (using the revert-to params sent with START_RECORDING).
-        arduino_communication_->stop_recording();
-    }
-
-    // Stop queuing frames. The acquirer threads flush any partial behavior
-    // group and discard subsequent frames (see behavior_image_acquirer).
-    program_state_->is_recording.store(false);
-
-    // Revert the free-running muscle camera to the streaming muscle frame rate,
-    // matching the streaming params the controller was just reverted to. This
-    // blocks until the camera server has applied it.
-    push_muscle_camera_exposure(streaming_behavior_fps_, streaming_sync_ratio_);
-
-    // Re-stream now that the camera runs at the streaming rate. Until the new
-    // exposure took effect, the camera still ran at the (possibly faster)
-    // recording rate while the controller already expected streaming timing,
-    // which can latch a muscle-frame overrun error. A STREAM clears that error
-    // and restarts the controller's timing on the camera's new cadence.
-    arduino_communication_->stream(build_streaming_params());
-
-    spdlog::info(
-        "Recording STOPPED ({}): {} recording, muscle imaging {}",
-        reached_programmed_end ? "reached scheduled end"
-                               : "user-initiated stop",
-        current_recording_is_scheduled_ ? "scheduled" : "open",
-        muscle_imaging_check_box_->isChecked() ? "enabled" : "disabled");
-
-    current_recording_is_scheduled_ = false;
-}
-
-void MainGUIWindow::push_muscle_camera_exposure(
-    int beh_frame_rate, int sync_ratio) {
-    if (!muscle_camera_) {
-        return; // started with --no-muscle
-    }
-    // In continuous (auto-sequence) mode the camera free-runs at
-    // 1/(nominalExposure + readout), so the nominal per-line exposure sets the
-    // frame rate. Pick it so the camera produces muscle frames at
-    // behFrameRate / syncRatio. See docs/data_acquisition.md and
-    // MuscleTriggerTiming.
-    unsigned int muscle_interval_us =
-        static_cast<unsigned int>(1000000.0 * sync_ratio / beh_frame_rate);
-    int exposure_us = static_cast<int>(muscle_interval_us) -
-                      static_cast<int>(pco_cam_readout_time_us_);
-    if (exposure_us <= 0) {
-        spdlog::error(
-            "Cannot set muscle camera exposure: muscle interval ({} us) is not "
-            "longer than the sensor readout time ({} us).",
-            muscle_interval_us,
-            pco_cam_readout_time_us_);
-        return;
-    }
-    muscle_camera_->set_nominal_exposure_us(
-        static_cast<unsigned int>(exposure_us));
-}
-
-TriggerParams MainGUIWindow::build_streaming_params() const {
-    TriggerParams params;
-    // During streaming the controller always runs DEFAULT parameters. The
-    // recording spin boxes (behavior FPS, sync ratio, behavior exposure, muscle
-    // light-on) are buffered in the GUI and take effect only when a recording
-    // starts (see build_recording_params). This keeps the controller's status
-    // display showing the actual live behavior, never the not-yet-executed
-    // recording config.
-    //
-    // The one live streaming control is the muscle-imaging checkbox: it toggles
-    // whether the behavior camera is locked to the muscle camera and the blue
-    // excitation LED is pulsed (enableMuscle), for muscle preview. When false,
-    // the muscle-only fields are still sent but ignored by the controller.
-    params.enable_muscle = muscle_imaging_enabled_;
-    params.beh_frame_rate = streaming_behavior_fps_;
-    params.beh_musc_sync_ratio = streaming_sync_ratio_;
-    params.beh_exp_time = static_cast<unsigned int>(default_beh_exp_time_us_);
-    params.musc_eff_exp_time =
-        static_cast<unsigned int>(default_musc_light_on_time_us_);
-    params.pco_cam_rolling_time = pco_cam_rolling_time_us_;
-    params.pco_cam_readout_time = pco_cam_readout_time_us_;
-    params.musc_resync_interval = get_musc_resync_interval(
-        musc_resync_interval_s_, streaming_behavior_fps_, streaming_sync_ratio_);
-    params.musc_acquire_restart_margin = musc_acquire_restart_margin_us_;
-    return params;
-}
-
-TriggerParams MainGUIWindow::build_recording_params(
-    unsigned int musc_resync_interval) const {
-    TriggerParams params;
-    // The muscle camera is recorded (and the blue excitation light pulsed) only
-    // when muscle imaging is enabled; otherwise the controller free-runs the
-    // behavior camera (enableMuscle = false).
-    params.enable_muscle = muscle_imaging_enabled_;
-    params.beh_frame_rate = behavior_fps_spin_box_->value();
-    params.beh_musc_sync_ratio = sync_ratio_spin_box_->value();
-    params.beh_exp_time = static_cast<unsigned int>(
-        behavior_exposure_time_spin_box_->value() * 1000);
-    params.musc_eff_exp_time = static_cast<unsigned int>(
-        muscle_light_on_time_spin_box_->value() * 1000);
-    params.pco_cam_rolling_time = pco_cam_rolling_time_us_;
-    params.pco_cam_readout_time = pco_cam_readout_time_us_;
-    params.musc_resync_interval = musc_resync_interval;
-    params.musc_acquire_restart_margin = musc_acquire_restart_margin_us_;
-    return params;
-}
-
-void MainGUIWindow::closeEvent(QCloseEvent *event) {
+void MainGUIWindow::closeEvent(QCloseEvent * /*event*/) {
     spdlog::info("User is closing GUI window. Quitting gracefully.");
-    if (!quit_program()) {
-        event->ignore();
-        return;
-    }
-    event->accept();
+    recorder_.quit();
 }
 
 void MainGUIWindow::browse_directory() {
-    std::string current_directory = save_directory_->get_directory();
+    std::string current_directory = recorder_.save_directory()->get_directory();
     QString dir = QFileDialog::getExistingDirectory(
         this,
         "Open Directory",
@@ -1172,7 +727,7 @@ void MainGUIWindow::browse_directory() {
     if (!dir.isEmpty()) {
         directory_line_edit_->setText(dir);
 
-        save_directory_->set_directory(dir.toStdString());
+        recorder_.save_directory()->set_directory(dir.toStdString());
         spdlog::info("Directory changed to '{}'", dir.toStdString());
     } else {
         spdlog::error("Directory is an empty string; failed to open.");
@@ -1184,7 +739,8 @@ void MainGUIWindow::increment_directory() {
     // (non-existent or empty) directory, matching the auto-increment behavior
     // used when starting a recording (see confirm_or_resolve_save_directory).
     std::filesystem::path incremented =
-        increment_directory_name(save_directory_->get_directory().string());
+        increment_directory_name(
+            recorder_.save_directory()->get_directory().string());
     while (std::filesystem::is_directory(incremented) &&
            !std::filesystem::is_empty(incremented)) {
         incremented = increment_directory_name(incremented.string());
@@ -1236,7 +792,7 @@ cv::Mat add_corner_marker(
 
 void MainGUIWindow::update_behavior_image_display() {
     cv::Mat latest_frame =
-        behavior_recording_state_->latest_frame_holder->get_latest_frame_data()
+        recorder_.behavior_recording_state()->latest_frame_holder->get_latest_frame_data()
             .image;
     if (latest_frame.empty()) {
         return;
@@ -1247,9 +803,9 @@ void MainGUIWindow::update_behavior_image_display() {
     MotionStagePosition my_stage_position;
     {
         std::lock_guard<std::mutex> lock(
-            tracking_control_state_->latest_motion_stage_position_mutex);
+            recorder_.tracking_control_state()->latest_motion_stage_position_mutex);
         my_stage_position =
-            tracking_control_state_->latest_motion_stage_position;
+            recorder_.tracking_control_state()->latest_motion_stage_position;
     }
 
     // Convert the grayscale frame to BGR. While tracking, warp the
@@ -1258,7 +814,7 @@ void MainGUIWindow::update_behavior_image_display() {
     cv::Mat bgr_image;
     cv::cvtColor(corrected_frame, bgr_image, cv::COLOR_GRAY2BGR);
     if (tracking_enabled_check_box_->isChecked()) {
-        cv::Mat active_mask_curr_view = active_area_mask_.warp_to_current_view(
+        cv::Mat active_mask_curr_view = recorder_.active_area_mask().warp_to_current_view(
             corrected_frame, my_stage_position);
         cv::Mat outside_arena;
         cv::threshold(
@@ -1280,10 +836,10 @@ void MainGUIWindow::update_behavior_image_display() {
 
     cv::Mat image_for_display = add_corner_marker(
         bgr_image,
-        active_area_mask_.arena_width_mm,
-        active_area_mask_.arena_height_mm,
+        recorder_.active_area_mask().arena_width_mm,
+        recorder_.active_area_mask().arena_height_mm,
         my_stage_position,
-        behavior_cam_calibration_params_);
+        recorder_.behavior_cam_calibration_params());
 
     QImage q_image = cv_mat_to_q_image(image_for_display);
     QPixmap pixmap = QPixmap::fromImage(q_image).scaled(
@@ -1294,16 +850,16 @@ void MainGUIWindow::update_behavior_image_display() {
 }
 
 void MainGUIWindow::update_muscle_image_display() {
-    if (!muscle_imaging_enabled_) {
+    if (!recorder_.is_muscle_imaging_enabled()) {
         muscle_image_display_label_->clear();
         return;
     }
 
     cv::Mat calcium_frame =
-        muscle_recording_state_->latest_calcium_frame_holder->get_latest_frame_data()
+        recorder_.muscle_recording_state()->latest_calcium_frame_holder->get_latest_frame_data()
             .image;
     cv::Mat fiducial_frame =
-        muscle_recording_state_->latest_fiducial_frame_holder
+        recorder_.muscle_recording_state()->latest_fiducial_frame_holder
             ->get_latest_frame_data()
             .image;
     if (calcium_frame.empty() || fiducial_frame.empty()) {
@@ -1323,7 +879,7 @@ void MainGUIWindow::update_muscle_image_display() {
     cv::Mat behavior_channel = cv::Mat::zeros(view_size, CV_8UC1);
     if (behavior_channel_check_box_->isChecked()) {
         cv::Mat behavior_frame =
-            behavior_recording_state_->latest_frame_holder
+            recorder_.behavior_recording_state()->latest_frame_holder
                 ->get_latest_frame_data()
                 .image;
         if (!behavior_frame.empty()) {
@@ -1365,111 +921,4 @@ warp_to_calcium_view(const cv::Mat &image, const cv::Size &calcium_view_size) {
     cv::Mat warped_image;
     cv::warpAffine(image, warped_image, transform, calcium_view_size);
     return warped_image;
-}
-
-// Parse the experiment-protocol text field into an opSequence. The text is a
-// ";"-separated list of steps, each "frameIdx/channel/op":
-//   - "<n>/ch2/on", "<n>/ch3/off": toggle an optogenetics channel
-//   - "<n>/x/stop": end the recording and revert to streaming
-// An empty string (or a single ";") denotes an open recording with no
-// programmed steps. If any steps are given, the protocol must contain exactly
-// one "<n>/x/stop" step and it must be the very last step. Returns the number
-// of steps, or -1 on a malformed string.
-int parse_protocol_string(
-    const std::string &protocol_text_field_string,
-    std::deque<OperationStep> &op_sequence) {
-    op_sequence.clear();
-
-    auto report_error = []() {
-        spdlog::error("Invalid experiment protocol string");
-        QMessageBox::critical(
-            nullptr,
-            "Invalid experiment protocol",
-            "The experiment protocol string is invalid.\n\n"
-            "It must be a ';'-separated list of steps, each of the form\n"
-            "    frameIdx/channel/op\n"
-            "where:\n"
-            "  - frameIdx is a non-negative integer: the behavior-frame index "
-            "after which the step is applied;\n"
-            "  - to switch an optogenetics channel, channel is 'ch2' or 'ch3' "
-            "(channel 1 is reserved for the IR LED) and op is 'on' or 'off';\n"
-            "  - to end the recording, channel is 'x' and op is 'stop'.\n\n"
-            "If any steps are given, the protocol must contain exactly one "
-            "'x/stop' step, and it must be the very last step.\n\n"
-            "Do not add a trailing ';' at the end.\n\n"
-            "Leave empty for open recording (no programmed stop).\n\n"
-            "Example:\n"
-            "    300/ch2/on;600/ch2/off;900/x/stop\n"
-            "turns channel 2 on after frame 300, off after frame 600, and "
-            "stops the recording after frame 900.");
-        return -1;
-    };
-
-    if (protocol_text_field_string == ";") {
-        return 0;
-    }
-
-    std::istringstream stream(protocol_text_field_string);
-    std::string token;
-    int num_steps_parsed = 0;
-    while (std::getline(stream, token, ';')) {
-        if (token.empty()) {
-            return report_error();
-        }
-
-        std::istringstream token_stream(token);
-        std::string frame_str, channel_str, op_str;
-        if (!std::getline(token_stream, frame_str, '/') ||
-            !std::getline(token_stream, channel_str, '/') ||
-            !std::getline(token_stream, op_str, '/')) {
-            return report_error();
-        }
-
-        unsigned long frame_idx = 0;
-        OptoChannel channel = OptoChannel::all;
-        OpType op = OpType::stop;
-        try {
-            frame_idx = std::stoul(frame_str);
-            if (channel_str == "x" && op_str == "stop") {
-                channel = OptoChannel::all;
-                op = OpType::stop;
-            } else if (channel_str.rfind("ch", 0) == 0) {
-                channel =
-                    static_cast<OptoChannel>(std::stoi(channel_str.substr(2)));
-                if (op_str == "on") {
-                    op = OpType::on;
-                } else if (op_str == "off") {
-                    op = OpType::off;
-                } else {
-                    return report_error();
-                }
-            } else {
-                return report_error();
-            }
-        } catch (const std::exception &) {
-            return report_error();
-        }
-
-        OperationStep step(frame_idx, channel, op);
-        if (!step.is_valid) {
-            return report_error();
-        }
-        op_sequence.push_back(step);
-        ++num_steps_parsed;
-    }
-
-    // If any steps are given, require exactly one stop step, at the very end.
-    if (num_steps_parsed > 0) {
-        int num_stops = 0;
-        for (const OperationStep &step : op_sequence) {
-            if (step.op == OpType::stop) {
-                ++num_stops;
-            }
-        }
-        if (num_stops != 1 || op_sequence.back().op != OpType::stop) {
-            return report_error();
-        }
-    }
-
-    return num_steps_parsed;
 }

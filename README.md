@@ -10,6 +10,7 @@ The closed-loop control and recording programs implemented in C++. A set of offl
         - `align-cameras`: (i) _mechanically_ align the two cameras and the blue excitation light, and (ii) define a cropped ROI on each of the two muscle cameras to align the fields of view.
         - `run-arena-registration-scan`: move the translation stages to predefined positions and capture fiducial-marker snapshots, used by a Python tool to build a camera–stage–arena coordinate mapping.
         - `run-spotlight`: the main program to record experimental data.
+        - `run-spotlight-headless`: `run-spotlight` without the GUI, for automated testing and performance analysis.
     - The behavior (Euresys) camera runs in-process; the two muscle (PCO) cameras run in one separate process (`pco-camera-server`) communicating over shared memory. See [`docs/architecture.md`](docs/architecture.md) for details.
 - **`trigger_firmware/`**: The embedded code that runs on the triggering microcontroller.
 - **`comm_protocol/`**: A lightweight JSON-based library for serial communication between the recorder and the microcontroller. Designed to be included by both sides; avoids exceptions to respect the microcontroller's linear workflow.

@@ -21,8 +21,8 @@ holds it, discovery comes up empty.
 
 The usual culprit is **eGrabber Studio** (`/opt/euresys/egrabber/studio/studio`)
 being left open — it is easy to forget when it is minimized or on another
-workspace. `run-spotlight` is the only program in this repo that uses the
-grabber, so anything else holding it is external.
+workspace. Also check that no other recorder program (e.g. another
+`run-spotlight` or `run-spotlight-headless`) is still running.
 
 Check who holds the grabber and close it:
 
